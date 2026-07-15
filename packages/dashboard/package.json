@@ -1,0 +1,38 @@
+{
+  "name": "@stepkit/dashboard",
+  "version": "0.0.0",
+  "description": "StepKit dashboard placeholder shell.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/chily-john/stepkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chily-john/stepkit/issues"
+  },
+  "homepage": "https://github.com/chily-john/stepkit#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check index.html src svelte.config.js vite.config.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.1.1",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "svelte": "^5.35.5",
+    "svelte-check": "^4.2.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}

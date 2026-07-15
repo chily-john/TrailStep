@@ -1,0 +1,30 @@
+{
+  "name": "stepkit",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@11.13.0+sha512.88d94724d8f2e6c186744a5584c6e59ecac869ec7ba15e9cb4cd628e8dc7066820b2481d8ee3b51ea8da323a7378068aa58c556a3720d32b7c20a051d088363a",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "biome check . && turbo run lint",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "publish:prepare": "pnpm build && changeset version"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.1.1",
+    "@changesets/cli": "^2.29.5",
+    "tsup": "^8.5.0",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

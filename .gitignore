@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+.pi/
+.workflower/
+.vite/
+mock-local-test/
+.env
+.env.*
+!.env.example
+.DS_Store

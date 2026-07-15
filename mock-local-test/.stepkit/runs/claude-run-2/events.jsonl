@@ -1,0 +1,4 @@
+{"id":"evt_1","runId":"claude-run-2","workflowId":"claude-greeting","type":"workflow.started","timestamp":"2026-07-15T15:04:39.153Z","schemaVersion":"v0","payload":{"input":{"name":"Ada"}}}
+{"id":"evt_2","runId":"claude-run-2","workflowId":"claude-greeting","stepId":"claude-greet","type":"step.started","timestamp":"2026-07-15T15:04:39.154Z","schemaVersion":"v0","payload":{"stepName":"claude-greet","kind":"agent"}}
+{"id":"evt_3","runId":"claude-run-2","workflowId":"claude-greeting","stepId":"claude-greet","type":"step.completed","timestamp":"2026-07-15T15:04:50.665Z","schemaVersion":"v0","payload":{"output":{"greeting":"Hey Ada! Great to have you here — hope you're ready for something awesome."}}}
+{"id":"evt_4","runId":"claude-run-2","workflowId":"claude-greeting","type":"workflow.completed","timestamp":"2026-07-15T15:04:50.665Z","schemaVersion":"v0","payload":{"output":{"greeting":"Hey Ada! Great to have you here — hope you're ready for something awesome."}}}

@@ -1,0 +1,4 @@
+{"id":"evt_1","runId":"pi-run","workflowId":"pi-greeting","type":"workflow.started","timestamp":"2026-07-14T23:00:07.633Z","schemaVersion":"v0","payload":{"input":{"name":"Ada"}}}
+{"id":"evt_2","runId":"pi-run","workflowId":"pi-greeting","stepId":"pi-greet","type":"step.started","timestamp":"2026-07-14T23:00:07.633Z","schemaVersion":"v0","payload":{"stepName":"pi-greet","kind":"agent"}}
+{"id":"evt_3","runId":"pi-run","workflowId":"pi-greeting","stepId":"pi-greet","type":"step.completed","timestamp":"2026-07-14T23:00:19.411Z","schemaVersion":"v0","payload":{"output":{"greeting":"Hi Ada! Great to see you — hope your day going well."}}}
+{"id":"evt_4","runId":"pi-run","workflowId":"pi-greeting","type":"workflow.completed","timestamp":"2026-07-14T23:00:19.411Z","schemaVersion":"v0","payload":{"output":{"greeting":"Hi Ada! Great to see you — hope your day going well."}}}

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "customAgents": {},
+  "workingAgents": {
+    "default": [{ "provider": "claude", "model": "sonnet", "thinking": "medium" }],
+    "small": [{ "provider": "claude", "model": "sonnet", "thinking": "medium" }]
+  },
+  "interactiveAgents": {
+    "default": [{ "provider": "claude", "model": "sonnet" }]
+  },
+  "workflows": {
+    "claude-greeting": {
+      "workingAgents": {
+        "writer": [{ "provider": "claude", "model": "sonnet", "thinking": "medium" }]
+      }
+    },
+    "codex-greeting": {
+      "workingAgents": {
+        "writer": [{ "provider": "codex", "model": "gpt-5.5", "thinking": "medium" }]
+      }
+    },
+    "pi-greeting": {
+      "workingAgents": {
+        "writer": [{ "provider": "pi", "model": "openai-codex/gpt-5.5", "thinking": "high" }]
+      }
+    },
+    "gemini-greeting": {
+      "workingAgents": {
+        "writer": [{ "provider": "gemini", "model": "gemini-2.5-pro" }]
+      }
+    }
+  }
+}

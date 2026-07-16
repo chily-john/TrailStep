@@ -22,6 +22,52 @@ export interface EnvelopeOptions {
   readonly resultField: string;
 }
 
+export interface EnvelopeMetadataOptions {
+  readonly harnessDurationMs: number;
+}
+
+export interface ClaudeEnvelopeMetadata {
+  readonly usage?: PlainObject;
+  readonly costUsd?: number;
+  readonly durationMs?: number;
+  readonly harnessDurationMs: number;
+  readonly turns?: number;
+  readonly sessionId?: string;
+}
+
+export function extractEnvelopeMetadata(
+  rawStdout: string,
+  options: EnvelopeMetadataOptions,
+): ClaudeEnvelopeMetadata {
+  const metadata: Record<string, unknown> = { harnessDurationMs: options.harnessDurationMs };
+  const envelope = parseEnvelopeObject(rawStdout);
+
+  if (envelope) {
+    const usage = camelCaseUsage(envelope.usage);
+    if (usage) {
+      metadata.usage = usage;
+    }
+
+    if (typeof envelope.total_cost_usd === "number") {
+      metadata.costUsd = envelope.total_cost_usd;
+    }
+
+    if (typeof envelope.duration_ms === "number") {
+      metadata.durationMs = envelope.duration_ms;
+    }
+
+    if (typeof envelope.num_turns === "number") {
+      metadata.turns = envelope.num_turns;
+    }
+
+    if (typeof envelope.session_id === "string") {
+      metadata.sessionId = envelope.session_id;
+    }
+  }
+
+  return metadata as unknown as ClaudeEnvelopeMetadata;
+}
+
 export function extractEnvelopeOutput(rawStdout: string, options: EnvelopeOptions): PlainObject {
   const text = rawStdout.trim();
   if (!text) {
@@ -147,6 +193,47 @@ function parseObjectFromText(text: string): PlainObject {
   }
 
   return extracted;
+}
+
+function parseEnvelopeObject(rawStdout: string): PlainObject | undefined {
+  const text = rawStdout.trim();
+  const parsed = parseJson(text);
+  if (isPlainObject(parsed)) {
+    return parsed;
+  }
+
+  const lines = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of [...lines].reverse()) {
+    const parsedLine = parseJson(line);
+    if (isPlainObject(parsedLine)) {
+      return parsedLine;
+    }
+  }
+
+  return undefined;
+}
+
+function camelCaseUsage(value: unknown): PlainObject | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const usage: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (typeof fieldValue === "number") {
+      usage[snakeToCamel(key)] = fieldValue;
+    }
+  }
+
+  return Object.keys(usage).length > 0 ? usage : undefined;
+}
+
+function snakeToCamel(value: string): string {
+  return value.replace(/_([a-z])/gu, (_match, letter: string) => letter.toUpperCase());
 }
 
 function parseJson(text: string): unknown {

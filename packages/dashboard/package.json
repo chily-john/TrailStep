@@ -26,9 +26,13 @@
     "test": "vitest run",
     "lint": "biome check index.html src svelte.config.js vite.config.ts"
   },
+  "dependencies": {
+    "@stepkit/core": "workspace:*"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@types/node": "^26.1.1",
     "svelte": "^5.35.5",
     "svelte-check": "^4.2.2",
     "typescript": "^5.8.3",

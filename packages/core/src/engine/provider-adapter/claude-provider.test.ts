@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,6 +74,78 @@ describe("claudeProvider.runWorking", () => {
       "--dangerously-skip-permissions",
       "Say hi.",
     ]);
+  });
+
+  it("writes usage.json after successful output extraction", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-usage-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    const usageFile = join(cwd, "usage.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    await claudeProvider.runWorking({ promptFile, outputFile, usageFile, cwd }, async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        result: '{"greeting":"Hi!"}',
+        usage: { input_tokens: 1, output_tokens: 2 },
+        total_cost_usd: 0.01,
+        duration_ms: 123,
+        num_turns: 1,
+        session_id: "session-usage",
+      }),
+    }));
+
+    const usage = JSON.parse(await readFile(usageFile, "utf8"));
+    expect(usage).toMatchObject({
+      usage: { inputTokens: 1, outputTokens: 2 },
+      costUsd: 0.01,
+      durationMs: 123,
+      turns: 1,
+      sessionId: "session-usage",
+    });
+    expect(usage.harnessDurationMs).toEqual(expect.any(Number));
+  });
+
+  it("does not write usage.json when Claude exits nonzero or output parsing fails", async () => {
+    const failedCwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-no-usage-fail-"));
+    const failedPromptFile = join(failedCwd, "prompt.md");
+    const failedOutputFile = join(failedCwd, "output.json");
+    const failedUsageFile = join(failedCwd, "usage.json");
+    await writeFile(failedPromptFile, "Say hi.", "utf8");
+
+    await expect(
+      claudeProvider.runWorking(
+        {
+          promptFile: failedPromptFile,
+          outputFile: failedOutputFile,
+          usageFile: failedUsageFile,
+          cwd: failedCwd,
+        },
+        async () => ({ exitCode: 1, stdout: "" }),
+      ),
+    ).rejects.toMatchObject({ failure: { code: "agent_provider_failed" } });
+    await expect(access(failedUsageFile)).rejects.toThrow();
+
+    const invalidCwd = await mkdtemp(
+      join(tmpdir(), "stepkit-core-claude-provider-no-usage-invalid-"),
+    );
+    const invalidPromptFile = join(invalidCwd, "prompt.md");
+    const invalidOutputFile = join(invalidCwd, "output.json");
+    const invalidUsageFile = join(invalidCwd, "usage.json");
+    await writeFile(invalidPromptFile, "Say hi.", "utf8");
+
+    await expect(
+      claudeProvider.runWorking(
+        {
+          promptFile: invalidPromptFile,
+          outputFile: invalidOutputFile,
+          usageFile: invalidUsageFile,
+          cwd: invalidCwd,
+        },
+        async () => ({ exitCode: 0, stdout: "not usable" }),
+      ),
+    ).rejects.toMatchObject({ failure: { code: "agent_provider_output_invalid" } });
+    await expect(access(invalidUsageFile)).rejects.toThrow();
   });
 
   it("throws agent_provider_failed on a non-zero exit code", async () => {

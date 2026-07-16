@@ -9,6 +9,7 @@ import type { InteractiveProcessResult, InteractiveProcessRunner } from "../engi
 export interface ProviderWorkingRequest {
   readonly promptFile: string;
   readonly outputFile: string;
+  readonly usageFile?: string;
   readonly cwd: string;
   readonly model?: string;
   readonly thinking?: WorkflowAgentThinking;

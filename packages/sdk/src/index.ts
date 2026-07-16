@@ -6,6 +6,8 @@ export type {
   Step,
   StepInvocation,
   Workflow,
+  RunContext,
+  RunContextState,
   WorkflowStep,
 } from "@stepkit/core";
 export { done, jsonSchema, shape, step } from "@stepkit/core";

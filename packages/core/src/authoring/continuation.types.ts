@@ -1,6 +1,7 @@
 import type { AgentRequirements } from "../shared/agent-role.types.js";
 import type { AgentAdapterSelection, AgentPrompt } from "../shared/agent-selection.types.js";
 import type { Failure } from "../shared/failure.js";
+import type { RunContext } from "../shared/run-context.types.js";
 import type { PlainObject, ShapeInput } from "../shared/shape.types.js";
 
 export interface ContinuationStepConfig<
@@ -20,7 +21,7 @@ export interface ContinuationStepConfig<
 }
 
 export type StepContinuation<TOutput extends PlainObject = PlainObject> = {
-  bivarianceHack(output: TOutput): ContinuationResult;
+  bivarianceHack(output: TOutput, ctx: RunContext): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
 
 export type StepErrorContinuation = {

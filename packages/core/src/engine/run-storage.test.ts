@@ -1,12 +1,72 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { createRunDirectory } from "./run-storage.js";
+import {
+  appendEvent,
+  createRunDirectory,
+  readRunEvents,
+  readRunState,
+  writeRunState,
+} from "./run-storage.js";
 
-describe("createRunDirectory", () => {
+describe("run storage", () => {
+  it("appendEvent appends newline-delimited events without rewriting previous lines", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "event-run" });
+
+    await appendEvent(runDir, {
+      id: "event-1",
+      runId: "event-run",
+      workflowId: "append-workflow",
+      type: "workflow.started",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      schemaVersion: "v0",
+      payload: { input: { value: 1 } },
+    });
+    await appendEvent(runDir, {
+      id: "event-2",
+      runId: "event-run",
+      workflowId: "append-workflow",
+      type: "workflow.completed",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      schemaVersion: "v0",
+      payload: { output: { value: 2 } },
+    });
+
+    const lines = (await readFile(join(runDir, "events.jsonl"), "utf8")).trim().split("\n");
+    expect(lines.map((line) => JSON.parse(line) as { readonly id: string })).toEqual([
+      expect.objectContaining({ id: "event-1" }),
+      expect.objectContaining({ id: "event-2" }),
+    ]);
+  });
+
+  it("readRunEvents ignores one unparseable trailing line", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "partial-run" });
+
+    await appendEvent(runDir, {
+      id: "event-1",
+      runId: "partial-run",
+      workflowId: "partial-workflow",
+      type: "workflow.started",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      schemaVersion: "v0",
+      payload: { input: { value: 1 } },
+    });
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      '{"id":"event-1","runId":"partial-run","workflowId":"partial-workflow","type":"workflow.started","timestamp":"2026-01-01T00:00:00.000Z","schemaVersion":"v0","payload":{"input":{"value":1}}}\n{"partial"',
+      "utf8",
+    );
+
+    await expect(readRunEvents(runDir)).resolves.toEqual([
+      expect.objectContaining({ id: "event-1", type: "workflow.started" }),
+    ]);
+  });
+
   it("creates a .stepkit/.gitignore file that ignores everything except itself", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
 
@@ -31,5 +91,19 @@ describe("createRunDirectory", () => {
     const secondContents = await readFile(gitignorePath, "utf8");
     expect(secondContents).toBe(firstContents);
     expect(secondContents).toBe("*\n!.gitignore\n");
+  });
+
+  it("persists run state as state.json and reads it from a second helper call", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "state-run" });
+
+    await expect(readRunState(runDir)).resolves.toEqual({});
+
+    await writeRunState(runDir, { count: { value: 1 } });
+
+    await expect(readRunState(runDir)).resolves.toEqual({ count: { value: 1 } });
+    await expect(readFile(join(runDir, "state.json"), "utf8")).resolves.toBe(
+      `${JSON.stringify({ count: { value: 1 } }, null, 2)}\n`,
+    );
   });
 });

@@ -18,6 +18,7 @@ type PackageJson = {
 export interface DiscoveredWorkflow {
   readonly id: string;
   readonly packageName: string;
+  readonly packageDir: string;
   readonly exportName: string;
   readonly workflow: Workflow;
 }
@@ -49,6 +50,7 @@ export async function discoverWorkflows(
     }
 
     const packageName = packageJson.name ?? dependencyName;
+    const packageDir = dirname(packageJsonPath);
     const packageModule = await importPackage(packageJsonPath, packageJson);
 
     for (const [exportName, exportedValue] of Object.entries(packageModule)) {
@@ -59,6 +61,7 @@ export async function discoverWorkflows(
       discovered.push({
         id: `${packageName}:${exportName}`,
         packageName,
+        packageDir,
         exportName,
         workflow: exportedValue,
       });

@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { runWorkflow } from "@stepkit/core";
 
 import { type CliCommand, type CliCommandContext, CliUsageError } from "../../command.types.js";
@@ -16,17 +18,18 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       throw new CliUsageError("Expected a command or workflow id and workflow run name.");
     }
     const workflow = parseWorkflowId(workflowId);
-    const input = parseRunArgs(rest);
+    const parsedOptions = parseRunArgs(rest);
     return {
       workflowId,
       workflowRunName,
       workflow,
-      ...(input !== undefined ? { input } : {}),
+      ...(parsedOptions?.input !== undefined ? { input: parsedOptions.input } : {}),
+      ...(parsedOptions?.resume === true ? { resume: true } : {}),
     };
   },
   async run(args: RunCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
-    const input = await loadJsonInput(args.input, cwd);
+    const input = args.resume ? undefined : await loadJsonInput(args.input, cwd);
     const stepkitConfig = await loadStepKitConfig(cwd);
     const workflows = await discoverWorkflows({ cwd });
     const discoveredWorkflow = workflows.find((workflow) => workflow.id === args.workflowId);
@@ -38,10 +41,8 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       return 1;
     }
 
-    const result = await runWorkflow({
+    const sharedRunOptions = {
       workflow: discoveredWorkflow.workflow,
-      input,
-      runName: args.workflowRunName,
       cwd,
       eventSink: context.eventSink,
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
@@ -49,7 +50,18 @@ export const runCommand: CliCommand<RunCommandArgs> = {
         ? {}
         : { workingAgentProcessRunner: context.workingAgentProcessRunner }),
       ...(stepkitConfig === undefined ? {} : { stepkitConfig }),
-    });
+    };
+
+    const result = args.resume
+      ? await runWorkflow({
+          ...sharedRunOptions,
+          resume: { runDir: join(cwd, ".stepkit", "runs", args.workflowRunName) },
+        })
+      : await runWorkflow({
+          ...sharedRunOptions,
+          input: input ?? {},
+          runName: args.workflowRunName,
+        });
 
     if (result.status === "success") {
       io.writeLine(`Workflow completed: ${args.workflowId} at ${result.runDir}`);

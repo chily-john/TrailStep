@@ -56,6 +56,8 @@ export type {
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "./engine/provider-adapter/provider-adapter.types.js";
+export { createRunContext } from "./engine/run-context.js";
+export { readRunEvents, readRunState, writeRunState } from "./engine/run-storage.js";
 export { parseStepKitConfig, resolveAgentTargets } from "./engine/targeting/targeting.js";
 export type {
   ResolveAgentTargetsOptions,
@@ -83,7 +85,7 @@ export type {
   AgentTool,
 } from "./shared/agent-selection.types.js";
 export type { Failure } from "./shared/failure.js";
-export type { RunContext } from "./shared/run-context.types.js";
+export type { RunContext, RunContextState } from "./shared/run-context.types.js";
 export type {
   PlainObject,
   Schema,

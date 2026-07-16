@@ -106,6 +106,181 @@ describe("runWorkflow", () => {
     expect(result.failure.message).toContain("portable-review");
   });
 
+  it("passes durable RunContext state to orchestration step continuations", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "stateful-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step(
+          {
+            id: "remember",
+            input,
+            outputShape: { value: "number" },
+            run: ({ value }) => ({ value }),
+          },
+          async (output, ctx) => {
+            await ctx.state.set("count", { value: output.value });
+            return step(
+              {
+                id: "recall",
+                input: output,
+                outputShape: { value: "number" },
+                run: ({ value }) => ({ value }),
+              },
+              async (_nextOutput, ctx) => {
+                const stored = await ctx.state.get("count");
+                return done(stored as { value: number });
+              },
+            );
+          },
+        );
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 3 },
+      runName: "durable-state",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({ value: 3 });
+    await expect(readFile(join(result.runDir, "state.json"), "utf8")).resolves.toBe(
+      `${JSON.stringify({ count: { value: 3 } }, null, 2)}\n`,
+    );
+  });
+
+  it("persists step events before the event sink observes a later event", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    let eventsAtFirstStepCompletion: readonly Event[] = [];
+
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "incremental-events",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step(
+          {
+            id: "first",
+            input,
+            outputShape: { value: "number" },
+            run: ({ value }) => ({ value: value + 1 }),
+          },
+          (output) =>
+            step(
+              {
+                id: "second",
+                input: output,
+                outputShape: { value: "number" },
+                run: ({ value }) => ({ value: value + 1 }),
+              },
+              done,
+            ),
+        );
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "incremental-events-run",
+      cwd,
+      eventSink: async (event) => {
+        if (event.type !== "step.completed" || event.stepId !== "first") {
+          return;
+        }
+
+        try {
+          const contents = await readFile(
+            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            "utf8",
+          );
+          eventsAtFirstStepCompletion = contents
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as Event);
+        } catch {
+          eventsAtFirstStepCompletion = [];
+        }
+      },
+    });
+
+    expect(result.status).toBe("success");
+    expect(eventsAtFirstStepCompletion.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+    ]);
+    expect(eventsAtFirstStepCompletion[2]?.stepId).toBe("first");
+  });
+
+  it("appends workflow.failed through the same emit path", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    let eventsAtWorkflowFailure: readonly Event[] = [];
+
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "failed-incremental-events",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step(
+          {
+            id: "explode",
+            input,
+            outputShape: { value: "number" },
+            run: () => {
+              throw new Error("boom");
+            },
+          },
+          done,
+        );
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "failed-incremental-events-run",
+      cwd,
+      eventSink: async (event) => {
+        if (event.type !== "workflow.failed") {
+          return;
+        }
+
+        try {
+          const contents = await readFile(
+            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            "utf8",
+          );
+          eventsAtWorkflowFailure = contents
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as Event);
+        } catch {
+          eventsAtWorkflowFailure = [];
+        }
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    expect(eventsAtWorkflowFailure.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+    ]);
+  });
+
   it("runs a continuation workflow from start through a code step to done", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
 

@@ -11,7 +11,7 @@ Core runtime primitives for StepKit v0.
 - Code, command-backed local agent, and interactive step execution paths are exported from the package.
 - Agent step prompts support literal markdown or functions of `{ input }`, rendered from live step input before command execution and structured output parsing.
 - Run artifacts are written under `.stepkit/runs/<actualRunName>/`; duplicate run names receive numeric suffixes such as `<runName>-2`.
-- Runtime events are persisted as `.stepkit/runs/<actualRunName>/events.jsonl` and include workflow, step, agent-tool, and interactive-session events.
+- Runtime events are incrementally appended to `.stepkit/runs/<actualRunName>/events.jsonl` as JSON lines and include workflow, step, agent-tool, and interactive-session events.
 - Interactive steps spawn a command without a shell, support `{{prompt}}` and `{{promptFile}}` placeholders, and can return either opaque exit-code output or validated JSON from a declared result file.
 
 ## Minimal example

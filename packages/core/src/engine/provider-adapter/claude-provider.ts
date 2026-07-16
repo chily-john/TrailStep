@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 
 import { StepKitFailureError } from "../../shared/failure.js";
 import type { PlainObject } from "../../shared/shape.types.js";
 import type { InteractiveProcessResult, InteractiveProcessRunner } from "../engine.types.js";
-import { extractEnvelopeOutput } from "./envelope.js";
+import { extractEnvelopeMetadata, extractEnvelopeOutput } from "./envelope.js";
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
@@ -23,6 +24,7 @@ async function runWorking(
   const args = buildClaudeWorkingArgs(request, prompt);
 
   let result: ProviderWorkingProcessResult;
+  const startedAt = performance.now();
   try {
     result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd });
   } catch (error) {
@@ -32,6 +34,8 @@ async function runWorking(
       details: { cause: error instanceof Error ? error.message : String(error) },
     });
   }
+
+  const harnessDurationMs = Math.max(0, Math.round(performance.now() - startedAt));
 
   if (result.exitCode !== 0) {
     throw new StepKitFailureError({
@@ -53,6 +57,11 @@ async function runWorking(
   }
 
   await writeFile(request.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+
+  if (request.usageFile) {
+    const metadata = extractEnvelopeMetadata(result.stdout, { harnessDurationMs });
+    await writeFile(request.usageFile, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  }
 }
 
 function buildClaudeWorkingArgs(request: ProviderWorkingRequest, prompt: string): string[] {

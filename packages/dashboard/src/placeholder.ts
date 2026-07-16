@@ -1,4 +1,4 @@
-export const dashboardPlaceholderTitle = "StepKit Dashboard Placeholder";
+export const dashboardPlaceholderTitle = "StepKit Local Runs";
 
 export const dashboardPlaceholderMessage =
-  "This dashboard shell is ready for future workflow observability data, but it does not display real workflow telemetry yet.";
+  "Read-only local dashboard for live local StepKit events from .stepkit/runs.";

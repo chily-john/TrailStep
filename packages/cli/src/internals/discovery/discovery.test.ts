@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -50,10 +50,29 @@ describe("discoverWorkflows", () => {
       {
         id: "@acme/stepkit-workflows:reviewFeature",
         packageName: "@acme/stepkit-workflows",
+        packageDir: resolve(cwd, "node_modules", "@acme", "stepkit-workflows"),
         exportName: "reviewFeature",
         workflow: expect.objectContaining({ id: "reviewFeature" }),
       },
     ]);
+  });
+
+  it("returns packageDir for discovered workflow packages", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-tests", `${task.id}-package-dir`);
+    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    await mkdir(cwd, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      dependencies: {
+        "@acme/stepkit-workflows": "1.0.0",
+      },
+    });
+    await createWorkflowPackage(cwd);
+
+    const workflows = await discoverWorkflows({ cwd });
+
+    expect(workflows).toHaveLength(1);
+    expect(workflows[0]?.packageDir).toBe(resolve(packageDir));
   });
 
   it("ignores default exports and skips invalid named exports without crashing", async ({

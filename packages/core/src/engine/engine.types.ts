@@ -46,6 +46,7 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
   readonly stepId?: string;
   readonly type:
     | "workflow.started"
+    | "workflow.resumed"
     | "workflow.failed"
     | "step.started"
     | "step.completed"
@@ -75,13 +76,8 @@ export type Result<TOutput extends PlainObject = PlainObject> =
       readonly events: readonly Event[];
     };
 
-export interface RunWorkflowOptions<
-  TInput extends PlainObject = PlainObject,
-  TOutput extends PlainObject = PlainObject,
-> {
+interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends PlainObject> {
   readonly workflow: Workflow<TInput, TOutput>;
-  readonly input: TInput;
-  readonly runName: string;
   readonly cwd?: string;
   readonly eventSink?: (event: Event) => void | Promise<void>;
   readonly processRunner?: InteractiveProcessRunner;
@@ -91,3 +87,20 @@ export interface RunWorkflowOptions<
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly maxSteps?: number;
 }
+
+export type RunWorkflowOptions<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = RunWorkflowBaseOptions<TInput, TOutput> &
+  (
+    | {
+        readonly input: TInput;
+        readonly runName: string;
+        readonly resume?: undefined;
+      }
+    | {
+        readonly resume: { readonly runDir: string };
+        readonly input?: undefined;
+        readonly runName?: undefined;
+      }
+  );

@@ -14,6 +14,7 @@ export interface WorkingAgentFiles {
   readonly stepDir: string;
   readonly promptFile: string;
   readonly outputFile: string;
+  readonly usageFile: string;
 }
 
 export function resolveStepAgentFiles(options: {
@@ -25,6 +26,7 @@ export function resolveStepAgentFiles(options: {
     stepDir,
     promptFile: join(stepDir, "prompt.md"),
     outputFile: join(stepDir, "output.json"),
+    usageFile: join(stepDir, "usage.json"),
   };
 }
 
@@ -179,6 +181,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
   readonly files: WorkingAgentFiles;
 }): Promise<TOutput> {
   await rm(options.files.outputFile, { force: true });
+  await rm(options.files.usageFile, { force: true });
 
   const provider = providerRegistry[options.target.provider as keyof typeof providerRegistry];
   if (provider) {
@@ -196,6 +199,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
       {
         promptFile: options.files.promptFile,
         outputFile: options.files.outputFile,
+        usageFile: options.files.usageFile,
         cwd: options.runDir,
         ...(options.target.model === undefined ? {} : { model: options.target.model }),
         ...(thinking === undefined ? {} : { thinking }),

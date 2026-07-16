@@ -72,6 +72,10 @@ importers:
         version: 3.2.7(@types/node@26.1.1)
 
   packages/dashboard:
+    dependencies:
+      '@stepkit/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.1.1
@@ -79,6 +83,9 @@ importers:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^5.1.1
         version: 5.1.1(svelte@5.56.4)(vite@6.4.3(@types/node@26.1.1))
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
       svelte:
         specifier: ^5.35.5
         version: 5.56.4

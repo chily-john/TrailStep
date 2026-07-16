@@ -1,6 +1,40 @@
 import { describe, expect, it } from "vitest";
 
-import { extractEnvelopeOutput } from "./envelope.js";
+import { extractEnvelopeMetadata, extractEnvelopeOutput } from "./envelope.js";
+
+describe("extractEnvelopeMetadata", () => {
+  it("extracts Claude usage metadata from a JSON envelope with camelCased fields", () => {
+    const stdout = JSON.stringify({
+      type: "result",
+      is_error: false,
+      result: '{"greeting":"Hello, Ada!"}',
+      usage: {
+        input_tokens: 10,
+        output_tokens: 20,
+        cache_creation_input_tokens: 3,
+        cache_read_input_tokens: 4,
+      },
+      total_cost_usd: 0.1234,
+      duration_ms: 5678,
+      num_turns: 2,
+      session_id: "session-123",
+    });
+
+    expect(extractEnvelopeMetadata(stdout, { harnessDurationMs: 42 })).toEqual({
+      usage: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheCreationInputTokens: 3,
+        cacheReadInputTokens: 4,
+      },
+      costUsd: 0.1234,
+      durationMs: 5678,
+      harnessDurationMs: 42,
+      turns: 2,
+      sessionId: "session-123",
+    });
+  });
+});
 
 describe("extractEnvelopeOutput", () => {
   it("parses a single JSON envelope whose result field holds JSON text", () => {

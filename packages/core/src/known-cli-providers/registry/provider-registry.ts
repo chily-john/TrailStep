@@ -13,8 +13,7 @@ import type { ProviderAdapter } from "./provider-registry.types.js";
  * adapter is structurally verified only (an injected fake stdout-capturing
  * runner in `agent.test.ts`/`gemini.test.ts`) — the real `gemini` CLI is not
  * installed in this environment, so its argv/envelope shape has not been
- * confirmed against a live process. See `mock-local-test/README.md` and
- * `docs/architecture.md` for the explicit follow-up.
+ * confirmed against a live process.
  */
 export const providerRegistry: Record<"claude" | "codex" | "pi" | "gemini", ProviderAdapter> = {
   claude: claudeProvider,

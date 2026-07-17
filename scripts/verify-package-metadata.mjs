@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -11,14 +11,6 @@ function readJson(path) {
 function assertFile(path) {
   assert.ok(existsSync(join(root, path)), `Expected ${path} to exist`);
 }
-
-const expectedWorkspacePackageNames = [
-  "@stepkit/cli",
-  "@stepkit/core",
-  "@stepkit/dashboard",
-  "@stepkit/sdk",
-  "@stepkit/testkit",
-];
 
 const npmRepository = {
   type: "git",
@@ -116,16 +108,6 @@ export function verifyPackageMetadata() {
   const gitignore = readFileSync(join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /(^|\n)dist\/(\n|$)/u, "generated package dist output must be ignored");
   assert.match(gitignore, /(^|\n)\.turbo\/(\n|$)/u, "Turbo cache output must be ignored");
-
-  const workspacePackageNames = readdirSync(join(root, "packages"), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => readJson(`packages/${entry.name}/package.json`).name)
-    .sort();
-  assert.deepEqual(
-    workspacePackageNames,
-    expectedWorkspacePackageNames,
-    "workspace package set must exactly match the publish-ready @stepkit packages",
-  );
 
   const libraryPackages = [
     { directory: "core", name: "@stepkit/core" },

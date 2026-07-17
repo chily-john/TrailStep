@@ -1,12 +1,13 @@
 # @stepkit/cli
 
-Command-line discovery and local execution for StepKit v0 workflows.
+Command-line discovery and local execution for StepKit workflows.
 
 ## Commands
 
 ```bash
 stepkit list
-stepkit <package:workflowExport> <workflowRunName> [--input '<json>' | --input-file <path>]
+stepkit skill-check
+stepkit <package:workflowExport> <workflowRunName> [--input '<json>' | --input-file <path> | --resume]
 ```
 
 ## Discovery
@@ -17,13 +18,13 @@ stepkit <package:workflowExport> <workflowRunName> [--input '<json>' | --input-f
 @acme/workflows:releaseWorkflow
 ```
 
-Workflows, not individual steps, are the public command and discovery units. The CLI executes exported `defineWorkflow({ ... start })` registrations; it does not expose a static step-list authoring model as a user-facing command surface.
+Workflows, not individual steps, are the public command and discovery units.
 
 ## Execution
 
-`stepkit <package:workflowExport> <workflowRunName>` loads JSON object input from `--input`, from `--input-file`, or defaults to `{}`. It then runs the discovered workflow through `@stepkit/core` from the consuming project's working directory. For agent steps, local `.stepkit/config.json` maps workflow roles and size tiers to command-backed local agents.
+`stepkit <package:workflowExport> <workflowRunName>` loads JSON object input from `--input`, from `--input-file`, or defaults to `{}`. With `--resume`, the run name identifies an existing `.stepkit/runs/<workflowRunName>` directory. The CLI runs the discovered workflow through `@stepkit/core` from the consuming project's working directory.
 
-At runtime, the workflow `start(input)` function returns a `step(...)` node. Each step continuation returns another `step(...)` node or `done(...)`; output shapes are validated before continuations and final workflow completion.
+For agent steps, local `.stepkit/config.json` maps workflow roles and size tiers to command-backed local agents. Interactive steps are executed by the core runtime. Their command templates run without a shell, inherit stdio, and may use `{{prompt}}` or `{{promptFile}}` placeholders declared by local `interactiveAgents` config. Working agents are separate from interactive agents and write structured JSON output for validation.
 
 Run artifacts are written to:
 
@@ -32,5 +33,3 @@ Run artifacts are written to:
 ```
 
 If the requested run name already exists, the runtime creates a suffixed directory such as `<workflowRunName>-2`. Event artifacts are persisted as `events.jsonl` in the run directory.
-
-Interactive steps are executed by the core runtime. Their command templates run without a shell, inherit stdio, and may use `{{prompt}}` or `{{promptFile}}` placeholders declared by the workflow author or local `interactiveAgents` config. Working agents are separate from interactive agents and write structured JSON output for validation.

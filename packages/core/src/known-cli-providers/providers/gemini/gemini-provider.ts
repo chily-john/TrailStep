@@ -23,8 +23,7 @@ const GEMINI_BINARY = "gemini";
  * installed in this environment, so unlike Claude/Codex/Pi this field name is
  * doc-sourced only, not empirically confirmed against a real invocation. Treat
  * this adapter as the least-verified of the four until a real
- * `gemini --version` + end-to-end smoke test is run (see
- * `mock-local-test/README.md` and `docs/architecture.md`).
+ * `gemini --version` + end-to-end smoke test is run.
  */
 const GEMINI_RESULT_FIELD = "response";
 

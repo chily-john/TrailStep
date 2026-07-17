@@ -1,13 +1,13 @@
 # @stepkit/sdk
 
-TypeScript authoring helpers for StepKit v0 workflows.
+TypeScript authoring helpers for StepKit workflows.
 
 ## What is implemented
 
 - `defineWorkflow({ id, agents, inputShape, outputShape, start })` declares a workflow as the public command/discovery unit and names provider-neutral agent roles.
-- `step(...)` is the only user-facing step primitive for new workflows.
+- `step(...)` is the user-facing step primitive for new workflows.
 - `done(...)` marks successful workflow completion from a continuation.
-- `jsonSchema`, `shape`, and shape types are re-exported from `@stepkit/core` for typed object input and output shapes.
+- `jsonSchema`, `shape`, `promptTemplate`, and shape types are re-exported from `@stepkit/core`.
 - Agent steps reference roles with step-level `agent`; users map those roles and size tiers to command-backed local agents in `.stepkit/config.json`.
 - Agent step prompts support markdown strings or functions of `{ input }` rendered from live step input.
 
@@ -35,4 +35,4 @@ export const sampleWorkflow = defineWorkflow({
 });
 ```
 
-Published workflow packages should include the `stepkit-workflow` keyword so `stepkit list` can discover exported workflows from a consuming project. SDK adapters, including Claude SDK integration, are future optional adapter-package territory; v0 examples should stay provider-neutral by default.
+Published workflow packages should include the `stepkit-workflow` keyword so `stepkit list` can discover exported workflows from a consuming project.

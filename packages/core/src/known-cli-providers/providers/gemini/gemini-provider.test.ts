@@ -12,9 +12,8 @@ import { geminiProvider } from "./gemini-provider.js";
 // case in this file exercises `geminiProvider` against an injected fake
 // runner only (structural verification of argv-building and envelope
 // extraction), never a live process. A real `gemini --version` +
-// end-to-end smoke test remains a required follow-up before this adapter is
-// trusted in production — see `mock-local-test/README.md` and
-// `docs/architecture.md`.
+// end-to-end smoke test remains required before this adapter is trusted in
+// production.
 describe("geminiProvider.runWorking", () => {
   it("builds -p <prompt> --yolo -m <model> --output-format json and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-"));

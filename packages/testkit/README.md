@@ -1,3 +1,5 @@
 # @stepkit/testkit
 
-Publish-ready scaffold package for StepKit.
+Reusable testing utilities package for StepKit workflows.
+
+Use this package for helpers that validate observable workflow behavior, prompt rendering, runtime events, and failure paths across StepKit packages.

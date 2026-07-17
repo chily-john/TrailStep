@@ -1,7 +1,7 @@
 {
   "name": "@stepkit/testkit",
   "version": "0.0.0",
-  "description": "Testkit package scaffold for future StepKit testing utilities.",
+  "description": "Testing utilities for StepKit workflows.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {

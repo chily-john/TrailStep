@@ -65,7 +65,7 @@ export function verifyGithubConfig() {
   assertIncludes(
     release,
     "NPM_TOKEN",
-    "Release workflow must reference the future NPM_TOKEN secret",
+    "Release workflow must reference the NPM_TOKEN secret",
   );
 
   const dependencyReview = assertFile(".github/workflows/dependency-review.yml");

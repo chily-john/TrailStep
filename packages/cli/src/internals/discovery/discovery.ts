@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 
 import type { Workflow } from "@stepkit/core";
 
+import { isWorkflow } from "../workflow-resolution/workflow-validator.js";
+
 type PackageJson = {
   name?: string;
   main?: string;
@@ -119,44 +121,6 @@ function getImportEntryPoint(packageJson: PackageJson): string {
   }
 
   return packageJson.module ?? packageJson.main ?? "./index.js";
-}
-
-function isWorkflow(value: unknown): value is Workflow {
-  if (!isPlainObject(value)) {
-    return false;
-  }
-
-  const inputShape = value.inputShape ?? value.input;
-  const outputShape = value.outputShape ?? value.output;
-
-  return (
-    typeof value.id === "string" &&
-    isShapeInput(inputShape) &&
-    (outputShape === undefined || isShapeInput(outputShape)) &&
-    typeof value.start === "function"
-  );
-}
-
-function isShapeInput(value: unknown): boolean {
-  return isSchemaLike(value) || isSimpleShapeObject(value);
-}
-
-function isSchemaLike(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    typeof value.validate === "function" &&
-    typeof value.diagnostics === "function" &&
-    typeof value.assert === "function"
-  );
-}
-
-function isSimpleShapeObject(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    Object.values(value).every(
-      (shapeType) => shapeType === "string" || shapeType === "number" || shapeType === "boolean",
-    )
-  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { parseStepKitConfig, type StepKitConfig } from "@stepkit/core";
@@ -10,6 +11,11 @@ export class CliConfigError extends Error {
   }
 }
 
+export interface StepKitProjectConfig {
+  readonly stepkitConfig: StepKitConfig | undefined;
+  readonly workflowRegistry: Readonly<Record<string, Readonly<Record<string, string>>>>;
+}
+
 /**
  * Loads optional project configuration for workflow runs.
  *
@@ -18,7 +24,43 @@ export class CliConfigError extends Error {
  * requires configuration that was not provided.
  */
 export async function loadStepKitConfig(cwd = process.cwd()): Promise<StepKitConfig | undefined> {
-  const configPath = join(cwd, ".stepkit", "config.json");
+  return (await loadStepKitProjectConfig(cwd)).stepkitConfig;
+}
+
+export async function loadStepKitProjectConfig(cwd = process.cwd()): Promise<StepKitProjectConfig> {
+  const parsed = await readRawStepKitConfig(join(cwd, ".stepkit", "config.json"), {
+    description: ".stepkit/config.json",
+  });
+
+  if (parsed === undefined) {
+    return { stepkitConfig: undefined, workflowRegistry: {} };
+  }
+
+  try {
+    return {
+      stepkitConfig: parseStepKitConfig(toCoreStepKitConfigValue(parsed)),
+      workflowRegistry: parseWorkflowRegistry(parsed),
+    };
+  } catch (error) {
+    const detail = formatConfigValidationDetail(error);
+    throw new CliConfigError(`Invalid .stepkit/config.json.${detail}`, { cause: error });
+  }
+}
+
+export async function loadStepKitUserWorkflowRegistry(
+  homeDir = homedir(),
+): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
+  const parsed = await readRawStepKitConfig(join(homeDir, ".stepkit", "config.json"), {
+    description: "~/.stepkit/config.json",
+  });
+
+  return parsed === undefined ? {} : parseWorkflowRegistry(parsed);
+}
+
+async function readRawStepKitConfig(
+  configPath: string,
+  options: { readonly description: string },
+): Promise<unknown | undefined> {
   let fileContents: string;
 
   try {
@@ -28,24 +70,80 @@ export async function loadStepKitConfig(cwd = process.cwd()): Promise<StepKitCon
       return undefined;
     }
 
-    throw new CliConfigError("Unable to read .stepkit/config.json.", { cause: error });
+    throw new CliConfigError(`Unable to read ${options.description}.`, { cause: error });
   }
 
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(fileContents) as unknown;
+    return JSON.parse(fileContents) as unknown;
   } catch (error) {
-    throw new CliConfigError("Invalid .stepkit/config.json: expected valid JSON.", {
+    throw new CliConfigError(`Invalid ${options.description}: expected valid JSON.`, {
       cause: error,
     });
   }
+}
 
-  try {
-    return parseStepKitConfig(parsed);
-  } catch (error) {
-    const detail = formatConfigValidationDetail(error);
-    throw new CliConfigError(`Invalid .stepkit/config.json.${detail}`, { cause: error });
+function parseWorkflowRegistry(
+  value: unknown,
+): Readonly<Record<string, Readonly<Record<string, string>>>> {
+  if (!isRecord(value) || !isRecord(value.workflows)) {
+    return {};
   }
+
+  const registry: Record<string, Record<string, string>> = {};
+
+  for (const [namespace, entries] of Object.entries(value.workflows)) {
+    if (!isRecord(entries)) {
+      continue;
+    }
+
+    const registeredWorkflows = Object.fromEntries(
+      Object.entries(entries).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+
+    if (Object.keys(registeredWorkflows).length > 0) {
+      registry[namespace] = registeredWorkflows;
+    }
+  }
+
+  return registry;
+}
+
+function toCoreStepKitConfigValue(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    version: value.version ?? 1,
+    customAgents: value.customAgents ?? {},
+    workingAgents: value.workingAgents ?? {},
+    interactiveAgents: value.interactiveAgents ?? {},
+    ...(value.workflows === undefined ? {} : { workflows: stripWorkflowRegistry(value.workflows) }),
+  };
+}
+
+function stripWorkflowRegistry(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([workflowId, workflowConfig]) => {
+      if (!isRecord(workflowConfig)) {
+        return [workflowId, workflowConfig];
+      }
+
+      return [
+        workflowId,
+        Object.fromEntries(
+          Object.entries(workflowConfig).filter((entry) => typeof entry[1] !== "string"),
+        ),
+      ];
+    }),
+  );
 }
 
 function formatConfigValidationDetail(error: unknown): string {

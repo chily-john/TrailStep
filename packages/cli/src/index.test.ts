@@ -273,6 +273,71 @@ describe("main", () => {
     expect(errors).toEqual([]);
   });
 
+  it("runs representative README-compatible workflow refs", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-readme-flows`);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      dependencies: { "@acme/workflows": "1.0.0" },
+    });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      version: 1,
+      customAgents: {},
+      workingAgents: {},
+      interactiveAgents: {},
+      workflows: { project: { review: "./workflows/review.mjs" } },
+    });
+    await writeFile(
+      join(cwd, "workflows", "review.mjs"),
+      "export const review = { id: 'review', inputShape: { ok: 'boolean' }, start: (input) => ({ kind: 'done', output: input }) };",
+      "utf8",
+    );
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.0.0",
+      type: "module",
+      main: "./index.mjs",
+      stepkit: { workflows: { release: "./index.mjs#release" } },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const release = { id: 'release', inputShape: { ok: 'boolean' }, start: (input) => ({ kind: 'done', output: input }) };",
+      "utf8",
+    );
+    const errors: string[] = [];
+
+    const run = async (argv: string[]) => {
+      const lines: string[] = [];
+      await expect(
+        main({
+          argv,
+          cwd,
+          io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+          runNameClock: () => new Date("2026-01-02T03:04:05.000Z"),
+          runNameRandomSuffix: () => "abc123",
+        }),
+      ).resolves.toBe(0);
+      return lines.join("\n");
+    };
+
+    await expect(
+      run(["./workflows/review.mjs", "direct-run", "--input", '{"ok":true}']),
+    ).resolves.toMatch(/Workflow completed: .*review\.mjs/);
+    await expect(run(["./workflows/review.mjs", "--input", '{"ok":true}'])).resolves.toContain(
+      join(".stepkit", "runs", "review-20260102-030405-abc123"),
+    );
+    await expect(
+      run(["project/review", "project-run", "--input", '{"ok":true}']),
+    ).resolves.toContain("Workflow completed: project/review");
+    await expect(
+      run(["@acme/workflows#release", "bundle-run", "--input", '{"ok":true}']),
+    ).resolves.toContain("Workflow completed: @acme/workflows#release");
+    expect(errors).toEqual([]);
+  });
+
   it("prints clean errors for invalid JSON before a run starts", async () => {
     const errors: string[] = [];
 

@@ -1,18 +1,24 @@
 #!/usr/bin/env node
 
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@stepkit/core";
-import { type CliCommandContext, CliUsageError, usageText } from "./internals/command.types.js";
+import {
+  type CliCommandContext,
+  type StepkitCliPrompts,
+  CliUsageError,
+  usageText,
+} from "./internals/command.types.js";
 import { resolveCommand } from "./internals/command-registry.js";
 import { CliInputError } from "./internals/commands/run/load-run-input.js";
 import { CliConfigError } from "./internals/config/config.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
+import { WorkflowResolutionError } from "./internals/workflow-resolution/workflow-resolution-error.js";
 
 export { CliInputError, loadJsonInput } from "./internals/commands/run/load-run-input.js";
 export type { InputSource } from "./internals/commands/run/run-command.types.js";
 export { CliConfigError, loadStepKitConfig } from "./internals/config/config.js";
 export { type DiscoveredWorkflow, discoverWorkflows } from "./internals/discovery/discovery.js";
 export type { WorkflowReference } from "./internals/workflow-reference/workflow-reference.types.js";
-export { CliUsageError, parseWorkflowId, usageText };
+export { CliUsageError, parseWorkflowId, usageText, WorkflowResolutionError };
 
 declare const process:
   | {
@@ -30,10 +36,14 @@ export interface StepkitCliIo {
 export interface StepkitMainOptions {
   argv?: readonly string[];
   cwd?: string;
+  homeDir?: string;
   io?: Partial<StepkitCliIo>;
   eventSink?: (event: Event) => void | Promise<void>;
   processRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
+  runNameClock?: () => Date;
+  runNameRandomSuffix?: () => string;
+  prompts?: StepkitCliPrompts;
 }
 
 export async function main(options: StepkitMainOptions = {}): Promise<number> {
@@ -46,10 +56,14 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
 
   const context: CliCommandContext = {
     cwd,
+    homeDir: options.homeDir,
     io,
+    prompts: options.prompts ?? createTerminalPrompts(),
     eventSink: options.eventSink,
     processRunner: options.processRunner,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
+    runNameClock: options.runNameClock,
+    runNameRandomSuffix: options.runNameRandomSuffix,
   };
 
   try {
@@ -60,7 +74,8 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
     if (
       error instanceof CliUsageError ||
       error instanceof CliInputError ||
-      error instanceof CliConfigError
+      error instanceof CliConfigError ||
+      error instanceof WorkflowResolutionError
     ) {
       io.writeError(error.message);
       return 1;
@@ -72,6 +87,39 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
 
 export function runStepkitCli(writeLine: (line: string) => void = console.log): Promise<number> {
   return main({ io: { writeLine } });
+}
+
+function createTerminalPrompts(): StepkitCliPrompts {
+  return {
+    async text(prompt) {
+      const { createInterface } = await import("node:readline/promises");
+      const { stdin, stdout } = await import("node:process");
+      const reader = createInterface({ input: stdin, output: stdout });
+      try {
+        return await reader.question(`${prompt}: `);
+      } finally {
+        reader.close();
+      }
+    },
+    async select(prompt, choices) {
+      const { createInterface } = await import("node:readline/promises");
+      const { stdin, stdout } = await import("node:process");
+      const reader = createInterface({ input: stdin, output: stdout });
+      try {
+        for (const [index, choice] of choices.entries()) {
+          stdout.write(`${index + 1}) ${choice}\n`);
+        }
+        const answer = await reader.question(`${prompt}: `);
+        const choice = choices[Number.parseInt(answer, 10) - 1];
+        if (choice === undefined) {
+          throw new CliUsageError(`Invalid selection for ${prompt}.`);
+        }
+        return choice;
+      } finally {
+        reader.close();
+      }
+    },
+  };
 }
 
 function normalizePath(path: string): string {

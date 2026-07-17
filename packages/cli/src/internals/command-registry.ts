@@ -1,4 +1,5 @@
 import type { CliCommand } from "./command.types.js";
+import { addCommand } from "./commands/add/add-command.js";
 import { listCommand } from "./commands/list/list-command.js";
 import { runCommand } from "./commands/run/run-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
@@ -9,6 +10,10 @@ import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js
  * This is the only file that needs to change to register a new command.
  */
 export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
+  if (argv[0] === "add") {
+    return addCommand;
+  }
+
   if (argv.length === 1 && argv[0] === "list") {
     return listCommand;
   }

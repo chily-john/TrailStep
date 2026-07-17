@@ -9,8 +9,8 @@ export interface ParsedRunOptions {
 
 export interface RunCommandArgs {
   workflowId: string;
-  workflowRunName: string;
-  workflow: WorkflowReference;
+  workflowRunName?: string;
+  workflow?: WorkflowReference;
   input?: InputSource;
   resume?: true;
 }

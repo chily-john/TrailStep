@@ -16,20 +16,6 @@ export type {
   StepErrorContinuation,
   StepNode,
 } from "./authoring/continuation.types.js";
-export type { AgentStep } from "./authoring/step-kinds/agent-step.types.js";
-export type { CodeStep } from "./authoring/step-kinds/code-step.types.js";
-export type {
-  FileInteractiveStep,
-  InteractiveStep,
-  OpaqueInteractiveStep,
-} from "./authoring/step-kinds/interactive-step.types.js";
-export type {
-  Step,
-  StepInputMapper,
-  StepInputMapperContext,
-  StepInvocation,
-  WorkflowStep,
-} from "./authoring/step-kinds/step.types.js";
 export type { Workflow } from "./authoring/workflow.types.js";
 export type { AgentAdapterRequest } from "./engine/agent-invocation.types.js";
 export { runWorkflow } from "./engine/engine.js";

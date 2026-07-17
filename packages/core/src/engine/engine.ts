@@ -2,12 +2,6 @@ import { basename } from "node:path";
 
 import type { ContinuationResult, StepNode } from "../authoring/continuation.types.js";
 import { normalizeShape } from "../authoring/json-schema.js";
-import type {
-  Step,
-  StepInputMapperContext,
-  StepInvocation,
-  WorkflowStep,
-} from "../authoring/step-kinds/step.types.js";
 import { isDoneNode, isStepNode } from "../authoring/step-node.js";
 import type { WorkflowAgentRole } from "../shared/agent-role.types.js";
 import type { Failure } from "../shared/failure.js";
@@ -18,7 +12,7 @@ import type { Event, Result, RunWorkflowOptions } from "./engine.types.js";
 import { createRunContext } from "./run-context.js";
 import { createEvent } from "./run-events.js";
 import { appendEvent, createRunDirectory, readRunEvents } from "./run-storage.js";
-import { dispatchContinuationStep, dispatchWorkflowStep } from "./step-dispatch.js";
+import { dispatchContinuationStep } from "./step-dispatch.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,
@@ -134,69 +128,29 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       );
     }
 
-    let current: PlainObject;
+    const continuationResult = await runContinuation({
+      node: startNode ?? options.workflow.start(workflowInput),
+      runId,
+      workflowId: options.workflow.id,
+      emit,
+      maxSteps,
+      initialSource: isResume
+        ? `resume for workflow ${options.workflow.id}`
+        : `workflow.start for workflow ${options.workflow.id}`,
+      workflowAgents: options.workflow.agents ?? {},
+      runDir,
+      runContext,
+      stepkitConfig: options.stepkitConfig,
+      workingAgentProcessRunner: options.workingAgentProcessRunner,
+      providerWorkingRunner: options.providerWorkingRunner,
+      processRunner: options.processRunner,
+    });
 
-    if (options.workflow.start) {
-      const continuationResult = await runContinuation({
-        node: startNode ?? options.workflow.start(workflowInput),
-        runId,
-        workflowId: options.workflow.id,
-        emit,
-        maxSteps,
-        initialSource: isResume
-          ? `resume for workflow ${options.workflow.id}`
-          : `workflow.start for workflow ${options.workflow.id}`,
-        workflowAgents: options.workflow.agents ?? {},
-        runDir,
-        runContext,
-        stepkitConfig: options.stepkitConfig,
-        workingAgentProcessRunner: options.workingAgentProcessRunner,
-        providerWorkingRunner: options.providerWorkingRunner,
-        processRunner: options.processRunner,
-      });
-
-      if (continuationResult.status === "failure") {
-        return await failWorkflow(continuationResult.failure);
-      }
-
-      current = continuationResult.output;
-    } else {
-      if (isResume) {
-        return failResumeValidation(
-          resumeFailure("resume_unsupported_history", "Resume requires a continuation workflow."),
-        );
-      }
-
-      current = workflowInput;
-      const stepOutputs: Record<string, PlainObject> = {};
-
-      for (const workflowStep of options.workflow.steps ?? []) {
-        const invocation = normalizeStepInvocation(workflowStep);
-        const stepResult = await runStep({
-          invocation,
-          pipelineInput: current,
-          mapperContext: {
-            workflowInput,
-            previousOutput: current,
-            stepOutputs: snapshotStepOutputs(stepOutputs),
-            run: runContext,
-          },
-          runId,
-          workflowId: options.workflow.id,
-          emit,
-          runDir,
-          processRunner: options.processRunner,
-          workflowAdapter: options.workflow.agentAdapter,
-        });
-
-        if (stepResult.status === "failure") {
-          return await failWorkflow(stepResult.failure);
-        }
-
-        current = stepResult.output;
-        stepOutputs[invocation.step.id] = stepResult.output;
-      }
+    if (continuationResult.status === "failure") {
+      return await failWorkflow(continuationResult.failure);
     }
+
+    const current = continuationResult.output;
 
     const outputSchema = options.workflow.outputShape
       ? normalizeShape(options.workflow.outputShape)
@@ -340,16 +294,6 @@ async function replayContinuationToFailedStep<
     return {
       status: "failure",
       failure: resumeFailure("resume_target_not_failed", "Failed step event has no step id."),
-    };
-  }
-
-  if (!options.workflow.start) {
-    return {
-      status: "failure",
-      failure: resumeFailure(
-        "resume_unsupported_history",
-        "Resume requires a continuation workflow.",
-      ),
     };
   }
 
@@ -597,69 +541,6 @@ async function runContinuation(options: {
   }
 }
 
-async function runStep<TWorkflowInput extends PlainObject>(options: {
-  readonly invocation: StepInvocation<TWorkflowInput>;
-  readonly pipelineInput: PlainObject;
-  readonly mapperContext: StepInputMapperContext<TWorkflowInput, PlainObject>;
-  readonly runId: string;
-  readonly workflowId: string;
-  readonly emit: (event: Event) => Promise<void>;
-  readonly runDir: string;
-  readonly processRunner: RunWorkflowOptions["processRunner"];
-  readonly workflowAdapter: RunWorkflowOptions["workflow"]["agentAdapter"];
-}): Promise<
-  | { readonly status: "success"; readonly output: PlainObject }
-  | { readonly status: "failure"; readonly failure: Failure }
-> {
-  const { step } = options.invocation;
-
-  try {
-    const rawInput = options.invocation.input
-      ? await options.invocation.input(options.mapperContext)
-      : options.pipelineInput;
-
-    const rawOutput = await dispatchWorkflowStep({
-      step,
-      rawInput,
-      runId: options.runId,
-      workflowId: options.workflowId,
-      emit: options.emit,
-      runDir: options.runDir,
-      processRunner: options.processRunner,
-      workflowAdapter: options.workflowAdapter,
-    });
-
-    const output = step.output.assert(rawOutput, `step ${step.id} output`);
-
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "step.completed",
-        payload: { output },
-      }),
-    );
-
-    return { status: "success", output };
-  } catch (error) {
-    const failure =
-      error instanceof StepKitFailureError ? error.failure : stepExecutionFailure(error);
-
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "step.failed",
-        payload: { failure },
-      }),
-    );
-
-    return { status: "failure", failure };
-  }
-}
-
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {
   const value = event.payload[key];
   return isPlainObject(value) ? value : undefined;
@@ -688,22 +569,6 @@ function errorMessage(error: unknown): string {
   }
 
   return "Error continuation failed.";
-}
-
-function normalizeStepInvocation<TWorkflowInput extends PlainObject>(
-  workflowStep: WorkflowStep<TWorkflowInput>,
-): StepInvocation<TWorkflowInput> {
-  if ("step" in workflowStep) {
-    return workflowStep;
-  }
-
-  return { step: workflowStep as Step };
-}
-
-function snapshotStepOutputs(
-  stepOutputs: Record<string, PlainObject>,
-): Readonly<Record<string, PlainObject>> {
-  return Object.freeze({ ...stepOutputs });
 }
 
 /**

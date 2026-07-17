@@ -7,95 +7,10 @@ import { describe, expect, it } from "vitest";
 import {
   done,
   type InteractiveProcessRunner,
-  jsonSchema,
   runWorkflow,
   step,
   type Workflow,
 } from "../../index.js";
-
-describe("interactive steps (deprecated static workflow compatibility)", () => {
-  it("substitutes promptFile as one argv value and spawns without a shell for opaque output", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-"));
-    const events: string[] = [];
-    const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
-    const objectSchema = jsonSchema<Record<string, never>>({
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    });
-    const workflow: Workflow<Record<string, never>, { exitCode: number }> = {
-      id: "interactive-workflow",
-      input: objectSchema,
-      output: jsonSchema<{ exitCode: number }>({
-        type: "object",
-        properties: { exitCode: { type: "number" } },
-        required: ["exitCode"],
-        additionalProperties: false,
-      }),
-      steps: [
-        {
-          kind: "interactive",
-          id: "ask-agent",
-          command: 'agent --message "{{promptFile}}" --literal "&&"',
-          prompt: "Use this prompt as opaque interactive input.",
-          outputMode: "opaque",
-          output: jsonSchema<{ exitCode: number }>({
-            type: "object",
-            properties: { exitCode: { type: "number" } },
-            required: ["exitCode"],
-            additionalProperties: false,
-          }),
-        },
-      ],
-    };
-
-    const processRunner: InteractiveProcessRunner = async (call) => {
-      runnerCalls.push(call);
-      return { exitCode: 0 };
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: {},
-      runName: "interactive-run",
-      cwd,
-      processRunner,
-      eventSink: (event) => {
-        events.push(event.type);
-      },
-    });
-
-    expect(result.status).toBe("success");
-    if (result.status !== "success") {
-      throw new Error(result.failure.message);
-    }
-
-    expect(runnerCalls).toHaveLength(1);
-    expect(runnerCalls[0]).toMatchObject({
-      command: "agent",
-      args: [
-        "--message",
-        join(result.runDir, "steps", "ask-agent", "prompt.txt"),
-        "--literal",
-        "&&",
-      ],
-      shell: false,
-      stdio: "inherit",
-    });
-    await expect(
-      readFile(join(result.runDir, "steps", "ask-agent", "prompt.txt"), "utf8"),
-    ).resolves.toBe("Use this prompt as opaque interactive input.");
-    expect(result.output).toEqual({ exitCode: 0 });
-    expect(events).toEqual([
-      "workflow.started",
-      "step.started",
-      "interactive.sessionStarted",
-      "interactive.sessionCompleted",
-      "step.completed",
-      "workflow.completed",
-    ]);
-  });
-});
 
 describe("continuation interactive agent roles", () => {
   it("resolves a continuation interactive agent role from interactiveAgents instead of workingAgents", async () => {

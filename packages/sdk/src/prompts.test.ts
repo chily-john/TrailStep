@@ -1,39 +1,12 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { type AgentAdapterObject, jsonSchema, runWorkflow } from "@stepkit/core";
 import { describe, expect, it } from "vitest";
-import { defineStep, defineWorkflow, done, step } from "./index.js";
+import { defineWorkflow, done, step } from "./index.js";
 
-describe("SDK prompt declarations", () => {
-  // defineStep promptUrl assertions are deprecated compatibility coverage;
-  // primary v0 prompt behavior is exercised through continuation step(...) nodes.
-  it("loads a local markdown promptUrl into a static prompt string", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-sdk-interactive-prompt-"));
-    const promptPath = join(cwd, "prompt.md");
-    await writeFile(promptPath, "# Review\n\nUse the provided checklist.", "utf8");
-
-    const interactive = defineStep({
-      id: "review",
-      kind: "interactive",
-      command: "agent {{prompt}}",
-      promptUrl: promptPath,
-      outputMode: "opaque",
-      output: jsonSchema<{ exitCode: number }>({
-        type: "object",
-        properties: { exitCode: { type: "number" } },
-        required: ["exitCode"],
-        additionalProperties: false,
-      }),
-    });
-
-    if (interactive.kind !== "interactive") {
-      throw new Error("Expected an interactive step.");
-    }
-    expect(interactive.prompt).toBe("# Review\n\nUse the provided checklist.");
-  });
-
+describe("SDK agent step prompt rendering", () => {
   it("splits an agent prompt into adapter messages before a custom adapter is called", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-sdk-agent-prompt-"));
     const schema = jsonSchema<{ value: string }>({
@@ -138,23 +111,5 @@ describe("SDK prompt declarations", () => {
       throw new Error(result.failure.message);
     }
     expect(result.output).toEqual({ response: "prompted:live input" });
-  });
-
-  it("rejects unsupported promptUrl declarations clearly", async () => {
-    expect(() =>
-      defineStep({
-        id: "remote",
-        kind: "interactive",
-        command: "agent {{prompt}}",
-        promptUrl: "https://example.test/prompt.md",
-        outputMode: "opaque",
-        output: jsonSchema<{ exitCode: number }>({
-          type: "object",
-          properties: { exitCode: { type: "number" } },
-          required: ["exitCode"],
-          additionalProperties: false,
-        }),
-      }),
-    ).toThrow(/local markdown/i);
   });
 });

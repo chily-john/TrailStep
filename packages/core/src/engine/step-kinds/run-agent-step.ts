@@ -1,7 +1,4 @@
-import type {
-  AgentStep,
-  AgentStepRequestConfig,
-} from "../../authoring/step-kinds/agent-step.types.js";
+import type { AgentStepRequestConfig } from "../../authoring/step-kinds/agent-step.types.js";
 import type { AgentModelTarget } from "../../shared/agent-role.types.js";
 import type {
   AgentAdapter,
@@ -27,7 +24,6 @@ export interface RunAgentStepOptions<
 > {
   readonly step: AgentStepRequestConfig<TInput, TOutput>;
   readonly input: TInput;
-  readonly workflowAdapter?: AgentAdapterSelection<TInput, TOutput>;
   readonly onToolCall?: (event: AgentToolCallEvent) => void | Promise<void>;
 }
 
@@ -36,7 +32,7 @@ export async function runAgentStep<
   TOutput extends PlainObject = PlainObject,
 >(options: RunAgentStepOptions<TInput, TOutput>): Promise<PlainObject> {
   const model = resolveAgentRequirements(options.step.requirements);
-  const adapter = resolveAgentAdapter(options.step.adapter ?? options.workflowAdapter);
+  const adapter = resolveAgentAdapter(options.step.adapter);
   let submittedOutput: PlainObject | undefined;
 
   const tools: AgentTool<TOutput>[] = [
@@ -80,7 +76,7 @@ export function renderAgentPrompt<TInput extends PlainObject>(
 }
 
 export function resolveAgentRequirements(
-  requirements: AgentStep["requirements"],
+  requirements: AgentStepRequestConfig["requirements"],
 ): AgentModelTarget {
   return {
     adapterKey: PROVIDER_NEUTRAL_ADAPTER_KEY,

@@ -4,11 +4,8 @@ import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from 
 import { type CliCommandContext, CliUsageError, usageText } from "./internals/command.types.js";
 import { resolveCommand } from "./internals/command-registry.js";
 import { CliInputError } from "./internals/commands/run/load-run-input.js";
-import { runCommand } from "./internals/commands/run/run-command.js";
-import type { InputSource } from "./internals/commands/run/run-command.types.js";
 import { CliConfigError } from "./internals/config/config.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
-import type { WorkflowReference } from "./internals/workflow-reference/workflow-reference.types.js";
 
 export { CliInputError, loadJsonInput } from "./internals/commands/run/load-run-input.js";
 export type { InputSource } from "./internals/commands/run/run-command.types.js";
@@ -16,30 +13,6 @@ export { CliConfigError, loadStepKitConfig } from "./internals/config/config.js"
 export { type DiscoveredWorkflow, discoverWorkflows } from "./internals/discovery/discovery.js";
 export type { WorkflowReference } from "./internals/workflow-reference/workflow-reference.types.js";
 export { CliUsageError, parseWorkflowId, usageText };
-
-export type ParsedStepkitCommand =
-  | { kind: "list" }
-  | {
-      kind: "run";
-      workflowId: string;
-      workflowRunName: string;
-      workflow: WorkflowReference;
-      input?: InputSource;
-    };
-
-/**
- * Parses raw CLI argv into a discriminated command description.
- *
- * @deprecated Kept for backward compatibility. New CLI behavior should be added via
- * `internals/command-registry.ts` and its `CliCommand` implementations.
- */
-export function parseStepkitArgs(args: readonly string[]): ParsedStepkitCommand {
-  if (args.length === 1 && args[0] === "list") {
-    return { kind: "list" };
-  }
-  const runArgs = runCommand.parseArgs(args);
-  return { kind: "run", ...runArgs };
-}
 
 declare const process:
   | {

@@ -10,9 +10,6 @@ TypeScript authoring helpers for StepKit v0 workflows.
 - `jsonSchema`, `shape`, and shape types are re-exported from `@stepkit/core` for typed object input and output shapes.
 - Agent steps reference roles with step-level `agent`; users map those roles and size tiers to command-backed local agents in `.stepkit/config.json`.
 - Agent step prompts support markdown strings or functions of `{ input }` rendered from live step input.
-- Legacy `defineStep({ ... })` remains as deprecated compatibility scaffolding for old object-form step tests; prefer `step(...)` for new workflows.
-
-The static `steps: []` workflow model is no longer the v0 direction.
 
 ## Minimal workflow package export
 

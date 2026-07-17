@@ -17,8 +17,6 @@ import {
 } from "../index.js";
 
 describe("runWorkflow failure paths", () => {
-  // Remaining `steps: []` cases in this block are deprecated static workflow compatibility coverage;
-  // continuation-specific failure behavior is covered alongside them below.
   it("fails invalid workflow input before the first step starts", async () => {
     const cwd = await testCwd();
     const objectWithValue = valueSchema();
@@ -26,14 +24,17 @@ describe("runWorkflow failure paths", () => {
       id: "invalid-workflow-input-workflow",
       input: objectWithValue,
       output: objectWithValue,
-      steps: [
-        {
-          id: "not-started",
-          input: objectWithValue,
-          output: objectWithValue,
-          run: async (input) => input,
-        },
-      ],
+      start(input) {
+        return step(
+          {
+            id: "not-started",
+            input,
+            outputShape: objectWithValue,
+            run: async (stepInput) => stepInput,
+          },
+          (output) => done(output),
+        );
+      },
     };
 
     const result = await runWorkflow({
@@ -52,66 +53,24 @@ describe("runWorkflow failure paths", () => {
     await expectPersistedEventTypes(result.runDir, ["workflow.failed"]);
   });
 
-  it("emits step.failed and workflow.failed when a step input violates its schema", async () => {
-    const cwd = await testCwd();
-    const objectWithValue = valueSchema();
-    const objectWithName = nameSchema();
-    const workflow: Workflow<{ value: number }, { name: string }> = {
-      id: "invalid-step-input-workflow",
-      input: objectWithValue,
-      output: objectWithName,
-      steps: [
-        {
-          id: "produce-value",
-          input: objectWithValue,
-          output: objectWithValue,
-          run: async (input) => input,
-        },
-        {
-          id: "needs-name",
-          input: objectWithName,
-          output: objectWithName,
-          run: async (input) => input,
-        },
-      ],
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: { value: 1 },
-      runName: "invalid-step-input",
-      cwd,
-    });
-
-    expectFailure(result, "validation_failed", "step needs-name input failed schema validation");
-    expect(result.events.map((event) => event.type)).toEqual([
-      "workflow.started",
-      "step.started",
-      "step.completed",
-      "step.failed",
-      "workflow.failed",
-    ]);
-    expect(result.events[3]).toMatchObject({
-      stepId: "needs-name",
-      payload: { failure: result.failure },
-    });
-  });
-
   it("emits step.failed and workflow.failed when a step output violates its schema", async () => {
     const cwd = await testCwd();
     const objectWithValue = valueSchema();
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "invalid-step-output-workflow",
-      input: objectWithValue,
-      output: objectWithValue,
-      steps: [
-        {
-          id: "break-output",
-          input: objectWithValue,
-          output: objectWithValue,
-          run: async () => ({ value: "not-a-number" }) as unknown as { value: number },
-        },
-      ],
+      inputShape: objectWithValue,
+      outputShape: objectWithValue,
+      start(input) {
+        return step(
+          {
+            id: "break-output",
+            input,
+            outputShape: objectWithValue,
+            run: async () => ({ value: "not-a-number" }) as unknown as { value: number },
+          },
+          (output) => done(output),
+        );
+      },
     };
 
     const result = await runWorkflow({
@@ -149,16 +108,19 @@ describe("runWorkflow failure paths", () => {
     const objectWithName = nameSchema();
     const workflow: Workflow<{ value: number }, { name: string }> = {
       id: "invalid-workflow-output-workflow",
-      input: objectWithValue,
-      output: objectWithName,
-      steps: [
-        {
-          id: "produce-value",
-          input: objectWithValue,
-          output: objectWithValue,
-          run: async (input) => input,
-        },
-      ],
+      inputShape: objectWithValue,
+      outputShape: objectWithName,
+      start(input) {
+        return step(
+          {
+            id: "produce-value",
+            input,
+            outputShape: objectWithValue,
+            run: async (stepInput) => stepInput,
+          },
+          (output) => done(output as unknown as { name: string }),
+        );
+      },
     };
 
     const result = await runWorkflow({
@@ -483,18 +445,21 @@ describe("runWorkflow failure paths", () => {
     const objectWithValue = valueSchema();
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "thrown-step-error-workflow",
-      input: objectWithValue,
-      output: objectWithValue,
-      steps: [
-        {
-          id: "explode",
-          input: objectWithValue,
-          output: objectWithValue,
-          run: async () => {
-            throw new Error("Boom from code step");
+      inputShape: objectWithValue,
+      outputShape: objectWithValue,
+      start(input) {
+        return step(
+          {
+            id: "explode",
+            input,
+            outputShape: objectWithValue,
+            run: async () => {
+              throw new Error("Boom from code step");
+            },
           },
-        },
-      ],
+          (output) => done(output),
+        );
+      },
     };
 
     const result = await runWorkflow({

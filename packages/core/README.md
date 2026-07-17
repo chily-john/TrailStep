@@ -7,7 +7,7 @@ Core runtime primitives for StepKit v0.
 - `jsonSchema(schema)` wraps JSON Schema validation for typed object inputs and outputs.
 - `shape({ ... })` creates concise object shapes for examples and simple workflows.
 - `runWorkflow({ workflow, input, runName, cwd })` interprets continuation workflows and returns a success or failure `Result`.
-- `step(...)` and `done(...)` model v0 workflow progression; new workflow authors should not target the old static `steps: []` sequence.
+- `step(...)` and `done(...)` model v0 workflow progression through a continuation chain returned from `workflow.start`.
 - Code, command-backed local agent, and interactive step execution paths are exported from the package.
 - Agent step prompts support literal markdown or functions of `{ input }`, rendered from live step input before command execution and structured output parsing.
 - Run artifacts are written under `.stepkit/runs/<actualRunName>/`; duplicate run names receive numeric suffixes such as `<runName>-2`.

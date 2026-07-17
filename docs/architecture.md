@@ -8,7 +8,7 @@ StepKit is a durable, typed, observable workflow harness for coding agents. It h
 
 ## v0 workflow model
 
-The v0 architecture is a continuation model, not the obsolete static `steps: []` direction. A package author exports workflows as registration and CLI discovery entry points. Each workflow is declared with `defineWorkflow({ id, inputShape, outputShape, start })`; the `start` function receives validated workflow input and returns the first node.
+The v0 architecture is a continuation model. A package author exports workflows as registration and CLI discovery entry points. Each workflow is declared with `defineWorkflow({ id, inputShape, outputShape, start })`; the `start` function receives validated workflow input and returns the first node.
 
 `step(...)` is the only user-facing step primitive for new workflows. A step node contains its live input, an output shape, and either code execution or prompt/agent configuration. When the step completes, its continuation returns the next `step(...)` node or `done(output)`. Error continuations may return an alternate next node or `done(...)` with failure-shaped output. This keeps branching and recovery in TypeScript orchestration code instead of in hidden runtime state.
 

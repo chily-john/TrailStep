@@ -13,11 +13,3 @@ export interface AgentStepRequestConfig<
   readonly requirements: AgentRequirements;
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
 }
-
-export interface AgentStep<
-  TInput extends PlainObject = PlainObject,
-  TOutput extends PlainObject = PlainObject,
-> extends AgentStepRequestConfig<TInput, TOutput> {
-  readonly kind: "agent";
-  readonly input: Schema<TInput>;
-}

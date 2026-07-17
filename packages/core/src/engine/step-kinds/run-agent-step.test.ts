@@ -17,8 +17,6 @@ import {
 } from "../../index.js";
 
 describe("agent steps", () => {
-  // Remaining `steps: []` cases in this block are deprecated static workflow compatibility coverage;
-  // new v0 behavior is covered with continuation `step(...)` nodes.
   it("core source does not expose provider SDK adapter registry exports", async () => {
     const forbiddenPatterns = [
       "Cl" + "aude",
@@ -41,14 +39,8 @@ describe("agent steps", () => {
     }
   });
 
-  it("runs an agent step through a custom adapter and validates submitted structured output", async () => {
+  it("chains an agent step into a code step through a custom adapter and validates submitted structured output", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-agent-"));
-    const inputSchema = jsonSchema<{ task: string }>({
-      type: "object",
-      properties: { task: { type: "string" } },
-      required: ["task"],
-      additionalProperties: false,
-    });
     const agentOutputSchema = jsonSchema<{ answer: string }>({
       type: "object",
       properties: { answer: { type: "string" } },
@@ -73,25 +65,30 @@ describe("agent steps", () => {
 
     const workflow: Workflow<{ task: string }, { final: string }> = {
       id: "agent-workflow",
-      input: inputSchema,
-      output: finalOutputSchema,
-      steps: [
-        {
-          kind: "agent",
-          id: "agent",
-          input: inputSchema,
-          output: agentOutputSchema,
-          prompt: "Return a short answer.",
-          requirements: { size: "small", name: "helper" },
-          adapter,
-        },
-        {
-          id: "finalize",
-          input: agentOutputSchema,
-          output: finalOutputSchema,
-          run: (input) => ({ final: input.answer }),
-        },
-      ],
+      inputShape: { task: "string" },
+      outputShape: finalOutputSchema,
+      start(input) {
+        return step(
+          {
+            id: "agent",
+            input,
+            outputShape: agentOutputSchema,
+            prompt: "Return a short answer.",
+            requirements: { size: "small", name: "helper" },
+            adapter,
+          },
+          (agentOutput) =>
+            step(
+              {
+                id: "finalize",
+                input: agentOutput,
+                outputShape: finalOutputSchema,
+                run: (finalizeInput) => ({ final: finalizeInput.answer }),
+              },
+              (output) => done(output),
+            ),
+        );
+      },
     };
 
     const result = await runWorkflow({

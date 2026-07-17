@@ -1,5 +1,4 @@
 import type { ContinuationStepConfig } from "../authoring/continuation.types.js";
-import type { Step } from "../authoring/step-kinds/step.types.js";
 import type { WorkflowAgentRole } from "../shared/agent-role.types.js";
 import { StepKitFailureError } from "../shared/failure.js";
 import type { PlainObject, Schema } from "../shared/shape.types.js";
@@ -8,10 +7,7 @@ import { createEvent } from "./run-events.js";
 import { renderAgentPrompt, runAgentStep } from "./step-kinds/run-agent-step.js";
 import { runCodeStep } from "./step-kinds/run-code-step.js";
 import { runWorkingAgentCommand } from "./step-kinds/run-command-agent-step.js";
-import {
-  runInteractiveAgentCommand,
-  runInteractiveStep,
-} from "./step-kinds/run-interactive-step.js";
+import { runInteractiveAgentCommand } from "./step-kinds/run-interactive-step.js";
 
 /**
  * Routes a continuation `step(...)` node's `config` to the right execution
@@ -165,91 +161,6 @@ export async function dispatchContinuationStep(options: {
   const rawOutput = await runCodeStep(run, config.input);
 
   return { rawOutput, stepKind: "code" };
-}
-
-/**
- * Routes a `steps: [...]` (legacy static workflow) `Step` object to the right
- * execution kind: interactive, agent (adapter mode only — no working/config
- * dispatch in this path), or code.
- */
-export async function dispatchWorkflowStep(options: {
-  readonly step: Step;
-  readonly rawInput: PlainObject;
-  readonly runId: string;
-  readonly workflowId: string;
-  readonly emit: (event: Event) => Promise<void>;
-  readonly runDir: string;
-  readonly processRunner: RunWorkflowOptions["processRunner"];
-  readonly workflowAdapter: RunWorkflowOptions["workflow"]["agentAdapter"];
-}): Promise<PlainObject> {
-  const { step } = options;
-
-  if (step.kind === "interactive") {
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "step.started",
-        payload: { stepName: step.id, kind: step.kind },
-      }),
-    );
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "interactive.sessionStarted",
-        payload: { command: step.command },
-      }),
-    );
-    const interactiveResult = await runInteractiveStep({
-      step,
-      runDir: options.runDir,
-      runner: options.processRunner,
-    });
-    const rawOutput = interactiveResult.output;
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "interactive.sessionCompleted",
-        payload: { exitCode: interactiveResult.exitCode, outputMode: step.outputMode },
-      }),
-    );
-    return rawOutput;
-  }
-
-  const input = step.input.assert(options.rawInput, `step ${step.id} input`);
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: step.id,
-      type: "step.started",
-      payload: { stepName: step.id, kind: step.kind ?? "code" },
-    }),
-  );
-
-  return step.kind === "agent"
-    ? await runAgentStep({
-        step,
-        input,
-        workflowAdapter: options.workflowAdapter,
-        onToolCall: async (toolCall) => {
-          await options.emit(
-            createEvent({
-              runId: options.runId,
-              workflowId: options.workflowId,
-              stepId: step.id,
-              type: "agent.toolCall",
-              payload: { ...toolCall },
-            }),
-          );
-        },
-      })
-    : await runCodeStep(step.run, input);
 }
 
 function throwMissingAgentConfig(options: {

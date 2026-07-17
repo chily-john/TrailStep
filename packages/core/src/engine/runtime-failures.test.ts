@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   done,
   type Event,
+  fail,
   jsonSchema,
   type PlainObject,
   type Result,
@@ -25,15 +26,10 @@ describe("runWorkflow failure paths", () => {
       input: objectWithValue,
       output: objectWithValue,
       start(input) {
-        return step(
-          {
-            id: "not-started",
-            input,
-            outputShape: objectWithValue,
-            run: async (stepInput) => stepInput,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "not-started",
+          outputShape: objectWithValue,
+        }).next((stepInput) => done(stepInput))(input);
       },
     };
 
@@ -60,16 +56,18 @@ describe("runWorkflow failure paths", () => {
       id: "invalid-step-output-workflow",
       inputShape: objectWithValue,
       outputShape: objectWithValue,
+      agents: { assistant: { size: "tiny" } },
       start(input) {
-        return step(
-          {
-            id: "break-output",
-            input,
-            outputShape: objectWithValue,
-            run: async () => ({ value: "not-a-number" }) as unknown as { value: number },
+        return step({
+          id: "break-output",
+          outputShape: objectWithValue,
+          agent: "assistant",
+          adapter: async (request) => {
+            await request.tools[0]?.call({ value: "not-a-number" } as unknown as { value: number });
           },
-          (output) => done(output),
-        );
+        })
+          .prompt(() => "Return a value.")
+          .next((output) => done(output))(input);
       },
     };
 
@@ -80,7 +78,11 @@ describe("runWorkflow failure paths", () => {
       cwd,
     });
 
-    expectFailure(result, "validation_failed", "step break-output output failed schema validation");
+    expectFailure(
+      result,
+      "validation_failed",
+      "agent step break-output submit_output failed schema validation",
+    );
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
@@ -111,15 +113,10 @@ describe("runWorkflow failure paths", () => {
       inputShape: objectWithValue,
       outputShape: objectWithName,
       start(input) {
-        return step(
-          {
-            id: "produce-value",
-            input,
-            outputShape: objectWithValue,
-            run: async (stepInput) => stepInput,
-          },
-          (output) => done(output as unknown as { name: string }),
-        );
+        return step({
+          id: "produce-value",
+          outputShape: objectWithValue,
+        }).next((stepInput) => done(stepInput as unknown as { name: string }))(input);
       },
     };
 
@@ -174,16 +171,12 @@ describe("runWorkflow failure paths", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "choose-next",
-            input,
-            outputShape: { value: "number" },
-            run: (stepInput) => stepInput,
-          },
-          () => ({ nope: true }) as never,
-          () => done({ value: 0 }),
-        );
+        return step({
+          id: "choose-next",
+          outputShape: { value: "number" },
+        })
+          .next(() => ({ nope: true }) as never)
+          .catch(() => done({ value: 0 }))(input);
       },
     };
 
@@ -219,18 +212,14 @@ describe("runWorkflow failure paths", () => {
       inputShape: { value: "number" },
       outputShape: { status: "string", summary: "string" },
       start(input) {
-        return step(
-          {
-            id: "explode",
-            input,
-            outputShape: { value: "number" },
-            run: () => {
-              throw new Error("Boom");
-            },
-          },
-          () => done({ status: "unexpected", summary: "should not continue" }),
-          (error) => done({ status: "failed", summary: error.message }),
-        );
+        return step({
+          id: "explode",
+          outputShape: { value: "number" },
+        })
+          .next(() => {
+            throw new Error("Boom");
+          })
+          .catch((error) => done({ status: "failed", summary: error.message }))(input);
       },
     };
 
@@ -258,72 +247,27 @@ describe("runWorkflow failure paths", () => {
     });
   });
 
-  it("fails clearly when a continuation step declares both run and prompt", async () => {
-    const cwd = await testCwd();
-    const workflow: Workflow<{ value: number }, { value: number }> = {
-      id: "conflicting-step-mode-workflow",
-      inputShape: { value: "number" },
-      outputShape: { value: "number" },
-      start(input) {
-        return step(
-          {
-            id: "conflicting-mode",
-            input,
-            outputShape: { value: "number" },
-            run: (stepInput) => stepInput,
-            prompt: "This prompt conflicts with run.",
-            requirements: { size: "tiny" },
-            adapter: async (request) => {
-              await request.tools[0]?.call({ value: 0 });
-            },
-          },
-          (output) => done(output),
-        );
-      },
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: { value: 1 },
-      runName: "conflicting-step-mode",
-      cwd,
-    });
-
-    expectFailure(
-      result,
-      "step_execution_failed",
-      "step conflicting-mode must declare exactly one execution mode: run or prompt",
-    );
-    expect(result.events.map((event) => event.type)).toEqual([
-      "workflow.started",
-      "step.failed",
-      "workflow.failed",
-    ]);
-  });
-
   it("routes a prompt rendering error through onError", async () => {
     const cwd = await testCwd();
     const workflow: Workflow<{ value: number }, { status: string; summary: string }> = {
       id: "recover-prompt-render-error-workflow",
       inputShape: { value: "number" },
       outputShape: { status: "string", summary: "string" },
+      agents: { assistant: { size: "tiny" } },
       start(input) {
-        return step(
-          {
-            id: "render-prompt",
-            input,
-            outputShape: { answer: "string" },
-            prompt: () => {
-              throw new Error("Cannot render prompt");
-            },
-            requirements: { size: "tiny" },
-            adapter: async (request) => {
-              await request.tools[0]?.call({ answer: "unexpected" });
-            },
+        return step({
+          id: "render-prompt",
+          outputShape: { answer: "string" },
+          agent: "assistant",
+          adapter: async (request) => {
+            await request.tools[0]?.call({ answer: "unexpected" });
           },
-          () => done({ status: "unexpected", summary: "should not continue" }),
-          (error) => done({ status: "failed", summary: error.message }),
-        );
+        })
+          .prompt(() => {
+            throw new Error("Cannot render prompt");
+          })
+          .next(() => done({ status: "unexpected", summary: "should not continue" }))
+          .catch((error) => done({ status: "failed", summary: error.message }))(input);
       },
     };
 
@@ -341,10 +285,11 @@ describe("runWorkflow failure paths", () => {
     expect(result.output).toEqual({ status: "failed", summary: "Cannot render prompt" });
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
+      "step.started",
       "step.failed",
       "workflow.completed",
     ]);
-    expect(result.events[1]).toMatchObject({
+    expect(result.events[2]).toMatchObject({
       stepId: "render-prompt",
       payload: { failure: { code: "step_execution_failed", message: "Cannot render prompt" } },
     });
@@ -357,18 +302,14 @@ describe("runWorkflow failure paths", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "explode",
-            input,
-            outputShape: { value: "number" },
-            run: () => {
-              throw new Error("Boom");
-            },
-          },
-          () => done({ value: 0 }),
-          () => ({ nope: true }) as never,
-        );
+        return step({
+          id: "explode",
+          outputShape: { value: "number" },
+        })
+          .next(() => {
+            throw new Error("Boom");
+          })
+          .catch(() => ({ nope: true }) as never)(input);
       },
     };
 
@@ -404,16 +345,13 @@ describe("runWorkflow failure paths", () => {
       outputShape: { answer: "string" },
       agents: { builder: { size: "small" } },
       start(input) {
-        return step(
-          {
-            id: "delegate",
-            input,
-            outputShape: { answer: "string" },
-            agent: "builder",
-            prompt: ({ input: stepInput }) => `Answer ${stepInput.task}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "delegate",
+          outputShape: { answer: "string" },
+          agent: "builder",
+        })
+          .prompt(({ input: stepInput }) => `Answer ${stepInput.task}.`)
+          .next((output) => done(output))(input);
       },
     };
     const requests: unknown[] = [];
@@ -448,17 +386,12 @@ describe("runWorkflow failure paths", () => {
       inputShape: objectWithValue,
       outputShape: objectWithValue,
       start(input) {
-        return step(
-          {
-            id: "explode",
-            input,
-            outputShape: objectWithValue,
-            run: async () => {
-              throw new Error("Boom from code step");
-            },
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "explode",
+          outputShape: objectWithValue,
+        }).next(async () => {
+          throw new Error("Boom from code step");
+        })(input);
       },
     };
 
@@ -475,6 +408,64 @@ describe("runWorkflow failure paths", () => {
       "workflow.started",
       "step.started",
       "step.failed",
+      "workflow.failed",
+    ]);
+  });
+
+  it("fails immediately via fail(...) without dispatching a step", async () => {
+    const cwd = await testCwd();
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "explicit-fail-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: () => fail({ code: "not_allowed", message: "This workflow always fails." }),
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "explicit-fail",
+      cwd,
+    });
+
+    expectFailure(result, "not_allowed", "This workflow always fails.");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.failed",
+    ]);
+  });
+
+  it("a step's onOutput can end the workflow via fail(...) after the step completes", async () => {
+    const cwd = await testCwd();
+    const objectWithValue = valueSchema();
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "step-then-fail-workflow",
+      inputShape: objectWithValue,
+      outputShape: objectWithValue,
+      start(input) {
+        return step({
+          id: "check",
+          outputShape: objectWithValue,
+        }).next((stepInput: { value: number }) =>
+          stepInput.value < 0
+            ? fail({ code: "negative_value", message: "value must not be negative" })
+            : done(stepInput),
+        )(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: -1 },
+      runName: "step-then-fail",
+      cwd,
+    });
+
+    expectFailure(result, "negative_value", "value must not be negative");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
       "workflow.failed",
     ]);
   });

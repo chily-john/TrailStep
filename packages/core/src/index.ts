@@ -1,10 +1,13 @@
 export {
   done,
+  fail,
   isDoneNode,
+  isFailNode,
   isStepNode,
   type JsonSchemaObject,
   jsonSchema,
   normalizeShape,
+  promptTemplate,
   shape,
   step,
 } from "./authoring/authoring.js";
@@ -12,8 +15,12 @@ export type {
   ContinuationResult,
   ContinuationStepConfig,
   DoneNode,
+  FailNode,
+  PromptTemplateSource,
+  StepConfig,
   StepContinuation,
   StepErrorContinuation,
+  StepFactory,
   StepNode,
 } from "./authoring/continuation.types.js";
 export type { Workflow } from "./authoring/workflow.types.js";
@@ -57,7 +64,6 @@ export type {
 } from "./engine/targeting/targeting.types.js";
 export type {
   AgentModelTarget,
-  AgentRequirements,
   WorkflowAgentRole,
   WorkflowAgentSize,
   WorkflowAgentThinking,

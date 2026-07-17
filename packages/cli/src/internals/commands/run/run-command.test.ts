@@ -23,7 +23,8 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
   });
   await writeFile(
     join(packageDir, "index.mjs"),
-    `let shouldFailResumeFeature = true;
+    `import { done, step } from '@stepkit/core';
+    let shouldFailResumeFeature = true;
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
       diagnostics: () => [],
@@ -36,46 +37,34 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
       id: 'reviewFeature',
       input: schema,
       output: schema,
-      start: (input) => ({
-        kind: 'step',
-        config: {
-          id: 'prepare',
-          input,
-          outputShape: schema,
-          run: (stepInput) => ({ ...stepInput, prepared: true }),
-        },
-        onOutput: (output) => ({ kind: 'done', output }),
-      }),
+      start: (input) => step({
+        id: 'prepare',
+        outputShape: schema,
+      }).next((stepInput) => done({ ...stepInput, prepared: true }))(input),
     };
     export const resumeFeature = {
       id: 'resumeFeature',
       input: schema,
       output: schema,
-      start: (input) => ({
-        kind: 'step',
-        config: {
-          id: 'prepare',
-          input,
+      start: (input) => {
+        const finishStep = step({
+          id: 'finish',
           outputShape: schema,
-          run: (stepInput) => ({ ...stepInput, prepared: true }),
-        },
-        onOutput: (output) => ({
-          kind: 'step',
-          config: {
-            id: 'finish',
-            input: output,
-            outputShape: schema,
-            run: (stepInput) => {
-              if (shouldFailResumeFeature) {
-                shouldFailResumeFeature = false;
-                throw new Error('finish unavailable');
-              }
-              return { ...stepInput, finished: true };
-            },
-          },
-          onOutput: (finished) => ({ kind: 'done', output: finished }),
-        }),
-      }),
+        }).next((stepInput) => {
+          if (shouldFailResumeFeature) {
+            shouldFailResumeFeature = false;
+            throw new Error('finish unavailable');
+          }
+          return done({ ...stepInput, finished: true });
+        });
+
+        const prepareStep = step({
+          id: 'prepare',
+          outputShape: schema,
+        }).next((stepInput) => finishStep({ ...stepInput, prepared: true }));
+
+        return prepareStep(input);
+      },
     };`,
     "utf8",
   );

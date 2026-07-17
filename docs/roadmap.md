@@ -46,7 +46,7 @@ StepKit is a clean-slate workflow harness separate from Workflower. This roadmap
 
 ## Migration notes
 
-- Migration path: `requirements` -> workflow-level `agents` plus step-level `agent`. A step-local `requirements: { size: "small" }` selector becomes `defineWorkflow({ agents: { writer: { size: "small" } }, ... })` plus `step({ agent: "writer", ... })`. `requirements` remains only a compatibility/deprecated shape.
+- Migration path: `requirements` -> workflow-level `agents` plus step-level `agent`. A step-local `requirements: { size: "small" }` selector becomes `defineWorkflow({ agents: { writer: { size: "small" } }, ... })` plus `step({ agent: "writer", ... })`. `requirements` has been removed entirely; there is no inline fallback, so every agent role must be declared via workflow-level `agents`.
 - Claude SDK integration is no longer a core-owned adapter path. `core` imports no in-process Claude SDK library. Claude-backed execution now has two paths: `{"provider":"claude"}` resolves through `core`'s built-in provider registry as a known-CLI print-mode invocation (no `customAgents` entry needed), and any other Claude-flavored command remains configurable as a user-owned `customAgents` entry, or could be provided later by an optional adapter package outside `@stepkit/core`.
 
 ## Open questions

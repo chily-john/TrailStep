@@ -2,7 +2,7 @@ import { basename } from "node:path";
 
 import type { ContinuationResult, StepNode } from "../authoring/continuation.types.js";
 import { normalizeShape } from "../authoring/json-schema.js";
-import { isDoneNode, isStepNode } from "../authoring/step-node.js";
+import { isDoneNode, isFailNode, isStepNode } from "../authoring/step-node.js";
 import type { WorkflowAgentRole } from "../shared/agent-role.types.js";
 import type { Failure } from "../shared/failure.js";
 import { StepKitFailureError } from "../shared/failure.js";
@@ -12,7 +12,7 @@ import type { Event, Result, RunWorkflowOptions } from "./engine.types.js";
 import { createRunContext } from "./run-context.js";
 import { createEvent } from "./run-events.js";
 import { appendEvent, createRunDirectory, readRunEvents } from "./run-storage.js";
-import { dispatchContinuationStep } from "./step-dispatch.js";
+import { dispatchAgentStep } from "./step-dispatch.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,
@@ -45,6 +45,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   }
 
   const { runId, runName, runDir, previousEvents } = initialized;
+  const cwd = options.cwd ?? process.cwd();
   const events: Event[] = [...previousEvents];
   const runContext = createRunContext({ runId, runName, runDir });
 
@@ -139,6 +140,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         : `workflow.start for workflow ${options.workflow.id}`,
       workflowAgents: options.workflow.agents ?? {},
       runDir,
+      cwd,
       runContext,
       stepkitConfig: options.stepkitConfig,
       workingAgentProcessRunner: options.workingAgentProcessRunner,
@@ -342,7 +344,7 @@ async function replayContinuationToFailedStep<
       };
     }
 
-    if (node.config.run === undefined) {
+    if (node.config.prompt !== undefined) {
       return {
         status: "failure",
         failure: resumeFailure(
@@ -352,18 +354,7 @@ async function replayContinuationToFailedStep<
       };
     }
 
-    const output = readPlainPayload(completedEvent, "output");
-    if (!output) {
-      return {
-        status: "failure",
-        failure: resumeFailure(
-          "resume_missing_completed_output",
-          `Completed step ${node.config.id} is missing output.`,
-        ),
-      };
-    }
-
-    node = await node.onOutput(output, options.runContext);
+    node = await node.onOutput(node.config.input, options.runContext);
   }
 
   if (!isStepNode(node) || node.config.id !== failedStepEvent.stepId) {
@@ -376,7 +367,7 @@ async function replayContinuationToFailedStep<
     };
   }
 
-  if (node.config.run === undefined) {
+  if (node.config.prompt !== undefined) {
     return {
       status: "failure",
       failure: resumeFailure(
@@ -415,6 +406,7 @@ async function runContinuation(options: {
   readonly initialSource: string;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
+  readonly cwd: string;
   readonly runContext: RunContext;
   readonly stepkitConfig: RunWorkflowOptions["stepkitConfig"];
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
@@ -431,6 +423,10 @@ async function runContinuation(options: {
   while (true) {
     if (isDoneNode(node)) {
       return { status: "success", output: node.output };
+    }
+
+    if (isFailNode(node)) {
+      return { status: "failure", failure: node.failure };
     }
 
     if (!isStepNode(node)) {
@@ -452,37 +448,75 @@ async function runContinuation(options: {
 
     const stepNode = node;
     const { config } = stepNode;
+    const hasPrompt = config.prompt !== undefined;
 
-    try {
-      const outputSchema = normalizeShape(config.outputShape);
-      const { rawOutput } = await dispatchContinuationStep({
-        config,
-        outputSchema,
+    await options.emit(
+      createEvent({
         runId: options.runId,
         workflowId: options.workflowId,
-        emit: options.emit,
-        workflowAgents: options.workflowAgents,
-        runDir: options.runDir,
-        stepkitConfig: options.stepkitConfig,
-        workingAgentProcessRunner: options.workingAgentProcessRunner,
-        providerWorkingRunner: options.providerWorkingRunner,
-        processRunner: options.processRunner,
-      });
+        stepId: config.id,
+        type: "step.started",
+        payload: { stepName: config.id, kind: hasPrompt ? "agent" : "code" },
+      }),
+    );
 
-      const output = outputSchema.assert(rawOutput, `step ${config.id} output`);
+    try {
+      let paramForNext: PlainObject;
 
-      await options.emit(
-        createEvent({
+      if (hasPrompt) {
+        if (!config.outputShape) {
+          throw new Error(`step ${config.id} with a prompt requires an outputShape`);
+        }
+
+        const outputSchema = normalizeShape(config.outputShape);
+        const rawOutput = await dispatchAgentStep({
+          config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
+          outputSchema,
           runId: options.runId,
           workflowId: options.workflowId,
-          stepId: config.id,
-          type: "step.completed",
-          payload: { output },
-        }),
-      );
+          emit: options.emit,
+          workflowAgents: options.workflowAgents,
+          runDir: options.runDir,
+          cwd: options.cwd,
+          stepkitConfig: options.stepkitConfig,
+          workingAgentProcessRunner: options.workingAgentProcessRunner,
+          providerWorkingRunner: options.providerWorkingRunner,
+          processRunner: options.processRunner,
+        });
+        paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
 
-      const nextNode = await stepNode.onOutput(output, options.runContext);
-      if (!isStepNode(nextNode) && !isDoneNode(nextNode)) {
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: options.workflowId,
+            stepId: config.id,
+            type: "step.completed",
+            payload: { output: paramForNext },
+          }),
+        );
+      } else {
+        paramForNext = config.input;
+      }
+
+      const nextNode = await stepNode.onOutput(paramForNext, options.runContext);
+
+      if (!hasPrompt) {
+        // A no-prompt step's .next(...) IS its work — only report completion once it has
+        // actually run without throwing, matching the with-prompt case's "step.completed
+        // means the step's own work succeeded" meaning (a thrown .next() must never be
+        // preceded by step.completed, or resume's already-completed guard sees both).
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: options.workflowId,
+            stepId: config.id,
+            type: "step.completed",
+            payload: {},
+          }),
+        );
+      }
+
+      if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
         const failure = continuationFailure(`step ${config.id}`);
         await options.emit(
           createEvent({
@@ -518,7 +552,7 @@ async function runContinuation(options: {
 
       try {
         const nextNode = stepNode.onError(failure);
-        if (!isStepNode(nextNode) && !isDoneNode(nextNode)) {
+        if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
           return {
             status: "failure",
             failure: continuationFailure(`error continuation for step ${config.id}`),

@@ -3,4 +3,5 @@
 // the package entry point) have a single place to import from.
 
 export { type JsonSchemaObject, jsonSchema, normalizeShape, shape } from "./json-schema.js";
-export { done, isDoneNode, isStepNode, step } from "./step-node.js";
+export { promptTemplate } from "./prompt-template.js";
+export { done, fail, isDoneNode, isFailNode, isStepNode, step } from "./step-node.js";

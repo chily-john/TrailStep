@@ -15,26 +15,18 @@ describe("runWorkflow", () => {
       inputShape: { shouldReview: "boolean" },
       outputShape: { destination: "string" },
       start(input) {
-        return step(
-          {
-            id: "implementation",
-            input,
-            outputShape: { destination: "string" },
-            run: ({ shouldReview }) => ({
-              destination: shouldReview ? "review" : "failure",
-            }),
-          },
-          (output) =>
-            step(
-              {
-                id: output.destination,
-                input: output,
-                outputShape: { destination: "string" },
-                run: ({ destination }) => ({ destination: `${destination}-complete` }),
-              },
-              done,
-            ),
-        );
+        return step({ id: "implementation", outputShape: { destination: "string" } })
+          .next((stepInput) => {
+            const output = {
+              destination: stepInput.shouldReview ? "review" : "failure",
+            };
+            return step({
+              id: output.destination,
+              outputShape: { destination: "string" },
+            }).next((nextInput) => done({ destination: `${nextInput.destination}-complete` }))(
+              output,
+            );
+          })(input);
       },
     };
 
@@ -74,16 +66,13 @@ describe("runWorkflow", () => {
       inputShape: { path: "string" },
       outputShape: { approved: "boolean" },
       start(input) {
-        return step(
-          {
-            id: "review",
-            input,
-            outputShape: { approved: "boolean" },
-            prompt: ({ input }) => `Review ${input.path}.`,
-            agent: "missing-reviewer",
-          },
-          done,
-        );
+        return step({
+          id: "review",
+          outputShape: { approved: "boolean" },
+          agent: "missing-reviewer",
+        })
+          .prompt(({ input }) => `Review ${input.path}.`)
+          .next(done)(input);
       },
     };
 
@@ -109,34 +98,26 @@ describe("runWorkflow", () => {
   it("passes durable RunContext state to orchestration step continuations", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
 
+    const rememberStep = step({ id: "remember", outputShape: { value: "number" } }).next(
+      async (input: { value: number }, ctx) => {
+        await ctx.state.set("count", { value: input.value });
+        return recallStep(input);
+      },
+    );
+
+    const recallStep = step({ id: "recall", outputShape: { value: "number" } }).next(
+      async (_input: { value: number }, ctx) => {
+        const stored = await ctx.state.get("count");
+        return done(stored as { value: number });
+      },
+    );
+
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "stateful-workflow",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "remember",
-            input,
-            outputShape: { value: "number" },
-            run: ({ value }) => ({ value }),
-          },
-          async (output, ctx) => {
-            await ctx.state.set("count", { value: output.value });
-            return step(
-              {
-                id: "recall",
-                input: output,
-                outputShape: { value: "number" },
-                run: ({ value }) => ({ value }),
-              },
-              async (_nextOutput, ctx) => {
-                const stored = await ctx.state.get("count");
-                return done(stored as { value: number });
-              },
-            );
-          },
-        );
+        return rememberStep(input);
       },
     };
 
@@ -162,29 +143,20 @@ describe("runWorkflow", () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];
 
+    const firstStep = step({ id: "first", outputShape: { value: "number" } }).next(
+      (input: { value: number }) => secondStep({ value: input.value + 1 }),
+    );
+
+    const secondStep = step({ id: "second", outputShape: { value: "number" } }).next(
+      (input: { value: number }) => done({ value: input.value + 1 }),
+    );
+
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "incremental-events",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "first",
-            input,
-            outputShape: { value: "number" },
-            run: ({ value }) => ({ value: value + 1 }),
-          },
-          (output) =>
-            step(
-              {
-                id: "second",
-                input: output,
-                outputShape: { value: "number" },
-                run: ({ value }) => ({ value: value + 1 }),
-              },
-              done,
-            ),
-        );
+        return firstStep(input);
       },
     };
 
@@ -232,17 +204,10 @@ describe("runWorkflow", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "explode",
-            input,
-            outputShape: { value: "number" },
-            run: () => {
-              throw new Error("boom");
-            },
-          },
-          done,
-        );
+        return step({ id: "explode", outputShape: { value: "number" } })
+          .next(() => {
+            throw new Error("boom");
+          })(input);
       },
     };
 
@@ -289,14 +254,9 @@ describe("runWorkflow", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "increment",
-            input,
-            outputShape: { value: "number" },
-            run: ({ value }) => ({ value: value + 1 }),
-          },
-          (output) => done({ value: output.value * 2 }),
+        return step({ id: "increment", outputShape: { value: "number" } })
+          .next((stepInput: { value: number }) => done({ value: (stepInput.value + 1) * 2 }))(
+          input,
         );
       },
     };

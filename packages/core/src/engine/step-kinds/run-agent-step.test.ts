@@ -10,6 +10,7 @@ import {
   jsonSchema,
   type ProviderWorkingProcessRequest,
   parseStepKitConfig,
+  promptTemplate,
   runWorkflow,
   step,
   type Workflow,
@@ -63,31 +64,27 @@ describe("agent steps", () => {
       await submitOutput?.call({ answer: `done: ${request.input.task}` });
     };
 
+    const agentStep = step({
+      id: "agent",
+      outputShape: agentOutputSchema,
+      agent: "helper",
+      adapter,
+    })
+      .prompt("Return a short answer.")
+      .next((agentOutput) => finalizeStep(agentOutput));
+
+    const finalizeStep = step({
+      id: "finalize",
+      outputShape: finalOutputSchema,
+    }).next((finalizeInput) => done({ final: finalizeInput.answer }));
+
     const workflow: Workflow<{ task: string }, { final: string }> = {
       id: "agent-workflow",
       inputShape: { task: "string" },
       outputShape: finalOutputSchema,
+      agents: { helper: { size: "small", name: "helper" } },
       start(input) {
-        return step(
-          {
-            id: "agent",
-            input,
-            outputShape: agentOutputSchema,
-            prompt: "Return a short answer.",
-            requirements: { size: "small", name: "helper" },
-            adapter,
-          },
-          (agentOutput) =>
-            step(
-              {
-                id: "finalize",
-                input: agentOutput,
-                outputShape: finalOutputSchema,
-                run: (finalizeInput) => ({ final: finalizeInput.answer }),
-              },
-              (output) => done(output),
-            ),
-        );
+        return agentStep(input);
       },
     };
 
@@ -136,22 +133,20 @@ describe("agent steps", () => {
       id: "unified-agent-workflow",
       inputShape: { task: "string" },
       output: finalOutputSchema,
+      agents: { helper: { size: "small", name: "helper" } },
       start(input) {
-        return step(
-          {
-            id: "agent",
-            input,
-            outputShape: { answer: "string" },
-            prompt: ({ input }) => `Summarize ${input.task}.`,
-            requirements: { size: "small", name: "helper" },
-            adapter: async (request) => {
-              capturedPrompt = request.messages[0]?.content;
-              capturedInput = request.input as { task: string };
-              await request.tools[0]?.call({ answer: `done: ${capturedInput.task}` });
-            },
+        return step({
+          id: "agent",
+          outputShape: { answer: "string" },
+          agent: "helper",
+          adapter: async (request) => {
+            capturedPrompt = request.messages[0]?.content;
+            capturedInput = request.input as { task: string };
+            await request.tools[0]?.call({ answer: `done: ${capturedInput.task}` });
           },
-          (output) => done(output),
-        );
+        })
+          .prompt(({ input }) => `Summarize ${input.task}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -183,16 +178,13 @@ describe("agent steps", () => {
         reviewer: { size: "medium", description: "Review answers" },
       },
       start(input) {
-        return step(
-          {
-            id: "review",
-            input,
-            outputShape: { answer: "string" },
-            agent: "reviewer",
-            prompt: ({ input }) => `Review ${input.task}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "review",
+          outputShape: { answer: "string" },
+          agent: "reviewer",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -253,16 +245,13 @@ describe("agent steps", () => {
       outputShape: { answer: "string" },
       agents: { reviewer: { size: "medium" } },
       start(input) {
-        return step(
-          {
-            id: "review",
-            input,
-            outputShape: { answer: "string" },
-            agent: "reviewer",
-            prompt: ({ input }) => `Review ${input.task}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "review",
+          outputShape: { answer: "string" },
+          agent: "reviewer",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -324,16 +313,13 @@ describe("agent steps", () => {
       outputShape: { answer: "string" },
       agents: { reviewer: { size: "small" } },
       start(input) {
-        return step(
-          {
-            id: "review",
-            input,
-            outputShape: { answer: "string" },
-            agent: "reviewer",
-            prompt: ({ input }) => `Review ${input.task}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "review",
+          outputShape: { answer: "string" },
+          agent: "reviewer",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -392,16 +378,13 @@ describe("agent steps", () => {
       outputShape: { answer: "string" },
       agents: { reviewer: { size: "medium" } },
       start(input) {
-        return step(
-          {
-            id: "review",
-            input,
-            outputShape: { answer: "string" },
-            agent: "reviewer",
-            prompt: ({ input }) => `Review ${input.task}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "review",
+          outputShape: { answer: "string" },
+          agent: "reviewer",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -461,16 +444,13 @@ describe("agent steps", () => {
       outputShape: { answer: "string" },
       agents: { reviewer: { size: "small" } },
       start(input) {
-        return step(
-          {
-            id: "review",
-            input,
-            outputShape: { answer: "string" },
-            agent: "reviewer",
-            prompt: ({ input }) => `Original prompt for ${input.task}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "review",
+          outputShape: { answer: "string" },
+          agent: "reviewer",
+        })
+          .prompt(({ input }) => `Original prompt for ${input.task}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -516,16 +496,13 @@ describe("registry-vs-customAgents dispatch split", () => {
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small", thinking: "medium" } },
       start(input) {
-        return step(
-          {
-            id: "greet",
-            input,
-            outputShape: { greeting: "string" },
-            agent: "writer",
-            prompt: ({ input }) => `Greet ${input.name}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "greet",
+          outputShape: { greeting: "string" },
+          agent: "writer",
+        })
+          .prompt(({ input }) => `Greet ${input.name}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -572,16 +549,13 @@ describe("registry-vs-customAgents dispatch split", () => {
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small", thinking: "medium" } },
       start(input) {
-        return step(
-          {
-            id: "greet",
-            input,
-            outputShape: { greeting: "string" },
-            agent: "writer",
-            prompt: ({ input }) => `Greet ${input.name}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "greet",
+          outputShape: { greeting: "string" },
+          agent: "writer",
+        })
+          .prompt(({ input }) => `Greet ${input.name}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -640,16 +614,13 @@ describe("registry-vs-customAgents dispatch split", () => {
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small", thinking: "high" } },
       start(input) {
-        return step(
-          {
-            id: "greet",
-            input,
-            outputShape: { greeting: "string" },
-            agent: "writer",
-            prompt: ({ input }) => `Greet ${input.name}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "greet",
+          outputShape: { greeting: "string" },
+          agent: "writer",
+        })
+          .prompt(({ input }) => `Greet ${input.name}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -714,16 +685,13 @@ describe("registry-vs-customAgents dispatch split", () => {
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small", thinking: "medium" } },
       start(input) {
-        return step(
-          {
-            id: "greet",
-            input,
-            outputShape: { greeting: "string" },
-            agent: "writer",
-            prompt: ({ input }) => `Greet ${input.name}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "greet",
+          outputShape: { greeting: "string" },
+          agent: "writer",
+        })
+          .prompt(({ input }) => `Greet ${input.name}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -778,16 +746,13 @@ describe("registry-vs-customAgents dispatch split", () => {
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small" } },
       start(input) {
-        return step(
-          {
-            id: "greet",
-            input,
-            outputShape: { greeting: "string" },
-            agent: "writer",
-            prompt: ({ input }) => `Greet ${input.name}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "greet",
+          outputShape: { greeting: "string" },
+          agent: "writer",
+        })
+          .prompt(({ input }) => `Greet ${input.name}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -834,16 +799,13 @@ describe("registry-vs-customAgents dispatch split", () => {
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small" } },
       start(input) {
-        return step(
-          {
-            id: "greet",
-            input,
-            outputShape: { greeting: "string" },
-            agent: "writer",
-            prompt: ({ input }) => `Greet ${input.name}.`,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "greet",
+          outputShape: { greeting: "string" },
+          agent: "writer",
+        })
+          .prompt(({ input }) => `Greet ${input.name}.`)
+          .next((output) => done(output))(input);
       },
     };
 
@@ -887,5 +849,100 @@ describe("registry-vs-customAgents dispatch split", () => {
         failure: expect.objectContaining({ code: "agent_provider_unknown" }),
       }),
     );
+  });
+});
+
+describe("promptTemplate prompt source", () => {
+  it("resolves a step's prompt from a local file relative to cwd", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-prompt-template-"));
+    await writeFile(join(cwd, "prompt.md"), "Say hello.", "utf8");
+    const outputSchema = jsonSchema<{ answer: string }>({
+      type: "object",
+      properties: { answer: { type: "string" } },
+      required: ["answer"],
+      additionalProperties: false,
+    });
+
+    let capturedPrompt: string | undefined;
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "prompt-template-workflow",
+      inputShape: { task: "string" },
+      outputShape: outputSchema,
+      agents: { assistant: { size: "small" } },
+      start(input) {
+        return step({
+          id: "ask",
+          outputShape: outputSchema,
+          agent: "assistant",
+          adapter: async (request) => {
+            capturedPrompt = request.messages[0]?.content;
+            await request.tools[0]?.call({ answer: "hi" });
+          },
+        })
+          .prompt(promptTemplate("prompt.md"))
+          .next((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "greet" },
+      runName: "prompt-template-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(capturedPrompt).toBe("Say hello.");
+    expect(result.output).toEqual({ answer: "hi" });
+  });
+
+  it("routes an unreadable promptTemplate file through normal step failure, recoverable via .catch", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-prompt-template-missing-"));
+    const outputSchema = jsonSchema<{ answer: string }>({
+      type: "object",
+      properties: { answer: { type: "string" } },
+      required: ["answer"],
+      additionalProperties: false,
+    });
+
+    const workflow: Workflow<{ task: string }, { status: string }> = {
+      id: "prompt-template-missing-workflow",
+      inputShape: { task: "string" },
+      outputShape: { status: "string" },
+      agents: { assistant: { size: "small" } },
+      start(input) {
+        return step({
+          id: "ask",
+          outputShape: outputSchema,
+          agent: "assistant",
+          adapter: async () => {
+            throw new Error("should not run");
+          },
+        })
+          .prompt(promptTemplate("missing.md"))
+          .next(() => done({ status: "unexpected" }))
+          .catch((failure) => done({ status: `failed: ${failure.code}: ${failure.message}` }))(
+          input,
+        );
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "greet" },
+      runName: "prompt-template-missing-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error("Expected workflow to recover through .catch");
+    }
+    expect(result.output.status).toContain("failed: step_execution_failed");
+    expect(result.output.status).toMatch(/ENOENT|no such file/i);
+    expect(result.output.status).toContain("missing.md");
   });
 });

@@ -25,15 +25,10 @@ const result = await runWorkflow({
     inputShape: shape({ name: "string" }),
     outputShape: shape({ greeting: "string" }),
     start(input) {
-      return step(
-        {
-          id: "greet",
-          input,
-          outputShape: shape({ greeting: "string" }),
-          run: ({ name }) => ({ greeting: `Hello, ${name}!` }),
-        },
-        (output) => done(output),
-      );
+      return step({
+        id: "greet",
+        outputShape: shape({ greeting: "string" }),
+      }).next(({ name }) => done({ greeting: `Hello, ${name}!` }))(input);
     },
   },
   input: { name: "Ada" },

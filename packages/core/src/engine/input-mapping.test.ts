@@ -46,36 +46,32 @@ describe("step input mapping", () => {
       inputShape: workflowInput,
       outputShape: finalOutput,
       start(input) {
-        return step(
-          {
-            id: "seed",
-            input,
-            outputShape: firstOutput,
-            run: async (stepInput) => ({ value: stepInput.starting + 1 }),
-          },
-          (seedOutput) => {
-            expect(seedOutput).toEqual({ value: 5 });
-
-            return step(
-              {
-                id: "multiply",
-                input: mappedInput.assert(
-                  {
-                    value: seedOutput.value,
-                    multiplier: input.factor,
-                    runName: "mapped-run",
-                  },
-                  "mapped continuation input",
-                ),
-                outputShape: finalOutput,
-                run: async (stepInput) => ({ result: stepInput.value * stepInput.multiplier }),
-              },
-              (output) => done(output),
-            );
-          },
-        );
+        return seedStep(input);
       },
     };
+
+    const seedStep = step({ id: "seed", outputShape: firstOutput }).next(
+      async (stepInput: { starting: number; factor: number }) => {
+        const seedOutput = { value: stepInput.starting + 1 };
+        expect(seedOutput).toEqual({ value: 5 });
+
+        return multiplyStep(
+          mappedInput.assert(
+            {
+              value: seedOutput.value,
+              multiplier: stepInput.factor,
+              runName: "mapped-run",
+            },
+            "mapped continuation input",
+          ),
+        );
+      },
+    );
+
+    const multiplyStep = step({ id: "multiply", outputShape: finalOutput }).next(
+      async (stepInput: { value: number; multiplier: number; runName: string }) =>
+        done({ result: stepInput.value * stepInput.multiplier }),
+    );
 
     const result = await runWorkflow({
       workflow,

@@ -1,22 +1,41 @@
-import type { AgentRequirements } from "../shared/agent-role.types.js";
 import type { AgentAdapterSelection, AgentPrompt } from "../shared/agent-selection.types.js";
 import type { Failure } from "../shared/failure.js";
 import type { RunContext } from "../shared/run-context.types.js";
 import type { PlainObject, ShapeInput } from "../shared/shape.types.js";
 
+/** A local text file to load a prompt's content from, resolved relative to the workflow's `cwd` at dispatch time. */
+export interface PromptTemplateSource {
+  readonly kind: "promptTemplate";
+  readonly path: string;
+}
+
+/**
+ * The object passed to `step(...)`. No `input` (supplied when the resulting
+ * `StepFactory` is called) and no `run` (there is no separate code runner —
+ * omitting `.prompt(...)` means `.next(...)` receives the step's input
+ * directly and does the work itself). `outputShape` only matters when
+ * `.prompt(...)` is used — it constrains the agent's structured-output tool;
+ * it's unused for a step with no prompt.
+ */
+export interface StepConfig<TOutput extends PlainObject = PlainObject> {
+  readonly id: string;
+  readonly outputShape?: ShapeInput<TOutput>;
+  readonly agent?: string;
+  readonly agentMode?: "working" | "interactive";
+  readonly adapter?: AgentAdapterSelection<PlainObject, TOutput>;
+}
+
+/** The runtime shape stored in `StepNode.config` — `StepConfig` plus the resolved `input` and `prompt` source. */
 export interface ContinuationStepConfig<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > {
   readonly id: string;
   readonly input: TInput;
-  readonly outputShape: ShapeInput<TOutput>;
-  run?(input: TInput): TOutput | Promise<TOutput>;
-  readonly prompt?: AgentPrompt<TInput>;
+  readonly outputShape?: ShapeInput<TOutput>;
+  readonly prompt?: AgentPrompt<TInput> | PromptTemplateSource;
   readonly agent?: string;
   readonly agentMode?: "working" | "interactive";
-  /** @deprecated Prefer workflow-level `agents` and a step-level `agent` role reference. */
-  readonly requirements?: AgentRequirements;
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
 }
 
@@ -38,11 +57,31 @@ export interface StepNode<
   readonly onError?: StepErrorContinuation;
 }
 
+/**
+ * Returned by `step(...).prompt(...)?.next(...)`: a reusable step definition,
+ * called with a live input value to produce an actual `StepNode`
+ * (`stepA(input)`). Chain `.catch(...)` to add an error continuation before
+ * calling it.
+ */
+export type StepFactory<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = ((input: TInput) => StepNode<TInput, TOutput>) & {
+  catch(onError: StepErrorContinuation): StepFactory<TInput, TOutput>;
+};
+
 export interface DoneNode<TOutput extends PlainObject = PlainObject> {
   readonly kind: "done";
   readonly output: TOutput;
 }
 
+/** Terminates the workflow as a failure without dispatching a step — no step.* events, just workflow.failed. */
+export interface FailNode {
+  readonly kind: "fail";
+  readonly failure: Failure;
+}
+
 export type ContinuationResult<TOutput extends PlainObject = PlainObject> =
   | StepNode<PlainObject, PlainObject>
-  | DoneNode<TOutput>;
+  | DoneNode<TOutput>
+  | FailNode;

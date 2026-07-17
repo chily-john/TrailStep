@@ -28,18 +28,16 @@ describe("SDK agent step prompt rendering", () => {
       id: "agent-prompt-workflow",
       inputShape: schema,
       outputShape: schema,
+      agents: { assistant: { size: "tiny" } },
       start(input) {
-        return step(
-          {
-            id: "agent",
-            input,
-            outputShape: schema,
-            prompt: "# Transform\n\nReturn the value with a suffix.",
-            requirements: { size: "tiny" },
-            adapter,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "agent",
+          outputShape: schema,
+          agent: "assistant",
+          adapter,
+        })
+          .prompt("# Transform\n\nReturn the value with a suffix.")
+          .next((output) => done(output))(input);
       },
     });
 
@@ -84,18 +82,16 @@ describe("SDK agent step prompt rendering", () => {
       id: "agent-function-prompt-workflow",
       inputShape,
       outputShape,
+      agents: { assistant: { size: "tiny" } },
       start(input) {
-        return step(
-          {
-            id: "explain",
-            input,
-            outputShape,
-            prompt: ({ input: liveInput }) => `Explain ${liveInput.topic} for StepKit.`,
-            requirements: { size: "tiny" },
-            adapter,
-          },
-          (output) => done(output),
-        );
+        return step({
+          id: "explain",
+          outputShape,
+          agent: "assistant",
+          adapter,
+        })
+          .prompt(({ input: liveInput }) => `Explain ${liveInput.topic} for StepKit.`)
+          .next((output) => done(output))(input);
       },
     });
 

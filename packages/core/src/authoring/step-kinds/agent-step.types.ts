@@ -1,4 +1,4 @@
-import type { AgentRequirements } from "../../shared/agent-role.types.js";
+import type { WorkflowAgentRole } from "../../shared/agent-role.types.js";
 import type { AgentAdapterSelection, AgentPrompt } from "../../shared/agent-selection.types.js";
 import type { PlainObject, Schema } from "../../shared/shape.types.js";
 
@@ -10,6 +10,6 @@ export interface AgentStepRequestConfig<
   readonly id: string;
   readonly output: Schema<TOutput>;
   readonly prompt: AgentPrompt<TInput>;
-  readonly requirements: AgentRequirements;
+  readonly requirements: WorkflowAgentRole;
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
 }

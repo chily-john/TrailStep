@@ -34,71 +34,57 @@ async function createRunWithEvents(events: readonly Event[]): Promise<string> {
 }
 
 function replayWorkflow(): Workflow<{ value: number }, { value: number }> {
+  const secondStep = step({
+    id: "second",
+    outputShape: { value: "number" },
+  }).next(({ value }: { value: number }) => done({ value: value + 1 }));
+
+  const firstStep = step({
+    id: "first",
+    outputShape: { value: "number" },
+  }).next(({ value }: { value: number }) => secondStep({ value: value + 1 }));
+
   return {
     id: "history-workflow",
     inputShape: { value: "number" },
     outputShape: { value: "number" },
     start(input) {
-      return step(
-        {
-          id: "first",
-          input,
-          outputShape: { value: "number" },
-          run: ({ value }) => ({ value: value + 1 }),
-        },
-        (firstOutput) =>
-          step(
-            {
-              id: "second",
-              input: firstOutput,
-              outputShape: { value: "number" },
-              run: ({ value }) => ({ value: value + 1 }),
-            },
-            done,
-          ),
-      );
+      return firstStep(input);
     },
   };
 }
 
 describe("runWorkflow resume", () => {
-  it("resumes a failed two-step run by skipping the completed first step", async () => {
+  it("resumes a failed two-step run by replaying the completed first step from its recorded position", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
     let firstStepRuns = 0;
     let shouldFailSecondStep = true;
+
+    const secondStep = step({
+      id: "second",
+      outputShape: { value: "number" },
+    }).next(({ value }: { value: number }) => {
+      if (shouldFailSecondStep) {
+        throw new Error("second step unavailable");
+      }
+
+      return done({ value: value + 1 });
+    });
+
+    const firstStep = step({
+      id: "first",
+      outputShape: { value: "number" },
+    }).next(({ value }: { value: number }) => {
+      firstStepRuns += 1;
+      return secondStep({ value: value + 1 });
+    });
 
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "resumable-workflow",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "first",
-            input,
-            outputShape: { value: "number" },
-            run: ({ value }) => {
-              firstStepRuns += 1;
-              return { value: value + 1 };
-            },
-          },
-          (output) =>
-            step(
-              {
-                id: "second",
-                input: output,
-                outputShape: { value: "number" },
-                run: ({ value }) => {
-                  if (shouldFailSecondStep) {
-                    throw new Error("second step unavailable");
-                  }
-
-                  return { value: value + 1 };
-                },
-              },
-              done,
-            ),
-        );
+        return firstStep(input);
       },
     };
 
@@ -123,7 +109,12 @@ describe("runWorkflow resume", () => {
     expect(resumed.runId).toBe(failed.runId);
     expect(resumed.runDir).toBe(failed.runDir);
     expect(resumed.output).toEqual({ value: 3 });
-    expect(firstStepRuns).toBe(1);
+    // A no-prompt step's .next(...) is both its computation and its continuation
+    // decision fused into one closure — unlike the old separate run()'s plain,
+    // serializable output, there is nothing to persist and feed back in its place.
+    // Resuming past a completed no-prompt step therefore re-invokes its .next(...)
+    // (from the same input) rather than skipping it, so firstStepRuns goes to 2.
+    expect(firstStepRuns).toBe(2);
     expect(eventTypes(resumed.events)).toEqual([
       "workflow.started",
       "step.started",
@@ -207,18 +198,6 @@ describe("runWorkflow resume", () => {
         ],
       },
       {
-        name: "missing completed outputs",
-        code: "resume_missing_completed_output",
-        events: [
-          event({ id: "started", type: "workflow.started", payload: { input: { value: 1 } } }),
-          event({ id: "first-started", type: "step.started", stepId: "first" }),
-          event({ id: "first-completed", type: "step.completed", stepId: "first", payload: {} }),
-          event({ id: "second-started", type: "step.started", stepId: "second" }),
-          event({ id: "second-failed", type: "step.failed", stepId: "second" }),
-          event({ id: "workflow-failed", type: "workflow.failed" }),
-        ],
-      },
-      {
         name: "step id drift",
         code: "resume_step_id_drift",
         events: [
@@ -249,29 +228,27 @@ describe("runWorkflow resume", () => {
     }
   });
 
-  it("rejects orchestration-step histories with a specific failure code", async () => {
+  it("resumes through a completed no-prompt orchestration-only step", async () => {
+    // There is no separate "orchestration step" kind — a step with no .prompt(...) is
+    // always just a no-prompt step, whether its .next(...) does arithmetic or pure
+    // branching. Resume treats every no-prompt step identically (only a step with a
+    // prompt makes resume-through-it unsupported), so this now succeeds.
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "history-workflow",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "orchestration",
-            input,
-            outputShape: { value: "number" },
-          },
-          (firstOutput: { value: number }) =>
-            step(
-              {
-                id: "second",
-                input: firstOutput,
-                outputShape: { value: "number" },
-                run: ({ value }) => ({ value: value + 1 }),
-              },
-              done,
-            ),
-        );
+        const secondStep = step({
+          id: "second",
+          outputShape: { value: "number" },
+        }).next(({ value }: { value: number }) => done({ value: value + 1 }));
+
+        const orchestrationStep = step({
+          id: "orchestration",
+          outputShape: { value: "number" },
+        }).next((firstOutput: { value: number }) => secondStep(firstOutput));
+
+        return orchestrationStep(input);
       },
     };
     const runDir = await createRunWithEvents([
@@ -281,7 +258,7 @@ describe("runWorkflow resume", () => {
         id: "orchestration-completed",
         type: "step.completed",
         stepId: "orchestration",
-        payload: { output: { value: 2 } },
+        payload: {},
       }),
       event({ id: "second-started", type: "step.started", stepId: "second" }),
       event({ id: "second-failed", type: "step.failed", stepId: "second" }),
@@ -290,11 +267,11 @@ describe("runWorkflow resume", () => {
 
     const result = await runWorkflow({ workflow, resume: { runDir } });
 
-    expect(result.status).toBe("failure");
-    if (result.status !== "failure") {
-      throw new Error("Expected orchestration-step resume to fail.");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.status === "failure" ? result.failure.message : "resume failed");
     }
-    expect(result.failure.code).toBe("resume_unsupported_history");
+    expect(result.output).toEqual({ value: 2 });
   });
 
   it("rejects completed runs and workflow mismatch with specific failure codes", async () => {
@@ -304,15 +281,10 @@ describe("runWorkflow resume", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step(
-          {
-            id: "only",
-            input,
-            outputShape: { value: "number" },
-            run: ({ value }) => ({ value }),
-          },
-          done,
-        );
+        return step({
+          id: "only",
+          outputShape: { value: "number" },
+        }).next(({ value }: { value: number }) => done({ value }))(input);
       },
     };
 

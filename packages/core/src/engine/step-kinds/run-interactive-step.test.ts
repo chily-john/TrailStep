@@ -24,17 +24,14 @@ describe("continuation interactive agent roles", () => {
         implementor: { description: "Implements changes.", size: "large" },
       },
       start(input) {
-        return step(
-          {
-            id: "implement",
-            input,
-            outputShape: { exitCode: "number" },
-            prompt: ({ input }) => `Implement ${input.task}.`,
-            agent: "implementor",
-            agentMode: "interactive",
-          },
-          done,
-        );
+        return step({
+          id: "implement",
+          outputShape: { exitCode: "number" },
+          agent: "implementor",
+          agentMode: "interactive",
+        })
+          .prompt(({ input }) => `Implement ${input.task}.`)
+          .next(done)(input);
       },
     };
 
@@ -88,17 +85,14 @@ describe("continuation interactive agent roles", () => {
         implementor: { size: "small" },
       },
       start(input) {
-        return step(
-          {
-            id: "discuss",
-            input,
-            outputShape: { exitCode: "number" },
-            prompt: ({ input }) => `Discuss ${input.task}.`,
-            agent: "implementor",
-            agentMode: "interactive",
-          },
-          done,
-        );
+        return step({
+          id: "discuss",
+          outputShape: { exitCode: "number" },
+          agent: "implementor",
+          agentMode: "interactive",
+        })
+          .prompt(({ input }) => `Discuss ${input.task}.`)
+          .next(done)(input);
       },
     };
 
@@ -154,17 +148,14 @@ describe("continuation interactive agent roles", () => {
         implementor: { size: "small" },
       },
       start(input) {
-        return step(
-          {
-            id: "discuss",
-            input,
-            outputShape: { exitCode: "number" },
-            prompt: ({ input }) => `Discuss ${input.task}.`,
-            agent: "implementor",
-            agentMode: "interactive",
-          },
-          done,
-        );
+        return step({
+          id: "discuss",
+          outputShape: { exitCode: "number" },
+          agent: "implementor",
+          agentMode: "interactive",
+        })
+          .prompt(({ input }) => `Discuss ${input.task}.`)
+          .next(done)(input);
       },
     };
 

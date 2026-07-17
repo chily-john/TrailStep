@@ -24,16 +24,13 @@ export const sampleWorkflow = defineWorkflow({
   inputShape: shape({ name: "string" }),
   outputShape: shape({ greeting: "string" }),
   start(input) {
-    return step(
-      {
-        id: "prepare",
-        input,
-        outputShape: shape({ greeting: "string" }),
-        agent: "writer",
-        prompt: ({ input }) => `Write a concise greeting for ${input.name}.`,
-      },
-      (output) => done(output),
-    );
+    return step({
+      id: "prepare",
+      outputShape: shape({ greeting: "string" }),
+      agent: "writer",
+    })
+      .prompt(({ input }) => `Write a concise greeting for ${input.name}.`)
+      .next((output) => done(output))(input);
   },
 });
 ```

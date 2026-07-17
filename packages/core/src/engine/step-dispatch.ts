@@ -1,166 +1,156 @@
-import type { ContinuationStepConfig } from "../authoring/continuation.types.js";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+import type {
+  ContinuationStepConfig,
+  PromptTemplateSource,
+} from "../authoring/continuation.types.js";
+import type { AgentPrompt } from "../shared/agent-selection.types.js";
 import type { WorkflowAgentRole } from "../shared/agent-role.types.js";
 import { StepKitFailureError } from "../shared/failure.js";
 import type { PlainObject, Schema } from "../shared/shape.types.js";
 import type { Event, RunWorkflowOptions } from "./engine.types.js";
 import { createEvent } from "./run-events.js";
 import { renderAgentPrompt, runAgentStep } from "./step-kinds/run-agent-step.js";
-import { runCodeStep } from "./step-kinds/run-code-step.js";
 import { runWorkingAgentCommand } from "./step-kinds/run-command-agent-step.js";
 import { runInteractiveAgentCommand } from "./step-kinds/run-interactive-step.js";
 
 /**
- * Routes a continuation `step(...)` node's `config` to the right execution
- * kind: code (`config.run`), agent-adapter-mode, working-mode, or
- * interactive-mode (all under `config.prompt`). This is the single place the
- * `config.run`/`config.prompt`/`config.agentMode` switch lives — the four
- * `step-kinds/*` modules underneath never decide which of themselves to run.
+ * Runs a `.prompt(...)` step's agent dispatch: resolves the workflow agent
+ * role, renders the prompt, and executes it in adapter, working, or
+ * interactive mode. Only called when `config.prompt` is defined — a step
+ * with no prompt is never dispatched at all (see `runContinuation` in
+ * `engine.ts`, which calls `stepNode.onOutput` directly on the step's input
+ * in that case).
  */
-export async function dispatchContinuationStep(options: {
-  readonly config: ContinuationStepConfig;
+export async function dispatchAgentStep(options: {
+  readonly config: ContinuationStepConfig & { readonly prompt: NonNullable<ContinuationStepConfig["prompt"]> };
   readonly outputSchema: Schema;
   readonly runId: string;
   readonly workflowId: string;
   readonly emit: (event: Event) => Promise<void>;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
+  readonly cwd: string;
   readonly stepkitConfig: RunWorkflowOptions["stepkitConfig"];
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
-}): Promise<{ readonly rawOutput: PlainObject; readonly stepKind: "code" | "agent" }> {
+}): Promise<PlainObject> {
   const { config, outputSchema } = options;
-  const hasRun = typeof config.run === "function";
-  const hasPrompt = config.prompt !== undefined;
 
-  if (hasRun === hasPrompt) {
-    throw new Error(`step ${config.id} must declare exactly one execution mode: run or prompt`);
-  }
+  const resolvedRole = resolveWorkflowAgentRole({
+    agent: config.agent,
+    workflowAgents: options.workflowAgents,
+    workflowId: options.workflowId,
+    stepId: config.id,
+  });
 
-  if (hasPrompt) {
-    const resolvedRole = resolveWorkflowAgentRole({
-      agent: config.agent,
-      requirements: config.requirements,
-      workflowAgents: options.workflowAgents,
+  const renderedPrompt = await resolvePromptSource(config.prompt, config.input, options.cwd);
+  const agentMode = config.agentMode ?? "working";
+
+  const agentStep = {
+    kind: "agent" as const,
+    id: config.id,
+    output: outputSchema,
+    prompt: renderedPrompt,
+    requirements: resolvedRole,
+    adapter: config.adapter,
+  };
+
+  if (config.agent && !options.stepkitConfig && config.adapter === undefined) {
+    throwMissingAgentConfig({
       workflowId: options.workflowId,
       stepId: config.id,
+      agent: config.agent,
+      mode: agentMode,
     });
+  }
 
-    const renderedPrompt = renderAgentPrompt(config.prompt, config.input);
-    const agentMode = config.agentMode ?? "working";
-
+  if (config.agent && options.stepkitConfig && agentMode === "interactive") {
     await options.emit(
       createEvent({
         runId: options.runId,
         workflowId: options.workflowId,
         stepId: config.id,
-        type: "step.started",
-        payload: { stepName: config.id, kind: "agent" },
+        type: "interactive.sessionStarted",
+        payload: { roleName: config.agent },
       }),
     );
-
-    const agentStep = {
-      kind: "agent" as const,
-      id: config.id,
-      output: outputSchema,
-      prompt: renderedPrompt,
-      requirements: resolvedRole,
-      adapter: config.adapter,
-    };
-
-    if (config.agent && !options.stepkitConfig && config.adapter === undefined) {
-      throwMissingAgentConfig({
+    const interactiveResult = await runInteractiveAgentCommand({
+      config: options.stepkitConfig,
+      workflowId: options.workflowId,
+      roleName: config.agent,
+      role: resolvedRole,
+      stepId: config.id,
+      renderedPrompt,
+      runDir: options.runDir,
+      runner: options.processRunner,
+    });
+    await options.emit(
+      createEvent({
+        runId: options.runId,
         workflowId: options.workflowId,
         stepId: config.id,
-        agent: config.agent,
-        mode: agentMode,
-      });
-    }
+        type: "interactive.sessionCompleted",
+        payload: { exitCode: interactiveResult.exitCode, outputMode: "opaque" },
+      }),
+    );
+    return interactiveResult.output;
+  }
 
-    let rawOutput: PlainObject;
-
-    if (config.agent && options.stepkitConfig && agentMode === "interactive") {
-      await options.emit(
-        createEvent({
-          runId: options.runId,
-          workflowId: options.workflowId,
-          stepId: config.id,
-          type: "interactive.sessionStarted",
-          payload: { roleName: config.agent },
-        }),
-      );
-      const interactiveResult = await runInteractiveAgentCommand({
+  return config.agent && options.stepkitConfig && agentMode === "working"
+    ? await runWorkingAgentCommand({
         config: options.stepkitConfig,
         workflowId: options.workflowId,
         roleName: config.agent,
         role: resolvedRole,
-        stepId: config.id,
+        step: agentStep,
         renderedPrompt,
         runDir: options.runDir,
-        runner: options.processRunner,
-      });
-      rawOutput = interactiveResult.output;
-      await options.emit(
-        createEvent({
-          runId: options.runId,
-          workflowId: options.workflowId,
-          stepId: config.id,
-          type: "interactive.sessionCompleted",
-          payload: { exitCode: interactiveResult.exitCode, outputMode: "opaque" },
-        }),
-      );
-    } else {
-      rawOutput =
-        config.agent && options.stepkitConfig && agentMode === "working"
-          ? await runWorkingAgentCommand({
-              config: options.stepkitConfig,
+        runner: options.workingAgentProcessRunner,
+        providerWorkingRunner: options.providerWorkingRunner,
+      })
+    : await runAgentStep({
+        step: agentStep,
+        input: config.input,
+        onToolCall: async (toolCall) => {
+          await options.emit(
+            createEvent({
+              runId: options.runId,
               workflowId: options.workflowId,
-              roleName: config.agent,
-              role: resolvedRole,
-              step: agentStep,
-              renderedPrompt,
-              runDir: options.runDir,
-              runner: options.workingAgentProcessRunner,
-              providerWorkingRunner: options.providerWorkingRunner,
-            })
-          : await runAgentStep({
-              step: agentStep,
-              input: config.input,
-              onToolCall: async (toolCall) => {
-                await options.emit(
-                  createEvent({
-                    runId: options.runId,
-                    workflowId: options.workflowId,
-                    stepId: config.id,
-                    type: "agent.toolCall",
-                    payload: { ...toolCall },
-                  }),
-                );
-              },
-            });
-    }
+              stepId: config.id,
+              type: "agent.toolCall",
+              payload: { ...toolCall },
+            }),
+          );
+        },
+      });
+}
 
-    return { rawOutput, stepKind: "agent" };
+/**
+ * Resolves a step's prompt source to a rendered string. A `promptTemplate(...)`
+ * source is read from disk relative to the workflow's `cwd`; a thrown/rejected
+ * read propagates up through the same try/catch that already wraps step
+ * dispatch, so an unreadable file becomes a normal step failure. Any other
+ * source (string or callback) renders synchronously via `renderAgentPrompt`.
+ */
+async function resolvePromptSource<TInput extends PlainObject>(
+  source: AgentPrompt<TInput> | PromptTemplateSource,
+  input: TInput,
+  cwd: string,
+): Promise<string> {
+  if (isPromptTemplateSource(source)) {
+    return await readFile(resolve(cwd, source.path), "utf8");
   }
 
-  const run = config.run;
-  if (!run) {
-    throw new Error(`step ${config.id} run-mode requires run`);
-  }
+  return renderAgentPrompt(source, input);
+}
 
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: config.id,
-      type: "step.started",
-      payload: { stepName: config.id, kind: "code" },
-    }),
-  );
-
-  const rawOutput = await runCodeStep(run, config.input);
-
-  return { rawOutput, stepKind: "code" };
+function isPromptTemplateSource(
+  source: AgentPrompt<PlainObject> | PromptTemplateSource,
+): source is PromptTemplateSource {
+  return typeof source === "object" && source !== null && source.kind === "promptTemplate";
 }
 
 function throwMissingAgentConfig(options: {
@@ -183,34 +173,29 @@ function throwMissingAgentConfig(options: {
 
 function resolveWorkflowAgentRole(options: {
   readonly agent: string | undefined;
-  readonly requirements: WorkflowAgentRole | undefined;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowId: string;
   readonly stepId: string;
 }): WorkflowAgentRole {
-  if (options.agent) {
-    const role = options.workflowAgents[options.agent];
-    if (!role) {
-      throw new StepKitFailureError({
-        code: "agent_role_unknown",
-        message: `Step ${options.stepId} references unknown agent role '${options.agent}' in workflow ${options.workflowId}. Declare workflow.agents.${options.agent} before referencing it with step agent.`,
-        details: {
-          workflowId: options.workflowId,
-          stepId: options.stepId,
-          agent: options.agent,
-          declaredAgents: Object.keys(options.workflowAgents),
-        },
-      });
-    }
-
-    return role;
+  if (!options.agent) {
+    throw new Error(
+      `step ${options.stepId} with a prompt requires an agent role: declare workflow.agents and reference it with step agent`,
+    );
   }
 
-  if (options.requirements) {
-    return options.requirements;
+  const role = options.workflowAgents[options.agent];
+  if (!role) {
+    throw new StepKitFailureError({
+      code: "agent_role_unknown",
+      message: `Step ${options.stepId} references unknown agent role '${options.agent}' in workflow ${options.workflowId}. Declare workflow.agents.${options.agent} before referencing it with step agent.`,
+      details: {
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        agent: options.agent,
+        declaredAgents: Object.keys(options.workflowAgents),
+      },
+    });
   }
 
-  throw new Error(
-    `step ${options.stepId} prompt-mode requires a workflow agent role: declare workflow.agents and reference it with step agent`,
-  );
+  return role;
 }

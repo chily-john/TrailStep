@@ -10,9 +10,6 @@ export interface WorkflowAgentRole {
   readonly name?: string;
 }
 
-/** @deprecated Prefer declaring workflow-level agents and referencing them from steps with `agent`. */
-export interface AgentRequirements extends WorkflowAgentRole {}
-
 export interface AgentModelTarget {
   readonly adapterKey: string;
   readonly model: string;

@@ -16,7 +16,7 @@ The v0 architecture is a continuation model. A package author exports workflows 
 
 The first package set is `core`, `sdk`, `cli`, `testkit`, and `dashboard`. `core`, `sdk`, and `cli` carry the implemented v0 vertical slice; `testkit` and `dashboard` remain publish-ready scaffolds.
 
-- `core` owns provider-agnostic runtime primitives: framework-neutral types, the continuation engine, shape/schema validation, prompt wrapping, structured output parsing, events, run artifacts, provider-neutral command-agent execution seams, and a small built-in provider registry for known-CLI print-mode invocation (Claude, Codex, Pi, Gemini). `core` imports no vendor SDK library.
+- `core` owns provider-agnostic runtime primitives: framework-neutral contracts under `contracts/`, authoring primitives under `authoring/`, continuation execution under `runtime/`, config-driven target resolution under `agent-targeting/`, provider-neutral command-agent execution seams under `agent-execution/`, and a small built-in provider registry under `known-cli-providers/` for known-CLI print-mode invocation (Claude, Codex, Pi, Gemini). `core` imports no vendor SDK library.
 - `sdk` owns ergonomic TypeScript authoring helpers layered thinly over `core`: `defineWorkflow`, workflow-level `agents`, step-level `agent`, `step`, `done`, and shape re-exports.
 - `cli` owns user-facing commands, package discovery of exported workflows from packages marked with the `stepkit-workflow` keyword, and loading local `.stepkit/config.json` for role/size-tier resolution.
 - `testkit` owns future behavior-focused validation utilities.

@@ -1,3 +1,15 @@
+export { parseStepKitConfig } from "./agent-targeting/parse-stepkit-config/parse-stepkit-config.js";
+export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
+export type {
+  ResolveAgentTargetsOptions,
+  StepKitAgentMode,
+  StepKitAgentTarget,
+  StepKitConfig,
+  StepKitCustomAgentConfig,
+  StepKitRoleAgentMappings,
+  StepKitSizeAgentMappings,
+  StepKitWorkflowConfig,
+} from "./agent-targeting/targeting.types.js";
 export {
   done,
   fail,
@@ -22,10 +34,47 @@ export type {
   StepErrorContinuation,
   StepFactory,
   StepNode,
-} from "./authoring/continuation.types.js";
-export type { Workflow } from "./authoring/workflow.types.js";
-export type { AgentAdapterRequest } from "./engine/agent-invocation.types.js";
-export { runWorkflow } from "./engine/engine.js";
+} from "./authoring/step/continuation.types.js";
+export type { Workflow } from "./authoring/workflow/workflow.types.js";
+export type {
+  AgentAdapter,
+  AgentAdapterObject,
+  AgentAdapterRequest,
+  AgentAdapterSelection,
+  AgentMessage,
+  AgentPrompt,
+  AgentTool,
+} from "./contracts/agents/agent-adapter.types.js";
+export type {
+  AgentModelTarget,
+  WorkflowAgentRole,
+  WorkflowAgentSize,
+  WorkflowAgentThinking,
+} from "./contracts/agents/agent-role.types.js";
+export type { Failure } from "./contracts/failures/failure.js";
+export type { RunContext, RunContextState } from "./contracts/run-context/run-context.types.js";
+export type {
+  PlainObject,
+  Schema,
+  ShapeInput,
+  ShapeObject,
+  ShapePrimitive,
+} from "./contracts/shapes/shape.types.js";
+export {
+  type ProviderRegistryKey,
+  providerRegistry,
+} from "./known-cli-providers/registry/provider-registry.js";
+export type {
+  ProviderAdapter,
+  ProviderInteractiveRequest,
+  ProviderWorkingProcessRequest,
+  ProviderWorkingProcessResult,
+  ProviderWorkingRequest,
+  ProviderWorkingRunner,
+} from "./known-cli-providers/registry/provider-registry.types.js";
+export { readRunEvents, readRunState, writeRunState } from "./runtime/artifacts/run-storage.js";
+export { createRunContext } from "./runtime/run-context/create-run-context.js";
+export { runWorkflow } from "./runtime/run-workflow/run-workflow.js";
 export type {
   Event,
   InteractiveProcessRequest,
@@ -36,52 +85,4 @@ export type {
   WorkingAgentProcessRequest,
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
-} from "./engine/engine.types.js";
-export {
-  type ProviderRegistryKey,
-  providerRegistry,
-} from "./engine/provider-adapter/provider-adapter.js";
-export type {
-  ProviderAdapter,
-  ProviderInteractiveRequest,
-  ProviderWorkingProcessRequest,
-  ProviderWorkingProcessResult,
-  ProviderWorkingRequest,
-  ProviderWorkingRunner,
-} from "./engine/provider-adapter/provider-adapter.types.js";
-export { createRunContext } from "./engine/run-context.js";
-export { readRunEvents, readRunState, writeRunState } from "./engine/run-storage.js";
-export { parseStepKitConfig, resolveAgentTargets } from "./engine/targeting/targeting.js";
-export type {
-  ResolveAgentTargetsOptions,
-  StepKitAgentMode,
-  StepKitAgentTarget,
-  StepKitConfig,
-  StepKitCustomAgentConfig,
-  StepKitRoleAgentMappings,
-  StepKitSizeAgentMappings,
-  StepKitWorkflowConfig,
-} from "./engine/targeting/targeting.types.js";
-export type {
-  AgentModelTarget,
-  WorkflowAgentRole,
-  WorkflowAgentSize,
-  WorkflowAgentThinking,
-} from "./shared/agent-role.types.js";
-export type {
-  AgentAdapter,
-  AgentAdapterObject,
-  AgentAdapterSelection,
-  AgentMessage,
-  AgentPrompt,
-  AgentTool,
-} from "./shared/agent-selection.types.js";
-export type { Failure } from "./shared/failure.js";
-export type { RunContext, RunContextState } from "./shared/run-context.types.js";
-export type {
-  PlainObject,
-  Schema,
-  ShapeInput,
-  ShapeObject,
-  ShapePrimitive,
-} from "./shared/shape.types.js";
+} from "./runtime/run-workflow/run-workflow.types.js";

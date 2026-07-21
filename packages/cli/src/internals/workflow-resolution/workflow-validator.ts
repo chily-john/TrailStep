@@ -10,7 +10,7 @@ export function isWorkflow(value: unknown): value is Workflow {
 
   return (
     typeof value.id === "string" &&
-    isShapeInput(inputShape) &&
+    (inputShape === undefined || isShapeInput(inputShape)) &&
     (outputShape === undefined || isShapeInput(outputShape)) &&
     typeof value.start === "function"
   );

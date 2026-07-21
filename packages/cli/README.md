@@ -5,7 +5,7 @@ Command-line discovery, registration, and local execution for StepKit workflows.
 ## Commands
 
 ```bash
-stepkit add <workflow-file-or-bundle> --scope <project|user> --namespace <namespace> --name <name> [--workflow <workflow>] [--force]
+stepkit add <workflow-file-or-bundle> --scope <project|user> --namespace <namespace> --name <name> [--workflow <workflow>] [--project-skill] [--user-skill] [--force]
 stepkit list
 stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
 stepkit <workflow-ref> <workflowRunName> --resume
@@ -47,6 +47,17 @@ stepkit ./workflows/review.mjs run-one --resume
 stepkit add ./workflows/review.mjs --scope project --namespace project --name review
 stepkit project/review
 ```
+
+Add `--project-skill` or `--user-skill` to also generate a StepKit workflow skill source at `.stepkit/skills/<sanitized-namespace>-<sanitized-name>/SKILL.md` and ask the upstream `skills` CLI to install it into the selected agent skill scope. Distribution is best-effort: registration still succeeds if the `skills` CLI cannot be resolved or exits with an error.
+
+```bash
+stepkit add ./workflows/review.mjs --scope project --namespace project --name review --project-skill
+stepkit add @acme/workflows --workflow review --scope user --namespace user --name review --user-skill
+```
+
+Prefer matching the registration scope and skill scope. A project skill that points at a user-scoped registration may not resolve for teammates, and a user skill that points at a project-scoped registration only works from that project; StepKit prints warnings for these scope mismatches.
+
+Generated skills pass workflow input through `stepkit <workflow-ref> --input-file <path>`. Workflow input must be a JSON object. For dense conversation context, write the context to a markdown file and pass an object wrapper such as `{ "sessionFile": ".stepkit/inputs/project-review-context.md" }`.
 
 ## Discovery and list
 

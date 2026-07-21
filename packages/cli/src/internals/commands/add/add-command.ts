@@ -5,9 +5,22 @@ import { dirname, join, resolve } from "node:path";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import {
+  type BundleWorkflowSpecifier,
+  loadBundleWorkflow,
+} from "../../workflow-resolution/bundle-resolver.js";
 import { loadDirectWorkflowFile } from "../../workflow-resolution/direct-file-resolver.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
 import { WorkflowResolutionError } from "../../workflow-resolution/workflow-resolution-error.js";
+import {
+  distributeWorkflowSkill,
+  type SkillsCliDistributionTarget,
+} from "../../workflow-skills/skills-cli.js";
+import {
+  type WorkflowSkillMetadata,
+  workflowSkillName,
+} from "../../workflow-skills/workflow-skill-content.js";
+import { writeProjectWorkflowSkill } from "../../workflow-skills/workflow-skill-writer.js";
 
 interface AddCommandArgs {
   readonly source: string;
@@ -16,6 +29,10 @@ interface AddCommandArgs {
   readonly name?: string;
   readonly workflow?: string;
   readonly force: boolean;
+  readonly projectSkill: boolean;
+  readonly userSkill: boolean;
+  readonly projectSkillExplicit: boolean;
+  readonly userSkillExplicit: boolean;
 }
 
 interface ResolvedAddCommandArgs {
@@ -25,6 +42,8 @@ interface ResolvedAddCommandArgs {
   readonly name: string;
   readonly workflow?: string;
   readonly force: boolean;
+  readonly projectSkill: boolean;
+  readonly userSkill: boolean;
 }
 
 export const addCommand: CliCommand<AddCommandArgs> = {
@@ -54,11 +73,15 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       ...(flags.name === undefined ? {} : { name: flags.name }),
       workflow: flags.workflow,
       force: flags.force === "true",
+      projectSkill: flags["project-skill"] === "true",
+      userSkill: flags["user-skill"] === "true",
+      projectSkillExplicit: flags["project-skill"] === "true",
+      userSkillExplicit: flags["user-skill"] === "true",
     };
   },
   async run(args: AddCommandArgs, context: CliCommandContext): Promise<number> {
     const resolvedArgs = await resolveInteractiveArgs(args, context);
-    const targetRef = await validateAndBuildRegistryTarget(resolvedArgs, context.cwd, context);
+    const registryTarget = await validateAndBuildRegistryTarget(resolvedArgs, context.cwd, context);
     const configPath = configPathForScope(resolvedArgs.scope, context);
     const config = await readConfig(configPath);
     const workflows = toMutableWorkflowRegistry(config.workflows);
@@ -70,11 +93,19 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
-    workflows[resolvedArgs.namespace] = { ...namespace, [resolvedArgs.name]: targetRef };
+    workflows[resolvedArgs.namespace] = {
+      ...namespace,
+      [resolvedArgs.name]: registryTarget.targetRef,
+    };
     await writeConfig(configPath, { ...config, workflows });
     context.io.writeLine(
-      `Registered ${resolvedArgs.namespace}/${resolvedArgs.name} -> ${targetRef} in ${resolvedArgs.scope} config.`,
+      `Registered ${resolvedArgs.namespace}/${resolvedArgs.name} -> ${registryTarget.targetRef} in ${resolvedArgs.scope} config.`,
     );
+
+    if (resolvedArgs.projectSkill || resolvedArgs.userSkill) {
+      await tryWriteAndDistributeWorkflowSkill(resolvedArgs, registryTarget, context);
+    }
+
     return 0;
   },
 };
@@ -86,6 +117,11 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
     const option = argv[index];
     if (option === "--force") {
       flags.force = "true";
+      continue;
+    }
+
+    if (option === "--project-skill" || option === "--user-skill") {
+      flags[option.slice(2)] = "true";
       continue;
     }
 
@@ -120,7 +156,9 @@ async function resolveInteractiveArgs(
       return value;
     }
     if (prompts === undefined) {
-      throw new CliUsageError(`stepkit add requires --${label.toLowerCase()} <${label.toLowerCase()}>.`);
+      throw new CliUsageError(
+        `stepkit add requires --${label.toLowerCase()} <${label.toLowerCase()}>.`,
+      );
     }
     const answer = (await prompts.text(label)).trim();
     if (!answer) {
@@ -128,6 +166,8 @@ async function resolveInteractiveArgs(
     }
     return answer;
   };
+  const promptSkillChoices =
+    prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
 
   return {
     source: args.source,
@@ -136,6 +176,12 @@ async function resolveInteractiveArgs(
     name: await promptText("Workflow name", args.name),
     workflow: args.workflow,
     force: args.force,
+    projectSkill: promptSkillChoices
+      ? await promptYesNo("Add to project skills?", prompts)
+      : args.projectSkill,
+    userSkill: promptSkillChoices
+      ? await promptYesNo("Add to user skills?", prompts)
+      : args.userSkill,
   };
 }
 
@@ -154,11 +200,103 @@ async function promptSelect<T extends string>(
   return selected as T;
 }
 
+async function promptYesNo(label: string, prompts: CliCommandContext["prompts"]): Promise<boolean> {
+  return (await promptSelect(label, ["yes", "no"], prompts)) === "yes";
+}
+
+async function tryWriteAndDistributeWorkflowSkill(
+  args: ResolvedAddCommandArgs,
+  registryTarget: AddRegistryTarget,
+  context: CliCommandContext,
+): Promise<void> {
+  const skillName = workflowSkillName(args.namespace, args.name);
+
+  let writtenSkill: { readonly skillName: string; readonly skillDirectory: string };
+  try {
+    const workflow =
+      registryTarget.bundleSpecifier === undefined
+        ? registryTarget.workflow
+        : (
+            await loadBundleWorkflow(registryTarget.bundleSpecifier, {
+              cwd: context.cwd,
+              freshImport: true,
+            })
+          ).workflow;
+
+    writtenSkill = await writeProjectWorkflowSkill({
+      cwd: context.cwd,
+      registeredRef: registryTarget.targetRef,
+      namespace: args.namespace,
+      name: args.name,
+      workflow: workflow as WorkflowSkillMetadata | undefined,
+    });
+  } catch {
+    context.io.writeError(
+      `Warning: registered ${args.namespace}/${args.name} but could not write project workflow skill ${skillName}.`,
+    );
+    return;
+  }
+
+  warnForSkillScopeMismatch(args, writtenSkill.skillName, context);
+
+  if (args.projectSkill) {
+    await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "project", context);
+  }
+  if (args.userSkill) {
+    await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "user", context);
+  }
+}
+
+function warnForSkillScopeMismatch(
+  args: ResolvedAddCommandArgs,
+  skillName: string,
+  context: CliCommandContext,
+): void {
+  if (args.projectSkill && args.scope === "user") {
+    context.io.writeError(
+      `Warning: project workflow skill ${skillName} points at a user-scoped registration; teammates may not resolve it.`,
+    );
+  }
+  if (args.userSkill && args.scope === "project") {
+    context.io.writeError(
+      `Warning: user workflow skill ${skillName} points at a project-scoped registration and only works from this project.`,
+    );
+  }
+}
+
+async function tryDistributeWorkflowSkill(
+  args: ResolvedAddCommandArgs,
+  skillDirectory: string,
+  target: SkillsCliDistributionTarget,
+  context: CliCommandContext,
+): Promise<void> {
+  const skillName = workflowSkillName(args.namespace, args.name);
+
+  try {
+    await distributeWorkflowSkill({
+      skillDirectory,
+      target,
+      resolver: context.skillsCliResolver,
+      runner: context.skillsCliProcessRunner,
+    });
+  } catch (error) {
+    context.io.writeError(
+      `Warning: registered ${args.namespace}/${args.name} but could not distribute ${target} workflow skill ${skillName}: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
+}
+
+interface AddRegistryTarget {
+  readonly targetRef: string;
+  readonly workflow?: WorkflowSkillMetadata;
+  readonly bundleSpecifier?: BundleWorkflowSpecifier;
+}
+
 async function validateAndBuildRegistryTarget(
   args: ResolvedAddCommandArgs,
   cwd: string,
   context: CliCommandContext,
-): Promise<string> {
+): Promise<AddRegistryTarget> {
   if (await isBundleSource(args.source, cwd)) {
     const workflowNames = await readBundleWorkflowNames(args.source, cwd);
     const workflowName =
@@ -179,15 +317,22 @@ async function validateAndBuildRegistryTarget(
       );
     }
 
-    return `${args.source}#${workflowName}`;
+    const specifier = bundleWorkflowSpecifier(args.source, workflowName);
+    const bundleWorkflow = await loadBundleWorkflow(specifier, { cwd });
+
+    return {
+      targetRef: `${args.source}#${workflowName}`,
+      workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
+      bundleSpecifier: specifier,
+    };
   }
 
   if (args.workflow !== undefined) {
     throw new CliUsageError("--workflow is only valid for bundle package registrations.");
   }
 
-  await loadDirectWorkflowFile(args.source, { cwd });
-  return args.source;
+  const directWorkflow = await loadDirectWorkflowFile(args.source, { cwd });
+  return { targetRef: args.source, workflow: directWorkflow.workflow as WorkflowSkillMetadata };
 }
 
 async function isBundleSource(source: string, cwd: string): Promise<boolean> {
@@ -231,6 +376,10 @@ async function readBundleWorkflowNames(source: string, cwd: string): Promise<str
   return Object.keys(workflows);
 }
 
+function bundleWorkflowSpecifier(source: string, workflowName: string): BundleWorkflowSpecifier {
+  return { packageName: source, workflowName };
+}
+
 function resolveBundlePackageJsonPath(source: string, cwd: string): string {
   if (isDirectWorkflowFileReference(source)) {
     return resolve(cwd, source, "package.json");
@@ -243,7 +392,10 @@ function resolveBundlePackageJsonPath(source: string, cwd: string): string {
   }
 }
 
-function configPathForScope(scope: ResolvedAddCommandArgs["scope"], context: CliCommandContext): string {
+function configPathForScope(
+  scope: ResolvedAddCommandArgs["scope"],
+  context: CliCommandContext,
+): string {
   const baseDir = scope === "project" ? context.cwd : (context.homeDir ?? homedir());
   return join(baseDir, ".stepkit", "config.json");
 }

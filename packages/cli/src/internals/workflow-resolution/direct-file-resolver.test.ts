@@ -23,6 +23,22 @@ const multipleWorkflowSource = [
 ].join("\n");
 
 describe("loadDirectWorkflowFile", () => {
+  it("accepts a workflow with no declared input shape", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(
+      join(workflowDir, "review.mjs"),
+      "export default { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+
+    await expect(loadDirectWorkflowFile("./workflows/review.mjs", { cwd })).resolves.toEqual({
+      id: resolve(cwd, "workflows", "review.mjs"),
+      workflow: expect.objectContaining({ id: "review" }),
+    });
+  });
+
   it("loads a default-exported workflow from a relative local file path", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");

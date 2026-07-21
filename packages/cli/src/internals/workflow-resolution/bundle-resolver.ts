@@ -11,6 +11,7 @@ import { isWorkflow } from "./workflow-validator.js";
 
 export interface LoadBundleWorkflowOptions {
   readonly cwd: string;
+  readonly freshImport?: boolean;
 }
 
 export interface BundleWorkflowSpecifier {
@@ -23,6 +24,8 @@ export interface ResolvedBundleWorkflow {
   readonly workflow: Workflow;
   readonly workflowRef: BundleWorkflowReference;
 }
+
+let freshImportCounter = 0;
 
 export async function loadBundleWorkflow(
   specifier: BundleWorkflowSpecifier,
@@ -45,7 +48,12 @@ export async function loadBundleWorkflow(
   let workflowModule: Record<string, unknown>;
 
   try {
-    workflowModule = (await import(pathToFileURL(modulePath).href)) as Record<string, unknown>;
+    const moduleUrl = pathToFileURL(modulePath);
+    if (options.freshImport === true) {
+      freshImportCounter += 1;
+      moduleUrl.searchParams.set("stepkitImport", `${freshImportCounter}`);
+    }
+    workflowModule = (await import(moduleUrl.href)) as Record<string, unknown>;
   } catch (error) {
     throw new WorkflowResolutionError(
       `Unable to import bundle workflow module: ${modulePath} from ${specifier.packageName}#${specifier.workflowName}`,

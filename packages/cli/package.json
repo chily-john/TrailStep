@@ -38,7 +38,8 @@
     "lint": "biome check src"
   },
   "dependencies": {
-    "@stepkit/core": "workspace:*"
+    "@stepkit/core": "workspace:*",
+    "skills": "^1.5.19"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

@@ -1,0 +1,36 @@
+{
+  "name": "@stepkit/create-flows",
+  "version": "0.0.0",
+  "description": "Personal StepKit workflows.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "keywords": [
+    "stepkit-workflow"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check src"
+  },
+  "dependencies": {
+    "@stepkit/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.1.1",
+    "@stepkit/core": "workspace:*",
+    "@types/node": "^26.1.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

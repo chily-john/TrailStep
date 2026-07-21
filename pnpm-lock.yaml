@@ -71,6 +71,31 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.1.1)
 
+  packages/create-flows:
+    dependencies:
+      '@stepkit/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.1.1
+        version: 2.5.3
+      '@stepkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.19)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.1.1)
+
   packages/dashboard:
     dependencies:
       '@stepkit/core':

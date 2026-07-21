@@ -4,7 +4,6 @@ interface DailyNoteOutput extends Record<string, unknown> {
     readonly isDone: boolean;
 }
 
-const inputShape = shape<Record<string, unknown>>({});
 const outputShape = shape<DailyNoteOutput>({ isDone: "boolean" });
 
 const stepOne = step({ id: "write-note", outputShape })

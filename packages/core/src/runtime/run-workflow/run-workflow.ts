@@ -87,10 +87,6 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       ? normalizeShape(options.workflow.inputShape)
       : options.workflow.input;
 
-    if (!inputSchema) {
-      throw new Error("workflow inputShape is required");
-    }
-
     let workflowInput: TInput;
     let startNode: ContinuationResult | undefined;
 
@@ -104,7 +100,9 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         return failResumeValidation(replay.failure);
       }
 
-      workflowInput = inputSchema.assert(replay.input, "workflow input") as TInput;
+      workflowInput = inputSchema
+        ? (inputSchema.assert(replay.input, "workflow input") as TInput)
+        : (replay.input as TInput);
       startNode = replay.node;
       await emit(
         createEvent({
@@ -119,7 +117,9 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }),
       );
     } else {
-      workflowInput = inputSchema.assert(options.input, "workflow input");
+      workflowInput = inputSchema
+        ? inputSchema.assert(options.input, "workflow input")
+        : (options.input as TInput);
       await emit(
         createEvent({
           runId,

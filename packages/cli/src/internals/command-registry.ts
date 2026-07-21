@@ -1,5 +1,6 @@
 import type { CliCommand } from "./command.types.js";
 import { addCommand } from "./commands/add/add-command.js";
+import { continueCommand } from "./commands/continue/continue-command.js";
 import { listCommand } from "./commands/list/list-command.js";
 import { runCommand } from "./commands/run/run-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
@@ -20,6 +21,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv.length === 1 && argv[0] === "skill-check") {
     return skillCheckCommand;
+  }
+
+  if (argv[0] === "continue") {
+    return continueCommand;
   }
 
   return runCommand;

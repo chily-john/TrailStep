@@ -1,4 +1,5 @@
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
+import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../../agent-execution/interactive-agent/protocol/default-interactive-output-shape.js";
 import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import { isDoneNode, isFailNode, isStepNode } from "../../../authoring/step/step-node.js";
@@ -66,6 +67,7 @@ export async function runContinuation(
       };
     }
     executedSteps += 1;
+    const stepIndex = executedSteps;
 
     const stepNode = node;
     const { config } = stepNode;
@@ -85,14 +87,21 @@ export async function runContinuation(
       let paramForNext: PlainObject;
 
       if (hasPrompt) {
-        if (!config.outputShape) {
+        const effectiveOutputShape =
+          config.outputShape ??
+          (config.agentMode === "interactive" ? DEFAULT_INTERACTIVE_OUTPUT_SHAPE : undefined);
+        if (!effectiveOutputShape) {
           throw new Error(`step ${config.id} with a prompt requires an outputShape`);
         }
 
-        const outputSchema = normalizeShape(config.outputShape);
+        const outputSchema = normalizeShape(effectiveOutputShape);
         const rawOutput = await dispatchAgentStep({
           config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
           outputSchema,
+          interactiveOutputMode:
+            config.agentMode === "interactive" && config.outputShape !== undefined
+              ? "json"
+              : "session-file",
           runId: options.runId,
           workflowId: options.workflowId,
           emit: options.emit,
@@ -103,6 +112,7 @@ export async function runContinuation(
           workingAgentProcessRunner: options.workingAgentProcessRunner,
           providerWorkingRunner: options.providerWorkingRunner,
           processRunner: options.processRunner,
+          stepIndex,
         });
         paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
 

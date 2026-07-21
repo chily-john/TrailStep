@@ -4,6 +4,9 @@ export const usageText = [
   "Usage:",
   "  stepkit add <workflow-file-or-bundle> --scope <project|user> --namespace <namespace> --name <name> [--workflow <workflow>] [--force]",
   "  stepkit list",
+  "  stepkit continue --session-file <path>",
+  "  stepkit continue --json-file <path>",
+  "  stepkit continue --json '<json>'",
   "  stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
   "  stepkit <workflow-ref> <workflowRunName> --resume",
   "",
@@ -38,6 +41,7 @@ export interface CliCommandContext {
   io: StepkitCliIo;
   prompts?: StepkitCliPrompts;
   eventSink?: (event: Event) => void | Promise<void>;
+  env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
   runNameClock?: () => Date;

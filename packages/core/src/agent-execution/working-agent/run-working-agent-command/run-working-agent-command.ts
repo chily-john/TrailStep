@@ -11,6 +11,7 @@ import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { providerRegistry } from "../../../known-cli-providers/registry/provider-registry.js";
 import type { ProviderWorkingRunner } from "../../../known-cli-providers/registry/provider-registry.types.js";
+import { resolveStepArtifactPaths } from "../../../runtime/artifacts/step-artifacts.js";
 import type {
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
@@ -26,13 +27,14 @@ export interface WorkingAgentFiles {
 export function resolveStepAgentFiles(options: {
   readonly runDir: string;
   readonly stepId: string;
+  readonly stepIndex: number;
 }): WorkingAgentFiles {
-  const stepDir = join(options.runDir, "steps", options.stepId);
+  const artifactPaths = resolveStepArtifactPaths(options);
   return {
-    stepDir,
-    promptFile: join(stepDir, "prompt.md"),
-    outputFile: join(stepDir, "output.json"),
-    usageFile: join(stepDir, "usage.json"),
+    stepDir: artifactPaths.stepDir,
+    promptFile: join(artifactPaths.stepDir, "prompt.md"),
+    outputFile: artifactPaths.outputFile,
+    usageFile: artifactPaths.usageFile,
   };
 }
 
@@ -102,6 +104,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly runDir: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
+  readonly stepIndex: number;
 }): Promise<TOutput> {
   const targets = resolveWorkingAgentFallbackTargets({
     config: options.config,
@@ -117,7 +120,11 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
     });
   }
 
-  const files = resolveStepAgentFiles({ runDir: options.runDir, stepId: options.step.id });
+  const files = resolveStepAgentFiles({
+    runDir: options.runDir,
+    stepId: options.step.id,
+    stepIndex: options.stepIndex,
+  });
   await mkdir(files.stepDir, { recursive: true });
   await writeFile(
     files.promptFile,
@@ -183,6 +190,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
   readonly runDir: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
+  readonly stepIndex: number;
   readonly target: StepKitAgentTarget;
   readonly files: WorkingAgentFiles;
 }): Promise<TOutput> {

@@ -126,6 +126,8 @@ async function runInteractive(
     cwd: request.cwd,
     shell: false,
     stdio: "inherit",
+    env: request.env,
+    signal: request.signal,
   });
 }
 
@@ -147,18 +149,41 @@ const spawnPiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cw
   });
 };
 
-const spawnPiInteractive: InteractiveProcessRunner = async ({ command, args, cwd }) => {
+const spawnPiInteractive: InteractiveProcessRunner = async ({ command, args, cwd, env, signal }) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
+      env,
+      signal,
+      detached: process.platform !== "win32",
       shell: false,
       stdio: "inherit",
     });
 
+    signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1 }));
   });
 };
+
+function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
+  if (!child.pid) {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on("error", () => {
+      child.kill();
+    });
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill();
+  }
+}
 
 export const piProvider: ProviderAdapter = {
   id: "pi",

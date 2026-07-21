@@ -67,12 +67,15 @@ export interface StepNode<
  * Returned by `step(...).prompt(...)?.next(...)`: a reusable step definition,
  * called with a live input value to produce an actual `StepNode`
  * (`stepA(input)`). Chain `.catch(...)` to add an error continuation before
- * calling it.
+ * calling it. When `TInput` has no required keys (e.g. a step that ignores
+ * its input), the call is `stepA()` — the input argument is optional.
  */
 export type StepFactory<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
-> = ((input: TInput) => StepNode<TInput, TOutput>) & {
+> = ({} extends TInput
+  ? (input?: TInput) => StepNode<TInput, TOutput>
+  : (input: TInput) => StepNode<TInput, TOutput>) & {
   catch(onError: StepErrorContinuation): StepFactory<TInput, TOutput>;
 };
 

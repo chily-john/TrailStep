@@ -9,6 +9,9 @@ stepkit add <workflow-file-or-bundle> --scope <project|user> --namespace <namesp
 stepkit list
 stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
 stepkit <workflow-ref> <workflowRunName> --resume
+stepkit continue --session-file <path>
+stepkit continue --json-file <path>
+stepkit continue --json '<json>'
 ```
 
 Workflow refs include:
@@ -60,6 +63,10 @@ Registered refs and bundle manifest refs can be run directly, but they are not i
 `stepkit <workflow-ref> [workflowRunName]` loads JSON object input from `--input`, from `--input-file`, or defaults to `{}`. The CLI runs the resolved workflow through `@stepkit/core` from the consuming project's working directory.
 
 For agent steps, local `.stepkit/config.json` maps workflow roles and size tiers to command-backed local agents. Interactive steps are executed by the core runtime. Their command templates run without a shell, inherit stdio, and may use `{{prompt}}` or `{{promptFile}}` placeholders declared by local `interactiveAgents` config. Working agents are separate from interactive agents and write structured JSON output for validation.
+
+Interactive steps complete through `stepkit continue` from the launched interactive process. StepKit sets `STEPKIT_INTERACTIVE_FILE`; the continue command requires that environment variable so it can validate and update the active `interactive.json` protocol file. Use `stepkit continue --session-file session-description.md` for default interactive steps, or `stepkit continue --json-file output.json` / `stepkit continue --json '{...}'` for custom structured output. Relative paths are resolved from the interactive step directory. If JSON or session-file validation fails, fix the artifact and run `stepkit continue` again.
+
+When the prompt is passed directly with `{{prompt}}` or a built-in provider, no `prompt.txt` is written. `prompt.txt` is created only for interactive custom-agent invocations that use `{{promptFile}}`. Default interactive directories contain `interactive.json`, `output.json`, and `session-description.md`; structured JSON directories contain `interactive.json` and `output.json` unless a prompt file placeholder is used.
 
 Run artifacts are written to:
 

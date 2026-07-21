@@ -25,7 +25,6 @@ describe("SDK workflow authoring", () => {
 
     const workflow = defineWorkflow({
       id: "greeting-workflow",
-      name: "Greeting workflow",
       description: "Builds a greeting from mapped input.",
       inputShape: jsonSchema<{ readonly person: string } & Record<string, unknown>>({
         type: "object",
@@ -51,7 +50,6 @@ describe("SDK workflow authoring", () => {
 
     expect(assignableWorkflow).toMatchObject({
       id: "greeting-workflow",
-      name: "Greeting workflow",
       description: "Builds a greeting from mapped input.",
     });
 

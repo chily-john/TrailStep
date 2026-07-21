@@ -12,7 +12,7 @@ Core runtime primitives for StepKit workflows.
 - Agent step prompts support literal markdown, functions of `{ input }`, or `promptTemplate(...)` local files rendered before command execution and structured output parsing.
 - Run artifacts are written under `.stepkit/runs/<actualRunName>/`; duplicate run names receive numeric suffixes such as `<runName>-2`.
 - Runtime events are incrementally appended to `.stepkit/runs/<actualRunName>/events.jsonl` as JSON lines and include workflow, step, agent-tool, and interactive-session events.
-- Interactive steps spawn a command without a shell, support `{{prompt}}` and `{{promptFile}}` placeholders, and return opaque exit-code output.
+- Interactive steps spawn a command without a shell, support `{{prompt}}` and `{{promptFile}}` placeholders, and complete when `stepkit continue` writes validated output artifacts.
 
 ## Minimal example
 
@@ -33,6 +33,14 @@ const result = await runWorkflow({
   runName: "demo",
 });
 ```
+
+## Interactive step artifacts
+
+Interactive steps write ordered artifacts under `.stepkit/runs/<actualRunName>/steps/<ordinal>-<stepId>/`. The runtime creates `interactive.json` and expects `stepkit continue` to produce `output.json` that matches the step output schema. Default interactive steps use session-file mode: the prompt asks for a dense `session-description.md`, and the validated output shape is `{ "sessionFile": "steps/<ordinal>-<stepId>/session-description.md" }`. Custom structured interactive steps use JSON mode and validate the submitted object directly.
+
+`prompt.txt` is written only when a custom interactive command uses the `{{promptFile}}` placeholder; direct `{{prompt}}` commands and built-in providers receive the same preambled prompt without a prompt artifact. Working-agent step directories remain separate and minimal: `prompt.md`, `output.json`, and optional `usage.json`.
+
+If an interactive process exits before `stepkit continue` marks `interactive.json` as completed, the step fails instead of returning an opaque `{ exitCode }` result. When completion wins the race, StepKit best-effort aborts the interactive subprocess; this is not a guarantee of provider-specific graceful shutdown or transcript capture.
 
 ## Scope notes
 

@@ -56,6 +56,8 @@ Run names are optional when starting a run; StepKit generates one if omitted. Re
 
 Runs create `.stepkit/runs/<actualRunName>/` in the consuming project. Events are written to `.stepkit/runs/<actualRunName>/events.jsonl`.
 
+Interactive steps use a file-based completion protocol. StepKit writes `interactive.json` and waits for the launched agent to run `stepkit continue`. Default interactive steps ask the agent to write a dense `session-description.md` and continue with `stepkit continue --session-file session-description.md`; structured interactive steps continue with `stepkit continue --json-file output.json` or `stepkit continue --json '{...}'`. When an agent receives the prompt directly, no `prompt.txt` artifact is created; `prompt.txt` exists only for commands configured with `{{promptFile}}`. Interactive steps now complete through `stepkit continue` and no longer return an opaque `{ exitCode }` object by default.
+
 ## Setup
 
 ```bash

@@ -43,6 +43,8 @@ export interface ProviderInteractiveRequest {
   readonly prompt: string;
   readonly cwd: string;
   readonly model?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly signal?: AbortSignal;
 }
 
 /**

@@ -10,6 +10,8 @@ export interface InteractiveProcessRequest {
   readonly cwd: string;
   readonly shell: false;
   readonly stdio: "inherit";
+  readonly env?: Readonly<Record<string, string>>;
+  readonly signal?: AbortSignal;
 }
 
 export interface InteractiveProcessResult {

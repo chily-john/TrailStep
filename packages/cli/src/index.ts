@@ -25,6 +25,7 @@ declare const process:
       argv: string[];
       exitCode?: number;
       cwd: () => string;
+      env?: Record<string, string | undefined>;
     }
   | undefined;
 
@@ -39,6 +40,7 @@ export interface StepkitMainOptions {
   homeDir?: string;
   io?: Partial<StepkitCliIo>;
   eventSink?: (event: Event) => void | Promise<void>;
+  env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
   runNameClock?: () => Date;
@@ -60,6 +62,7 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
     io,
     prompts: options.prompts ?? createTerminalPrompts(),
     eventSink: options.eventSink,
+    env: options.env ?? process?.env ?? {},
     processRunner: options.processRunner,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     runNameClock: options.runNameClock,

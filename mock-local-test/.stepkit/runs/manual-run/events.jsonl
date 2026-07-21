@@ -1,4 +1,0 @@
-{"id":"evt_1","runId":"manual-run","workflowId":"hello","type":"workflow.started","timestamp":"2026-07-14T18:04:06.874Z","schemaVersion":"v0","payload":{"input":{"name":"Ada"}}}
-{"id":"evt_2","runId":"manual-run","workflowId":"hello","stepId":"greet","type":"step.started","timestamp":"2026-07-14T18:04:06.875Z","schemaVersion":"v0","payload":{"stepName":"greet","kind":"code"}}
-{"id":"evt_3","runId":"manual-run","workflowId":"hello","stepId":"greet","type":"step.completed","timestamp":"2026-07-14T18:04:06.875Z","schemaVersion":"v0","payload":{"output":{"greeting":"Hello, Ada!"}}}
-{"id":"evt_4","runId":"manual-run","workflowId":"hello","type":"workflow.completed","timestamp":"2026-07-14T18:04:06.875Z","schemaVersion":"v0","payload":{"output":{"greeting":"Hello, Ada!"}}}

@@ -20,6 +20,8 @@ import type {
  * step's input directly and is responsible for the work and the continuation
  * in one function. Either way, `.next(...)` produces a reusable `StepFactory`
  * — call it with a live input value (`stepA(input)`) to get a `StepNode`.
+ * When the inferred input type has no required keys, the argument is
+ * optional (`stepA()`) and defaults to `{}`.
  */
 export function step<TOutput extends PlainObject = PlainObject>(
   config: StepConfig<TOutput>,
@@ -38,9 +40,13 @@ export function step<TOutput extends PlainObject = PlainObject>(
     onOutput: StepContinuation<TStepOutput>,
     onError?: StepErrorContinuation,
   ): StepFactory<TInput, TStepOutput> => {
-    const factory = ((input: TInput): StepNode<TInput, TStepOutput> => ({
+    const factory = ((input?: TInput): StepNode<TInput, TStepOutput> => ({
       kind: "step",
-      config: { ...config, prompt, input } as ContinuationStepConfig<TInput, TStepOutput>,
+      config: {
+        ...config,
+        prompt,
+        input: input ?? ({} as TInput),
+      } as ContinuationStepConfig<TInput, TStepOutput>,
       onOutput,
       onError,
     })) as StepFactory<TInput, TStepOutput>;
@@ -63,10 +69,12 @@ export function step<TOutput extends PlainObject = PlainObject>(
   };
 }
 
-export function done<TOutput extends PlainObject>(output: TOutput): DoneNode<TOutput> {
+export function done<TOutput extends PlainObject = PlainObject>(
+  output?: TOutput,
+): DoneNode<TOutput> {
   return {
     kind: "done",
-    output,
+    output: output ?? ({} as TOutput),
   };
 }
 

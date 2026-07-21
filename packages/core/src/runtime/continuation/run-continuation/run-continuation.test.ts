@@ -7,6 +7,39 @@ import { createRunContext } from "../../run-context/create-run-context.js";
 import { runContinuation } from "./run-continuation.js";
 
 describe("runContinuation", () => {
+  it("still requires outputShape for working prompted steps", async () => {
+    const result = await runContinuation({
+      node: step({ id: "draft", agent: "writer" })
+        .prompt("Draft the plan.")
+        .next(done)({}),
+      runId: "working-missing-output-shape-run",
+      workflowId: "working-missing-output-shape-workflow",
+      emit: async () => {},
+      maxSteps: 1000,
+      initialSource: "test",
+      workflowAgents: { writer: { size: "small" } },
+      runDir: ".",
+      cwd: process.cwd(),
+      runContext: createRunContext({
+        runId: "working-missing-output-shape-run",
+        runName: "working-missing-output-shape-run",
+        runDir: ".",
+      }),
+      stepkitConfig: {
+        version: 1,
+        customAgents: {},
+        workingAgents: {},
+        interactiveAgents: {},
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected runContinuation to fail.");
+    }
+    expect(result.failure.message).toContain("requires an outputShape");
+  });
+
   it("routes a thrown step error through an error continuation to done", async () => {
     const events: Event[] = [];
     const runId = "recover-thrown-step-error-run";

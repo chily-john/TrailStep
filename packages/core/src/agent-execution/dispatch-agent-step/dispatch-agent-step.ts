@@ -9,6 +9,7 @@ import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js"
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { StepKitFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
+import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
 import type { Event, RunWorkflowOptions } from "../../runtime/run-workflow/run-workflow.types.js";
 import {
@@ -31,6 +32,7 @@ export async function dispatchAgentStep(options: {
     readonly prompt: NonNullable<ContinuationStepConfig["prompt"]>;
   };
   readonly outputSchema: Schema;
+  readonly interactiveOutputMode: "session-file" | "json";
   readonly runId: string;
   readonly workflowId: string;
   readonly emit: (event: Event) => Promise<void>;
@@ -41,6 +43,7 @@ export async function dispatchAgentStep(options: {
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
+  readonly stepIndex: number;
 }): Promise<PlainObject> {
   const { config, outputSchema } = options;
 
@@ -59,38 +62,46 @@ export async function dispatchAgentStep(options: {
     id: config.id,
     output: outputSchema,
     prompt: renderedPrompt,
-    requirements: resolvedRole,
+    requirements: resolvedRole.role,
     adapter: config.adapter,
   };
 
-  if (config.agent && !options.stepkitConfig && config.adapter === undefined) {
+  if (!options.stepkitConfig && config.adapter === undefined) {
     throwMissingAgentConfig({
       workflowId: options.workflowId,
       stepId: config.id,
-      agent: config.agent,
+      agent: resolvedRole.roleName,
       mode: agentMode,
     });
   }
 
-  if (config.agent && options.stepkitConfig && agentMode === "interactive") {
+  if (options.stepkitConfig && agentMode === "interactive") {
     await options.emit(
       createEvent({
         runId: options.runId,
         workflowId: options.workflowId,
         stepId: config.id,
         type: "interactive.sessionStarted",
-        payload: { roleName: config.agent },
+        payload: { roleName: resolvedRole.roleName },
       }),
     );
+    const artifactPaths = resolveStepArtifactPaths({
+      runDir: options.runDir,
+      stepId: config.id,
+      stepIndex: options.stepIndex,
+    });
     const interactiveResult = await runInteractiveAgentCommand({
       config: options.stepkitConfig,
       workflowId: options.workflowId,
-      roleName: config.agent,
-      role: resolvedRole,
+      roleName: resolvedRole.roleName,
+      role: resolvedRole.role,
       stepId: config.id,
       renderedPrompt,
       runDir: options.runDir,
       runner: options.processRunner,
+      outputSchema,
+      outputMode: options.interactiveOutputMode,
+      artifactPaths,
     });
     await options.emit(
       createEvent({
@@ -98,23 +109,28 @@ export async function dispatchAgentStep(options: {
         workflowId: options.workflowId,
         stepId: config.id,
         type: "interactive.sessionCompleted",
-        payload: { exitCode: interactiveResult.exitCode, outputMode: "opaque" },
+        payload: {
+          exitCode: interactiveResult.exitCode,
+          outputMode: options.interactiveOutputMode,
+          stepDir: artifactPaths.runRelativeStepDir,
+        },
       }),
     );
     return interactiveResult.output;
   }
 
-  return config.agent && options.stepkitConfig && agentMode === "working"
+  return options.stepkitConfig && agentMode === "working"
     ? await runWorkingAgentCommand({
         config: options.stepkitConfig,
         workflowId: options.workflowId,
-        roleName: config.agent,
-        role: resolvedRole,
+        roleName: resolvedRole.roleName,
+        role: resolvedRole.role,
         step: agentStep,
         renderedPrompt,
         runDir: options.runDir,
         runner: options.workingAgentProcessRunner,
         providerWorkingRunner: options.providerWorkingRunner,
+        stepIndex: options.stepIndex,
       })
     : await runAgentStep({
         step: agentStep,
@@ -176,31 +192,43 @@ function throwMissingAgentConfig(options: {
   });
 }
 
+const DEFAULT_AGENT_ROLE_NAME = "default";
+
+const BUILTIN_DEFAULT_AGENT_ROLE: WorkflowAgentRole = { size: "default" };
+
+/**
+ * A step's `.agent` is optional. With none given, falls back to
+ * `workflow.agents.default` if the workflow declares one, else a builtin
+ * `{ size: "default" }` role — which `resolveAgentTargets` in turn resolves
+ * against `.stepkit/config.json`'s `workingAgents.default` /
+ * `interactiveAgents.default`. An explicit `.agent(...)` naming an undeclared
+ * role is still a hard error (typo protection).
+ */
 function resolveWorkflowAgentRole(options: {
   readonly agent: string | undefined;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowId: string;
   readonly stepId: string;
-}): WorkflowAgentRole {
-  if (!options.agent) {
-    throw new Error(
-      `step ${options.stepId} with a prompt requires an agent role: declare workflow.agents and reference it with step agent`,
-    );
+}): { readonly role: WorkflowAgentRole; readonly roleName: string } {
+  const roleName = options.agent ?? DEFAULT_AGENT_ROLE_NAME;
+  const role = options.workflowAgents[roleName];
+
+  if (role) {
+    return { role, roleName };
   }
 
-  const role = options.workflowAgents[options.agent];
-  if (!role) {
-    throw new StepKitFailureError({
-      code: "agent_role_unknown",
-      message: `Step ${options.stepId} references unknown agent role '${options.agent}' in workflow ${options.workflowId}. Declare workflow.agents.${options.agent} before referencing it with step agent.`,
-      details: {
-        workflowId: options.workflowId,
-        stepId: options.stepId,
-        agent: options.agent,
-        declaredAgents: Object.keys(options.workflowAgents),
-      },
-    });
+  if (options.agent === undefined) {
+    return { role: BUILTIN_DEFAULT_AGENT_ROLE, roleName: DEFAULT_AGENT_ROLE_NAME };
   }
 
-  return role;
+  throw new StepKitFailureError({
+    code: "agent_role_unknown",
+    message: `Step ${options.stepId} references unknown agent role '${options.agent}' in workflow ${options.workflowId}. Declare workflow.agents.${options.agent} before referencing it with step agent.`,
+    details: {
+      workflowId: options.workflowId,
+      stepId: options.stepId,
+      agent: options.agent,
+      declaredAgents: Object.keys(options.workflowAgents),
+    },
+  });
 }

@@ -226,8 +226,10 @@ describe("agent steps", () => {
       shell: false,
       stdio: "inherit",
     });
-    expect(requests[0]?.promptFile).toBe(join(result.runDir, "steps", "review", "prompt.md"));
-    expect(requests[0]?.outputFile).toBe(join(result.runDir, "steps", "review", "output.json"));
+    expect(requests[0]?.promptFile).toBe(join(result.runDir, "steps", "0001-review", "prompt.md"));
+    expect(requests[0]?.outputFile).toBe(
+      join(result.runDir, "steps", "0001-review", "output.json"),
+    );
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
@@ -293,8 +295,8 @@ describe("agent steps", () => {
     expect(result.output).toEqual({ answer: "fallback-ok" });
     expect(requests.map((request) => request.model)).toEqual(["bad-model", "good-model"]);
     expect(requests.map((request) => request.outputFile)).toEqual([
-      join(result.runDir, "steps", "review", "output.json"),
-      join(result.runDir, "steps", "review", "output.json"),
+      join(result.runDir, "steps", "0001-review", "output.json"),
+      join(result.runDir, "steps", "0001-review", "output.json"),
     ]);
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
@@ -478,10 +480,12 @@ describe("agent steps", () => {
     if (result.status !== "success") {
       throw new Error(result.failure.message);
     }
-    expect(promptFileBeforeRun).toBe(join(result.runDir, "steps", "review", "prompt.md"));
+    expect(promptFileBeforeRun).toBe(join(result.runDir, "steps", "0001-review", "prompt.md"));
     expect(promptTextBeforeRun).toContain("Original prompt for beta.");
     expect(promptTextBeforeRun).toContain("write exactly one JSON object");
-    expect(promptTextBeforeRun).toContain(join(result.runDir, "steps", "review", "output.json"));
+    expect(promptTextBeforeRun).toContain(
+      join(result.runDir, "steps", "0001-review", "output.json"),
+    );
     expect(promptTextBeforeRun).toContain('"answer"');
   });
 });

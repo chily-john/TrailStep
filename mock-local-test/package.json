@@ -1,8 +1,0 @@
-{
-  "name": "stepkit-manual-consumer",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@acme/stepkit-workflows": "1.0.0"
-  }
-}

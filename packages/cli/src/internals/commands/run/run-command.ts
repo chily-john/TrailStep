@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { Event } from "@stepkit/core";
 import { runWorkflow } from "@stepkit/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
@@ -9,6 +10,7 @@ import { generateRunName } from "./generate-run-name.js";
 import { loadJsonInput } from "./load-run-input.js";
 import { parseRunInvocation } from "./parse-run-invocation.js";
 import type { RunCommandArgs } from "./run-command.types.js";
+import { createTerminalEventLogger } from "./terminal-event-logger.js";
 
 export const runCommand: CliCommand<RunCommandArgs> = {
   name: "run",
@@ -31,10 +33,16 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       return 1;
     }
 
+    const terminalEventLogger = createTerminalEventLogger(io);
+    const eventSink = (event: Event): void | Promise<void> => {
+      terminalEventLogger(event);
+      return context.eventSink?.(event);
+    };
+
     const sharedRunOptions = {
       workflow: resolvedWorkflow.workflow,
       cwd,
-      eventSink: context.eventSink,
+      eventSink,
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
       ...(context.workingAgentProcessRunner === undefined
         ? {}

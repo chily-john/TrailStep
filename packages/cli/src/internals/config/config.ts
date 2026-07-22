@@ -28,23 +28,48 @@ export async function loadStepKitConfig(cwd = process.cwd()): Promise<StepKitCon
 }
 
 export async function loadStepKitProjectConfig(cwd = process.cwd()): Promise<StepKitProjectConfig> {
-  const parsed = await readRawStepKitConfig(join(cwd, ".stepkit", "config.json"), {
-    description: ".stepkit/config.json",
-  });
+  const [base, local] = await Promise.all([
+    readRawStepKitConfig(join(cwd, ".stepkit", "config.json"), {
+      description: ".stepkit/config.json",
+    }),
+    readRawStepKitConfig(join(cwd, ".stepkit", "config-local.json"), {
+      description: ".stepkit/config-local.json",
+    }),
+  ]);
 
-  if (parsed === undefined) {
+  if (base === undefined && local === undefined) {
     return { stepkitConfig: undefined, workflowRegistry: {} };
   }
 
+  const merged = mergeRawStepKitConfig(base, local);
+
   try {
     return {
-      stepkitConfig: parseStepKitConfig(toCoreStepKitConfigValue(parsed)),
-      workflowRegistry: parseWorkflowRegistry(parsed),
+      stepkitConfig: parseStepKitConfig(toCoreStepKitConfigValue(merged)),
+      workflowRegistry: parseWorkflowRegistry(merged),
     };
   } catch (error) {
     const detail = formatConfigValidationDetail(error);
     throw new CliConfigError(`Invalid .stepkit/config.json.${detail}`, { cause: error });
   }
+}
+
+/**
+ * Merges `.stepkit/config-local.json` over `.stepkit/config.json`.
+ *
+ * The merge is shallow at the top level: a key present in the local override (e.g.
+ * `workingAgents`) replaces the shared value for that key wholesale rather than being
+ * deep-merged, keeping precedence easy to reason about.
+ */
+function mergeRawStepKitConfig(base: unknown, local: unknown): unknown {
+  if (!isRecord(base)) {
+    return local ?? base;
+  }
+  if (!isRecord(local)) {
+    return base;
+  }
+
+  return { ...base, ...local };
 }
 
 export async function loadStepKitUserWorkflowRegistry(

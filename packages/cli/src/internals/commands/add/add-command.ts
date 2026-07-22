@@ -24,7 +24,7 @@ import { writeProjectWorkflowSkill } from "../../workflow-skills/workflow-skill-
 
 interface AddCommandArgs {
   readonly source: string;
-  readonly scope?: "project" | "user";
+  readonly scope?: "project" | "project-local" | "user";
   readonly namespace?: string;
   readonly name?: string;
   readonly workflow?: string;
@@ -37,7 +37,7 @@ interface AddCommandArgs {
 
 interface ResolvedAddCommandArgs {
   readonly source: string;
-  readonly scope: "project" | "user";
+  readonly scope: "project" | "project-local" | "user";
   readonly namespace: string;
   readonly name: string;
   readonly workflow?: string;
@@ -62,8 +62,15 @@ export const addCommand: CliCommand<AddCommandArgs> = {
 
     const flags = parseFlags(argv.slice(2));
     const scope = flags.scope;
-    if (scope !== undefined && scope !== "project" && scope !== "user") {
-      throw new CliUsageError("stepkit add requires --scope project or --scope user.");
+    if (
+      scope !== undefined &&
+      scope !== "project" &&
+      scope !== "project-local" &&
+      scope !== "user"
+    ) {
+      throw new CliUsageError(
+        "stepkit add requires --scope project, --scope project-local, or --scope user.",
+      );
     }
 
     return {
@@ -171,7 +178,9 @@ async function resolveInteractiveArgs(
 
   return {
     source: args.source,
-    scope: args.scope ?? (await promptSelect("Config scope", ["project", "user"], prompts)),
+    scope:
+      args.scope ??
+      (await promptSelect("Config scope", ["project", "project-local", "user"], prompts)),
     namespace: await promptText("Namespace", args.namespace),
     name: await promptText("Workflow name", args.name),
     workflow: args.workflow,
@@ -252,14 +261,14 @@ function warnForSkillScopeMismatch(
   skillName: string,
   context: CliCommandContext,
 ): void {
-  if (args.projectSkill && args.scope === "user") {
+  if (args.projectSkill && (args.scope === "user" || args.scope === "project-local")) {
     context.io.writeError(
-      `Warning: project workflow skill ${skillName} points at a user-scoped registration; teammates may not resolve it.`,
+      `Warning: project workflow skill ${skillName} points at a ${args.scope}-scoped registration; teammates may not resolve it.`,
     );
   }
-  if (args.userSkill && args.scope === "project") {
+  if (args.userSkill && (args.scope === "project" || args.scope === "project-local")) {
     context.io.writeError(
-      `Warning: user workflow skill ${skillName} points at a project-scoped registration and only works from this project.`,
+      `Warning: user workflow skill ${skillName} points at a ${args.scope}-scoped registration and only works from this project.`,
     );
   }
 }
@@ -396,6 +405,9 @@ function configPathForScope(
   scope: ResolvedAddCommandArgs["scope"],
   context: CliCommandContext,
 ): string {
+  if (scope === "project-local") {
+    return join(context.cwd, ".stepkit", "config-local.json");
+  }
   const baseDir = scope === "project" ? context.cwd : (context.homeDir ?? homedir());
   return join(baseDir, ".stepkit", "config.json");
 }

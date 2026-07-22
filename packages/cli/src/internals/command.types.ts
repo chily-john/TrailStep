@@ -4,7 +4,7 @@ import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skill
 
 export const usageText = [
   "Usage:",
-  "  stepkit add <workflow-file-or-bundle> --scope <project|user> --namespace <namespace> --name <name> [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
+  "  stepkit add <workflow-file-or-bundle> --scope <project|project-local|user> --namespace <namespace> --name <name> [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
   "  stepkit list",
   "  stepkit continue --session-file <path>",
   "  stepkit continue --json-file <path>",

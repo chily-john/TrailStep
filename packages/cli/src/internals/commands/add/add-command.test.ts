@@ -83,7 +83,7 @@ describe("addCommand", () => {
         prompts: {
           select: async (prompt, choices) => {
             if (prompt === "Config scope") {
-              expect(choices).toEqual(["project", "user"]);
+              expect(choices).toEqual(["project", "project-local", "user"]);
               return "project";
             }
             if (prompt === "Add to project skills?") {
@@ -599,7 +599,7 @@ describe("addCommand", () => {
           select: async (prompt, choices) => {
             prompts.push(prompt);
             if (prompt === "Config scope") {
-              expect(choices).toEqual(["project", "user"]);
+              expect(choices).toEqual(["project", "project-local", "user"]);
               return "project";
             }
             if (prompt === "Add to project skills?") {
@@ -749,6 +749,64 @@ describe("addCommand", () => {
     });
     expect(lines).toEqual(["Registered acme/review -> ./workflows/review.mjs in project config."]);
     expect(errors).toEqual([]);
+  });
+
+  it("adds a direct workflow file to project-local config without touching project config", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      version: 1,
+      workingAgents: { reviewer: { command: "reviewer" } },
+    });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const command = resolveCommand([
+      "add",
+      "./workflows/review.mjs",
+      "--scope",
+      "project-local",
+      "--namespace",
+      "acme",
+      "--name",
+      "review",
+    ]);
+    const lines: string[] = [];
+
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows/review.mjs",
+        "--scope",
+        "project-local",
+        "--namespace",
+        "acme",
+        "--name",
+        "review",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".stepkit", "config-local.json"))).toEqual({
+      workflows: { acme: { review: "./workflows/review.mjs" } },
+    });
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      version: 1,
+      workingAgents: { reviewer: { command: "reviewer" } },
+    });
+    expect(lines).toEqual([
+      "Registered acme/review -> ./workflows/review.mjs in project-local config.",
+    ]);
   });
 
   it("preserves existing workflow config objects while adding string registrations", async ({

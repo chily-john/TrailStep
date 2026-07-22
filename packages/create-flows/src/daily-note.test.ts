@@ -13,9 +13,8 @@ describe("dailyNote workflow", () => {
 
     const stepkitConfig: StepKitConfig = {
       version: 1,
-      customAgents: {},
-      workingAgents: { default: [{ provider: "claude" }] },
-      interactiveAgents: { default: [] },
+      customProviders: {},
+      agents: { default: [{ provider: "claude" }] },
     };
 
     const result = await runWorkflow({

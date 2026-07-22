@@ -1,5 +1,6 @@
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
 import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../../agent-execution/interactive-agent/protocol/default-interactive-output-shape.js";
+import type { StepKitConfig } from "../../../agent-targeting/targeting.types.js";
 import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import { isDoneNode, isFailNode, isStepNode } from "../../../authoring/step/step-node.js";
@@ -25,7 +26,7 @@ export interface RunContinuationOptions {
   readonly runDir: string;
   readonly cwd: string;
   readonly runContext: RunContext;
-  readonly stepkitConfig?: RunWorkflowOptions["stepkitConfig"];
+  readonly stepkitConfig?: StepKitConfig;
   readonly workingAgentProcessRunner?: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner?: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner?: RunWorkflowOptions["processRunner"];
@@ -41,6 +42,7 @@ export async function runContinuation(
   let node: ContinuationResult = options.node;
   let source = options.initialSource;
   let executedSteps = 0;
+  const stepkitConfig = options.stepkitConfig;
 
   while (true) {
     if (isDoneNode(node)) {
@@ -108,7 +110,7 @@ export async function runContinuation(
           workflowAgents: options.workflowAgents,
           runDir: options.runDir,
           cwd: options.cwd,
-          stepkitConfig: options.stepkitConfig,
+          stepkitConfig,
           workingAgentProcessRunner: options.workingAgentProcessRunner,
           providerWorkingRunner: options.providerWorkingRunner,
           processRunner: options.processRunner,

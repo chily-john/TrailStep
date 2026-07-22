@@ -1,9 +1,16 @@
 import type { StepKitConfig } from "../targeting.types.js";
-import { parseCustomAgents } from "./parse-custom-agents.js";
-import { parseSizeAgentMappings } from "./parse-size-agent-mappings.js";
+import { expandAgentRefs } from "./expand-agent-refs.js";
+import { parseAgentMappings } from "./parse-agent-mappings.js";
+import { parseCustomProviders } from "./parse-custom-providers.js";
 import { isRecord, throwValidationFailure } from "./parse-utils.js";
 import { parseWorkflows } from "./parse-workflow-agent-mappings.js";
 import { validateProviderReferences } from "./validate-provider-references.js";
+
+const parsedConfigs = new WeakSet<StepKitConfig>();
+
+export function isParsedStepKitConfig(value: unknown): value is StepKitConfig {
+  return isRecord(value) && parsedConfigs.has(value as unknown as StepKitConfig);
+}
 
 export function parseStepKitConfig(value: unknown): StepKitConfig {
   const diagnostics: string[] = [];
@@ -16,27 +23,26 @@ export function parseStepKitConfig(value: unknown): StepKitConfig {
     diagnostics.push("version must be 1.");
   }
 
-  const customAgents = parseCustomAgents(value.customAgents, diagnostics);
-  const providerNames = new Set(Object.keys(customAgents));
-  const workingAgents = parseSizeAgentMappings("workingAgents", value.workingAgents, diagnostics);
-  const interactiveAgents = parseSizeAgentMappings(
-    "interactiveAgents",
-    value.interactiveAgents,
-    diagnostics,
-  );
+  const customProviders = parseCustomProviders(value.customProviders, diagnostics);
+  const providerNames = new Set(Object.keys(customProviders));
+  const agents = parseAgentMappings("agents", value.agents, diagnostics);
   const workflows = parseWorkflows(value.workflows, diagnostics);
 
   if (diagnostics.length > 0) {
     throwValidationFailure(diagnostics);
   }
 
-  validateProviderReferences({ workingAgents, interactiveAgents, workflows, providerNames });
+  validateProviderReferences({ agents, workflows, providerNames });
+  const expanded = expandAgentRefs({ agents, workflows });
 
-  return {
+  const config: StepKitConfig = {
     version: 1,
-    customAgents,
-    workingAgents,
-    interactiveAgents,
-    ...(workflows === undefined ? {} : { workflows }),
+    customProviders,
+    agents: expanded.agents,
+    ...(expanded.workflows === undefined ? {} : { workflows: expanded.workflows }),
   };
+
+  parsedConfigs.add(config);
+
+  return config;
 }

@@ -31,7 +31,7 @@ const SUPPORTED_CODEX_THINKING = new Set(["low", "medium", "high", "xhigh"]);
  * through `known-cli-providers/envelopes/envelope.ts`: `codex exec`'s `-o/--output-last-message
  * <file>` flag writes the agent's final message straight to `outputFile`
  * itself, so this reuses the same plain inherited-stdio process shape as the
- * `customAgents` fallback runner in `run-working-agent-command.ts` (stdio fully
+ * `customProviders` fallback runner in `run-working-agent-command.ts` (stdio fully
  * inherited, only the exit code is observed).
  */
 async function runWorking(

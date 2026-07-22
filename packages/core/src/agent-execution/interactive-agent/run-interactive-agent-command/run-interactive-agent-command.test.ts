@@ -42,12 +42,11 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: {
-          terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        workingAgents: {},
-        interactiveAgents: {
-          small: [{ provider: "terminalAgent", model: "right-mode" }],
+        agents: {
+          small: { items: [{ provider: "terminalAgent", model: "right-mode" }] },
         },
       },
       processRunner: async (call) => {
@@ -136,9 +135,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -202,9 +202,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -260,9 +261,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async () => ({ exitCode: 0 }),
     });
@@ -301,9 +303,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -352,9 +355,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -403,9 +407,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{prompt}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         prompt = call.args[0] ?? "";
@@ -454,11 +459,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: {
-          terminalAgent: { binary: "terminal-agent", args: ["--prompt", "{{prompt}}"] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["--prompt", "{{prompt}}"] },
         },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         expect(call.args[1]).toContain("## Original prompt\nDiscuss direct prompt.");
@@ -514,9 +518,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{prompt}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         await completeInteractiveWithSessionFile(call, "Minimal default notes.\n");
@@ -530,9 +535,10 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{prompt}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async (call) => {
         await completeInteractive(call, { notes: "Minimal custom notes." });
@@ -580,12 +586,11 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: {
-          terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        workingAgents: {},
-        interactiveAgents: {
-          small: [{ provider: "terminalAgent", model: "right-mode" }],
+        agents: {
+          small: { items: [{ provider: "terminalAgent", model: "right-mode" }] },
         },
       },
       processRunner: async (call) => {
@@ -654,7 +659,7 @@ describe("continuation interactive agent roles", () => {
     ).resolves.toContain("stepkit continue --session-file session-description.md");
   });
 
-  it("resolves a continuation interactive agent role from interactiveAgents instead of workingAgents", async () => {
+  it("resolves a continuation interactive agent role from the unified agents mapping", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-agent-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
@@ -683,15 +688,12 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: {
+        customProviders: {
           working: { binary: "working-agent", args: ["{{promptFile}}"] },
-          interactive: { binary: "interactive-agent", args: ["{{promptFile}}"] },
+          interactive: { binary: "interactive-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        workingAgents: {
-          large: [{ provider: "working", model: "working-model" }],
-        },
-        interactiveAgents: {
-          large: [{ provider: "interactive", model: "interactive-model" }],
+        agents: {
+          large: { items: [{ provider: "interactive", model: "interactive-model" }] },
         },
       },
       processRunner: async (call) => {
@@ -714,6 +716,53 @@ describe("continuation interactive agent roles", () => {
     });
     expect(runnerCalls[0]?.command).not.toBe("working-agent");
     expect(result.output).toEqual({ exitCode: 0 });
+  });
+
+  it("rejects a custom interactive provider that only declares working args", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-unsupported-"));
+    let runnerCalled = false;
+    const workflow: Workflow<{ task: string }, { exitCode: number }> = {
+      id: "interactive-unsupported-workflow",
+      inputShape: { task: "string" },
+      outputShape: { exitCode: "number" },
+      agents: { implementor: { size: "small" } },
+      start(input) {
+        return step({
+          id: "discuss",
+          outputShape: { exitCode: "number" },
+          agent: "implementor",
+          agentMode: "interactive",
+        })
+          .prompt(({ input }) => `Discuss ${input.task}.`)
+          .next(done)(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "unsupported provider" },
+      runName: "interactive-unsupported-run",
+      cwd,
+      stepkitConfig: {
+        version: 1,
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+      },
+      processRunner: async () => {
+        runnerCalled = true;
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected unsupported interactive provider to fail.");
+    }
+    expect(result.failure.code).toBe("agent_provider_interactive_unsupported");
+    expect(result.failure.message).toMatch(/interactiveArgs/i);
+    expect(runnerCalled).toBe(false);
   });
 
   it("passes rendered prompt to configured interactive command without a shell", async () => {
@@ -745,17 +794,14 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: {
+        customProviders: {
           terminalAgent: {
             binary: "terminal-agent",
-            args: ["--message-file", "{{promptFile}}", "--literal", "&&"],
+            interactiveArgs: ["--message-file", "{{promptFile}}", "--literal", "&&"],
           },
         },
-        workingAgents: {
-          small: [{ provider: "terminalAgent", model: "wrong-mode" }],
-        },
-        interactiveAgents: {
-          small: [{ provider: "terminalAgent", model: "right-mode" }],
+        agents: {
+          small: { items: [{ provider: "terminalAgent", model: "right-mode" }] },
         },
       },
       processRunner: async (call) => {
@@ -809,10 +855,9 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: {},
-        workingAgents: {},
-        interactiveAgents: {
-          small: [{ provider: "claude", model: "opus" }],
+        customProviders: {},
+        agents: {
+          small: { items: [{ provider: "claude", model: "opus" }] },
         },
       },
       processRunner: async (call) => {

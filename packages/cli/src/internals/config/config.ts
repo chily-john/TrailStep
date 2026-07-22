@@ -27,26 +27,38 @@ export async function loadStepKitConfig(cwd = process.cwd()): Promise<StepKitCon
   return (await loadStepKitProjectConfig(cwd)).stepkitConfig;
 }
 
-export async function loadStepKitProjectConfig(cwd = process.cwd()): Promise<StepKitProjectConfig> {
-  const [base, local] = await Promise.all([
-    readRawStepKitConfig(join(cwd, ".stepkit", "config.json"), {
+export interface LoadStepKitProjectConfigOptions {
+  readonly homeDir?: string;
+}
+
+export async function loadStepKitProjectConfig(
+  cwd = process.cwd(),
+  options: LoadStepKitProjectConfigOptions = {},
+): Promise<StepKitProjectConfig> {
+  const homeDir = options.homeDir ?? homedir();
+  const [user, project, projectLocal] = await Promise.all([
+    readRawScopeConfig(join(homeDir, ".stepkit", "config.json"), {
+      description: "~/.stepkit/config.json",
+    }),
+    readRawScopeConfig(join(cwd, ".stepkit", "config.json"), {
       description: ".stepkit/config.json",
     }),
-    readRawStepKitConfig(join(cwd, ".stepkit", "config-local.json"), {
+    readRawScopeConfig(join(cwd, ".stepkit", "config-local.json"), {
       description: ".stepkit/config-local.json",
     }),
   ]);
 
-  if (base === undefined && local === undefined) {
+  if (user === undefined && project === undefined && projectLocal === undefined) {
     return { stepkitConfig: undefined, workflowRegistry: {} };
   }
 
-  const merged = mergeRawStepKitConfig(base, local);
+  const mergedRunConfig = mergeEffectiveRunConfig(user, project, projectLocal);
+  const mergedProjectRegistryConfig = mergeRawStepKitConfig(project, projectLocal);
 
   try {
     return {
-      stepkitConfig: parseStepKitConfig(toCoreStepKitConfigValue(merged)),
-      workflowRegistry: parseWorkflowRegistry(merged),
+      stepkitConfig: parseStepKitConfig(toCoreStepKitConfigValue(mergedRunConfig)),
+      workflowRegistry: parseWorkflowRegistry(mergedProjectRegistryConfig),
     };
   } catch (error) {
     const detail = formatConfigValidationDetail(error);
@@ -58,7 +70,7 @@ export async function loadStepKitProjectConfig(cwd = process.cwd()): Promise<Ste
  * Merges `.stepkit/config-local.json` over `.stepkit/config.json`.
  *
  * The merge is shallow at the top level: a key present in the local override (e.g.
- * `workingAgents`) replaces the shared value for that key wholesale rather than being
+ * `customProviders`) replaces the shared value for that key wholesale rather than being
  * deep-merged, keeping precedence easy to reason about.
  *
  * `workflows` is the one exception: it merges one level deeper, per namespace bucket,
@@ -75,6 +87,42 @@ function mergeRawStepKitConfig(base: unknown, local: unknown): unknown {
   }
 
   return { ...base, ...local, workflows: mergeWorkflowsRecord(base.workflows, local.workflows) };
+}
+
+function mergeEffectiveRunConfig(...configs: readonly unknown[]): unknown {
+  return configs.reduce<unknown>(
+    (merged, next) => mergeEffectiveRunConfigPair(merged, next),
+    undefined,
+  );
+}
+
+function mergeEffectiveRunConfigPair(base: unknown, override: unknown): unknown {
+  if (!isRecord(base)) {
+    return override ?? base;
+  }
+  if (!isRecord(override)) {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...override,
+    agents: mergeAgentsRecord(base.agents, override.agents),
+  };
+}
+
+function mergeAgentsRecord(base: unknown, override: unknown): unknown {
+  if (override === undefined) {
+    return base;
+  }
+  if (!isRecord(base)) {
+    return override;
+  }
+  if (!isRecord(override)) {
+    return override;
+  }
+
+  return { ...base, ...override };
 }
 
 function mergeWorkflowsRecord(base: unknown, local: unknown): unknown {
@@ -104,14 +152,14 @@ function mergeWorkflowsRecord(base: unknown, local: unknown): unknown {
 export async function loadStepKitUserWorkflowRegistry(
   homeDir = homedir(),
 ): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
-  const parsed = await readRawStepKitConfig(join(homeDir, ".stepkit", "config.json"), {
+  const parsed = await readRawScopeConfig(join(homeDir, ".stepkit", "config.json"), {
     description: "~/.stepkit/config.json",
   });
 
   return parsed === undefined ? {} : parseWorkflowRegistry(parsed);
 }
 
-async function readRawStepKitConfig(
+async function readRawScopeConfig(
   configPath: string,
   options: { readonly description: string },
 ): Promise<unknown | undefined> {
@@ -172,9 +220,8 @@ function toCoreStepKitConfigValue(value: unknown): unknown {
   return {
     ...value,
     version: value.version ?? 1,
-    customAgents: value.customAgents ?? {},
-    workingAgents: value.workingAgents ?? {},
-    interactiveAgents: value.interactiveAgents ?? {},
+    customProviders: value.customProviders ?? {},
+    agents: value.agents ?? {},
     ...(value.workflows === undefined ? {} : { workflows: stripWorkflowRegistry(value.workflows) }),
   };
 }

@@ -2,8 +2,20 @@ import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
+import {
+  providerRegistry,
+  resolveAgentTargets,
+  type StepKitConfig,
+  type WorkflowAgentRole,
+} from "@stepkit/core";
+
+import {
+  type ConfiguredCustomProvider,
+  configureLiteralAgentTarget,
+} from "../../agent-config/configure-target-flow.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { loadStepKitProjectConfig } from "../../config/config.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import {
   assertNamespaceMatchesScope,
@@ -58,6 +70,7 @@ interface ResolvedAddCommandArgs {
 const SCOPE_PROMPT_LABEL =
   "Where should this workflow be registered? (project-local = just you on this repo, " +
   "project = shared with your team, user = global across all your projects)";
+const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -153,6 +166,8 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       projectSkill: resolvedArgs.projectSkill,
       userSkill: resolvedArgs.userSkill,
     };
+
+    await promptForUncoveredWorkflowRoles({ scope, workflow: registryTarget.workflow }, context);
 
     if (finalArgs.projectSkill || finalArgs.userSkill) {
       await tryWriteAndDistributeWorkflowSkill(finalArgs, registryTarget, context);
@@ -277,6 +292,200 @@ async function resolveSkillArgs(
       "stepkit add requires --user-skill.",
     ),
   };
+}
+
+interface PromptForUncoveredWorkflowRolesOptions {
+  readonly scope: WorkflowRegistryScope;
+  readonly workflow?: WorkflowSkillMetadata;
+}
+
+async function promptForUncoveredWorkflowRoles(
+  options: PromptForUncoveredWorkflowRolesOptions,
+  context: CliCommandContext,
+): Promise<void> {
+  const workflow = options.workflow;
+  const workflowAgents = workflow?.agents;
+  if (
+    workflow === undefined ||
+    workflowAgents === undefined ||
+    Object.keys(workflowAgents).length === 0
+  ) {
+    return;
+  }
+
+  const loadedConfig = await loadStepKitProjectConfig(context.cwd, { homeDir: context.homeDir });
+  const effectiveConfig = loadedConfig.stepkitConfig;
+  if (effectiveConfig === undefined) {
+    return;
+  }
+
+  for (const roleName of Object.keys(workflowAgents).sort()) {
+    const role = workflowAgents[roleName];
+    if (role === undefined || !isWorkflowAgentRole(role)) {
+      continue;
+    }
+    if (isRoleCoveredByEffectiveConfig(effectiveConfig, workflow.id, roleName, role)) {
+      continue;
+    }
+    await promptForWorkflowRoleMapping(
+      { scope: options.scope, workflowId: workflow.id, roleName, role },
+      context,
+    );
+  }
+}
+
+function isRoleCoveredByEffectiveConfig(
+  config: StepKitConfig,
+  workflowId: string,
+  roleName: string,
+  role: WorkflowAgentRole,
+): boolean {
+  try {
+    resolveAgentTargets({ config, workflowId, roleName, roleSize: role.size });
+    return true;
+  } catch (error) {
+    if (isAgentTargetsUnavailable(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function isAgentTargetsUnavailable(error: unknown): boolean {
+  return (
+    isRecord(error) && isRecord(error.failure) && error.failure.code === "agent_targets_unavailable"
+  );
+}
+
+interface PromptForWorkflowRoleMappingOptions {
+  readonly scope: WorkflowRegistryScope;
+  readonly workflowId: string;
+  readonly roleName: string;
+  readonly role: WorkflowAgentRole;
+}
+
+async function promptForWorkflowRoleMapping(
+  options: PromptForWorkflowRoleMappingOptions,
+  context: CliCommandContext,
+): Promise<void> {
+  if (context.prompts === undefined) {
+    throw new CliUsageError(
+      `Workflow ${options.workflowId} role ${options.roleName} has no configured agent targets; run interactively or configure agents first.`,
+    );
+  }
+
+  const action = await context.prompts.select(workflowRolePrompt(options), [
+    "Use named agent",
+    "Create new agent",
+    "Skip",
+  ]);
+  if (action === "Skip") {
+    return;
+  }
+  if (action === "Use named agent") {
+    const namedAgent = await context.prompts.select(
+      `Named agent for workflow role ${options.roleName}`,
+      await listNamedAgentChoices(context),
+    );
+    await writeWorkflowRoleMapping(
+      options.scope,
+      options.workflowId,
+      options.roleName,
+      {
+        items: [{ ref: namedAgent }],
+      },
+      context,
+    );
+    return;
+  }
+
+  const name = (
+    await context.prompts.text(`New agent name for workflow role ${options.roleName}`)
+  ).trim();
+  if (name.length === 0) {
+    throw new CliUsageError("New agent name is required.");
+  }
+  const configured = await configureLiteralAgentTarget({
+    prompts: context.prompts,
+    providerChoices: PROVIDER_CHOICES,
+  });
+  await writeNamedAgent(
+    options.scope,
+    name,
+    { items: [configured.target] },
+    context,
+    configured.customProvider,
+  );
+  await writeWorkflowRoleMapping(
+    options.scope,
+    options.workflowId,
+    options.roleName,
+    {
+      items: [{ ref: name }],
+    },
+    context,
+  );
+}
+
+function workflowRolePrompt(options: PromptForWorkflowRoleMappingOptions): string {
+  return [
+    `Configure workflow role ${options.roleName} (${options.role.size})`,
+    options.role.description === undefined ? undefined : `— ${options.role.description}`,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" ");
+}
+
+async function listNamedAgentChoices(context: CliCommandContext): Promise<readonly string[]> {
+  const names = new Set<string>();
+  for (const scope of ["project-local", "project", "user"] as const) {
+    const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+    for (const name of Object.keys(toMutableRecord(config.agents))) {
+      names.add(name);
+    }
+  }
+  return [...names].sort();
+}
+
+async function writeNamedAgent(
+  scope: WorkflowRegistryScope,
+  name: string,
+  entry: Record<string, unknown>,
+  context: CliCommandContext,
+  customProvider?: ConfiguredCustomProvider,
+): Promise<void> {
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawStepKitConfigFile(configPath);
+  const agents = toMutableRecord(config.agents);
+  agents[name] = entry;
+  if (customProvider === undefined) {
+    await writeRawStepKitConfigFile(configPath, { ...config, agents });
+    return;
+  }
+  const customProviders = toMutableRecord(config.customProviders);
+  customProviders[customProvider.name] = { ...customProvider.config };
+  await writeRawStepKitConfigFile(configPath, { ...config, customProviders, agents });
+}
+
+async function writeWorkflowRoleMapping(
+  scope: WorkflowRegistryScope,
+  workflowId: string,
+  roleName: string,
+  entry: Record<string, unknown>,
+  context: CliCommandContext,
+): Promise<void> {
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawStepKitConfigFile(configPath);
+  const workflows = toMutableRecord(config.workflows);
+  const workflowConfig = toMutableRecord(workflows[workflowId]);
+  const workflowAgents = toMutableRecord(workflowConfig.agents);
+  workflowAgents[roleName] = entry;
+  workflows[workflowId] = { ...workflowConfig, agents: workflowAgents };
+  await writeRawStepKitConfigFile(configPath, { ...config, workflows });
+}
+
+function isWorkflowAgentRole(value: unknown): value is WorkflowAgentRole {
+  return isRecord(value) && typeof value.size === "string";
 }
 
 async function tryWriteAndDistributeWorkflowSkill(
@@ -475,6 +684,13 @@ function resolveBundlePackageJsonPath(source: string, cwd: string): string {
   } catch (error) {
     throw new WorkflowResolutionError(`Bundle package not found: ${source}`, { cause: error });
   }
+}
+
+function toMutableRecord(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return { ...value };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

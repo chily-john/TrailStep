@@ -36,8 +36,8 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(readme, "workflow-level `agents`", "README.md");
   assertIncludes(readme, "step-level `agent`", "README.md");
-  assertIncludes(readme, "workingAgents", "README.md");
-  assertIncludes(readme, "interactiveAgents", "README.md");
+  assertIncludes(readme, "customProviders", "README.md");
+  assertIncludes(readme, "agents.*.items", "README.md");
   assertIncludes(readme, "Implementation guidance lives in `.pi/rules/`", "README.md");
 
   const removedDirectionTerms = [
@@ -67,6 +67,16 @@ export function verifyRepositoryDocs() {
     packageReadmes.get("packages/sdk/README.md") ?? "",
     "defineWorkflow",
     "packages/sdk/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/cli/README.md") ?? "",
+    "stepkit init",
+    "packages/cli/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/cli/README.md") ?? "",
+    "stepkit agents",
+    "packages/cli/README.md",
   );
   assertIncludes(
     packageReadmes.get("packages/cli/README.md") ?? "",

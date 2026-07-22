@@ -4,28 +4,26 @@ import type { ResolveAgentTargetsOptions, StepKitAgentTarget } from "../targetin
 export function resolveAgentTargets(
   options: ResolveAgentTargetsOptions,
 ): readonly StepKitAgentTarget[] {
-  const modeMappings =
-    options.mode === "working" ? options.config.workingAgents : options.config.interactiveAgents;
-  const workflowMappings =
-    options.config.workflows?.[options.workflowId]?.[`${options.mode}Agents`];
+  const workflowMappings = options.config.workflows?.[options.workflowId]?.agents;
 
   const targetLists = [
     workflowMappings?.[options.roleName],
-    modeMappings[options.roleSize],
-    modeMappings.default,
+    options.config.agents[options.roleSize],
+    options.config.agents.default,
   ];
 
-  for (const targets of targetLists) {
-    if (targets !== undefined && targets.length > 0) {
-      return targets;
-    }
+  const targets = targetLists.flatMap((targets) =>
+    targets && targets.length > 0 ? [...targets] : [],
+  );
+
+  if (targets.length > 0) {
+    return targets;
   }
 
   throw new StepKitFailureError({
     code: "agent_targets_unavailable",
-    message: `No ${options.mode} agent targets found for role ${options.roleName} with size ${options.roleSize} in workflow ${options.workflowId}.`,
+    message: `No agent targets found for role ${options.roleName} with size ${options.roleSize} in workflow ${options.workflowId}.`,
     details: {
-      mode: options.mode,
       roleName: options.roleName,
       roleSize: options.roleSize,
       workflowId: options.workflowId,

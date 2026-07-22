@@ -2,12 +2,10 @@ export { parseStepKitConfig } from "./agent-targeting/parse-stepkit-config/parse
 export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 export type {
   ResolveAgentTargetsOptions,
-  StepKitAgentMode,
+  StepKitAgentMappings,
   StepKitAgentTarget,
   StepKitConfig,
-  StepKitCustomAgentConfig,
-  StepKitRoleAgentMappings,
-  StepKitSizeAgentMappings,
+  StepKitCustomProviderConfig,
   StepKitWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
 export {

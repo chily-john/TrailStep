@@ -5,6 +5,8 @@ Command-line discovery, registration, and local execution for StepKit workflows.
 ## Commands
 
 ```bash
+stepkit init [--scope <project|project-local|user>]
+stepkit agents [--scope <project|project-local|user>]
 stepkit add <workflow-file-or-bundle> [--scope <project|project-local|user>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]
 stepkit remove <namespace>/<name> [--scope <project|project-local|user>]
 stepkit list [--edit]
@@ -39,6 +41,41 @@ stepkit ./workflows/review.mjs
 stepkit ./workflows/review.mjs run-one
 stepkit ./workflows/review.mjs run-one --resume
 ```
+
+## Agent configuration
+
+`stepkit init` bootstraps `.stepkit/config.json`, `.stepkit/config-local.json`, or `~/.stepkit/config.json` using the current config schema. Built-in providers such as `claude`, `codex`, `pi`, and `gemini` can be referenced directly from `agents.*.items`; other command-backed providers are declared under `customProviders`.
+
+```json
+{
+  "version": 1,
+  "customProviders": {
+    "local-reviewer": {
+      "binary": "reviewer-agent",
+      "args": ["{{promptFile}}", "{{outputFile}}"]
+    }
+  },
+  "agents": {
+    "default": {
+      "items": [{ "provider": "claude", "model": "sonnet" }]
+    },
+    "reviewer": {
+      "items": [{ "provider": "local-reviewer" }]
+    }
+  },
+  "workflows": {
+    "review": {
+      "agents": {
+        "reviewer": {
+          "items": [{ "ref": "reviewer" }]
+        }
+      }
+    }
+  }
+}
+```
+
+`stepkit agents` edits the same agent/provider configuration interactively.
 
 ## Registration
 
@@ -83,11 +120,11 @@ Run `stepkit list --edit` for an interactive prompt to select a registered workf
 
 `stepkit <workflow-ref> [workflowRunName]` loads JSON object input from `--input`, from `--input-file`, or defaults to `{}`. The CLI runs the resolved workflow through `@stepkit/core` from the consuming project's working directory.
 
-For agent steps, local `.stepkit/config.json` maps workflow roles and size tiers to command-backed local agents. Interactive steps are executed by the core runtime. Their command templates run without a shell, inherit stdio, and may use `{{prompt}}` or `{{promptFile}}` placeholders declared by local `interactiveAgents` config. Working agents are separate from interactive agents and write structured JSON output for validation.
+For agent steps, local `.stepkit/config.json` maps workflow roles and size tiers to entries under `agents.*.items`. Agent command templates run without a shell and may use `{{prompt}}`, `{{promptFile}}`, and `{{outputFile}}` placeholders declared by built-in providers or local `customProviders` config. Interactive steps inherit stdio and complete through `stepkit continue`; non-interactive command-backed agent steps write structured JSON output for validation.
 
 Interactive steps complete through `stepkit continue` from the launched interactive process. StepKit sets `STEPKIT_INTERACTIVE_FILE`; the continue command requires that environment variable so it can validate and update the active `interactive.json` protocol file. Use `stepkit continue --session-file session-description.md` for default interactive steps, or `stepkit continue --json-file output.json` / `stepkit continue --json '{...}'` for custom structured output. Relative paths are resolved from the interactive step directory. If JSON or session-file validation fails, fix the artifact and run `stepkit continue` again.
 
-When the prompt is passed directly with `{{prompt}}` or a built-in provider, no `prompt.txt` is written. `prompt.txt` is created only for interactive custom-agent invocations that use `{{promptFile}}`. Default interactive directories contain `interactive.json`, `output.json`, and `session-description.md`; structured JSON directories contain `interactive.json` and `output.json` unless a prompt file placeholder is used.
+When the prompt is passed directly with `{{prompt}}` or a built-in provider, no `prompt.txt` is written. `prompt.txt` is created only for custom provider invocations that use `{{promptFile}}`. Default interactive directories contain `interactive.json`, `output.json`, and `session-description.md`; structured JSON directories contain `interactive.json` and `output.json` unless a prompt file placeholder is used.
 
 Run artifacts are written to:
 

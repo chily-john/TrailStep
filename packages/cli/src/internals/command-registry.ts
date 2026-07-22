@@ -1,7 +1,9 @@
 import type { CliCommand } from "./command.types.js";
 import { addCommand } from "./commands/add/add-command.js";
+import { agentsCommand } from "./commands/agents/agents-command.js";
 import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
+import { initCommand } from "./commands/init/init-command.js";
 import { listCommand } from "./commands/list/list-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
 import { runCommand } from "./commands/run/run-command.js";
@@ -19,6 +21,14 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "remove") {
     return removeCommand;
+  }
+
+  if (argv[0] === "init") {
+    return initCommand;
+  }
+
+  if (argv[0] === "agents") {
+    return agentsCommand;
   }
 
   if (argv[0] === "list") {

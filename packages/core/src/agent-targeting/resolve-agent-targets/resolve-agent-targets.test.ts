@@ -4,25 +4,22 @@ import { parseStepKitConfig } from "../parse-stepkit-config/parse-stepkit-config
 import { resolveAgentTargets } from "./resolve-agent-targets.js";
 
 describe("StepKit config", () => {
-  it("resolves a working role from workflow-specific mapping before size and default", () => {
+  it("resolves the unified precedence chain from workflow role, size, then default", () => {
     const config = parseStepKitConfig({
       version: 1,
-      customAgents: {
-        workflowReviewer: customAgent("workflow-reviewer"),
-        mediumReviewer: customAgent("medium-reviewer"),
-        defaultReviewer: customAgent("default-reviewer"),
+      customProviders: {
+        workflowReviewer: customProvider("workflow-reviewer"),
+        mediumReviewer: customProvider("medium-reviewer"),
+        defaultReviewer: customProvider("default-reviewer"),
       },
-      workingAgents: {
-        medium: [target("mediumReviewer")],
-        default: [target("defaultReviewer")],
-      },
-      interactiveAgents: {
-        default: [],
+      agents: {
+        medium: { items: [target("mediumReviewer")] },
+        default: { items: [target("defaultReviewer")] },
       },
       workflows: {
         "review-workflow": {
-          workingAgents: {
-            reviewer: [target("workflowReviewer")],
+          agents: {
+            reviewer: { items: [target("workflowReviewer")] },
           },
         },
       },
@@ -34,23 +31,19 @@ describe("StepKit config", () => {
         workflowId: "review-workflow",
         roleName: "reviewer",
         roleSize: "medium",
-        mode: "working",
       }),
-    ).toEqual([target("workflowReviewer")]);
+    ).toEqual([target("workflowReviewer"), target("mediumReviewer"), target("defaultReviewer")]);
   });
 
-  it("falls back from empty size mapping to workingAgents.default", () => {
+  it("falls back from empty size mapping to agents.default", () => {
     const config = parseStepKitConfig({
       version: 1,
-      customAgents: {
-        defaultReviewer: customAgent("default-reviewer"),
+      customProviders: {
+        defaultReviewer: customProvider("default-reviewer"),
       },
-      workingAgents: {
-        medium: [],
-        default: [target("defaultReviewer")],
-      },
-      interactiveAgents: {
-        default: [],
+      agents: {
+        medium: { items: [] },
+        default: { items: [target("defaultReviewer")] },
       },
     });
 
@@ -60,50 +53,19 @@ describe("StepKit config", () => {
         workflowId: "review-workflow",
         roleName: "reviewer",
         roleSize: "medium",
-        mode: "working",
       }),
     ).toEqual([target("defaultReviewer")]);
   });
 
-  it("uses interactiveAgents for interactive mode and never workingAgents", () => {
-    const config = parseStepKitConfig({
-      version: 1,
-      customAgents: {
-        workingReviewer: customAgent("working-reviewer"),
-        interactiveReviewer: customAgent("interactive-reviewer"),
-      },
-      workingAgents: {
-        default: [target("workingReviewer")],
-      },
-      interactiveAgents: {
-        medium: [target("interactiveReviewer")],
-        default: [],
-      },
-    });
-
-    expect(
-      resolveAgentTargets({
-        config,
-        workflowId: "review-workflow",
-        roleName: "reviewer",
-        roleSize: "medium",
-        mode: "interactive",
-      }),
-    ).toEqual([target("interactiveReviewer")]);
-  });
-
-  it("rejects targets that reference providers not declared in customAgents", () => {
+  it("rejects targets that reference providers not declared in customProviders", () => {
     expect(() =>
       parseStepKitConfig({
         version: 1,
-        customAgents: {
-          reviewer: customAgent("reviewer"),
+        customProviders: {
+          reviewer: customProvider("reviewer"),
         },
-        workingAgents: {
-          default: [target("missing")],
-        },
-        interactiveAgents: {
-          default: [],
+        agents: {
+          default: { items: [target("missing")] },
         },
       }),
     ).toThrow(StepKitFailureError);
@@ -112,14 +74,11 @@ describe("StepKit config", () => {
   it("throws a structured failure when no usable target exists", () => {
     const config = parseStepKitConfig({
       version: 1,
-      customAgents: {
-        reviewer: customAgent("reviewer"),
+      customProviders: {
+        reviewer: customProvider("reviewer"),
       },
-      workingAgents: {
-        default: [],
-      },
-      interactiveAgents: {
-        default: [],
+      agents: {
+        default: { items: [] },
       },
     });
 
@@ -129,14 +88,13 @@ describe("StepKit config", () => {
         workflowId: "review-workflow",
         roleName: "reviewer",
         roleSize: "medium",
-        mode: "working",
       }),
     ).toThrowError(
       expect.objectContaining({
         failure: expect.objectContaining({
           code: "agent_targets_unavailable",
           message: expect.stringContaining(
-            "No working agent targets found for role reviewer with size medium in workflow review-workflow.",
+            "No agent targets found for role reviewer with size medium in workflow review-workflow.",
           ),
         }),
       }),
@@ -144,7 +102,7 @@ describe("StepKit config", () => {
   });
 });
 
-function customAgent(binary: string) {
+function customProvider(binary: string) {
   return { binary, args: [] };
 }
 

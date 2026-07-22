@@ -25,9 +25,8 @@ describe("runContinuation", () => {
       }),
       stepkitConfig: {
         version: 1,
-        customAgents: {},
-        workingAgents: {},
-        interactiveAgents: {},
+        customProviders: {},
+        agents: {},
       },
     });
 

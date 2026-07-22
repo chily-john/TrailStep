@@ -61,18 +61,17 @@ async function writeRegisteredProjectWorkflow(cwd: string): Promise<void> {
   await mkdir(workflowDir, { recursive: true });
   await writeJson(join(cwd, ".stepkit", "config.json"), {
     version: 1,
-    customAgents: {
+    customProviders: {
       local: { binary: "pi" },
     },
-    workingAgents: {},
-    interactiveAgents: {},
+    agents: {},
     workflows: {
       project: {
         release: "./.stepkit/workflows/release.mjs",
       },
       review: {
-        workingAgents: {
-          reviewer: [{ provider: "local" }],
+        agents: {
+          reviewer: { items: [{ provider: "local" }] },
         },
       },
     },

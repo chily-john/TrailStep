@@ -5,6 +5,13 @@ import type {
 import type { StepKitAgentTarget } from "../targeting.types.js";
 import { isRecord, parseOptionalStringArray } from "./parse-utils.js";
 
+export interface RawStepKitAgentRef {
+  readonly ref: string;
+}
+
+export type RawStepKitAgentTarget = StepKitAgentTarget | RawStepKitAgentRef;
+export type RawStepKitAgentMappings = Readonly<Record<string, readonly RawStepKitAgentTarget[]>>;
+
 export const AGENT_SIZES = new Set<WorkflowAgentSize>([
   "default",
   "tiny",
@@ -20,18 +27,27 @@ export function parseTargetArray(
   path: string,
   value: unknown,
   diagnostics: string[],
-): readonly StepKitAgentTarget[] {
+): readonly RawStepKitAgentTarget[] {
   if (!Array.isArray(value)) {
     diagnostics.push(`${path} must be an array.`);
     return [];
   }
 
-  return value.flatMap((target, index) => {
+  return value.flatMap((target, index): readonly RawStepKitAgentTarget[] => {
     const targetPath = `${path}[${index}]`;
 
     if (!isRecord(target)) {
       diagnostics.push(`${targetPath} must be an object.`);
       return [];
+    }
+
+    if (target.ref !== undefined) {
+      if (typeof target.ref !== "string" || target.ref.length === 0) {
+        diagnostics.push(`${targetPath}.ref must be a non-empty string when present.`);
+        return [];
+      }
+
+      return [{ ref: target.ref }];
     }
 
     if (typeof target.provider !== "string" || target.provider.length === 0) {

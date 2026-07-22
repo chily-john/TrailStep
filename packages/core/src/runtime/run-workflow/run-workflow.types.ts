@@ -4,6 +4,8 @@ import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type { ProviderWorkingRunner } from "../../known-cli-providers/registry/provider-registry.types.js";
 
+export type StepKitConfigInput = StepKitConfig | Readonly<Record<string, unknown>>;
+
 export interface InteractiveProcessRequest {
   readonly command: string;
   readonly args: readonly string[];
@@ -83,7 +85,7 @@ interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends Pla
   readonly cwd?: string;
   readonly eventSink?: (event: Event) => void | Promise<void>;
   readonly processRunner?: InteractiveProcessRunner;
-  readonly stepkitConfig?: StepKitConfig;
+  readonly stepkitConfig?: StepKitConfigInput;
   readonly workingAgentProcessRunner?: WorkingAgentProcessRunner;
   /** Injectable stdout-capturing runner for built-in registry provider adapters (e.g. Claude). Test-only seam. */
   readonly providerWorkingRunner?: ProviderWorkingRunner;

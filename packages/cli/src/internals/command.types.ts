@@ -6,6 +6,11 @@ export const usageText = [
   "Usage:",
   "  stepkit add <workflow-file-or-bundle> [--scope <project|project-local|user>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
   "  stepkit remove <namespace>/<name> [--scope <project|project-local|user>]",
+  "  stepkit init [--scope <project|project-local|user>]",
+  "  stepkit agents",
+  "  stepkit agents set <name> --provider <provider> --model <model> [--thinking <none|low|medium|high|xhigh|max>] --scope <project|project-local|user>",
+  "  stepkit agents delete <name> --scope <project|project-local|user>",
+  "  stepkit agents rename <old> <new> --scope <project|project-local|user>",
   "  stepkit list [--edit]",
   "  stepkit continue --session-file <path>",
   "  stepkit continue --json-file <path>",
@@ -41,6 +46,7 @@ export interface StepkitCliIo {
 export interface StepkitCliPrompts {
   text: (prompt: string) => Promise<string>;
   select: (prompt: string, choices: readonly string[]) => Promise<string>;
+  confirm?: (prompt: string) => Promise<boolean>;
 }
 
 export interface CliCommandContext {

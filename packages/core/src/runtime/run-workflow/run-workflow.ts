@@ -1,4 +1,9 @@
 import { basename } from "node:path";
+import {
+  isParsedStepKitConfig,
+  parseStepKitConfig,
+} from "../../agent-targeting/parse-stepkit-config/parse-stepkit-config.js";
+import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
 import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
@@ -50,6 +55,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   }
 
   const { runId, runName, runDir, previousEvents } = initialized;
+  const stepkitConfig =
+    options.stepkitConfig === undefined
+      ? undefined
+      : parseStepKitConfigInput(options.stepkitConfig);
   const cwd = options.cwd ?? process.cwd();
   const events: Event[] = [...previousEvents];
   const runContext = createRunContext({ runId, runName, runDir });
@@ -155,7 +164,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       runDir,
       cwd,
       runContext,
-      stepkitConfig: options.stepkitConfig,
+      stepkitConfig,
       workingAgentProcessRunner: options.workingAgentProcessRunner,
       providerWorkingRunner: options.providerWorkingRunner,
       processRunner: options.processRunner,
@@ -239,6 +248,48 @@ function unknownWorkflowFailure(error: unknown): Failure {
     message: error instanceof Error ? error.message : "Unknown workflow failure.",
     ...(error === undefined ? {} : { details: { cause: error } }),
   };
+}
+
+function parseStepKitConfigInput(value: RunWorkflowOptions["stepkitConfig"]): StepKitConfig {
+  if (isParsedStepKitConfig(value) || isFlattenedStepKitConfig(value)) {
+    return value;
+  }
+
+  return parseStepKitConfig(value);
+}
+
+function isFlattenedStepKitConfig(
+  value: RunWorkflowOptions["stepkitConfig"],
+): value is StepKitConfig {
+  if (!isPlainRecord(value) || value.version !== 1) {
+    return false;
+  }
+
+  if (!isPlainRecord(value.customProviders) || !isFlattenedAgentMappings(value.agents)) {
+    return false;
+  }
+
+  if (value.workflows === undefined) {
+    return true;
+  }
+
+  if (!isPlainRecord(value.workflows)) {
+    return false;
+  }
+
+  return Object.values(value.workflows).every(
+    (workflow) =>
+      isPlainRecord(workflow) &&
+      (workflow.agents === undefined || isFlattenedAgentMappings(workflow.agents)),
+  );
+}
+
+function isFlattenedAgentMappings(value: unknown): value is StepKitConfig["agents"] {
+  return isPlainRecord(value) && Object.values(value).every(Array.isArray);
+}
+
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isFailureLikeError(error: unknown): error is { readonly failure: Failure } {

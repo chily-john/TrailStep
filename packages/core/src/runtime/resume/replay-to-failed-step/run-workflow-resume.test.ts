@@ -407,9 +407,10 @@ describe("runWorkflow resume", () => {
       resume: { runDir },
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
-        workingAgents: {},
-        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: { items: [{ provider: "terminalAgent" }] } },
       },
       processRunner: async () => {
         processRunnerCalls += 1;

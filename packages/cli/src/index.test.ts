@@ -96,11 +96,10 @@ describe("main", () => {
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
-      customAgents: {
+      customProviders: {
         local: { binary: "local-agent", args: ["{{promptFile}}", "{{outputFile}}"] },
       },
-      workingAgents: { small: [{ provider: "local", model: "fake-model" }] },
-      interactiveAgents: {},
+      agents: { small: { items: [{ provider: "local", model: "fake-model" }] } },
     });
     await writeJson(join(packageDir, "package.json"), {
       name: "@acme/stepkit-workflows",
@@ -224,9 +223,8 @@ describe("main", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
-      customAgents: {},
-      workingAgents: { tiny: [{ provider: "missing-command" }] },
-      interactiveAgents: {},
+      customProviders: {},
+      agents: { tiny: { items: [{ provider: "missing-command" }] } },
     });
     const errors: string[] = [];
 
@@ -285,9 +283,8 @@ describe("main", () => {
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
-      customAgents: {},
-      workingAgents: {},
-      interactiveAgents: {},
+      customProviders: {},
+      agents: {},
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     await writeFile(

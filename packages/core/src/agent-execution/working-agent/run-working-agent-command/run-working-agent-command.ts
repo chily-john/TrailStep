@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { resolveAgentTargets } from "../../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 import type {
   StepKitAgentTarget,
   StepKitConfig,
@@ -106,19 +107,12 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
 }): Promise<TOutput> {
-  const targets = resolveWorkingAgentFallbackTargets({
+  const targets = resolveAgentTargets({
     config: options.config,
     workflowId: options.workflowId,
     roleName: options.roleName,
     roleSize: options.role.size,
   });
-
-  if (targets.length === 0) {
-    throw new StepKitFailureError({
-      code: "agent_targets_unavailable",
-      message: `No working agent targets found for role ${options.roleName} with size ${options.role.size} in workflow ${options.workflowId}.`,
-    });
-  }
 
   const files = resolveStepAgentFiles({
     runDir: options.runDir,
@@ -162,22 +156,6 @@ interface WorkingAgentAttemptFailure {
   readonly model?: string;
   readonly code: string;
   readonly message: string;
-}
-
-function resolveWorkingAgentFallbackTargets(options: {
-  readonly config: StepKitConfig;
-  readonly workflowId: string;
-  readonly roleName: string;
-  readonly roleSize: WorkflowAgentRole["size"];
-}): readonly StepKitAgentTarget[] {
-  const workflowTargets =
-    options.config.workflows?.[options.workflowId]?.workingAgents?.[options.roleName];
-  const sizeTargets = options.config.workingAgents[options.roleSize];
-  const defaultTargets = options.config.workingAgents.default;
-
-  return [workflowTargets, sizeTargets, defaultTargets].flatMap((targets) =>
-    targets && targets.length > 0 ? [...targets] : [],
-  );
 }
 
 async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options: {
@@ -228,7 +206,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
     });
   }
 
-  const agentConfig = options.config.customAgents[options.target.provider];
+  const agentConfig = options.config.customProviders[options.target.provider];
   if (!agentConfig) {
     throw new StepKitFailureError({
       code: "agent_provider_unavailable",

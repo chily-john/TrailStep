@@ -38,6 +38,7 @@
     "lint": "biome check src"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "@stepkit/core": "workspace:*",
     "skills": "^1.5.19"
   },

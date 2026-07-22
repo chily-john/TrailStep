@@ -95,32 +95,31 @@ export function runStepkitCli(writeLine: (line: string) => void = console.log): 
 function createTerminalPrompts(): StepkitCliPrompts {
   return {
     async text(prompt) {
-      const { createInterface } = await import("node:readline/promises");
-      const { stdin, stdout } = await import("node:process");
-      const reader = createInterface({ input: stdin, output: stdout });
-      try {
-        return await reader.question(`${prompt}: `);
-      } finally {
-        reader.close();
+      const { isCancel, text } = await import("@clack/prompts");
+      const answer = await text({ message: prompt });
+      if (isCancel(answer)) {
+        throw new CliUsageError(`Prompt cancelled: ${prompt}.`);
       }
+      return String(answer);
     },
     async select(prompt, choices) {
-      const { createInterface } = await import("node:readline/promises");
-      const { stdin, stdout } = await import("node:process");
-      const reader = createInterface({ input: stdin, output: stdout });
-      try {
-        for (const [index, choice] of choices.entries()) {
-          stdout.write(`${index + 1}) ${choice}\n`);
-        }
-        const answer = await reader.question(`${prompt}: `);
-        const choice = choices[Number.parseInt(answer, 10) - 1];
-        if (choice === undefined) {
-          throw new CliUsageError(`Invalid selection for ${prompt}.`);
-        }
-        return choice;
-      } finally {
-        reader.close();
+      const { isCancel, select } = await import("@clack/prompts");
+      const answer = await select({
+        message: prompt,
+        options: choices.map((choice) => ({ value: choice, label: choice })),
+      });
+      if (isCancel(answer)) {
+        throw new CliUsageError(`Prompt cancelled: ${prompt}.`);
       }
+      return String(answer);
+    },
+    async confirm(prompt) {
+      const { confirm, isCancel } = await import("@clack/prompts");
+      const answer = await confirm({ message: prompt });
+      if (isCancel(answer)) {
+        throw new CliUsageError(`Prompt cancelled: ${prompt}.`);
+      }
+      return answer;
     },
   };
 }

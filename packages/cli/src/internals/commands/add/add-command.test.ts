@@ -19,6 +19,14 @@ const describedNoInputWorkflowSource = [
   "};",
 ].join("\n");
 
+const reviewerAgentWorkflowSource = [
+  "export default {",
+  "  id: 'review',",
+  "  agents: { reviewer: { size: 'medium', description: 'Review code' } },",
+  "  start: () => ({ kind: 'done', output: {} })",
+  "};",
+].join("\n");
+
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
@@ -820,7 +828,151 @@ describe("addCommand", () => {
     });
   });
 
-  it("adds a direct workflow file to project config and preserves working agents", async ({
+  it("prompts for uncovered workflow roles after direct workflow registration", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      agents: {
+        reviewerAgent: { items: [{ provider: "claude", model: "sonnet" }] },
+      },
+    });
+    await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
+
+    const prompts: string[] = [];
+    const command = resolveCommand([
+      "add",
+      "./workflows/review.mjs",
+      "--scope",
+      "project",
+      "--namespace",
+      "acme",
+      "--name",
+      "review",
+    ]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows/review.mjs",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--name",
+        "review",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            prompts.push(prompt);
+            if (prompt === "Configure workflow role reviewer (medium) — Review code") {
+              expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
+              return "Use named agent";
+            }
+            if (prompt === "Named agent for workflow role reviewer") {
+              expect(choices).toContain("reviewerAgent");
+              return "reviewerAgent";
+            }
+            if (prompt === "Add to project skills?") {
+              return "no";
+            }
+            if (prompt === "Add to user skills?") {
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual([
+      "Add to project skills?",
+      "Add to user skills?",
+      "Configure workflow role reviewer (medium) — Review code",
+      "Named agent for workflow role reviewer",
+    ]);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      agents: {
+        reviewerAgent: { items: [{ provider: "claude", model: "sonnet" }] },
+      },
+      workflows: {
+        acme: { review: "./workflows/review.mjs" },
+        review: { agents: { reviewer: { items: [{ ref: "reviewerAgent" }] } } },
+      },
+    });
+  });
+
+  it("does not prompt for workflow roles covered by default fallback", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      agents: { default: { items: [{ provider: "claude", model: "sonnet" }] } },
+    });
+    await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
+
+    const command = resolveCommand([
+      "add",
+      "./workflows/review.mjs",
+      "--scope",
+      "project",
+      "--namespace",
+      "acme",
+      "--name",
+      "review",
+    ]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows/review.mjs",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--name",
+        "review",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      agents: { default: { items: [{ provider: "claude", model: "sonnet" }] } },
+      workflows: { acme: { review: "./workflows/review.mjs" } },
+    });
+  });
+
+  it("adds a direct workflow file to project config and preserves agent config", async ({
     task,
   }) => {
     const cwd = join(
@@ -832,7 +984,12 @@ describe("addCommand", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
-      workingAgents: { reviewer: { command: "reviewer" } },
+      customProviders: {
+        reviewer: { binary: "reviewer" },
+      },
+      agents: {
+        reviewer: { items: [{ provider: "reviewer" }] },
+      },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
 
@@ -869,7 +1026,12 @@ describe("addCommand", () => {
     expect(exitCode).toBe(0);
     expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
       version: 1,
-      workingAgents: { reviewer: { command: "reviewer" } },
+      customProviders: {
+        reviewer: { binary: "reviewer" },
+      },
+      agents: {
+        reviewer: { items: [{ provider: "reviewer" }] },
+      },
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
     expect(lines).toEqual(["Registered acme/review -> ./workflows/review.mjs in project config."]);
@@ -888,7 +1050,12 @@ describe("addCommand", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
-      workingAgents: { reviewer: { command: "reviewer" } },
+      customProviders: {
+        reviewer: { binary: "reviewer" },
+      },
+      agents: {
+        reviewer: { items: [{ provider: "reviewer" }] },
+      },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
 
@@ -927,7 +1094,12 @@ describe("addCommand", () => {
     });
     expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
       version: 1,
-      workingAgents: { reviewer: { command: "reviewer" } },
+      customProviders: {
+        reviewer: { binary: "reviewer" },
+      },
+      agents: {
+        reviewer: { items: [{ provider: "reviewer" }] },
+      },
     });
     expect(lines).toEqual([
       "Registered acme/review -> ./workflows/review.mjs in project-local config.",

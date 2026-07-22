@@ -121,6 +121,11 @@ export function verifyPackageMetadata() {
   assert.equal(cliPackageMetadata.name, "@stepkit/cli");
   assertPublicPackageMetadata(cliPackageMetadata, "@stepkit/cli");
   assert.equal(cliPackageMetadata.bin?.stepkit, "./dist/index.js");
+  assert.match(
+    cliPackageMetadata.dependencies?.["@clack/prompts"] ?? "",
+    /^\^/u,
+    "@stepkit/cli must depend on @clack/prompts for interactive commands",
+  );
 
   const dashboardPackageJsonPath = "packages/dashboard/package.json";
   assertFile(dashboardPackageJsonPath);

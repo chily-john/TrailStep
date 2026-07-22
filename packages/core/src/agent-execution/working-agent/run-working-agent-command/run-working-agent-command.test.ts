@@ -46,9 +46,8 @@ describe("runWorkingAgentCommand", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: { worker: { binary: "worker-agent" } },
-        workingAgents: { medium: [{ provider: "worker" }] },
-        interactiveAgents: {},
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { medium: { items: [{ provider: "worker" }] } },
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);
@@ -118,17 +117,18 @@ describe("runWorkingAgentCommand", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {
+        customProviders: {
           first: { binary: "first-agent" },
           second: { binary: "second-agent" },
         },
-        workingAgents: {
-          medium: [
-            { provider: "first", model: "first-model" },
-            { provider: "second", model: "second-model" },
-          ],
+        agents: {
+          medium: {
+            items: [
+              { provider: "first", model: "first-model" },
+              { provider: "second", model: "second-model" },
+            ],
+          },
         },
-        interactiveAgents: {},
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);

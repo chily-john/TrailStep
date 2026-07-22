@@ -35,7 +35,6 @@ export async function runInteractiveAgentCommand(options: {
     workflowId: options.workflowId,
     roleName: options.roleName,
     roleSize: options.role.size,
-    mode: "interactive",
   });
 
   if (!target) {
@@ -102,7 +101,7 @@ async function runInteractiveAgentTarget(options: {
     });
   }
 
-  const agentConfig = options.config.customAgents[options.target.provider];
+  const agentConfig = options.config.customProviders[options.target.provider];
   if (!agentConfig) {
     throw new StepKitFailureError({
       code: "agent_provider_unavailable",
@@ -111,8 +110,16 @@ async function runInteractiveAgentTarget(options: {
     });
   }
 
+  if (!agentConfig.interactiveArgs) {
+    throw new StepKitFailureError({
+      code: "agent_provider_interactive_unsupported",
+      message: `Custom provider '${options.target.provider}' cannot run interactive agent steps because customProviders.${options.target.provider}.interactiveArgs is not declared.`,
+      details: { provider: options.target.provider },
+    });
+  }
+
   const args = await substitutePromptPlaceholders({
-    argv: options.target.args ?? agentConfig.args ?? [],
+    argv: options.target.args ?? agentConfig.interactiveArgs,
     prompt,
     promptFile: files.promptFile,
     model: options.target.model,

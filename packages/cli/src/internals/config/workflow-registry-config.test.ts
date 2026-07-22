@@ -21,6 +21,15 @@ async function writeLocalConfig(cwd: string, value: unknown): Promise<void> {
   );
 }
 
+async function writeUserConfig(homeDir: string, value: unknown): Promise<void> {
+  await mkdir(join(homeDir, ".stepkit"), { recursive: true });
+  await writeFile(
+    join(homeDir, ".stepkit", "config.json"),
+    `${JSON.stringify(value, null, 2)}\n`,
+    "utf8",
+  );
+}
+
 describe("workflow registry project config", () => {
   it("parses string-valued project workflow registrations without losing agent config", async ({
     task,
@@ -29,20 +38,19 @@ describe("workflow registry project config", () => {
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       version: 1,
-      customAgents: {
+      customProviders: {
         local: { binary: "pi", args: ["--model", "small"] },
       },
-      workingAgents: {
-        small: [{ provider: "local" }],
+      agents: {
+        small: { items: [{ provider: "local" }] },
       },
-      interactiveAgents: {},
       workflows: {
         project: {
           release: "./.stepkit/workflows/release.mjs",
         },
         review: {
-          workingAgents: {
-            reviewer: [{ provider: "local", size: "small" }],
+          agents: {
+            reviewer: { items: [{ provider: "local", model: "small" }] },
           },
         },
       },
@@ -57,13 +65,129 @@ describe("workflow registry project config", () => {
       stepkitConfig: {
         workflows: {
           review: {
-            workingAgents: {
-              reviewer: [{ provider: "local" }],
+            agents: {
+              reviewer: [{ provider: "local", model: "small" }],
             },
           },
         },
       },
     });
+  });
+
+  it("merges user, project, and project-local run config with agents replaced by entry name", async ({
+    task,
+  }) => {
+    const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join(root, "project");
+    const homeDir = join(root, "home");
+    await rm(root, { recursive: true, force: true });
+
+    await writeUserConfig(homeDir, {
+      version: 1,
+      customProviders: {
+        user: { binary: "user-pi" },
+      },
+      agents: {
+        default: { items: [{ provider: "claude", args: ["--user-default"] }] },
+        userOnly: { items: [{ provider: "claude" }] },
+      },
+    });
+    await writeConfig(cwd, {
+      customProviders: {
+        project: { binary: "project-pi" },
+      },
+      agents: {
+        default: { items: [{ provider: "codex", args: ["--project-default"] }] },
+        projectOnly: { items: [{ provider: "codex" }] },
+      },
+    });
+    await writeLocalConfig(cwd, {
+      customProviders: {
+        local: { binary: "local-pi" },
+      },
+      agents: {
+        default: { items: [{ provider: "local", args: ["--local-default"] }] },
+        localOnly: { items: [{ provider: "local" }] },
+      },
+    });
+
+    await expect(loadStepKitProjectConfig(cwd, { homeDir })).resolves.toMatchObject({
+      stepkitConfig: {
+        customProviders: {
+          local: { binary: "local-pi" },
+        },
+        agents: {
+          default: [{ provider: "local", args: ["--local-default"] }],
+          userOnly: [{ provider: "claude" }],
+          projectOnly: [{ provider: "codex" }],
+          localOnly: [{ provider: "local" }],
+        },
+      },
+    });
+  });
+
+  it("replaces top-level workflows for run config while keeping registry scopes merged", async ({
+    task,
+  }) => {
+    const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join(root, "project");
+    const homeDir = join(root, "home");
+    await rm(root, { recursive: true, force: true });
+
+    await writeUserConfig(homeDir, {
+      version: 1,
+      agents: {
+        reviewer: { items: [{ provider: "claude" }] },
+      },
+      workflows: {
+        userWorkflow: {
+          agents: {
+            reviewer: { items: [{ provider: "claude", model: "user-model" }] },
+          },
+        },
+      },
+    });
+    await writeConfig(cwd, {
+      agents: {
+        reviewer: { items: [{ provider: "codex" }] },
+      },
+      workflows: {
+        project: {
+          release: "./release.mjs",
+        },
+        projectWorkflow: {
+          agents: {
+            reviewer: { items: [{ provider: "codex", model: "project-model" }] },
+          },
+        },
+      },
+    });
+    await writeLocalConfig(cwd, {
+      workflows: {
+        project: {
+          review: "./review.mjs",
+        },
+        localWorkflow: {
+          agents: {
+            reviewer: { items: [{ provider: "codex", model: "local-model" }] },
+          },
+        },
+      },
+    });
+
+    const loaded = await loadStepKitProjectConfig(cwd, { homeDir });
+
+    expect(loaded.workflowRegistry).toEqual({
+      project: {
+        release: "./release.mjs",
+        review: "./review.mjs",
+      },
+    });
+    expect(loaded.stepkitConfig?.workflows?.localWorkflow?.agents?.reviewer).toEqual([
+      { provider: "codex", model: "local-model" },
+    ]);
+    expect(loaded.stepkitConfig?.workflows).not.toHaveProperty("userWorkflow");
+    expect(loaded.stepkitConfig?.workflows).not.toHaveProperty("projectWorkflow");
   });
 
   it("merges config-local.json over config.json, with local winning per top-level key", async ({
@@ -73,26 +197,27 @@ describe("workflow registry project config", () => {
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       version: 1,
-      customAgents: {
+      customProviders: {
         shared: { binary: "pi" },
         local: { binary: "pi", args: ["--model", "small"] },
       },
-      workingAgents: {
-        small: [{ provider: "shared" }],
+      agents: {
+        small: { items: [{ provider: "shared" }] },
       },
     });
     await writeLocalConfig(cwd, {
-      workingAgents: {
-        small: [{ provider: "local" }],
+      agents: {
+        small: { items: [{ provider: "local" }] },
       },
     });
 
     await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
       stepkitConfig: {
-        customAgents: {
+        customProviders: {
           shared: { binary: "pi" },
+          local: { binary: "pi", args: ["--model", "small"] },
         },
-        workingAgents: {
+        agents: {
           small: [{ provider: "local" }],
         },
       },
@@ -162,17 +287,17 @@ describe("workflow registry project config", () => {
     const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeLocalConfig(cwd, {
-      customAgents: {
+      customProviders: {
         local: { binary: "pi", args: ["--model", "small"] },
       },
-      workingAgents: {
-        small: [{ provider: "local" }],
+      agents: {
+        small: { items: [{ provider: "local" }] },
       },
     });
 
     await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
       stepkitConfig: {
-        workingAgents: {
+        agents: {
           small: [{ provider: "local" }],
         },
       },

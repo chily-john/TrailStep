@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,43 @@ import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 import { runWorkflow } from "./run-workflow.js";
 
 describe("runWorkflow runtime front-door", () => {
+  it("accepts an already-flattened non-empty StepKitConfig without reparsing it as raw entries", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-flattened-config-"));
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "flattened-config-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "small" } },
+      start(input) {
+        return step({ id: "review", agent: "reviewer", outputShape: { answer: "string" } })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "flattened config" },
+      runName: "flattened-config-run",
+      cwd,
+      stepkitConfig: {
+        version: 1,
+        customProviders: { local: { binary: "local-agent" } },
+        agents: { small: [{ provider: "local", model: "fast" }] },
+      },
+      workingAgentProcessRunner: async (request) => {
+        await writeFile(request.outputFile, JSON.stringify({ answer: request.model }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ answer: "fast" });
+  });
+
   it("persists step events before the event sink observes a later event", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];

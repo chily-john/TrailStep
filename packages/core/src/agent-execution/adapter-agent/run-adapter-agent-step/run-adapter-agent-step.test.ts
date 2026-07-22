@@ -196,14 +196,13 @@ describe("agent steps", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {
+        customProviders: {
           local: {
             binary: "local-agent",
             args: ["{{promptFile}}", "{{outputFile}}", "{{model}}"],
           },
         },
-        workingAgents: { medium: [{ provider: "local", model: "test-model" }] },
-        interactiveAgents: {},
+        agents: { medium: { items: [{ provider: "local", model: "test-model" }] } },
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);
@@ -265,17 +264,18 @@ describe("agent steps", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {
+        customProviders: {
           broken: { binary: "broken-agent" },
           local: { binary: "local-agent" },
         },
-        workingAgents: {
-          medium: [
-            { provider: "broken", model: "bad-model" },
-            { provider: "local", model: "good-model" },
-          ],
+        agents: {
+          medium: {
+            items: [
+              { provider: "broken", model: "bad-model" },
+              { provider: "local", model: "good-model" },
+            ],
+          },
         },
-        interactiveAgents: {},
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);
@@ -306,7 +306,7 @@ describe("agent steps", () => {
     ]);
   });
 
-  it("falls back to workingAgents.default when role and size mappings are unusable", async () => {
+  it("falls back to agents.default when role and size mappings are unusable", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-command-agent-default-fallback-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
@@ -333,19 +333,18 @@ describe("agent steps", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {
+        customProviders: {
           role: { binary: "role-agent" },
           size: { binary: "size-agent" },
           default: { binary: "default-agent" },
         },
-        workingAgents: {
-          small: [{ provider: "size", model: "size-model" }],
-          default: [{ provider: "default", model: "default-model" }],
+        agents: {
+          small: { items: [{ provider: "size", model: "size-model" }] },
+          default: { items: [{ provider: "default", model: "default-model" }] },
         },
-        interactiveAgents: {},
         workflows: {
           "command-agent-default-fallback-workflow": {
-            workingAgents: { reviewer: [{ provider: "role", model: "role-model" }] },
+            agents: { reviewer: { items: [{ provider: "role", model: "role-model" }] } },
           },
         },
       }),
@@ -398,15 +397,14 @@ describe("agent steps", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {
+        customProviders: {
           first: { binary: "first-agent" },
           second: { binary: "second-agent" },
         },
-        workingAgents: {
-          medium: [{ provider: "first", model: "first-model" }],
-          default: [{ provider: "second", model: "second-model" }],
+        agents: {
+          medium: { items: [{ provider: "first", model: "first-model" }] },
+          default: { items: [{ provider: "second", model: "second-model" }] },
         },
-        interactiveAgents: {},
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);
@@ -464,9 +462,8 @@ describe("agent steps", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: { local: { binary: "local-agent" } },
-        workingAgents: { small: [{ provider: "local" }] },
-        interactiveAgents: {},
+        customProviders: { local: { binary: "local-agent" } },
+        agents: { small: { items: [{ provider: "local" }] } },
       }),
       workingAgentProcessRunner: async (request) => {
         promptFileBeforeRun = request.promptFile;
@@ -490,8 +487,8 @@ describe("agent steps", () => {
   });
 });
 
-describe("registry-vs-customAgents dispatch split", () => {
-  it("dispatches a working target whose provider matches a registry key through the built-in provider, with no customAgents entry required", async () => {
+describe("registry-vs-customProviders dispatch split", () => {
+  it("dispatches a working target whose provider matches a registry key through the built-in provider, with no customProviders entry required", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-dispatch-"));
     const providerCalls: ProviderWorkingProcessRequest[] = [];
 
@@ -518,9 +515,8 @@ describe("registry-vs-customAgents dispatch split", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {},
-        workingAgents: { small: [{ provider: "claude", model: "sonnet" }] },
-        interactiveAgents: {},
+        customProviders: {},
+        agents: { small: { items: [{ provider: "claude", model: "sonnet" }] } },
       }),
       providerWorkingRunner: async (request) => {
         providerCalls.push(request);
@@ -571,9 +567,8 @@ describe("registry-vs-customAgents dispatch split", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {},
-        workingAgents: { small: [{ provider: "codex", model: "gpt-5.5" }] },
-        interactiveAgents: {},
+        customProviders: {},
+        agents: { small: { items: [{ provider: "codex", model: "gpt-5.5" }] } },
       }),
       // Unlike the claude registry test above, this mock never returns a
       // stdout envelope: it writes outputFile directly, exactly as the real
@@ -636,9 +631,8 @@ describe("registry-vs-customAgents dispatch split", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {},
-        workingAgents: { small: [{ provider: "pi", model: "openai-codex/gpt-5.5" }] },
-        interactiveAgents: {},
+        customProviders: {},
+        agents: { small: { items: [{ provider: "pi", model: "openai-codex/gpt-5.5" }] } },
       }),
       // Simulates the real, empirically confirmed `pi --mode json` shape: a
       // JSON-lines transcript whose final usable "message" field is a
@@ -707,9 +701,8 @@ describe("registry-vs-customAgents dispatch split", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: {},
-        workingAgents: { small: [{ provider: "gemini", model: "gemini-2.5-pro" }] },
-        interactiveAgents: {},
+        customProviders: {},
+        agents: { small: { items: [{ provider: "gemini", model: "gemini-2.5-pro" }] } },
       }),
       // Synthetic stdout shaped like the Gemini CLI's documented
       // `--output-format json` envelope (a flat "response" string field plus
@@ -740,7 +733,7 @@ describe("registry-vs-customAgents dispatch split", () => {
     expect(providerCalls[0]?.args).toEqual(expect.arrayContaining(["--output-format", "json"]));
   });
 
-  it("prefers built-in known CLI providers over same-named customAgents after provider registry is moved", async () => {
+  it("prefers built-in known CLI providers over same-named customProviders after provider registry is moved", async () => {
     expect(providerRegistry.claude.id).toBe("claude");
 
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-priority-"));
@@ -770,9 +763,8 @@ describe("registry-vs-customAgents dispatch split", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: { claude: { binary: "should-not-run" } },
-        workingAgents: { small: [{ provider: "claude" }] },
-        interactiveAgents: {},
+        customProviders: { claude: { binary: "should-not-run" } },
+        agents: { small: { items: [{ provider: "claude" }] } },
       }),
       providerWorkingRunner: async (request) => {
         providerCalls.push(request);
@@ -796,7 +788,7 @@ describe("registry-vs-customAgents dispatch split", () => {
     expect(legacyRequests).toHaveLength(0);
   });
 
-  it("still dispatches a provider name that is only a customAgents key through the legacy command path", async () => {
+  it("still dispatches a provider name that is only a customProviders key through the command path", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-customagents-fallback-"));
     const legacyRequests: WorkingAgentProcessRequest[] = [];
 
@@ -823,9 +815,8 @@ describe("registry-vs-customAgents dispatch split", () => {
       cwd,
       stepkitConfig: parseStepKitConfig({
         version: 1,
-        customAgents: { "local-cli": { binary: "local-cli" } },
-        workingAgents: { small: [{ provider: "local-cli" }] },
-        interactiveAgents: {},
+        customProviders: { "local-cli": { binary: "local-cli" } },
+        agents: { small: { items: [{ provider: "local-cli" }] } },
       }),
       workingAgentProcessRunner: async (request) => {
         legacyRequests.push(request);
@@ -843,13 +834,12 @@ describe("registry-vs-customAgents dispatch split", () => {
     expect(legacyRequests[0]?.command).toBe("local-cli");
   });
 
-  it("rejects a target whose provider matches neither the registry nor customAgents with agent_provider_unknown", () => {
+  it("rejects a target whose provider matches neither the registry nor customProviders with agent_provider_unknown", () => {
     expect(() =>
       parseStepKitConfig({
         version: 1,
-        customAgents: {},
-        workingAgents: { small: [{ provider: "totally-unknown-provider" }] },
-        interactiveAgents: {},
+        customProviders: {},
+        agents: { small: { items: [{ provider: "totally-unknown-provider" }] } },
       }),
     ).toThrowError(
       expect.objectContaining({

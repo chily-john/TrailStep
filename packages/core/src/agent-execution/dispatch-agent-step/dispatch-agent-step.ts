@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
 import type {
   ContinuationStepConfig,
   PromptTemplateSource,
@@ -39,7 +40,7 @@ export async function dispatchAgentStep(options: {
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
   readonly cwd: string;
-  readonly stepkitConfig: RunWorkflowOptions["stepkitConfig"];
+  readonly stepkitConfig: StepKitConfig | undefined;
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
@@ -200,8 +201,7 @@ const BUILTIN_DEFAULT_AGENT_ROLE: WorkflowAgentRole = { size: "default" };
  * A step's `.agent` is optional. With none given, falls back to
  * `workflow.agents.default` if the workflow declares one, else a builtin
  * `{ size: "default" }` role — which `resolveAgentTargets` in turn resolves
- * against `.stepkit/config.json`'s `workingAgents.default` /
- * `interactiveAgents.default`. An explicit `.agent(...)` naming an undeclared
+ * against `.stepkit/config.json`'s unified `agents.default` mapping. An explicit `.agent(...)` naming an undeclared
  * role is still a hard error (typo protection).
  */
 function resolveWorkflowAgentRole(options: {

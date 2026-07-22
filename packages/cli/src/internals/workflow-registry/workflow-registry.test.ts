@@ -159,7 +159,7 @@ describe("listRegisteredWorkflowEntries", () => {
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: {
         project: { review: "./review.mjs" },
-        release: { workingAgents: [{ provider: "local" }] },
+        release: { agents: { reviewer: { items: [{ provider: "local" }] } } },
       },
     });
 

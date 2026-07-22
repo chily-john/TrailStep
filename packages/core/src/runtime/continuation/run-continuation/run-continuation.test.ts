@@ -9,9 +9,7 @@ import { runContinuation } from "./run-continuation.js";
 describe("runContinuation", () => {
   it("still requires outputShape for working prompted steps", async () => {
     const result = await runContinuation({
-      node: step({ id: "draft", agent: "writer" })
-        .prompt("Draft the plan.")
-        .next(done)({}),
+      node: step({ id: "draft", agent: "writer" }).prompt("Draft the plan.").next(done)({}),
       runId: "working-missing-output-shape-run",
       workflowId: "working-missing-output-shape-workflow",
       emit: async () => {},

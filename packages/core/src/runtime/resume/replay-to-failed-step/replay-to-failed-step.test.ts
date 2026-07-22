@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { done, step } from "../../../authoring/authoring.js";
 import type { Workflow } from "../../../authoring/workflow/workflow.types.js";
 import type { Event } from "../../../runtime/run-workflow/run-workflow.types.js";
-import { appendEvent, createRunDirectory } from "../../artifacts/run-storage.js";
+import { appendEvent, createRunDirectory, readRunEvents } from "../../artifacts/run-storage.js";
+import { createRunContext } from "../../run-context/create-run-context.js";
 import { runWorkflow } from "../../run-workflow/run-workflow.js";
 import { replayToFailedStep } from "./replay-to-failed-step.js";
 
@@ -280,6 +281,112 @@ describe("replayToFailedStep", () => {
       throw new Error(result.status === "failure" ? result.failure.message : "resume failed");
     }
     expect(result.output).toEqual({ value: 2 });
+  });
+
+  it("resumes past a completed prompt/agent step using its recorded output, not config.input", async () => {
+    // A prompt step's live-execution paramForNext is the agent's structured output
+    // (see run-continuation.ts), not config.input — replaying it must feed the
+    // recorded step.completed output back in, and must never re-dispatch the agent.
+    let adapterCalls = 0;
+    const secondStep = step({
+      id: "second",
+      outputShape: { value: "number" },
+    }).next(({ value }: { value: number }) => done({ value }));
+
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "history-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      agents: { assistant: { size: "tiny" } },
+      start(input) {
+        return step({
+          id: "first",
+          outputShape: { value: "number" },
+          agent: "assistant",
+          adapter: async (request) => {
+            adapterCalls += 1;
+            await request.tools[0]?.call({ value: 0 });
+          },
+        })
+          .prompt(() => "produce a value")
+          .next((output: { value: number }) => secondStep({ value: output.value }))(input);
+      },
+    };
+
+    const runDir = await createRunWithEvents([
+      event({ id: "started", type: "workflow.started", payload: { input: { value: 1 } } }),
+      event({ id: "first-started", type: "step.started", stepId: "first" }),
+      event({
+        id: "first-completed",
+        type: "step.completed",
+        stepId: "first",
+        payload: { output: { value: 42 } },
+      }),
+      event({ id: "second-started", type: "step.started", stepId: "second" }),
+      event({ id: "second-failed", type: "step.failed", stepId: "second" }),
+      event({ id: "workflow-failed", type: "workflow.failed" }),
+    ]);
+
+    const runContext = createRunContext({ runId: "history-run", runName: "history-run", runDir });
+    const replay = await replayToFailedStep({
+      workflow,
+      events: await readRunEvents(runDir),
+      runContext,
+    });
+
+    expect(replay.status).toBe("success");
+    if (replay.status !== "success") {
+      throw new Error(replay.failure.message);
+    }
+    expect(replay.node.config.id).toBe("second");
+    expect(replay.node.config.input).toEqual({ value: 42 });
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("allows the anchor (failed) step itself to be a prompt/agent step", async () => {
+    // A failed prompt step gets fed straight back into a live runContinuation() by the
+    // caller (run-workflow.ts), which dispatches it fresh — there's no replay hazard in
+    // retrying a thrown agent step, so this must succeed rather than being rejected.
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "history-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      agents: { assistant: { size: "tiny" } },
+      start(input) {
+        return step({
+          id: "first",
+          outputShape: { value: "number" },
+          agent: "assistant",
+          adapter: async (request) => {
+            await request.tools[0]?.call({ value: 2 });
+          },
+        })
+          .prompt(() => "produce a value")
+          .next((output: { value: number }) => done(output))(input);
+      },
+    };
+
+    const runDir = await createRunWithEvents([
+      event({ id: "started", type: "workflow.started", payload: { input: { value: 1 } } }),
+      event({ id: "first-started", type: "step.started", stepId: "first" }),
+      event({ id: "first-failed", type: "step.failed", stepId: "first" }),
+      event({ id: "workflow-failed", type: "workflow.failed" }),
+    ]);
+
+    const runContext = createRunContext({ runId: "history-run", runName: "history-run", runDir });
+    const replay = await replayToFailedStep({
+      workflow,
+      events: await readRunEvents(runDir),
+      runContext,
+    });
+
+    expect(replay.status).toBe("success");
+    if (replay.status !== "success") {
+      throw new Error(replay.failure.message);
+    }
+    expect(replay.node.config.id).toBe("first");
+    expect(replay.node.config.prompt).toBeDefined();
+    expect(replay.resumedStepId).toBe("first");
   });
 
   it("rejects completed runs and workflow mismatch with specific failure codes", async () => {

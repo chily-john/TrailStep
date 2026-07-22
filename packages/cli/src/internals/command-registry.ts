@@ -1,5 +1,6 @@
 import type { CliCommand } from "./command.types.js";
 import { addCommand } from "./commands/add/add-command.js";
+import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
 import { listCommand } from "./commands/list/list-command.js";
 import { runCommand } from "./commands/run/run-command.js";
@@ -25,6 +26,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "continue") {
     return continueCommand;
+  }
+
+  if (argv[0] === "cancel") {
+    return cancelCommand;
   }
 
   return runCommand;

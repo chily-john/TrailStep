@@ -82,7 +82,7 @@ export async function dispatchAgentStep(options: {
         workflowId: options.workflowId,
         stepId: config.id,
         type: "interactive.sessionStarted",
-        payload: { roleName: resolvedRole.roleName },
+        payload: { roleName: resolvedRole.roleName, stepIndex: options.stepIndex },
       }),
     );
     const artifactPaths = resolveStepArtifactPaths({

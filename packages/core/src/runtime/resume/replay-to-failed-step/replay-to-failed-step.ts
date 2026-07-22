@@ -1,5 +1,4 @@
-import type { ContinuationResult, StepNode } from "../../../authoring/step/continuation.types.js";
-import { isStepNode } from "../../../authoring/step/step-node.js";
+import type { StepNode } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { RunContext } from "../../../contracts/run-context/run-context.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
@@ -7,6 +6,7 @@ import type {
   Event,
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
+import { replayCompletedSteps } from "../replay-completed-steps/replay-completed-steps.js";
 
 export async function replayToFailedStep<
   TInput extends PlainObject,
@@ -114,73 +114,18 @@ export async function replayToFailedStep<
     };
   }
 
-  let node: ContinuationResult = options.workflow.start(input as TInput);
-  const completedStepEvents = options.events.filter((event) => event.type === "step.completed");
-
-  for (const completedEvent of completedStepEvents) {
-    if (!isStepNode(node)) {
-      return {
-        status: "failure",
-        failure: resumeFailure(
-          "resume_step_id_drift",
-          "Completed history continues after the current workflow reaches done.",
-        ),
-      };
-    }
-
-    if (node.config.id === failedStepEvent.stepId) {
-      return {
-        status: "failure",
-        failure: resumeFailure(
-          "resume_target_not_failed",
-          "Failed step already has a completed output in the target history.",
-        ),
-      };
-    }
-
-    if (node.config.id !== completedEvent.stepId) {
-      return {
-        status: "failure",
-        failure: resumeFailure(
-          "resume_step_id_drift",
-          `Expected completed step ${node.config.id} but found ${completedEvent.stepId ?? "<missing>"}.`,
-        ),
-      };
-    }
-
-    if (node.config.prompt !== undefined) {
-      return {
-        status: "failure",
-        failure: resumeFailure(
-          "resume_unsupported_history",
-          `Resume does not support non-code step ${node.config.id}.`,
-        ),
-      };
-    }
-
-    node = await node.onOutput(node.config.input, options.runContext);
+  const replay = await replayCompletedSteps({
+    workflow: options.workflow,
+    events: options.events,
+    runContext: options.runContext,
+    input,
+    targetStepId: failedStepEvent.stepId,
+  });
+  if (replay.status === "failure") {
+    return replay;
   }
 
-  if (!isStepNode(node) || node.config.id !== failedStepEvent.stepId) {
-    return {
-      status: "failure",
-      failure: resumeFailure(
-        "resume_step_id_drift",
-        `Failed step ${failedStepEvent.stepId} is not the next live step.`,
-      ),
-    };
-  }
-
-  if (node.config.prompt !== undefined) {
-    return {
-      status: "failure",
-      failure: resumeFailure(
-        "resume_unsupported_history",
-        `Resume does not support non-code step ${node.config.id}.`,
-      ),
-    };
-  }
-
+  const { node } = replay;
   if (node.onError) {
     return {
       status: "failure",
@@ -191,11 +136,10 @@ export async function replayToFailedStep<
     };
   }
 
-  const resumeNode = node;
   return {
     status: "success",
     input,
-    node: resumeNode,
+    node,
     resumedStepId: failedStepEvent.stepId,
     sourceFailureEventId: failedStepEvent.id,
   };

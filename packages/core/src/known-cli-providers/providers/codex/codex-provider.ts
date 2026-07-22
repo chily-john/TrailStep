@@ -126,7 +126,13 @@ const spawnCodexInheritingStdio: ProviderWorkingRunner = async ({ command, args,
   });
 };
 
-const spawnCodexInteractive: InteractiveProcessRunner = async ({ command, args, cwd, env, signal }) => {
+const spawnCodexInteractive: InteractiveProcessRunner = async ({
+  command,
+  args,
+  cwd,
+  env,
+  signal,
+}) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -149,9 +155,12 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
   }
 
   if (process.platform === "win32") {
-    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on("error", () => {
-      child.kill();
-    });
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on(
+      "error",
+      () => {
+        child.kill();
+      },
+    );
     return;
   }
 

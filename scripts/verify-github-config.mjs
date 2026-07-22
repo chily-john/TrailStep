@@ -62,11 +62,7 @@ export function verifyGithubConfig() {
   ]) {
     assertIncludes(release, command, `Release workflow must include ${command}`);
   }
-  assertIncludes(
-    release,
-    "NPM_TOKEN",
-    "Release workflow must reference the NPM_TOKEN secret",
-  );
+  assertIncludes(release, "NPM_TOKEN", "Release workflow must reference the NPM_TOKEN secret");
 
   const dependencyReview = assertFile(".github/workflows/dependency-review.yml");
   assertIncludes(

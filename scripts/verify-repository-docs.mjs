@@ -29,14 +29,23 @@ export function verifyRepositoryDocs() {
     "README.md",
   );
   assertIncludes(readme, "git@github-personal:chily-john/stepkit.git", "README.md");
-  assert.match(readme, /command-backed local agents/iu, "Expected README.md to mention command-backed local agents");
+  assert.match(
+    readme,
+    /command-backed local agents/iu,
+    "Expected README.md to mention command-backed local agents",
+  );
   assertIncludes(readme, "workflow-level `agents`", "README.md");
   assertIncludes(readme, "step-level `agent`", "README.md");
   assertIncludes(readme, "workingAgents", "README.md");
   assertIncludes(readme, "interactiveAgents", "README.md");
   assertIncludes(readme, "Implementation guidance lives in `.pi/rules/`", "README.md");
 
-  const removedDirectionTerms = ["do" + "cs/", "publish-ready " + "scaf" + "fold", "currently " + "scaf" + "folded", "v" + "0"];
+  const removedDirectionTerms = [
+    "do" + "cs/",
+    "publish-ready " + "scaf" + "fold",
+    "currently " + "scaf" + "folded",
+    "v" + "0",
+  ];
   for (const forbidden of removedDirectionTerms) {
     assertNotIncludes(readme, forbidden, "README.md");
   }
@@ -49,11 +58,31 @@ export function verifyRepositoryDocs() {
     ["packages/testkit/README.md", assertFile("packages/testkit/README.md")],
   ]);
 
-  assertIncludes(packageReadmes.get("packages/core/README.md") ?? "", "runWorkflow", "packages/core/README.md");
-  assertIncludes(packageReadmes.get("packages/sdk/README.md") ?? "", "defineWorkflow", "packages/sdk/README.md");
-  assertIncludes(packageReadmes.get("packages/cli/README.md") ?? "", "stepkit list", "packages/cli/README.md");
-  assertIncludes(packageReadmes.get("packages/dashboard/README.md") ?? "", ".stepkit/runs", "packages/dashboard/README.md");
-  assertIncludes(packageReadmes.get("packages/testkit/README.md") ?? "", "workflow", "packages/testkit/README.md");
+  assertIncludes(
+    packageReadmes.get("packages/core/README.md") ?? "",
+    "runWorkflow",
+    "packages/core/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/sdk/README.md") ?? "",
+    "defineWorkflow",
+    "packages/sdk/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/cli/README.md") ?? "",
+    "stepkit list",
+    "packages/cli/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/dashboard/README.md") ?? "",
+    ".stepkit/runs",
+    "packages/dashboard/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/testkit/README.md") ?? "",
+    "workflow",
+    "packages/testkit/README.md",
+  );
 
   for (const [path, text] of packageReadmes) {
     for (const forbidden of ["do" + "cs/", "sc" + "affold", "v" + "0"]) {

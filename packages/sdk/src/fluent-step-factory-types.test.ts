@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { done, step, type RunContext } from "./index.js";
+import { done, type RunContext, step } from "./index.js";
 
 describe("fluent step factory continuation types", () => {
   it("allows orchestration next callbacks with input and RunContext while preserving one-argument callbacks", () => {

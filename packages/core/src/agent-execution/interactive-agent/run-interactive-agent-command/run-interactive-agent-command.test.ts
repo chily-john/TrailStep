@@ -1,7 +1,7 @@
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { describe, expect, it } from "vitest";
 
@@ -275,6 +275,57 @@ describe("continuation interactive agent roles", () => {
     expect(result.failure.message).toMatch(/did not complete/i);
   });
 
+  it("fails when the interactive session is cancelled", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-cancelled-"));
+    const workflow: Workflow<{ task: string }, { notes: string }> = {
+      id: "interactive-cancelled-workflow",
+      inputShape: { task: "string" },
+      outputShape: { notes: "string" },
+      agents: { reviewer: { size: "small" } },
+      start(input) {
+        return step({
+          id: "review",
+          outputShape: { notes: "string" },
+          agent: "reviewer",
+          agentMode: "interactive",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next(done)(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "cancellation" },
+      runName: "interactive-cancelled-run",
+      cwd,
+      stepkitConfig: {
+        version: 1,
+        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
+        workingAgents: {},
+        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+      },
+      processRunner: async (call) => {
+        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
+        await writeFile(
+          interactiveFile ?? "",
+          `${JSON.stringify({ ...protocol, status: "cancelled", reason: "Requirements changed." }, null, 2)}\n`,
+          "utf8",
+        );
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected workflow to fail.");
+    }
+    expect(result.failure.code).toBe("interactive_session_cancelled");
+    expect(result.failure.message).toMatch(/was cancelled/i);
+    expect(result.failure.details).toMatchObject({ reason: "Requirements changed." });
+  });
+
   it("fails when completion output is missing or invalid", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-output-invalid-"));
     const workflow: Workflow<{ task: string }, { approved: boolean; notes: string }> = {
@@ -308,7 +359,11 @@ describe("continuation interactive agent roles", () => {
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
-        await writeFile(protocol.outputFile, `${JSON.stringify({ approved: true }, null, 2)}\n`, "utf8");
+        await writeFile(
+          protocol.outputFile,
+          `${JSON.stringify({ approved: true }, null, 2)}\n`,
+          "utf8",
+        );
         await writeFile(
           interactiveFile ?? "",
           `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
@@ -367,8 +422,12 @@ describe("continuation interactive agent roles", () => {
     expect(prompt).toContain("preserve as much usable context as possible");
     expect(prompt).toContain("describe the conversation rather than aggressively summarize");
     expect(prompt).toContain("decisions, rejected options, tradeoffs, constraints, side comments");
-    expect(prompt).toContain("terminology, open questions, assumptions, file paths, commands, APIs");
-    expect(prompt).toContain("package names, examples, preferences, reasoning, and abandoned options");
+    expect(prompt).toContain(
+      "terminology, open questions, assumptions, file paths, commands, APIs",
+    );
+    expect(prompt).toContain(
+      "package names, examples, preferences, reasoning, and abandoned options",
+    );
     expect(prompt).toContain("context preservation, not polish");
     expect(prompt).toContain("Do not omit low-importance details merely because they seem minor");
     expect(prompt).toContain("## Original prompt\nDiscuss dense context.");
@@ -395,7 +454,9 @@ describe("continuation interactive agent roles", () => {
       cwd,
       stepkitConfig: {
         version: 1,
-        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["--prompt", "{{prompt}}"] } },
+        customAgents: {
+          terminalAgent: { binary: "terminal-agent", args: ["--prompt", "{{prompt}}"] },
+        },
         workingAgents: {},
         interactiveAgents: { small: [{ provider: "terminalAgent" }] },
       },
@@ -410,9 +471,9 @@ describe("continuation interactive agent roles", () => {
     if (result.status !== "success") {
       throw new Error(result.failure.message);
     }
-    await expect(
-      readdir(join(result.runDir, "steps", "0001-discuss")),
-    ).resolves.not.toContain("prompt.txt");
+    await expect(readdir(join(result.runDir, "steps", "0001-discuss"))).resolves.not.toContain(
+      "prompt.txt",
+    );
   });
 
   it("keeps default and custom interactive artifact directories minimal", async () => {

@@ -58,7 +58,9 @@ describe("registered workflow resolver", () => {
       },
     });
 
-    await expect(resolveWorkflowReference("project/release", { cwd, homeDir })).resolves.toMatchObject({
+    await expect(
+      resolveWorkflowReference("project/release", { cwd, homeDir }),
+    ).resolves.toMatchObject({
       id: "project/release",
       workflow: { id: "release" },
       workflowRef: {
@@ -109,14 +111,16 @@ describe("registered workflow resolver", () => {
       },
     });
 
-    await expect(resolveWorkflowReference("user/cleanup", { cwd, homeDir })).resolves.toMatchObject({
-      id: "user/cleanup",
-      workflow: { id: "cleanup" },
-      workflowRef: {
-        kind: "direct-file",
-        packageName: resolve(homeDir, ".stepkit", "workflows", "cleanup.mjs"),
+    await expect(resolveWorkflowReference("user/cleanup", { cwd, homeDir })).resolves.toMatchObject(
+      {
+        id: "user/cleanup",
+        workflow: { id: "cleanup" },
+        workflowRef: {
+          kind: "direct-file",
+          packageName: resolve(homeDir, ".stepkit", "workflows", "cleanup.mjs"),
+        },
       },
-    });
+    );
   });
 
   it("names the requested registered ref when the namespace is missing", async ({ task }) => {

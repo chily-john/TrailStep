@@ -3,8 +3,8 @@
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@stepkit/core";
 import {
   type CliCommandContext,
-  type StepkitCliPrompts,
   CliUsageError,
+  type StepkitCliPrompts,
   usageText,
 } from "./internals/command.types.js";
 import { resolveCommand } from "./internals/command-registry.js";

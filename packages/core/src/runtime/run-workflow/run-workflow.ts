@@ -12,6 +12,10 @@ import type {
 import { appendEvent, createRunDirectory, readRunEvents } from "../artifacts/run-storage.js";
 import { runContinuation } from "../continuation/run-continuation/run-continuation.js";
 import { createEvent } from "../events/create-run-event.js";
+import {
+  findDanglingInteractiveSessionStart,
+  reattachInProgressStep,
+} from "../resume/reattach-in-progress-step/reattach-in-progress-step.js";
 import { replayToFailedStep } from "../resume/replay-to-failed-step/replay-to-failed-step.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 
@@ -91,11 +95,19 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     let startNode: ContinuationResult | undefined;
 
     if (isResume) {
-      const replay = await replayToFailedStep({
-        workflow: options.workflow,
-        events: previousEvents,
-        runContext,
-      });
+      const danglingAnchor = findDanglingInteractiveSessionStart(previousEvents);
+      const replay = danglingAnchor
+        ? await reattachInProgressStep({
+            workflow: options.workflow,
+            events: previousEvents,
+            runContext,
+            runDir,
+          })
+        : await replayToFailedStep({
+            workflow: options.workflow,
+            events: previousEvents,
+            runContext,
+          });
       if (replay.status === "failure") {
         return failResumeValidation(replay.failure);
       }

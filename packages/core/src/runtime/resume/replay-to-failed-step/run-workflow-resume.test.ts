@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { done, type Event, runWorkflow, step, type Workflow } from "../../../index.js";
 import { appendEvent, createRunDirectory } from "../../artifacts/run-storage.js";
+import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 
 function eventTypes(events: readonly Event[]): readonly string[] {
   return events.map((event) => event.type);
@@ -319,5 +320,129 @@ describe("runWorkflow resume", () => {
       throw new Error("Expected mismatch resume to fail.");
     }
     expect(mismatchResume.failure.code).toBe("resume_workflow_mismatch");
+  });
+
+  it("reattaches a run killed mid-interactive-session without spawning a new agent process", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-killed-"));
+    const workflow: Workflow<{ task: string }, { notes: string }> = {
+      id: "killed-mid-session-workflow",
+      inputShape: { task: "string" },
+      outputShape: { notes: "string" },
+      agents: { reviewer: { size: "small" } },
+      start(input) {
+        return step({
+          id: "review",
+          outputShape: { notes: "string" },
+          agent: "reviewer",
+          agentMode: "interactive",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`)
+          .next((output: { notes: string }) => done({ notes: output.notes }))(input);
+      },
+    };
+
+    const { runDir } = await createRunDirectory({ cwd, runName: "killed-mid-session-run" });
+    const danglingEvents: Event[] = [
+      event({
+        id: "started",
+        type: "workflow.started",
+        workflowId: workflow.id,
+        payload: { input: { task: "ship it" } },
+      }),
+      event({
+        id: "review-started",
+        type: "step.started",
+        workflowId: workflow.id,
+        stepId: "review",
+      }),
+      event({
+        id: "review-session-started",
+        type: "interactive.sessionStarted",
+        workflowId: workflow.id,
+        stepId: "review",
+        payload: { roleName: "reviewer", stepIndex: 1 },
+      }),
+    ];
+    for (const nextEvent of danglingEvents) {
+      await appendEvent(runDir, nextEvent);
+    }
+
+    const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });
+    await mkdir(artifactPaths.stepDir, { recursive: true });
+    await writeFile(
+      artifactPaths.outputFile,
+      `${JSON.stringify({ notes: "Approved while orchestrator was down." })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      artifactPaths.interactiveFile,
+      `${JSON.stringify(
+        {
+          status: "completed",
+          stepId: "review",
+          artifactStepId: artifactPaths.artifactStepId,
+          outputMode: "json",
+          runDir,
+          stepDir: artifactPaths.stepDir,
+          promptFile: artifactPaths.promptFile,
+          outputFile: artifactPaths.outputFile,
+          interactiveFile: artifactPaths.interactiveFile,
+          runRelativeStepDir: artifactPaths.runRelativeStepDir,
+          outputSchema: {
+            type: "object",
+            properties: { notes: { type: "string" } },
+            required: ["notes"],
+            additionalProperties: false,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    let processRunnerCalls = 0;
+    const resumed = await runWorkflow({
+      workflow,
+      resume: { runDir },
+      stepkitConfig: {
+        version: 1,
+        customAgents: { terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] } },
+        workingAgents: {},
+        interactiveAgents: { small: [{ provider: "terminalAgent" }] },
+      },
+      processRunner: async () => {
+        processRunnerCalls += 1;
+        throw new Error("no new agent process should be spawned on reattach");
+      },
+    });
+
+    expect(processRunnerCalls).toBe(0);
+    expect(resumed.status).toBe("success");
+    if (resumed.status !== "success") {
+      throw new Error(resumed.failure.message);
+    }
+    expect(resumed.output).toEqual({ notes: "Approved while orchestrator was down." });
+    expect(eventTypes(resumed.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "interactive.sessionStarted",
+      "workflow.resumed",
+      "workflow.completed",
+    ]);
+    expect(resumed.events[3]).toMatchObject({
+      type: "workflow.resumed",
+      payload: {
+        resumedFromRunDir: runDir,
+        resumedStepId: "review",
+        sourceFailureEventId: "review-session-started",
+      },
+    });
+
+    const persistedEvents = (await readFile(join(runDir, "events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Event);
+    expect(eventTypes(persistedEvents)).toEqual(eventTypes(resumed.events));
   });
 });

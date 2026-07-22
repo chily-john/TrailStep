@@ -73,6 +73,7 @@ export interface StepNode<
 export type StepFactory<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
+  // biome-ignore lint/complexity/noBannedTypes: `{}` here is the standard conditional-type idiom for "TInput has no required keys", not a stand-in for "any value".
 > = ({} extends TInput
   ? (input?: TInput) => StepNode<TInput, TOutput>
   : (input: TInput) => StepNode<TInput, TOutput>) & {

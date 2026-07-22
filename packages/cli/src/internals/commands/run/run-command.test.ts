@@ -390,10 +390,12 @@ describe("run command", () => {
       }),
     ).resolves.toBe(0);
 
-    await expect(readFile(join(cwd, ".stepkit", "runs", "project-run", "events.jsonl"), "utf8"))
-      .resolves.toContain('"projectSelected":true');
-    await expect(readFile(join(cwd, ".stepkit", "runs", "user-run", "events.jsonl"), "utf8"))
-      .resolves.toContain('"userSelected":true');
+    await expect(
+      readFile(join(cwd, ".stepkit", "runs", "project-run", "events.jsonl"), "utf8"),
+    ).resolves.toContain('"projectSelected":true');
+    await expect(
+      readFile(join(cwd, ".stepkit", "runs", "user-run", "events.jsonl"), "utf8"),
+    ).resolves.toContain('"userSelected":true');
     expect(projectLines.join("\n")).toContain("project/review");
     expect(userLines.join("\n")).toContain("user/review");
   });

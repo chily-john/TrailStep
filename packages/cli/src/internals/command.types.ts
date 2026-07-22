@@ -9,6 +9,7 @@ export const usageText = [
   "  stepkit continue --session-file <path>",
   "  stepkit continue --json-file <path>",
   "  stepkit continue --json '<json>'",
+  "  stepkit cancel [--reason '<text>']",
   "  stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
   "  stepkit <workflow-ref> <workflowRunName> --resume",
   "",

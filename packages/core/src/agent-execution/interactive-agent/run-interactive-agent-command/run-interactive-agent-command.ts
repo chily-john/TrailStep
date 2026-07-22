@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
 import { dirname } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { resolveAgentTargets } from "../../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 import type {
   StepKitAgentTarget,
@@ -149,7 +149,9 @@ async function runInteractiveAgentTarget(options: {
 
 function definedProcessEnv(): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
   );
 }
 
@@ -206,7 +208,7 @@ async function runProcessUntilExitOrCompletion(options: {
   return { exitCode: 0, output: await options.readOutput() };
 }
 
-async function waitForInteractiveCompletion(
+export async function waitForInteractiveCompletion(
   interactiveFile: string,
   signal: AbortSignal,
 ): Promise<void> {
@@ -219,14 +221,14 @@ async function waitForInteractiveCompletion(
   }
 }
 
-async function isInteractiveCompleted(interactiveFile: string): Promise<boolean> {
+export async function isInteractiveCompleted(interactiveFile: string): Promise<boolean> {
   try {
     const protocol = await readPlainJsonFile(interactiveFile, {
       readCode: "interactive_session_invalid",
       invalidCode: "interactive_session_invalid",
       message: "Interactive session protocol file is invalid.",
     });
-    return protocol.status === "completed";
+    return protocol.status === "completed" || protocol.status === "cancelled";
   } catch {
     // The process-exit path reports authoritative protocol validation errors.
     // The watcher is intentionally best-effort and only needs to notice completion.
@@ -316,7 +318,7 @@ async function readCompletedOutput(options: {
   });
 }
 
-async function readCompletedInteractiveOutput(options: {
+export async function readCompletedInteractiveOutput(options: {
   readonly stepId: string;
   readonly interactiveFile: string;
   readonly outputSchema: Schema;
@@ -326,6 +328,17 @@ async function readCompletedInteractiveOutput(options: {
     invalidCode: "interactive_session_invalid",
     message: `Interactive agent step ${options.stepId} has an invalid interactive.json file.`,
   });
+
+  if (protocol.status === "cancelled") {
+    throw new StepKitFailureError({
+      code: "interactive_session_cancelled",
+      message: `Interactive agent step ${options.stepId} was cancelled.`,
+      details: {
+        status: protocol.status,
+        ...(typeof protocol.reason === "string" ? { reason: protocol.reason } : {}),
+      },
+    });
+  }
 
   if (protocol.status !== "completed") {
     throw new StepKitFailureError({
@@ -406,7 +419,9 @@ function requireProtocolString(value: unknown, field: string, stepId: string): s
   });
 }
 
-function formatDiagnostics(diagnostics: readonly { readonly path: string; readonly message: string }[]): string {
+function formatDiagnostics(
+  diagnostics: readonly { readonly path: string; readonly message: string }[],
+): string {
   return diagnostics.map((diagnostic) => `${diagnostic.path} ${diagnostic.message}`).join("; ");
 }
 
@@ -474,7 +489,13 @@ async function substitutePromptPlaceholders(options: {
   return substituted;
 }
 
-const spawnInteractiveProcess: InteractiveProcessRunner = async ({ command, args, cwd, env, signal }) => {
+const spawnInteractiveProcess: InteractiveProcessRunner = async ({
+  command,
+  args,
+  cwd,
+  env,
+  signal,
+}) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -497,9 +518,12 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
   }
 
   if (process.platform === "win32") {
-    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on("error", () => {
-      child.kill();
-    });
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on(
+      "error",
+      () => {
+        child.kill();
+      },
+    );
     return;
   }
 

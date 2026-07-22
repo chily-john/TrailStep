@@ -65,7 +65,7 @@ describe("addCommand", () => {
     });
   });
 
-  it("prompts for direct workflow registration details", async ({ task }) => {
+  it("prompts for scope only in a zero-flag add, deriving namespace and name", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-stepkit-add-command-tests",
@@ -74,6 +74,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
 
+    const selectPrompts: string[] = [];
     const command = resolveCommand(["add", "./workflows/review.mjs"]);
     const exitCode = await command.run(
       command.parseArgs(["add", "./workflows/review.mjs"]) as never,
@@ -82,8 +83,9 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            if (prompt === "Config scope") {
-              expect(choices).toEqual(["project", "project-local", "user"]);
+            selectPrompts.push(prompt);
+            if (prompt.startsWith("Where should this workflow be registered?")) {
+              expect(choices).toEqual(["project-local", "project", "user"]);
               return "project";
             }
             if (prompt === "Add to project skills?") {
@@ -97,22 +99,193 @@ describe("addCommand", () => {
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           text: async (prompt) => {
-            if (prompt === "Namespace") {
-              return "acme";
-            }
-            if (prompt === "Workflow name") {
-              return "review";
-            }
-            throw new Error(`Unexpected prompt: ${prompt}`);
+            throw new Error(`Unexpected text prompt: ${prompt}`);
           },
         },
       },
     );
 
     expect(exitCode).toBe(0);
+    expect(selectPrompts).toEqual([
+      "Where should this workflow be registered? (project-local = just you on this repo, project = shared with your team, user = global across all your projects)",
+      "Add to project skills?",
+      "Add to user skills?",
+    ]);
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      workflows: { acme: { review: "./workflows/review.mjs" } },
+      workflows: { project: { review: "./workflows/review.mjs" } },
     });
+  });
+
+  it("derives the name from workflow.id and skips namespace/name prompts for project scope", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const command = resolveCommand(["add", "./workflows/review.mjs", "--scope", "project-local"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "./workflows/review.mjs", "--scope", "project-local"]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config-local.json"))).toEqual({
+      workflows: { project: { review: "./workflows/review.mjs" } },
+    });
+  });
+
+  it("supports an explicit --name override without deriving from workflow.id", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const command = resolveCommand([
+      "add",
+      "./workflows/review.mjs",
+      "--scope",
+      "project",
+      "--name",
+      "custom-name",
+    ]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows/review.mjs",
+        "--scope",
+        "project",
+        "--name",
+        "custom-name",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { project: { "custom-name": "./workflows/review.mjs" } },
+    });
+  });
+
+  it("rejects a workflow id containing a reserved character when no --name is given", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(
+      join(cwd, "workflows", "review.mjs"),
+      "export default { id: 'team/review', start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows/review.mjs", "--scope", "project"]);
+    await expect(
+      command.run(
+        command.parseArgs(["add", "./workflows/review.mjs", "--scope", "project"]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+        },
+      ),
+    ).rejects.toThrow(/reserved character/);
+  });
+
+  it("rejects --namespace project combined with --scope user", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const command = resolveCommand([
+      "add",
+      "./workflows/review.mjs",
+      "--scope",
+      "user",
+      "--namespace",
+      "project",
+      "--name",
+      "review",
+    ]);
+    await expect(
+      command.run(
+        command.parseArgs([
+          "add",
+          "./workflows/review.mjs",
+          "--scope",
+          "user",
+          "--namespace",
+          "project",
+          "--name",
+          "review",
+        ]) as never,
+        {
+          cwd,
+          homeDir: cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+        },
+      ),
+    ).rejects.toThrow(/Namespace "project" is reserved/);
+  });
+
+  it("catches a duplicate registration across project and project-local scope", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./workflows/existing.mjs" } },
+    });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const command = resolveCommand([
+      "add",
+      "./workflows/review.mjs",
+      "--scope",
+      "project-local",
+      "--name",
+      "review",
+    ]);
+    await expect(
+      command.run(
+        command.parseArgs([
+          "add",
+          "./workflows/review.mjs",
+          "--scope",
+          "project-local",
+          "--name",
+          "review",
+        ]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+        },
+      ),
+    ).rejects.toThrow(/already exists: project\/review \(in project config\)/);
   });
 
   it("skips optional skill prompts in non-interactive add without skill flags", async ({
@@ -365,52 +538,6 @@ describe("addCommand", () => {
     );
   });
 
-  it("warns for project skill pointing at user-scoped registration", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-stepkit-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "user",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-    ]);
-    const errors: string[] = [];
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "user",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        homeDir: cwd,
-        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
-        skillsCliProcessRunner: async () => ({ exitCode: 0 }),
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(errors.some((line) => line.includes("teammates may not resolve"))).toBe(true);
-  });
-
   it("warns for global skill pointing at project-scoped registration", async ({ task }) => {
     const cwd = join(
       "node_modules",
@@ -598,8 +725,8 @@ describe("addCommand", () => {
         prompts: {
           select: async (prompt, choices) => {
             prompts.push(prompt);
-            if (prompt === "Config scope") {
-              expect(choices).toEqual(["project", "project-local", "user"]);
+            if (prompt.startsWith("Where should this workflow be registered?")) {
+              expect(choices).toEqual(["project-local", "project", "user"]);
               return "project";
             }
             if (prompt === "Add to project skills?") {
@@ -613,12 +740,6 @@ describe("addCommand", () => {
             throw new Error(`Unexpected prompt: ${prompt}`);
           },
           text: async (prompt) => {
-            if (prompt === "Namespace") {
-              return "acme";
-            }
-            if (prompt === "Workflow name") {
-              return "review";
-            }
             throw new Error(`Unexpected prompt: ${prompt}`);
           },
         },
@@ -626,9 +747,13 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(prompts).toEqual(["Config scope", "Add to project skills?", "Add to user skills?"]);
+    expect(prompts).toEqual([
+      "Where should this workflow be registered? (project-local = just you on this repo, project = shared with your team, user = global across all your projects)",
+      "Add to project skills?",
+      "Add to user skills?",
+    ]);
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      workflows: { acme: { review: "./workflows/review.mjs" } },
+      workflows: { project: { review: "./workflows/review.mjs" } },
     });
   });
 

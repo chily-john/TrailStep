@@ -60,6 +60,11 @@ export async function loadStepKitProjectConfig(cwd = process.cwd()): Promise<Ste
  * The merge is shallow at the top level: a key present in the local override (e.g.
  * `workingAgents`) replaces the shared value for that key wholesale rather than being
  * deep-merged, keeping precedence easy to reason about.
+ *
+ * `workflows` is the one exception: it merges one level deeper, per namespace bucket,
+ * because `project` and `project-local` scope registrations are meant to coexist. A
+ * shallow replace here would make every project-scope registration disappear the moment
+ * a project-local registration exists, since both configs share the same `workflows` key.
  */
 function mergeRawStepKitConfig(base: unknown, local: unknown): unknown {
   if (!isRecord(base)) {
@@ -69,7 +74,31 @@ function mergeRawStepKitConfig(base: unknown, local: unknown): unknown {
     return base;
   }
 
-  return { ...base, ...local };
+  return { ...base, ...local, workflows: mergeWorkflowsRecord(base.workflows, local.workflows) };
+}
+
+function mergeWorkflowsRecord(base: unknown, local: unknown): unknown {
+  if (!isRecord(base)) {
+    return local;
+  }
+  if (!isRecord(local)) {
+    return base;
+  }
+
+  const namespaces = new Set([...Object.keys(base), ...Object.keys(local)]);
+  const merged: Record<string, unknown> = {};
+
+  for (const namespace of namespaces) {
+    const baseBucket = base[namespace];
+    const localBucket = local[namespace];
+
+    merged[namespace] =
+      isRecord(baseBucket) && isRecord(localBucket)
+        ? { ...baseBucket, ...localBucket }
+        : (localBucket ?? baseBucket);
+  }
+
+  return merged;
 }
 
 export async function loadStepKitUserWorkflowRegistry(

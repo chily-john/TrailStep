@@ -5,8 +5,9 @@ Command-line discovery, registration, and local execution for StepKit workflows.
 ## Commands
 
 ```bash
-stepkit add <workflow-file-or-bundle> --scope <project|user> --namespace <namespace> --name <name> [--workflow <workflow>] [--project-skill] [--user-skill] [--force]
-stepkit list
+stepkit add <workflow-file-or-bundle> [--scope <project|project-local|user>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]
+stepkit remove <namespace>/<name> [--scope <project|project-local|user>]
+stepkit list [--edit]
 stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
 stepkit <workflow-ref> <workflowRunName> --resume
 stepkit continue --session-file <path>
@@ -27,7 +28,7 @@ stepkit @acme/workflows#release
 ## Workflow refs
 
 - Direct local files use a relative or absolute path such as `./workflows/review.mjs`. Direct files must be native Node-loadable ESM today; `.mjs` is supported, while direct `.ts` and `.tsx` files are rejected until StepKit chooses a TypeScript loader policy.
-- Registered refs such as `project/review`, `user/cleanup`, or unqualified `review` resolve through string entries under `.stepkit/config.json` or `~/.stepkit/config.json` `workflows`. Project entries take precedence for unqualified names.
+- Registered refs such as `project/review`, `user/cleanup`, or unqualified `review` resolve through string entries under `.stepkit/config.json`, `.stepkit/config-local.json`, or `~/.stepkit/config.json` `workflows`. `.stepkit/config-local.json` is gitignored and merges over the committed `.stepkit/config.json` per workflow name, so project and project-local registrations coexist. Project entries take precedence for unqualified names.
 - Bundle refs use `#`, for example `@acme/workflows#release`. The package must expose `stepkit.workflows` manifest metadata mapping workflow names to module exports.
 - Legacy `package:export` refs remain supported for compatibility with package export discovery.
 
@@ -41,33 +42,42 @@ stepkit ./workflows/review.mjs run-one --resume
 
 ## Registration
 
-`stepkit add` writes workflow registry entries without installing packages. Register local files or already-installed bundle packages, choose a scope and namespace, and use the resulting ref in later runs:
+`stepkit add` writes workflow registry entries without installing packages. `--scope`, `--namespace`, and `--name` are all optional — the common case is just:
 
 ```bash
-stepkit add ./workflows/review.mjs --scope project --namespace project --name review
+stepkit add ./workflows/review.mjs
 stepkit project/review
 ```
 
-Add `--project-skill` or `--user-skill` to also generate a StepKit workflow skill source at `.stepkit/skills/<sanitized-namespace>-<sanitized-name>/SKILL.md` and ask the upstream `skills` CLI to install it into the selected agent skill scope. Distribution is best-effort: registration still succeeds if the `skills` CLI cannot be resolved or exits with an error.
+With no flags, `add` prompts once for scope (a single select — `project-local` for personal-to-you-in-this-repo, `project` for shared with your team, `user` for global across all your projects; there is no silent default). Namespace then defaults to `"project"` for `project`/`project-local` scope, or to `"user"` for `user` scope (with an optional follow-up prompt to pick a custom namespace, useful for avoiding collisions across multiple globally-registered bundles). Name defaults to the workflow's own `id` (set by the author via `defineWorkflow({ id: "..." })`). Pass `--scope`/`--namespace`/`--name` explicitly to skip any of these prompts or override the default:
 
 ```bash
-stepkit add ./workflows/review.mjs --scope project --namespace project --name review --project-skill
-stepkit add @acme/workflows --workflow review --scope user --namespace user --name review --user-skill
+stepkit add ./workflows/review.mjs --scope project-local
+stepkit add @acme/workflows --workflow review --scope user --namespace acme --name review
 ```
 
-Prefer matching the registration scope and skill scope. A project skill that points at a user-scoped registration may not resolve for teammates, and a user skill that points at a project-scoped registration only works from that project; StepKit prints warnings for these scope mismatches.
+A workflow `id` containing `/`, `#`, `:`, or that looks like a file path can't be used as a default registration name (each of those breaks or ambiguates how registered refs are resolved) — pass `--name` explicitly for those.
+
+Add `--project-skill` or `--user-skill` to also generate a StepKit workflow skill source at `.stepkit/skills/<sanitized-namespace>-<sanitized-name>/SKILL.md` and ask the upstream `skills` CLI to install it into the selected agent skill scope. Distribution is best-effort: registration still succeeds if the `skills` CLI cannot be resolved or exits with an error.
+
+Prefer matching the registration scope and skill scope. A project skill that points at a user- or project-local-scoped registration may not resolve for teammates, and a user skill that points at a project- or project-local-scoped registration only works from that project; StepKit prints warnings for these scope mismatches.
 
 Generated skills pass workflow input through `stepkit <workflow-ref> --input-file <path>`. Workflow input must be a JSON object. For dense conversation context, write the context to a markdown file and pass an object wrapper such as `{ "sessionFile": ".stepkit/inputs/project-review-context.md" }`.
 
-## Discovery and list
+Remove a registration with `stepkit remove <namespace>/<name>`. Since `project` and `project-local` scope both default to the same `"project"` namespace, the same ref can exist in either (or both) config files; `remove` searches project-local, then project, then user unless `--scope` is passed, and asks you to disambiguate with `--scope` if the ref matches more than one:
 
-`stepkit list` is legacy package discovery only. It reads the current project's direct dependencies and dev dependencies, resolves packages whose `package.json` contains the `stepkit-workflow` keyword, imports their module entry point, and prints exported workflow objects as package-qualified ids:
-
-```text
-@acme/workflows:releaseWorkflow
+```bash
+stepkit remove project/review
+stepkit remove project/review --scope project-local
 ```
 
-Registered refs and bundle manifest refs can be run directly, but they are not included in `stepkit list` output yet. Workflows, not individual steps, are the public command and discovery units.
+A custom namespace reused independently at both a project-family scope and `user` scope is not safe — qualified-ref lookups check the project-merged registry first, so a `user`-scope entry under a namespace that also exists in the project registry would be masked. Prefer scope-distinct namespaces, or the defaults above, for anything registered at `user` scope.
+
+## Discovery and list
+
+`stepkit list` prints registered workflows grouped by scope — `Project (local)`, `Project (shared)`, then `User`, in that order, each heading omitted when it has no entries — followed by legacy package-discovered workflows under a `Discoverable workflow packages:` heading (or as a plain list with no heading, if there are no registered entries to disambiguate from). Package discovery reads the current project's direct dependencies and dev dependencies, resolves packages whose `package.json` contains the `stepkit-workflow` keyword, imports their module entry point, and prints exported workflow objects as package-qualified ids such as `@acme/workflows:releaseWorkflow`.
+
+Run `stepkit list --edit` for an interactive prompt to select a registered workflow and rename its namespace/name in place (scope cannot be changed this way — remove and re-add to move a registration across scopes).
 
 ## Execution
 

@@ -1,10 +1,19 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
+import {
+  assertNamespaceMatchesScope,
+  configPathForScope,
+  findExistingRegistrationScope,
+  readRawStepKitConfigFile,
+  toMutableWorkflowRegistry,
+  type WorkflowRegistryScope,
+  writeRawStepKitConfigFile,
+} from "../../workflow-registry/workflow-registry.js";
 import {
   type BundleWorkflowSpecifier,
   loadBundleWorkflow,
@@ -24,7 +33,7 @@ import { writeProjectWorkflowSkill } from "../../workflow-skills/workflow-skill-
 
 interface AddCommandArgs {
   readonly source: string;
-  readonly scope?: "project" | "project-local" | "user";
+  readonly scope?: WorkflowRegistryScope;
   readonly namespace?: string;
   readonly name?: string;
   readonly workflow?: string;
@@ -37,7 +46,7 @@ interface AddCommandArgs {
 
 interface ResolvedAddCommandArgs {
   readonly source: string;
-  readonly scope: "project" | "project-local" | "user";
+  readonly scope: WorkflowRegistryScope;
   readonly namespace: string;
   readonly name: string;
   readonly workflow?: string;
@@ -45,6 +54,10 @@ interface ResolvedAddCommandArgs {
   readonly projectSkill: boolean;
   readonly userSkill: boolean;
 }
+
+const SCOPE_PROMPT_LABEL =
+  "Where should this workflow be registered? (project-local = just you on this repo, " +
+  "project = shared with your team, user = global across all your projects)";
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -87,30 +100,62 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     };
   },
   async run(args: AddCommandArgs, context: CliCommandContext): Promise<number> {
-    const resolvedArgs = await resolveInteractiveArgs(args, context);
-    const registryTarget = await validateAndBuildRegistryTarget(resolvedArgs, context.cwd, context);
-    const configPath = configPathForScope(resolvedArgs.scope, context);
-    const config = await readConfig(configPath);
-    const workflows = toMutableWorkflowRegistry(config.workflows);
-    const namespace = workflows[resolvedArgs.namespace] ?? {};
+    const scope =
+      args.scope ??
+      (await promptSelect(
+        SCOPE_PROMPT_LABEL,
+        ["project-local", "project", "user"] as const,
+        context.prompts,
+        "stepkit add requires --scope <project|project-local|user>.",
+      ));
 
-    if (!resolvedArgs.force && namespace[resolvedArgs.name] !== undefined) {
+    const registryTarget = await validateAndBuildRegistryTarget(
+      { source: args.source, workflow: args.workflow },
+      context.cwd,
+      context,
+    );
+
+    const namespace = await resolveNamespace(args.namespace, scope, context.prompts);
+    const name = args.name ?? deriveDefaultWorkflowName(registryTarget.workflow);
+    assertNamespaceMatchesScope(namespace, scope);
+
+    const resolvedArgs = await resolveSkillArgs(args, context.prompts);
+
+    const existingScope = await findExistingRegistrationScope(namespace, name, scope, {
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+    });
+    if (!args.force && existingScope !== undefined) {
       throw new CliUsageError(
-        `Workflow registration already exists: ${resolvedArgs.namespace}/${resolvedArgs.name}. Use --force to replace it.`,
+        `Workflow registration already exists: ${namespace}/${name} (in ${existingScope} config). ` +
+          "Use --force to replace it, or --name <name> to register under a different name.",
       );
     }
 
-    workflows[resolvedArgs.namespace] = {
-      ...namespace,
-      [resolvedArgs.name]: registryTarget.targetRef,
-    };
-    await writeConfig(configPath, { ...config, workflows });
+    const configPath = configPathForScope(scope, context);
+    const config = await readRawStepKitConfigFile(configPath);
+    const workflows = toMutableWorkflowRegistry(config.workflows);
+    const namespaceBucket = workflows[namespace] ?? {};
+
+    workflows[namespace] = { ...namespaceBucket, [name]: registryTarget.targetRef };
+    await writeRawStepKitConfigFile(configPath, { ...config, workflows });
     context.io.writeLine(
-      `Registered ${resolvedArgs.namespace}/${resolvedArgs.name} -> ${registryTarget.targetRef} in ${resolvedArgs.scope} config.`,
+      `Registered ${namespace}/${name} -> ${registryTarget.targetRef} in ${scope} config.`,
     );
 
-    if (resolvedArgs.projectSkill || resolvedArgs.userSkill) {
-      await tryWriteAndDistributeWorkflowSkill(resolvedArgs, registryTarget, context);
+    const finalArgs: ResolvedAddCommandArgs = {
+      source: args.source,
+      scope,
+      namespace,
+      name,
+      workflow: args.workflow,
+      force: args.force,
+      projectSkill: resolvedArgs.projectSkill,
+      userSkill: resolvedArgs.userSkill,
+    };
+
+    if (finalArgs.projectSkill || finalArgs.userSkill) {
+      await tryWriteAndDistributeWorkflowSkill(finalArgs, registryTarget, context);
     }
 
     return 0;
@@ -153,64 +198,85 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
   return flags;
 }
 
-async function resolveInteractiveArgs(
+async function resolveNamespace(
+  explicitNamespace: string | undefined,
+  scope: WorkflowRegistryScope,
+  prompts: CliCommandContext["prompts"],
+): Promise<string> {
+  if (explicitNamespace !== undefined) {
+    return explicitNamespace;
+  }
+  if (scope !== "user") {
+    return "project";
+  }
+  if (prompts === undefined) {
+    return "user";
+  }
+
+  const wantsNamespace = await promptYesNo(
+    "Add a namespace to avoid collisions?",
+    prompts,
+    "stepkit add requires --namespace <namespace> when scope is user and not run interactively.",
+  );
+  if (!wantsNamespace) {
+    return "user";
+  }
+  return promptText(
+    "Namespace",
+    undefined,
+    prompts,
+    "stepkit add requires --namespace <namespace>.",
+  );
+}
+
+function deriveDefaultWorkflowName(workflow: WorkflowSkillMetadata | undefined): string {
+  const id = workflow?.id;
+  if (id === undefined) {
+    throw new CliUsageError("stepkit add requires --name <name> for this source.");
+  }
+  if (/[/#:]/u.test(id)) {
+    throw new CliUsageError(
+      `Workflow id "${id}" contains a reserved character (/, #, or :) and can't be used as a ` +
+        "default registration name. Pass --name <name> explicitly.",
+    );
+  }
+  if (isDirectWorkflowFileReference(id)) {
+    throw new CliUsageError(
+      `Workflow id "${id}" looks like a file path and can't be used as a default registration ` +
+        "name. Pass --name <name> explicitly.",
+    );
+  }
+  return id;
+}
+
+interface ResolvedSkillArgs {
+  readonly projectSkill: boolean;
+  readonly userSkill: boolean;
+}
+
+async function resolveSkillArgs(
   args: AddCommandArgs,
-  context: CliCommandContext,
-): Promise<ResolvedAddCommandArgs> {
-  const prompts = context.prompts;
-  const promptText = async (label: string, value: string | undefined): Promise<string> => {
-    if (value !== undefined) {
-      return value;
-    }
-    if (prompts === undefined) {
-      throw new CliUsageError(
-        `stepkit add requires --${label.toLowerCase()} <${label.toLowerCase()}>.`,
-      );
-    }
-    const answer = (await prompts.text(label)).trim();
-    if (!answer) {
-      throw new CliUsageError(`${label} is required.`);
-    }
-    return answer;
-  };
+  prompts: CliCommandContext["prompts"],
+): Promise<ResolvedSkillArgs> {
   const promptSkillChoices =
     prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
 
+  if (!promptSkillChoices) {
+    return { projectSkill: args.projectSkill, userSkill: args.userSkill };
+  }
+
   return {
-    source: args.source,
-    scope:
-      args.scope ??
-      (await promptSelect("Config scope", ["project", "project-local", "user"], prompts)),
-    namespace: await promptText("Namespace", args.namespace),
-    name: await promptText("Workflow name", args.name),
-    workflow: args.workflow,
-    force: args.force,
-    projectSkill: promptSkillChoices
-      ? await promptYesNo("Add to project skills?", prompts)
-      : args.projectSkill,
-    userSkill: promptSkillChoices
-      ? await promptYesNo("Add to user skills?", prompts)
-      : args.userSkill,
+    projectSkill: await promptYesNo(
+      "Add to project skills?",
+      prompts,
+      "stepkit add requires --project-skill.",
+    ),
+    userSkill: await promptYesNo(
+      "Add to user skills?",
+      prompts,
+      "stepkit add requires --user-skill.",
+    ),
   };
-}
-
-async function promptSelect<T extends string>(
-  label: string,
-  choices: readonly T[],
-  prompts: CliCommandContext["prompts"],
-): Promise<T> {
-  if (prompts === undefined) {
-    throw new CliUsageError(`stepkit add requires ${label}.`);
-  }
-  const selected = await prompts.select(label, choices);
-  if (!choices.includes(selected as T)) {
-    throw new CliUsageError(`Invalid selection for ${label}: ${selected}`);
-  }
-  return selected as T;
-}
-
-async function promptYesNo(label: string, prompts: CliCommandContext["prompts"]): Promise<boolean> {
-  return (await promptSelect(label, ["yes", "no"], prompts)) === "yes";
 }
 
 async function tryWriteAndDistributeWorkflowSkill(
@@ -301,8 +367,13 @@ interface AddRegistryTarget {
   readonly bundleSpecifier?: BundleWorkflowSpecifier;
 }
 
+interface SourceResolutionArgs {
+  readonly source: string;
+  readonly workflow?: string;
+}
+
 async function validateAndBuildRegistryTarget(
-  args: ResolvedAddCommandArgs,
+  args: SourceResolutionArgs,
   cwd: string,
   context: CliCommandContext,
 ): Promise<AddRegistryTarget> {
@@ -312,7 +383,12 @@ async function validateAndBuildRegistryTarget(
       args.workflow ??
       (workflowNames.length === 1
         ? workflowNames[0]
-        : await promptSelect("Bundle workflow", workflowNames, context.prompts));
+        : await promptSelect(
+            "Bundle workflow",
+            workflowNames,
+            context.prompts,
+            `Bundle ${args.source} contains multiple workflows. Choose one with --workflow <workflow>.`,
+          ));
 
     if (!workflowName) {
       throw new CliUsageError(
@@ -399,55 +475,6 @@ function resolveBundlePackageJsonPath(source: string, cwd: string): string {
   } catch (error) {
     throw new WorkflowResolutionError(`Bundle package not found: ${source}`, { cause: error });
   }
-}
-
-function configPathForScope(
-  scope: ResolvedAddCommandArgs["scope"],
-  context: CliCommandContext,
-): string {
-  if (scope === "project-local") {
-    return join(context.cwd, ".stepkit", "config-local.json");
-  }
-  const baseDir = scope === "project" ? context.cwd : (context.homeDir ?? homedir());
-  return join(baseDir, ".stepkit", "config.json");
-}
-
-async function readConfig(path: string): Promise<Record<string, unknown>> {
-  try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
-    if (!isRecord(parsed)) {
-      throw new CliUsageError(`Invalid StepKit config at ${path}: expected a JSON object.`);
-    }
-    return parsed;
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return {};
-    }
-    throw error;
-  }
-}
-
-async function writeConfig(path: string, value: Record<string, unknown>): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function toMutableWorkflowRegistry(value: unknown): Record<string, Record<string, unknown>> {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  const registry: Record<string, Record<string, unknown>> = {};
-  for (const [namespace, entries] of Object.entries(value)) {
-    if (isRecord(entries)) {
-      registry[namespace] = { ...entries };
-    }
-  }
-  return registry;
-}
-
-function isNodeError(error: unknown): error is { readonly code: string } {
-  return isRecord(error) && typeof error.code === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

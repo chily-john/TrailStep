@@ -99,6 +99,65 @@ describe("workflow registry project config", () => {
     });
   });
 
+  it("merges workflows per-namespace instead of replacing the shared registry wholesale", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeConfig(cwd, {
+      workflows: {
+        project: {
+          release: "./release.mjs",
+        },
+      },
+    });
+    await writeLocalConfig(cwd, {
+      workflows: {
+        project: {
+          review: "./review.mjs",
+        },
+      },
+    });
+
+    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
+      workflowRegistry: {
+        project: {
+          release: "./release.mjs",
+          review: "./review.mjs",
+        },
+      },
+    });
+  });
+
+  it("lets config-local.json win on a same-name workflow registration conflict", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeConfig(cwd, {
+      workflows: {
+        project: {
+          review: "./shared-review.mjs",
+        },
+      },
+    });
+    await writeLocalConfig(cwd, {
+      workflows: {
+        project: {
+          review: "./local-review.mjs",
+        },
+      },
+    });
+
+    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
+      workflowRegistry: {
+        project: {
+          review: "./local-review.mjs",
+        },
+      },
+    });
+  });
+
   it("loads config-local.json alone when config.json is absent", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });

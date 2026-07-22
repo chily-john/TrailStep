@@ -3,6 +3,7 @@ import { addCommand } from "./commands/add/add-command.js";
 import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
 import { listCommand } from "./commands/list/list-command.js";
+import { removeCommand } from "./commands/remove/remove-command.js";
 import { runCommand } from "./commands/run/run-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
 
@@ -16,7 +17,11 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
     return addCommand;
   }
 
-  if (argv.length === 1 && argv[0] === "list") {
+  if (argv[0] === "remove") {
+    return removeCommand;
+  }
+
+  if (argv[0] === "list") {
     return listCommand;
   }
 

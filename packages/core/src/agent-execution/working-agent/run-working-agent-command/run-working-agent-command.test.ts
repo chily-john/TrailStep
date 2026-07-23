@@ -47,7 +47,7 @@ describe("runWorkingAgentCommand", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
-        agents: { medium: { items: [{ provider: "worker" }] } },
+        agents: { medium: [{ provider: "worker" }] },
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);
@@ -122,12 +122,10 @@ describe("runWorkingAgentCommand", () => {
           second: { binary: "second-agent" },
         },
         agents: {
-          medium: {
-            items: [
-              { provider: "first", model: "first-model" },
-              { provider: "second", model: "second-model" },
-            ],
-          },
+          medium: [
+            { provider: "first", model: "first-model" },
+            { provider: "second", model: "second-model" },
+          ],
         },
       }),
       workingAgentProcessRunner: async (request) => {

@@ -69,8 +69,8 @@ interface ResolvedAddCommandArgs {
 }
 
 const SCOPE_PROMPT_LABEL =
-  "Where should this workflow be registered? (project-local = just you on this repo, " +
-  "project = shared with your team, user = global across all your projects)";
+  "Where should this workflow be registered? (local = just you on this repo, " +
+  "project = shared with your team, global = global across all your projects)";
 const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
 
 export const addCommand: CliCommand<AddCommandArgs> = {
@@ -89,14 +89,9 @@ export const addCommand: CliCommand<AddCommandArgs> = {
 
     const flags = parseFlags(argv.slice(2));
     const scope = flags.scope;
-    if (
-      scope !== undefined &&
-      scope !== "project" &&
-      scope !== "project-local" &&
-      scope !== "user"
-    ) {
+    if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
-        "stepkit add requires --scope project, --scope project-local, or --scope user.",
+        "stepkit add requires --scope local, --scope project, or --scope global.",
       );
     }
 
@@ -118,9 +113,9 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       args.scope ??
       (await promptSelect(
         SCOPE_PROMPT_LABEL,
-        ["project-local", "project", "user"] as const,
+        ["local", "project", "global"] as const,
         context.prompts,
-        "stepkit add requires --scope <project|project-local|user>.",
+        "stepkit add requires --scope <local|project|global>.",
       ));
 
     const registryTarget = await validateAndBuildRegistryTarget(
@@ -222,20 +217,20 @@ async function resolveNamespace(
   if (explicitNamespace !== undefined) {
     return explicitNamespace;
   }
-  if (scope !== "user") {
+  if (scope !== "global") {
     return "project";
   }
   if (prompts === undefined) {
-    return "user";
+    return "global";
   }
 
   const wantsNamespace = await promptYesNo(
     "Add a namespace to avoid collisions?",
     prompts,
-    "stepkit add requires --namespace <namespace> when scope is user and not run interactively.",
+    "stepkit add requires --namespace <namespace> when scope is global and not run interactively.",
   );
   if (!wantsNamespace) {
-    return "user";
+    return "global";
   }
   return promptText(
     "Namespace",
@@ -392,9 +387,7 @@ async function promptForWorkflowRoleMapping(
       options.scope,
       options.workflowId,
       options.roleName,
-      {
-        items: [{ ref: namedAgent }],
-      },
+      [{ ref: namedAgent }],
       context,
     );
     return;
@@ -413,7 +406,7 @@ async function promptForWorkflowRoleMapping(
   await writeNamedAgent(
     options.scope,
     name,
-    { items: [configured.target] },
+    [{ ...configured.target }],
     context,
     configured.customProvider,
   );
@@ -421,9 +414,7 @@ async function promptForWorkflowRoleMapping(
     options.scope,
     options.workflowId,
     options.roleName,
-    {
-      items: [{ ref: name }],
-    },
+    [{ ref: name }],
     context,
   );
 }
@@ -439,7 +430,7 @@ function workflowRolePrompt(options: PromptForWorkflowRoleMappingOptions): strin
 
 async function listNamedAgentChoices(context: CliCommandContext): Promise<readonly string[]> {
   const names = new Set<string>();
-  for (const scope of ["project-local", "project", "user"] as const) {
+  for (const scope of ["local", "project", "global"] as const) {
     const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
     for (const name of Object.keys(toMutableRecord(config.agents))) {
       names.add(name);
@@ -451,7 +442,7 @@ async function listNamedAgentChoices(context: CliCommandContext): Promise<readon
 async function writeNamedAgent(
   scope: WorkflowRegistryScope,
   name: string,
-  entry: Record<string, unknown>,
+  entry: readonly Record<string, unknown>[],
   context: CliCommandContext,
   customProvider?: ConfiguredCustomProvider,
 ): Promise<void> {
@@ -472,7 +463,7 @@ async function writeWorkflowRoleMapping(
   scope: WorkflowRegistryScope,
   workflowId: string,
   roleName: string,
-  entry: Record<string, unknown>,
+  entry: readonly Record<string, unknown>[],
   context: CliCommandContext,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
@@ -537,12 +528,12 @@ function warnForSkillScopeMismatch(
   skillName: string,
   context: CliCommandContext,
 ): void {
-  if (args.projectSkill && (args.scope === "user" || args.scope === "project-local")) {
+  if (args.projectSkill && (args.scope === "global" || args.scope === "local")) {
     context.io.writeError(
       `Warning: project workflow skill ${skillName} points at a ${args.scope}-scoped registration; teammates may not resolve it.`,
     );
   }
-  if (args.userSkill && (args.scope === "project" || args.scope === "project-local")) {
+  if (args.userSkill && (args.scope === "project" || args.scope === "local")) {
     context.io.writeError(
       `Warning: user workflow skill ${skillName} points at a ${args.scope}-scoped registration and only works from this project.`,
     );

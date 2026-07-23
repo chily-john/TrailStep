@@ -46,7 +46,7 @@ describe("continuation interactive agent roles", () => {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
         agents: {
-          small: { items: [{ provider: "terminalAgent", model: "right-mode" }] },
+          small: [{ provider: "terminalAgent", model: "right-mode" }],
         },
       },
       processRunner: async (call) => {
@@ -138,7 +138,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -205,7 +205,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -264,7 +264,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async () => ({ exitCode: 0 }),
     });
@@ -306,7 +306,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -358,7 +358,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
@@ -410,7 +410,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         prompt = call.args[0] ?? "";
@@ -462,7 +462,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["--prompt", "{{prompt}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         expect(call.args[1]).toContain("## Original prompt\nDiscuss direct prompt.");
@@ -521,7 +521,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         await completeInteractiveWithSessionFile(call, "Minimal default notes.\n");
@@ -538,7 +538,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
         await completeInteractive(call, { notes: "Minimal custom notes." });
@@ -590,7 +590,7 @@ describe("continuation interactive agent roles", () => {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
         agents: {
-          small: { items: [{ provider: "terminalAgent", model: "right-mode" }] },
+          small: [{ provider: "terminalAgent", model: "right-mode" }],
         },
       },
       processRunner: async (call) => {
@@ -693,7 +693,7 @@ describe("continuation interactive agent roles", () => {
           interactive: { binary: "interactive-agent", interactiveArgs: ["{{promptFile}}"] },
         },
         agents: {
-          large: { items: [{ provider: "interactive", model: "interactive-model" }] },
+          large: [{ provider: "interactive", model: "interactive-model" }],
         },
       },
       processRunner: async (call) => {
@@ -748,7 +748,7 @@ describe("continuation interactive agent roles", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async () => {
         runnerCalled = true;
@@ -801,7 +801,7 @@ describe("continuation interactive agent roles", () => {
           },
         },
         agents: {
-          small: { items: [{ provider: "terminalAgent", model: "right-mode" }] },
+          small: [{ provider: "terminalAgent", model: "right-mode" }],
         },
       },
       processRunner: async (call) => {
@@ -857,7 +857,7 @@ describe("continuation interactive agent roles", () => {
         version: 1,
         customProviders: {},
         agents: {
-          small: { items: [{ provider: "claude", model: "opus" }] },
+          small: [{ provider: "claude", model: "opus" }],
         },
       },
       processRunner: async (call) => {

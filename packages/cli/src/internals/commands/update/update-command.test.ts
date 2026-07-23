@@ -39,7 +39,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitOne,
@@ -82,7 +82,7 @@ describe("updateCommand", () => {
     const lines: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes", "--force"],
+      argv: ["update", "--assume-yes", "--force"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: latestStepkitOne,
@@ -122,7 +122,7 @@ describe("updateCommand", () => {
     const lines: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: latestStepkitOne,
@@ -159,7 +159,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitOne,
@@ -202,7 +202,7 @@ describe("updateCommand", () => {
     const output: string[] = [];
 
     await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: {
         writeLine: (line) => output.push(`line:${line}`),
@@ -303,7 +303,7 @@ describe("updateCommand", () => {
     const lines: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--workflows", "--yes"],
+      argv: ["update", "--workflows", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: async () => ({
@@ -382,7 +382,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const blockedExitCode = await main({
-      argv: ["update", "--workflow=project/release", "--yes"],
+      argv: ["update", "--workflow=project/release", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestWorkflowPackage,
@@ -397,7 +397,7 @@ describe("updateCommand", () => {
 
     const forceLines: string[] = [];
     const forceExitCode = await main({
-      argv: ["update", "--workflow=project/release", "--yes", "--force"],
+      argv: ["update", "--workflow=project/release", "--assume-yes", "--force"],
       cwd,
       io: { writeLine: (line) => forceLines.push(line), writeError: () => undefined },
       packageCommandRunner: latestWorkflowPackage,
@@ -443,7 +443,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitTwo,
@@ -520,7 +520,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--all", "--yes"],
+      argv: ["update", "--all", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitTwoAndWorkflowPackage,
@@ -540,7 +540,9 @@ describe("updateCommand", () => {
     expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
   });
 
-  it("applies self and workflow package updates together for --all --yes", async ({ task }) => {
+  it("applies self and workflow package updates together for --all --assume-yes", async ({
+    task,
+  }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
@@ -569,7 +571,7 @@ describe("updateCommand", () => {
     const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
 
     const exitCode = await main({
-      argv: ["update", "--all", "--yes"],
+      argv: ["update", "--all", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: async (request) => {
@@ -611,7 +613,7 @@ describe("updateCommand", () => {
     );
 
     const exitCode = await main({
-      argv: ["update", "--workflows", "--yes"],
+      argv: ["update", "--workflows", "--assume-yes"],
       cwd,
       io: { writeLine: () => undefined, writeError: () => undefined },
       packageCommandRunner: async (request) => {
@@ -642,7 +644,7 @@ describe("updateCommand", () => {
     const events: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => events.push(`line:${line}`), writeError: () => undefined },
       packageCommandRunner: async (request) => {
@@ -661,7 +663,7 @@ describe("updateCommand", () => {
     ).toBeLessThan(events.indexOf("install"));
   });
 
-  it("applies self update with --yes, prints version changes, and runs detected install", async ({
+  it("applies self update with --assume-yes, prints version changes, and runs detected install", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
@@ -680,7 +682,7 @@ describe("updateCommand", () => {
     const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: async (request) => {
@@ -766,7 +768,7 @@ describe("updateCommand", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(errors.join("\n")).toMatch(/--yes or an interactive confirm prompt/i);
+    expect(errors.join("\n")).toMatch(/--assume-yes or an interactive confirm prompt/i);
     expect(await readFile(packageJsonPath, "utf8")).toBe(original);
   });
 
@@ -815,7 +817,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--yes"],
+      argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: async (request) => {

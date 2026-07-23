@@ -13,13 +13,13 @@ describe("StepKit config", () => {
         defaultReviewer: customProvider("default-reviewer"),
       },
       agents: {
-        medium: { items: [target("mediumReviewer")] },
-        default: { items: [target("defaultReviewer")] },
+        medium: [target("mediumReviewer")],
+        default: [target("defaultReviewer")],
       },
       workflows: {
         "review-workflow": {
           agents: {
-            reviewer: { items: [target("workflowReviewer")] },
+            reviewer: [target("workflowReviewer")],
           },
         },
       },
@@ -42,8 +42,8 @@ describe("StepKit config", () => {
         defaultReviewer: customProvider("default-reviewer"),
       },
       agents: {
-        medium: { items: [] },
-        default: { items: [target("defaultReviewer")] },
+        medium: [],
+        default: [target("defaultReviewer")],
       },
     });
 
@@ -65,7 +65,7 @@ describe("StepKit config", () => {
           reviewer: customProvider("reviewer"),
         },
         agents: {
-          default: { items: [target("missing")] },
+          default: [target("missing")],
         },
       }),
     ).toThrow(StepKitFailureError);
@@ -78,7 +78,7 @@ describe("StepKit config", () => {
         reviewer: customProvider("reviewer"),
       },
       agents: {
-        default: { items: [] },
+        default: [],
       },
     });
 

@@ -1,11 +1,7 @@
 {
   "version": 1,
-  "customAgents": {},
-  "workingAgents": {
+  "agents": {
     "default": [{ "provider": "claude" }]
-  },
-  "interactiveAgents": {
-    "default": []
   },
   "workflows": {
     "project": {

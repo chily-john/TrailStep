@@ -100,11 +100,11 @@ async function addSourceFilesForTarget(
 }
 
 function baseDirForRegistryScope(
-  scope: "project" | "project-local" | "user",
+  scope: "local" | "project" | "global",
   cwd: string,
   homeDir: string | undefined,
 ): string {
-  return scope === "user" ? (homeDir ?? homedir()) : cwd;
+  return scope === "global" ? (homeDir ?? homedir()) : cwd;
 }
 
 function normalizeRegistryTargetRef(targetRef: string, baseDir: string): string {

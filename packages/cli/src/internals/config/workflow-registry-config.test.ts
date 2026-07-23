@@ -42,7 +42,7 @@ describe("workflow registry project config", () => {
         local: { binary: "pi", args: ["--model", "small"] },
       },
       agents: {
-        small: { items: [{ provider: "local" }] },
+        small: [{ provider: "local" }],
       },
       workflows: {
         project: {
@@ -50,7 +50,7 @@ describe("workflow registry project config", () => {
         },
         review: {
           agents: {
-            reviewer: { items: [{ provider: "local", model: "small" }] },
+            reviewer: [{ provider: "local", model: "small" }],
           },
         },
       },
@@ -74,7 +74,7 @@ describe("workflow registry project config", () => {
     });
   });
 
-  it("merges user, project, and project-local run config with agents replaced by entry name", async ({
+  it("merges global, project, and local run config with agents replaced by entry name", async ({
     task,
   }) => {
     const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
@@ -88,8 +88,8 @@ describe("workflow registry project config", () => {
         user: { binary: "user-pi" },
       },
       agents: {
-        default: { items: [{ provider: "claude", args: ["--user-default"] }] },
-        userOnly: { items: [{ provider: "claude" }] },
+        default: [{ provider: "claude", args: ["--user-default"] }],
+        userOnly: [{ provider: "claude" }],
       },
     });
     await writeConfig(cwd, {
@@ -97,8 +97,8 @@ describe("workflow registry project config", () => {
         project: { binary: "project-pi" },
       },
       agents: {
-        default: { items: [{ provider: "codex", args: ["--project-default"] }] },
-        projectOnly: { items: [{ provider: "codex" }] },
+        default: [{ provider: "codex", args: ["--project-default"] }],
+        projectOnly: [{ provider: "codex" }],
       },
     });
     await writeLocalConfig(cwd, {
@@ -106,8 +106,8 @@ describe("workflow registry project config", () => {
         local: { binary: "local-pi" },
       },
       agents: {
-        default: { items: [{ provider: "local", args: ["--local-default"] }] },
-        localOnly: { items: [{ provider: "local" }] },
+        default: [{ provider: "local", args: ["--local-default"] }],
+        localOnly: [{ provider: "local" }],
       },
     });
 
@@ -137,19 +137,19 @@ describe("workflow registry project config", () => {
     await writeUserConfig(homeDir, {
       version: 1,
       agents: {
-        reviewer: { items: [{ provider: "claude" }] },
+        reviewer: [{ provider: "claude" }],
       },
       workflows: {
         userWorkflow: {
           agents: {
-            reviewer: { items: [{ provider: "claude", model: "user-model" }] },
+            reviewer: [{ provider: "claude", model: "user-model" }],
           },
         },
       },
     });
     await writeConfig(cwd, {
       agents: {
-        reviewer: { items: [{ provider: "codex" }] },
+        reviewer: [{ provider: "codex" }],
       },
       workflows: {
         project: {
@@ -157,7 +157,7 @@ describe("workflow registry project config", () => {
         },
         projectWorkflow: {
           agents: {
-            reviewer: { items: [{ provider: "codex", model: "project-model" }] },
+            reviewer: [{ provider: "codex", model: "project-model" }],
           },
         },
       },
@@ -169,7 +169,7 @@ describe("workflow registry project config", () => {
         },
         localWorkflow: {
           agents: {
-            reviewer: { items: [{ provider: "codex", model: "local-model" }] },
+            reviewer: [{ provider: "codex", model: "local-model" }],
           },
         },
       },
@@ -202,12 +202,12 @@ describe("workflow registry project config", () => {
         local: { binary: "pi", args: ["--model", "small"] },
       },
       agents: {
-        small: { items: [{ provider: "shared" }] },
+        small: [{ provider: "shared" }],
       },
     });
     await writeLocalConfig(cwd, {
       agents: {
-        small: { items: [{ provider: "local" }] },
+        small: [{ provider: "local" }],
       },
     });
 
@@ -291,7 +291,7 @@ describe("workflow registry project config", () => {
         local: { binary: "pi", args: ["--model", "small"] },
       },
       agents: {
-        small: { items: [{ provider: "local" }] },
+        small: [{ provider: "local" }],
       },
     });
 

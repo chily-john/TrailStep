@@ -93,7 +93,7 @@ describe("addCommand", () => {
           select: async (prompt, choices) => {
             selectPrompts.push(prompt);
             if (prompt.startsWith("Where should this workflow be registered?")) {
-              expect(choices).toEqual(["project-local", "project", "user"]);
+              expect(choices).toEqual(["local", "project", "global"]);
               return "project";
             }
             if (prompt === "Add to project skills?") {
@@ -115,7 +115,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(selectPrompts).toEqual([
-      "Where should this workflow be registered? (project-local = just you on this repo, project = shared with your team, user = global across all your projects)",
+      "Where should this workflow be registered? (local = just you on this repo, project = shared with your team, global = global across all your projects)",
       "Add to project skills?",
       "Add to user skills?",
     ]);
@@ -135,9 +135,9 @@ describe("addCommand", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
 
-    const command = resolveCommand(["add", "./workflows/review.mjs", "--scope", "project-local"]);
+    const command = resolveCommand(["add", "./workflows/review.mjs", "--scope", "local"]);
     const exitCode = await command.run(
-      command.parseArgs(["add", "./workflows/review.mjs", "--scope", "project-local"]) as never,
+      command.parseArgs(["add", "./workflows/review.mjs", "--scope", "local"]) as never,
       {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
@@ -215,7 +215,7 @@ describe("addCommand", () => {
     ).rejects.toThrow(/reserved character/);
   });
 
-  it("rejects --namespace project combined with --scope user", async ({ task }) => {
+  it("rejects --namespace project combined with --scope global", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-stepkit-add-command-tests",
@@ -228,7 +228,7 @@ describe("addCommand", () => {
       "add",
       "./workflows/review.mjs",
       "--scope",
-      "user",
+      "global",
       "--namespace",
       "project",
       "--name",
@@ -240,7 +240,7 @@ describe("addCommand", () => {
           "add",
           "./workflows/review.mjs",
           "--scope",
-          "user",
+          "global",
           "--namespace",
           "project",
           "--name",
@@ -255,9 +255,7 @@ describe("addCommand", () => {
     ).rejects.toThrow(/Namespace "project" is reserved/);
   });
 
-  it("catches a duplicate registration across project and project-local scope", async ({
-    task,
-  }) => {
+  it("catches a duplicate registration across project and local scope", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-stepkit-add-command-tests",
@@ -274,7 +272,7 @@ describe("addCommand", () => {
       "add",
       "./workflows/review.mjs",
       "--scope",
-      "project-local",
+      "local",
       "--name",
       "review",
     ]);
@@ -284,7 +282,7 @@ describe("addCommand", () => {
           "add",
           "./workflows/review.mjs",
           "--scope",
-          "project-local",
+          "local",
           "--name",
           "review",
         ]) as never,
@@ -734,7 +732,7 @@ describe("addCommand", () => {
           select: async (prompt, choices) => {
             prompts.push(prompt);
             if (prompt.startsWith("Where should this workflow be registered?")) {
-              expect(choices).toEqual(["project-local", "project", "user"]);
+              expect(choices).toEqual(["local", "project", "global"]);
               return "project";
             }
             if (prompt === "Add to project skills?") {
@@ -756,7 +754,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(prompts).toEqual([
-      "Where should this workflow be registered? (project-local = just you on this repo, project = shared with your team, user = global across all your projects)",
+      "Where should this workflow be registered? (local = just you on this repo, project = shared with your team, global = global across all your projects)",
       "Add to project skills?",
       "Add to user skills?",
     ]);
@@ -840,7 +838,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       agents: {
-        reviewerAgent: { items: [{ provider: "claude", model: "sonnet" }] },
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
@@ -905,11 +903,11 @@ describe("addCommand", () => {
     ]);
     expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
       agents: {
-        reviewerAgent: { items: [{ provider: "claude", model: "sonnet" }] },
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
       workflows: {
         acme: { review: "./workflows/review.mjs" },
-        review: { agents: { reviewer: { items: [{ ref: "reviewerAgent" }] } } },
+        review: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
       },
     });
   });
@@ -923,7 +921,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      agents: { default: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
 
@@ -967,7 +965,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { default: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
   });
@@ -988,7 +986,7 @@ describe("addCommand", () => {
         reviewer: { binary: "reviewer" },
       },
       agents: {
-        reviewer: { items: [{ provider: "reviewer" }] },
+        reviewer: [{ provider: "reviewer" }],
       },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
@@ -1030,7 +1028,7 @@ describe("addCommand", () => {
         reviewer: { binary: "reviewer" },
       },
       agents: {
-        reviewer: { items: [{ provider: "reviewer" }] },
+        reviewer: [{ provider: "reviewer" }],
       },
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
@@ -1038,7 +1036,7 @@ describe("addCommand", () => {
     expect(errors).toEqual([]);
   });
 
-  it("adds a direct workflow file to project-local config without touching project config", async ({
+  it("adds a direct workflow file to local config without touching project config", async ({
     task,
   }) => {
     const cwd = join(
@@ -1054,7 +1052,7 @@ describe("addCommand", () => {
         reviewer: { binary: "reviewer" },
       },
       agents: {
-        reviewer: { items: [{ provider: "reviewer" }] },
+        reviewer: [{ provider: "reviewer" }],
       },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
@@ -1063,7 +1061,7 @@ describe("addCommand", () => {
       "add",
       "./workflows/review.mjs",
       "--scope",
-      "project-local",
+      "local",
       "--namespace",
       "acme",
       "--name",
@@ -1076,7 +1074,7 @@ describe("addCommand", () => {
         "add",
         "./workflows/review.mjs",
         "--scope",
-        "project-local",
+        "local",
         "--namespace",
         "acme",
         "--name",
@@ -1098,12 +1096,10 @@ describe("addCommand", () => {
         reviewer: { binary: "reviewer" },
       },
       agents: {
-        reviewer: { items: [{ provider: "reviewer" }] },
+        reviewer: [{ provider: "reviewer" }],
       },
     });
-    expect(lines).toEqual([
-      "Registered acme/review -> ./workflows/review.mjs in project-local config.",
-    ]);
+    expect(lines).toEqual(["Registered acme/review -> ./workflows/review.mjs in local config."]);
   });
 
   it("preserves existing workflow config objects while adding string registrations", async ({

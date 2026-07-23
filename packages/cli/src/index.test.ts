@@ -11,7 +11,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 describe("main", () => {
-  it("prints discovered workflow ids for the list command", async ({ task }) => {
+  it("prints discovered workflow ids for the workflows command", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
     await mkdir(packageDir, { recursive: true });
@@ -36,13 +36,16 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["list"],
+        argv: ["workflows"],
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       }),
     ).resolves.toBe(0);
 
-    expect(lines).toEqual(["@acme/stepkit-workflows:reviewFeature"]);
+    expect(lines).toEqual([
+      "No registered workflows to edit.",
+      "@acme/stepkit-workflows:reviewFeature",
+    ]);
     expect(errors).toEqual([]);
   });
 
@@ -100,7 +103,7 @@ describe("main", () => {
       customProviders: {
         local: { binary: "local-agent", args: ["{{promptFile}}", "{{outputFile}}"] },
       },
-      agents: { small: { items: [{ provider: "local", model: "fake-model" }] } },
+      agents: { small: [{ provider: "local", model: "fake-model" }] },
     });
     await writeJson(join(packageDir, "package.json"), {
       name: "@acme/stepkit-workflows",
@@ -225,7 +228,7 @@ describe("main", () => {
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
       customProviders: {},
-      agents: { tiny: { items: [{ provider: "missing-command" }] } },
+      agents: { tiny: [{ provider: "missing-command" }] },
     });
     const errors: string[] = [];
 
@@ -241,7 +244,7 @@ describe("main", () => {
     expect(errors.join("\n")).toMatch(/missing-command/i);
   });
 
-  it("list does not require .stepkit/config.json", async ({ task }) => {
+  it("workflows does not require .stepkit/config.json", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-list-without-config`);
     const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
     await mkdir(packageDir, { recursive: true });
@@ -262,13 +265,13 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["list"],
+        argv: ["workflows"],
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       }),
     ).resolves.toBe(0);
 
-    expect(lines).toEqual([]);
+    expect(lines).toEqual(["No registered workflows to edit."]);
     expect(errors).toEqual([]);
   });
 
@@ -559,7 +562,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["update", "--workflows", "--yes"],
+        argv: ["update", "--workflows", "--assume-yes"],
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         packageCommandRunner: async () => ({
@@ -593,7 +596,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["update", "--all", "--yes"],
+        argv: ["update", "--all", "--assume-yes"],
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
         packageCommandRunner: latestStepkitTwo,
@@ -620,7 +623,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["update", "--yes"],
+        argv: ["update", "--assume-yes"],
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         packageCommandRunner: async (request) => {

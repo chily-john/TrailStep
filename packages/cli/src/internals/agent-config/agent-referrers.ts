@@ -7,7 +7,7 @@ import {
   writeRawStepKitConfigFile,
 } from "../workflow-registry/workflow-registry.js";
 
-const SCOPES: readonly WorkflowRegistryScope[] = ["project-local", "project", "user"];
+const SCOPES: readonly WorkflowRegistryScope[] = ["local", "project", "global"];
 
 export interface AgentReferrer {
   readonly scope: WorkflowRegistryScope;
@@ -72,7 +72,7 @@ function collectAgentReferrers(
   }
 
   for (const [agentName, entry] of Object.entries(value)) {
-    collectItemsReferrers(entry, `${path}.${agentName}`, ref, scope, referrers);
+    collectAgentEntryReferrers(entry, `${path}.${agentName}`, ref, scope, referrers);
   }
 }
 
@@ -92,7 +92,7 @@ function collectWorkflowRoleReferrers(
       continue;
     }
     for (const [roleName, roleConfig] of Object.entries(workflowConfig)) {
-      collectItemsReferrers(
+      collectAgentEntryReferrers(
         roleConfig,
         `${path}.${workflowName}.${roleName}`,
         ref,
@@ -110,20 +110,20 @@ function collectWorkflowRoleReferrers(
   }
 }
 
-function collectItemsReferrers(
+function collectAgentEntryReferrers(
   value: unknown,
   path: string,
   ref: string,
   scope: WorkflowRegistryScope,
   referrers: AgentReferrer[],
 ): void {
-  if (!isRecord(value) || !Array.isArray(value.items)) {
+  if (!Array.isArray(value)) {
     return;
   }
 
-  value.items.forEach((item, index) => {
+  value.forEach((item, index) => {
     if (isRecord(item) && item.ref === ref) {
-      referrers.push({ scope, path: `${path}.items[${index}]` });
+      referrers.push({ scope, path: `${path}[${index}]` });
     }
   });
 }

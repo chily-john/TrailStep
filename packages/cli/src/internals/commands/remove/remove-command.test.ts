@@ -84,7 +84,7 @@ describe("removeCommand", () => {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
       }),
-    ).rejects.toThrow(/more than one scope.*project-local, project/s);
+    ).rejects.toThrow(/more than one scope.*local, project/s);
   });
 
   it("removes only the file forced by --scope when the ref exists in more than one", async ({
@@ -98,15 +98,15 @@ describe("removeCommand", () => {
       workflows: { project: { review: "./local-review.mjs" } },
     });
 
-    const command = resolveCommand(["remove", "project/review", "--scope", "project-local"]);
+    const command = resolveCommand(["remove", "project/review", "--scope", "local"]);
     const lines: string[] = [];
     const exitCode = await command.run(
-      command.parseArgs(["remove", "project/review", "--scope", "project-local"]) as never,
+      command.parseArgs(["remove", "project/review", "--scope", "local"]) as never,
       { cwd, io: { writeLine: (line) => lines.push(line), writeError: () => undefined } },
     );
 
     expect(exitCode).toBe(0);
-    expect(lines).toEqual(["Removed project/review from project-local config."]);
+    expect(lines).toEqual(["Removed project/review from local config."]);
     expect(await readJson(join(cwd, ".stepkit", "config-local.json"))).toEqual({ workflows: {} });
     expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
       workflows: { project: { review: "./shared-review.mjs" } },

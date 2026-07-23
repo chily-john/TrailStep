@@ -8,30 +8,18 @@ import {
 } from "./agent-entry-items-flow.js";
 
 describe("agent entry item helpers", () => {
-  it("adds, removes, reorders, and edits raw items while preserving unrelated keys", () => {
-    const entry: Record<string, unknown> = { description: "kept", items: [{ ref: "base" }] };
+  it("adds, removes, reorders, and edits raw items", () => {
+    const items: readonly Record<string, unknown>[] = [{ ref: "base" }];
 
-    const added = addAgentEntryItem(entry, { provider: "claude" });
-    expect(added).toEqual({
-      description: "kept",
-      items: [{ ref: "base" }, { provider: "claude" }],
-    });
+    const added = addAgentEntryItem(items, { provider: "claude" });
+    expect(added).toEqual([{ ref: "base" }, { provider: "claude" }]);
 
     const reordered = reorderAgentEntryItem(added, 1, 0);
-    expect(reordered).toEqual({
-      description: "kept",
-      items: [{ provider: "claude" }, { ref: "base" }],
-    });
+    expect(reordered).toEqual([{ provider: "claude" }, { ref: "base" }]);
 
     const edited = editAgentEntryItem(reordered, 0, { provider: "codex", model: "gpt-5" });
-    expect(edited).toEqual({
-      description: "kept",
-      items: [{ provider: "codex", model: "gpt-5" }, { ref: "base" }],
-    });
+    expect(edited).toEqual([{ provider: "codex", model: "gpt-5" }, { ref: "base" }]);
 
-    expect(removeAgentEntryItem(edited, 1)).toEqual({
-      description: "kept",
-      items: [{ provider: "codex", model: "gpt-5" }],
-    });
+    expect(removeAgentEntryItem(edited, 1)).toEqual([{ provider: "codex", model: "gpt-5" }]);
   });
 });

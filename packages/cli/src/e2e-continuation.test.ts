@@ -54,7 +54,7 @@ describe("continuation workflow CLI e2e", () => {
     const listLines: string[] = [];
     await expect(
       main({
-        argv: ["list"],
+        argv: ["workflows"],
         cwd,
         io: { writeLine: (line) => listLines.push(line), writeError: () => undefined },
       }),

@@ -71,7 +71,7 @@ async function writeRegisteredProjectWorkflow(cwd: string): Promise<void> {
       },
       review: {
         agents: {
-          reviewer: { items: [{ provider: "local" }] },
+          reviewer: [{ provider: "local" }],
         },
       },
     },
@@ -117,7 +117,7 @@ async function writeConflictingRegisteredWorkflows(cwd: string, homeDir: string)
   });
   await writeJson(join(homeDir, ".stepkit", "config.json"), {
     workflows: {
-      user: {
+      global: {
         review: "~/.stepkit/workflows/review.mjs",
       },
     },
@@ -359,7 +359,7 @@ describe("run command", () => {
     expect({ errors, exitCode }).toEqual({ errors: [], exitCode: 0 });
   });
 
-  it("prefers project registrations for unqualified conflicts while explicit user refs remain available", async ({
+  it("prefers project registrations for unqualified conflicts while explicit global refs remain available", async ({
     task,
   }) => {
     const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
@@ -382,7 +382,7 @@ describe("run command", () => {
     ).resolves.toBe(0);
     await expect(
       main({
-        argv: ["user/review", "user-run", "--input", "{}"],
+        argv: ["global/review", "user-run", "--input", "{}"],
         cwd,
         homeDir,
         io: { writeLine: (line) => userLines.push(line), writeError: () => undefined },
@@ -396,7 +396,7 @@ describe("run command", () => {
       readFile(join(cwd, ".stepkit", "runs", "user-run", "events.jsonl"), "utf8"),
     ).resolves.toContain('"userSelected":true');
     expect(projectLines.join("\n")).toContain("project/review");
-    expect(userLines.join("\n")).toContain("user/review");
+    expect(userLines.join("\n")).toContain("global/review");
   });
 
   it("runs a workflow from scoped package bundle manifest metadata", async ({ task }) => {
@@ -534,6 +534,6 @@ describe("run command", () => {
     ).resolves.toBe(1);
 
     expect(errors.join("\n")).toMatch(/workflow.*not found/i);
-    expect(errors.join("\n")).toContain("stepkit list");
+    expect(errors.join("\n")).toContain("stepkit workflows");
   });
 });

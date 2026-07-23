@@ -410,7 +410,7 @@ describe("runWorkflow resume", () => {
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        agents: { small: { items: [{ provider: "terminalAgent" }] } },
+        agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async () => {
         processRunnerCalls += 1;

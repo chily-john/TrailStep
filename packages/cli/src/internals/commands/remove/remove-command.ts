@@ -18,7 +18,7 @@ interface RemoveCommandArgs {
   readonly scope?: WorkflowRegistryScope;
 }
 
-const ALL_SCOPES: readonly WorkflowRegistryScope[] = ["project-local", "project", "user"];
+const ALL_SCOPES: readonly WorkflowRegistryScope[] = ["local", "project", "global"];
 
 export const removeCommand: CliCommand<RemoveCommandArgs> = {
   name: "remove",
@@ -34,14 +34,9 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
 
     const flags = parseFlags(argv.slice(2));
     const scope = flags.scope;
-    if (
-      scope !== undefined &&
-      scope !== "project" &&
-      scope !== "project-local" &&
-      scope !== "user"
-    ) {
+    if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
-        "stepkit remove requires --scope project, --scope project-local, or --scope user.",
+        "stepkit remove requires --scope local, --scope project, or --scope global.",
       );
     }
 

@@ -187,10 +187,10 @@ function findUnqualifiedRegistryTarget(
     };
   }
 
-  const userTargetRef = options.userRegistry.user?.[name];
+  const userTargetRef = options.userRegistry.global?.[name];
   if (userTargetRef !== undefined) {
     return {
-      canonicalRef: `user/${name}`,
+      canonicalRef: `global/${name}`,
       targetRef: normalizeRegistryTargetRef(userTargetRef, options.homeDir),
     };
   }
@@ -208,8 +208,8 @@ function registrySourceForNamespace(
       : { registry: options.projectRegistry, baseDir: options.cwd };
   }
 
-  if (namespace === "user") {
-    return options.userRegistry.user === undefined
+  if (namespace === "global") {
+    return options.userRegistry.global === undefined
       ? undefined
       : { registry: options.userRegistry, baseDir: options.homeDir };
   }

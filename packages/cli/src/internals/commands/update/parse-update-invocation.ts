@@ -9,7 +9,7 @@ export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArg
   let scope: UpdateScope = { kind: "self" };
   let hasExplicitScope = false;
   let force = false;
-  let yes = false;
+  let assumeYes = false;
 
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
@@ -19,8 +19,8 @@ export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArg
       continue;
     }
 
-    if (arg === "--yes") {
-      yes = true;
+    if (arg === "--assume-yes") {
+      assumeYes = true;
       continue;
     }
 
@@ -64,7 +64,7 @@ export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArg
     throw new CliUsageError(`Unexpected argument: ${arg}`);
   }
 
-  return { scope, force, yes };
+  return { scope, force, assumeYes };
 }
 
 function setScope(

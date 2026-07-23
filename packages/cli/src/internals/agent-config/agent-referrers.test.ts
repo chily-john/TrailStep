@@ -24,51 +24,49 @@ async function readJson(path: string): Promise<unknown> {
 }
 
 describe("agent referrer helpers", () => {
-  it("finds and renames refs across project-local, project, and user config files", async ({
-    task,
-  }) => {
+  it("finds and renames refs across local, project, and global config files", async ({ task }) => {
     const cwd = tmpDir(task);
     const homeDir = join(cwd, "home");
     await writeJson(join(cwd, ".stepkit", "config-local.json"), {
-      agents: { local: { items: [{ ref: "workerA" }, { provider: "claude" }] } },
+      agents: { local: [{ ref: "workerA" }, { provider: "claude" }] },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      agents: { shared: { items: [{ ref: "workerA" }] } },
-      workflows: { release: { reviewer: { items: [{ ref: "workerA" }] } } },
+      agents: { shared: [{ ref: "workerA" }] },
+      workflows: { release: { reviewer: [{ ref: "workerA" }] } },
     });
     await writeJson(join(homeDir, ".stepkit", "config.json"), {
-      agents: { user: { items: [{ ref: "workerA" }, { provider: "workerA" }] } },
+      agents: { user: [{ ref: "workerA" }, { provider: "workerA" }] },
     });
 
     await expect(findAgentReferrers("workerA", { cwd, homeDir })).resolves.toEqual([
-      { scope: "project-local", path: "agents.local.items[0]" },
-      { scope: "project", path: "agents.shared.items[0]" },
-      { scope: "project", path: "workflows.release.reviewer.items[0]" },
-      { scope: "user", path: "agents.user.items[0]" },
+      { scope: "local", path: "agents.local[0]" },
+      { scope: "project", path: "agents.shared[0]" },
+      { scope: "project", path: "workflows.release.reviewer[0]" },
+      { scope: "global", path: "agents.user[0]" },
     ]);
 
     await renameAgentRefs("workerA", "workerB", { cwd, homeDir });
 
     await expect(readJson(join(cwd, ".stepkit", "config-local.json"))).resolves.toEqual({
-      agents: { local: { items: [{ ref: "workerB" }, { provider: "claude" }] } },
+      agents: { local: [{ ref: "workerB" }, { provider: "claude" }] },
     });
     await expect(readJson(join(cwd, ".stepkit", "config.json"))).resolves.toEqual({
-      agents: { shared: { items: [{ ref: "workerB" }] } },
-      workflows: { release: { reviewer: { items: [{ ref: "workerB" }] } } },
+      agents: { shared: [{ ref: "workerB" }] },
+      workflows: { release: { reviewer: [{ ref: "workerB" }] } },
     });
     await expect(readJson(join(homeDir, ".stepkit", "config.json"))).resolves.toEqual({
-      agents: { user: { items: [{ ref: "workerB" }, { provider: "workerA" }] } },
+      agents: { user: [{ ref: "workerB" }, { provider: "workerA" }] },
     });
   });
 
   it("blocks delete when referrers exist", async ({ task }) => {
     const cwd = tmpDir(task);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      agents: { reviewer: { items: [{ ref: "workerA" }] } },
+      agents: { reviewer: [{ ref: "workerA" }] },
     });
 
     await expect(blockDeleteWhenAgentReferrersExist("workerA", { cwd })).rejects.toThrow(
-      "Cannot delete agent workerA because it is referenced by project: agents.reviewer.items[0].",
+      "Cannot delete agent workerA because it is referenced by project: agents.reviewer[0].",
     );
   });
 });

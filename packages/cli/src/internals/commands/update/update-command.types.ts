@@ -7,5 +7,5 @@ export type UpdateScope =
 export interface UpdateCommandArgs {
   scope: UpdateScope;
   force: boolean;
-  yes: boolean;
+  assumeYes: boolean;
 }

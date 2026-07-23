@@ -202,7 +202,7 @@ describe("agent steps", () => {
             args: ["{{promptFile}}", "{{outputFile}}", "{{model}}"],
           },
         },
-        agents: { medium: { items: [{ provider: "local", model: "test-model" }] } },
+        agents: { medium: [{ provider: "local", model: "test-model" }] },
       }),
       workingAgentProcessRunner: async (request) => {
         requests.push(request);
@@ -269,12 +269,10 @@ describe("agent steps", () => {
           local: { binary: "local-agent" },
         },
         agents: {
-          medium: {
-            items: [
-              { provider: "broken", model: "bad-model" },
-              { provider: "local", model: "good-model" },
-            ],
-          },
+          medium: [
+            { provider: "broken", model: "bad-model" },
+            { provider: "local", model: "good-model" },
+          ],
         },
       }),
       workingAgentProcessRunner: async (request) => {
@@ -339,12 +337,12 @@ describe("agent steps", () => {
           default: { binary: "default-agent" },
         },
         agents: {
-          small: { items: [{ provider: "size", model: "size-model" }] },
-          default: { items: [{ provider: "default", model: "default-model" }] },
+          small: [{ provider: "size", model: "size-model" }],
+          default: [{ provider: "default", model: "default-model" }],
         },
         workflows: {
           "command-agent-default-fallback-workflow": {
-            agents: { reviewer: { items: [{ provider: "role", model: "role-model" }] } },
+            agents: { reviewer: [{ provider: "role", model: "role-model" }] },
           },
         },
       }),
@@ -402,8 +400,8 @@ describe("agent steps", () => {
           second: { binary: "second-agent" },
         },
         agents: {
-          medium: { items: [{ provider: "first", model: "first-model" }] },
-          default: { items: [{ provider: "second", model: "second-model" }] },
+          medium: [{ provider: "first", model: "first-model" }],
+          default: [{ provider: "second", model: "second-model" }],
         },
       }),
       workingAgentProcessRunner: async (request) => {
@@ -463,7 +461,7 @@ describe("agent steps", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: { local: { binary: "local-agent" } },
-        agents: { small: { items: [{ provider: "local" }] } },
+        agents: { small: [{ provider: "local" }] },
       }),
       workingAgentProcessRunner: async (request) => {
         promptFileBeforeRun = request.promptFile;
@@ -516,7 +514,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: {},
-        agents: { small: { items: [{ provider: "claude", model: "sonnet" }] } },
+        agents: { small: [{ provider: "claude", model: "sonnet" }] },
       }),
       providerWorkingRunner: async (request) => {
         providerCalls.push(request);
@@ -568,7 +566,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: {},
-        agents: { small: { items: [{ provider: "codex", model: "gpt-5.5" }] } },
+        agents: { small: [{ provider: "codex", model: "gpt-5.5" }] },
       }),
       // Unlike the claude registry test above, this mock never returns a
       // stdout envelope: it writes outputFile directly, exactly as the real
@@ -632,7 +630,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: {},
-        agents: { small: { items: [{ provider: "pi", model: "openai-codex/gpt-5.5" }] } },
+        agents: { small: [{ provider: "pi", model: "openai-codex/gpt-5.5" }] },
       }),
       // Simulates the real, empirically confirmed `pi --mode json` shape: a
       // JSON-lines transcript whose final usable "message" field is a
@@ -702,7 +700,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: {},
-        agents: { small: { items: [{ provider: "gemini", model: "gemini-2.5-pro" }] } },
+        agents: { small: [{ provider: "gemini", model: "gemini-2.5-pro" }] },
       }),
       // Synthetic stdout shaped like the Gemini CLI's documented
       // `--output-format json` envelope (a flat "response" string field plus
@@ -764,7 +762,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: { claude: { binary: "should-not-run" } },
-        agents: { small: { items: [{ provider: "claude" }] } },
+        agents: { small: [{ provider: "claude" }] },
       }),
       providerWorkingRunner: async (request) => {
         providerCalls.push(request);
@@ -816,7 +814,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       stepkitConfig: parseStepKitConfig({
         version: 1,
         customProviders: { "local-cli": { binary: "local-cli" } },
-        agents: { small: { items: [{ provider: "local-cli" }] } },
+        agents: { small: [{ provider: "local-cli" }] },
       }),
       workingAgentProcessRunner: async (request) => {
         legacyRequests.push(request);
@@ -839,7 +837,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       parseStepKitConfig({
         version: 1,
         customProviders: {},
-        agents: { small: { items: [{ provider: "totally-unknown-provider" }] } },
+        agents: { small: [{ provider: "totally-unknown-provider" }] },
       }),
     ).toThrowError(
       expect.objectContaining({

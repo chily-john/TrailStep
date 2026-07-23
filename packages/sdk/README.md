@@ -35,4 +35,4 @@ export const sampleWorkflow = defineWorkflow({
 });
 ```
 
-Published workflow packages should include the `stepkit-workflow` keyword so `stepkit list` can discover exported workflows from a consuming project.
+Published workflow packages should include the `stepkit-workflow` keyword so `stepkit workflows` can discover exported workflows from a consuming project.

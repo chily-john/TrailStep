@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { CliUsageError } from "../command.types.js";
 import { isDirectWorkflowFileReference } from "../workflow-resolution/workflow-resolution.js";
 
-export type WorkflowRegistryScope = "project" | "project-local" | "user";
+export type WorkflowRegistryScope = "local" | "project" | "global";
 
 export interface WorkflowRegistryContext {
   readonly cwd: string;
@@ -16,7 +16,7 @@ export function configPathForScope(
   scope: WorkflowRegistryScope,
   context: WorkflowRegistryContext,
 ): string {
-  if (scope === "project-local") {
+  if (scope === "local") {
     return join(context.cwd, ".stepkit", "config-local.json");
   }
   const baseDir = scope === "project" ? context.cwd : (context.homeDir ?? homedir());
@@ -111,7 +111,7 @@ export interface RegisteredWorkflowEntry {
 export async function listRegisteredWorkflowEntries(
   context: WorkflowRegistryContext,
 ): Promise<readonly RegisteredWorkflowEntry[]> {
-  const scopes: readonly WorkflowRegistryScope[] = ["project-local", "project", "user"];
+  const scopes: readonly WorkflowRegistryScope[] = ["local", "project", "global"];
   const entries: RegisteredWorkflowEntry[] = [];
 
   for (const scope of scopes) {
@@ -133,9 +133,9 @@ export async function listRegisteredWorkflowEntries(
 
 /**
  * Checks whether a namespace/name registration already exists among the scopes relevant
- * to `scope`: for "project"/"project-local" this checks BOTH project config files, since
+ * to `scope`: for "project"/"local" this checks BOTH project config files, since
  * they share the same merged registry at resolution time and a collision in either would
- * otherwise silently shadow the other once merged. For "user" scope only that file is
+ * otherwise silently shadow the other once merged. For "global" scope only that file is
  * checked, since it is never merged with anything.
  */
 export async function findExistingRegistrationScope(
@@ -145,7 +145,7 @@ export async function findExistingRegistrationScope(
   context: WorkflowRegistryContext,
 ): Promise<WorkflowRegistryScope | undefined> {
   const candidateScopes: readonly WorkflowRegistryScope[] =
-    scope === "user" ? ["user"] : ["project", "project-local"];
+    scope === "global" ? ["global"] : ["project", "local"];
 
   for (const candidateScope of candidateScopes) {
     const path = configPathForScope(candidateScope, context);
@@ -160,21 +160,21 @@ export async function findExistingRegistrationScope(
 }
 
 /**
- * "project" is only resolvable when registered under "project"/"project-local" scope, and
- * "user" only under "user" scope — registrySourceForNamespace in workflow-resolution.ts only
- * ever looks up "project" inside the project-merged registry and "user" inside the user-home
+ * "project" is only resolvable when registered under "project"/"local" scope, and
+ * "global" only under "global" scope — registrySourceForNamespace in workflow-resolution.ts only
+ * ever looks up "project" inside the project-merged registry and "global" inside the user-home
  * registry, so a mismatched pair would silently write an entry that can never be resolved back.
  */
 export function assertNamespaceMatchesScope(namespace: string, scope: WorkflowRegistryScope): void {
-  if (namespace === "project" && scope === "user") {
+  if (namespace === "project" && scope === "global") {
     throw new CliUsageError(
-      'Namespace "project" is reserved for --scope project or --scope project-local; it would ' +
-        "not be resolvable when registered under --scope user.",
+      'Namespace "project" is reserved for --scope project or --scope local; it would ' +
+        "not be resolvable when registered under --scope global.",
     );
   }
-  if (namespace === "user" && scope !== "user") {
+  if (namespace === "global" && scope !== "global") {
     throw new CliUsageError(
-      'Namespace "user" is reserved for --scope user; it would not be resolvable when registered ' +
+      'Namespace "global" is reserved for --scope global; it would not be resolvable when registered ' +
         "under this scope.",
     );
   }

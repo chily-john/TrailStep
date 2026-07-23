@@ -74,9 +74,9 @@ export async function loadStepKitProjectConfig(
  * deep-merged, keeping precedence easy to reason about.
  *
  * `workflows` is the one exception: it merges one level deeper, per namespace bucket,
- * because `project` and `project-local` scope registrations are meant to coexist. A
+ * because `project` and `local` scope registrations are meant to coexist. A
  * shallow replace here would make every project-scope registration disappear the moment
- * a project-local registration exists, since both configs share the same `workflows` key.
+ * a local registration exists, since both configs share the same `workflows` key.
  */
 function mergeRawStepKitConfig(base: unknown, local: unknown): unknown {
   if (!isRecord(base)) {

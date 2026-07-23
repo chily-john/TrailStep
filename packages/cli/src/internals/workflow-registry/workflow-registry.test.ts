@@ -30,14 +30,14 @@ describe("configPathForScope", () => {
     );
   });
 
-  it("resolves project-local scope to <cwd>/.stepkit/config-local.json", () => {
-    expect(configPathForScope("project-local", { cwd: "/repo" })).toBe(
+  it("resolves local scope to <cwd>/.stepkit/config-local.json", () => {
+    expect(configPathForScope("local", { cwd: "/repo" })).toBe(
       join("/repo", ".stepkit", "config-local.json"),
     );
   });
 
-  it("resolves user scope to <homeDir>/.stepkit/config.json", () => {
-    expect(configPathForScope("user", { cwd: "/repo", homeDir: "/home/me" })).toBe(
+  it("resolves global scope to <homeDir>/.stepkit/config.json", () => {
+    expect(configPathForScope("global", { cwd: "/repo", homeDir: "/home/me" })).toBe(
       join("/home/me", ".stepkit", "config.json"),
     );
   });
@@ -127,7 +127,7 @@ describe("listRegisteredWorkflowEntries", () => {
       workflows: { project: { scratch: "./scratch.mjs" } },
     });
     await writeJson(join(homeDir, ".stepkit", "config.json"), {
-      workflows: { user: { deploy: "./deploy.mjs" } },
+      workflows: { global: { deploy: "./deploy.mjs" } },
     });
 
     const entries = await listRegisteredWorkflowEntries({ cwd, homeDir });
@@ -135,13 +135,13 @@ describe("listRegisteredWorkflowEntries", () => {
     expect(entries).toEqual(
       expect.arrayContaining([
         {
-          scope: "project-local",
+          scope: "local",
           namespace: "project",
           name: "scratch",
           targetRef: "./scratch.mjs",
         },
         { scope: "project", namespace: "project", name: "review", targetRef: "./review.mjs" },
-        { scope: "user", namespace: "user", name: "deploy", targetRef: "./deploy.mjs" },
+        { scope: "global", namespace: "global", name: "deploy", targetRef: "./deploy.mjs" },
       ]),
     );
     expect(entries).toHaveLength(3);
@@ -159,7 +159,7 @@ describe("listRegisteredWorkflowEntries", () => {
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: {
         project: { review: "./review.mjs" },
-        release: { agents: { reviewer: { items: [{ provider: "local" }] } } },
+        release: { agents: { reviewer: [{ provider: "local" }] } },
       },
     });
 
@@ -179,35 +179,35 @@ describe("findExistingRegistrationScope", () => {
 
     await expect(
       findExistingRegistrationScope("project", "review", "project", { cwd, homeDir: tmpDir(task) }),
-    ).resolves.toBe("project-local");
+    ).resolves.toBe("local");
   });
 
-  it("checks both project files when scope is project-local", async ({ task }) => {
+  it("checks both project files when scope is local", async ({ task }) => {
     const cwd = tmpDir(task);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
 
     await expect(
-      findExistingRegistrationScope("project", "review", "project-local", {
+      findExistingRegistrationScope("project", "review", "local", {
         cwd,
         homeDir: tmpDir(task),
       }),
     ).resolves.toBe("project");
   });
 
-  it("only checks the user file when scope is user", async ({ task }) => {
+  it("only checks the global file when scope is global", async ({ task }) => {
     const cwd = tmpDir(task);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: { user: { review: "./review.mjs" } },
+      workflows: { global: { review: "./review.mjs" } },
     });
     const homeDir = tmpDir(task);
     await writeJson(join(homeDir, ".stepkit", "config.json"), {
-      workflows: { user: { deploy: "./deploy.mjs" } },
+      workflows: { global: { deploy: "./deploy.mjs" } },
     });
 
     await expect(
-      findExistingRegistrationScope("user", "review", "user", { cwd, homeDir }),
+      findExistingRegistrationScope("global", "review", "global", { cwd, homeDir }),
     ).resolves.toBeUndefined();
   });
 

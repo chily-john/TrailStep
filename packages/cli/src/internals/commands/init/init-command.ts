@@ -1,6 +1,9 @@
 import { providerRegistry } from "@stepkit/core";
 
-import { addAgentEntryItem } from "../../agent-config/agent-entry-items-flow.js";
+import {
+  addAgentEntryItem,
+  readAgentEntryItems,
+} from "../../agent-config/agent-entry-items-flow.js";
 import { configureLiteralAgentTarget } from "../../agent-config/configure-target-flow.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
@@ -28,14 +31,9 @@ export const initCommand: CliCommand<InitCommandArgs> = {
 
     const flags = parseFlags(argv.slice(1));
     const scope = flags.scope;
-    if (
-      scope !== undefined &&
-      scope !== "project" &&
-      scope !== "project-local" &&
-      scope !== "user"
-    ) {
+    if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
-        "stepkit init requires --scope project, --scope project-local, or --scope user.",
+        "stepkit init requires --scope local, --scope project, or --scope global.",
       );
     }
 
@@ -46,9 +44,9 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       args.scope ??
       (await promptSelect(
         SCOPE_PROMPT_LABEL,
-        ["project", "project-local", "user"] as const,
+        ["local", "project", "global"] as const,
         context.prompts,
-        "stepkit init requires --scope <project|project-local|user> when prompts are unavailable.",
+        "stepkit init requires --scope <local|project|global> when prompts are unavailable.",
       ));
 
     if (context.prompts === undefined) {
@@ -111,8 +109,8 @@ async function addConfiguredAgentEntry(
   });
 
   const agents = toMutableRecord(config.agents);
-  const existingEntry = toMutableRecord(agents[name]);
-  agents[name] = addAgentEntryItem(existingEntry, { ...configured.target });
+  const existingItems = readAgentEntryItems(agents[name]);
+  agents[name] = addAgentEntryItem(existingItems, { ...configured.target });
 
   if (configured.customProvider === undefined) {
     return { ...config, agents };

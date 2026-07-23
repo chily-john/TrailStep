@@ -39,7 +39,7 @@ export const helloWorkflow = defineWorkflow({
 });
 ```
 
-A conceptual `.stepkit/config.json` maps reusable `customProviders`, `agents.*.items`, and workflow role bindings.
+A conceptual `.stepkit/config.json` maps reusable `customProviders`, `agents.*`, and workflow role bindings.
 
 Then run it from the consuming project using a direct local file, a registered ref, a bundle ref, or the legacy package-export form:
 

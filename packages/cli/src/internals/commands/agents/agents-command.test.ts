@@ -78,7 +78,7 @@ describe("agentsCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
     });
   });
 
@@ -123,7 +123,7 @@ describe("agentsCommand", () => {
     const homeDir = join(cwd, "home");
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {});
     await writeJson(resolve(homeDir, ".stepkit", "config.json"), {
-      agents: { medium: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { medium: [{ provider: "claude", model: "sonnet" }] },
     });
     const selections: { readonly prompt: string; readonly choices: readonly string[] }[] = [];
     const command = resolveCommand(["agents"]);
@@ -136,8 +136,8 @@ describe("agentsCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(selections[0]?.choices).toEqual(["Project-local", "Project", "User"]);
-    expect(selections[1]?.choices).toContain("medium — dash");
+    expect(selections[0]?.choices).toEqual(["Local", "Project", "Global"]);
+    expect(selections[1]?.choices).toContain("medium — ----");
   });
 
   it("creates a project-scope workflow one-off for a declared workflow role dash row", async ({
@@ -162,7 +162,7 @@ describe("agentsCommand", () => {
       prompts: scriptedPrompts(
         [
           "Project",
-          "workflow release reviewer — dash",
+          "workflow release reviewer — ----",
           "Create inline one-off",
           "claude",
           "sonnet",
@@ -174,11 +174,11 @@ describe("agentsCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(selections[1]?.choices).toContain("workflow release reviewer — dash");
+    expect(selections[1]?.choices).toContain("workflow release reviewer — ----");
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } } },
+        release: { agents: { reviewer: [{ provider: "claude", model: "sonnet" }] } },
       },
     });
   });
@@ -205,7 +205,7 @@ describe("agentsCommand", () => {
       prompts: scriptedPrompts(
         [
           "Project",
-          "workflow release reviewer — dash",
+          "workflow release reviewer — ----",
           "Use named agent",
           "+ Create new agent",
           "release-reviewer",
@@ -223,10 +223,10 @@ describe("agentsCommand", () => {
       "+ Create new agent",
     );
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { "release-reviewer": { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { "release-reviewer": [{ provider: "claude", model: "sonnet" }] },
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ ref: "release-reviewer" }] } } },
+        release: { agents: { reviewer: [{ ref: "release-reviewer" }] } },
       },
     });
   });
@@ -238,10 +238,10 @@ describe("agentsCommand", () => {
     const homeDir = join(cwd, "home");
     const projectConfigPath = resolve(cwd, ".stepkit", "config.json");
     await writeJson(projectConfigPath, {
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
     });
     await writeJson(resolve(homeDir, ".stepkit", "config.json"), {
-      workflows: { release: { reviewer: { items: [{ ref: "reviewer" }] } } },
+      workflows: { release: { reviewer: [{ ref: "reviewer" }] } },
     });
 
     const command = resolveCommand(["agents", "delete", "reviewer", "--scope", "project"]);
@@ -251,9 +251,9 @@ describe("agentsCommand", () => {
         command.parseArgs(["agents", "delete", "reviewer", "--scope", "project"]) as never,
         { cwd, homeDir, io: { writeLine: () => undefined, writeError: () => undefined } },
       ),
-    ).rejects.toThrow("user: workflows.release.reviewer.items[0]");
+    ).rejects.toThrow("global: workflows.release.reviewer[0]");
     expect(await readJson(projectConfigPath)).toEqual({
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
     });
   });
 
@@ -262,7 +262,7 @@ describe("agentsCommand", () => {
   }) => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
     });
     const command = resolveCommand(["agents"]);
 
@@ -285,7 +285,7 @@ describe("agentsCommand", () => {
       ),
     });
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { reviewer: { items: [{ provider: "codex", model: "gpt-5" }] } },
+      agents: { reviewer: [{ provider: "codex", model: "gpt-5" }] },
     });
 
     await command.run(command.parseArgs(["agents"]) as never, {
@@ -297,7 +297,7 @@ describe("agentsCommand", () => {
       ),
     });
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { auditor: { items: [{ provider: "codex", model: "gpt-5" }] } },
+      agents: { auditor: [{ provider: "codex", model: "gpt-5" }] },
     });
 
     await command.run(command.parseArgs(["agents"]) as never, {
@@ -316,8 +316,8 @@ describe("agentsCommand", () => {
   }) => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
-      workflows: { release: { agents: { reviewer: { items: [{ ref: "reviewer" }] } } } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
+      workflows: { release: { agents: { reviewer: [{ ref: "reviewer" }] } } },
     });
     const command = resolveCommand(["agents"]);
 
@@ -329,8 +329,8 @@ describe("agentsCommand", () => {
       }),
     ).rejects.toThrow("Cannot delete agent reviewer");
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
-      workflows: { release: { agents: { reviewer: { items: [{ ref: "reviewer" }] } } } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
+      workflows: { release: { agents: { reviewer: [{ ref: "reviewer" }] } } },
     });
   });
 
@@ -368,7 +368,7 @@ describe("agentsCommand", () => {
       ),
     });
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { reviewer: { items: [{ provider: "claude", model: "opus", thinking: "high" }] } },
+      agents: { reviewer: [{ provider: "claude", model: "opus", thinking: "high" }] },
     });
   });
 
@@ -384,12 +384,12 @@ describe("agentsCommand", () => {
     );
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
       agents: {
-        reviewer: { items: [{ provider: "claude", model: "sonnet" }] },
-        auditor: { items: [{ provider: "gemini", model: "pro" }] },
+        reviewer: [{ provider: "claude", model: "sonnet" }],
+        auditor: [{ provider: "gemini", model: "pro" }],
       },
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ ref: "reviewer" }] } } },
+        release: { agents: { reviewer: [{ ref: "reviewer" }] } },
       },
     });
     const selections: { readonly prompt: string; readonly choices: readonly string[] }[] = [];
@@ -415,7 +415,7 @@ describe("agentsCommand", () => {
     });
     let config = await readJson(resolve(cwd, ".stepkit", "config.json"));
     expect(config).toMatchObject({
-      agents: { reviewer: { items: [{ provider: "codex", model: "gpt-5" }] } },
+      agents: { reviewer: [{ provider: "codex", model: "gpt-5" }] },
     });
 
     await command.run(command.parseArgs(["agents"]) as never, {
@@ -438,7 +438,7 @@ describe("agentsCommand", () => {
       ...(config as Record<string, unknown>),
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ ref: "reviewer" }] } } },
+        release: { agents: { reviewer: [{ ref: "reviewer" }] } },
       },
     });
     await command.run(command.parseArgs(["agents"]) as never, {
@@ -463,7 +463,7 @@ describe("agentsCommand", () => {
       "Discard",
     ]);
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toMatchObject({
-      workflows: { release: { agents: { reviewer: { items: [{ ref: "auditor" }] } } } },
+      workflows: { release: { agents: { reviewer: [{ ref: "auditor" }] } } },
     });
   });
 
@@ -478,10 +478,10 @@ describe("agentsCommand", () => {
       "utf8",
     );
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
-      agents: { reviewer: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ provider: "claude", model: "haiku" }] } } },
+        release: { agents: { reviewer: [{ provider: "claude", model: "haiku" }] } },
       },
     });
     const command = resolveCommand(["agents"]);
@@ -507,7 +507,7 @@ describe("agentsCommand", () => {
     let config = await readJson(resolve(cwd, ".stepkit", "config.json"));
     expect(config).toMatchObject({
       workflows: {
-        release: { agents: { reviewer: { items: [{ provider: "gemini", model: "pro" }] } } },
+        release: { agents: { reviewer: [{ provider: "gemini", model: "pro" }] } },
       },
     });
 
@@ -528,7 +528,7 @@ describe("agentsCommand", () => {
     });
     config = await readJson(resolve(cwd, ".stepkit", "config.json"));
     expect(config).toMatchObject({
-      workflows: { release: { agents: { reviewer: { items: [{ ref: "reviewer" }] } } } },
+      workflows: { release: { agents: { reviewer: [{ ref: "reviewer" }] } } },
     });
 
     await command.run(command.parseArgs(["agents"]) as never, {
@@ -560,10 +560,10 @@ describe("agentsCommand", () => {
       "utf8",
     );
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
-      agents: { fallback: { items: [{ provider: "gemini", model: "pro" }] } },
+      agents: { fallback: [{ provider: "gemini", model: "pro" }] },
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ provider: "claude", model: "haiku" }] } } },
+        release: { agents: { reviewer: [{ provider: "claude", model: "haiku" }] } },
       },
     });
     const command = resolveCommand(["agents"]);
@@ -590,9 +590,7 @@ describe("agentsCommand", () => {
       workflows: {
         release: {
           agents: {
-            reviewer: {
-              items: [{ provider: "claude", model: "haiku" }, { ref: "fallback" }],
-            },
+            reviewer: [{ provider: "claude", model: "haiku" }, { ref: "fallback" }],
           },
         },
       },
@@ -610,10 +608,10 @@ describe("agentsCommand", () => {
       "utf8",
     );
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
-      agents: { shared: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { shared: [{ provider: "claude", model: "sonnet" }] },
       workflows: {
         project: { release: "./workflows/release.mjs" },
-        release: { agents: { reviewer: { items: [{ ref: "shared" }] } } },
+        release: { agents: { reviewer: [{ ref: "shared" }] } },
       },
     });
     const selections: { readonly prompt: string; readonly choices: readonly string[] }[] = [];
@@ -647,10 +645,10 @@ describe("agentsCommand", () => {
     ]);
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toMatchObject({
       agents: {
-        shared: { items: [{ provider: "claude", model: "sonnet" }] },
-        "release-reviewer": { items: [{ provider: "codex", model: "gpt-5" }] },
+        shared: [{ provider: "claude", model: "sonnet" }],
+        "release-reviewer": [{ provider: "codex", model: "gpt-5" }],
       },
-      workflows: { release: { agents: { reviewer: { items: [{ ref: "release-reviewer" }] } } } },
+      workflows: { release: { agents: { reviewer: [{ ref: "release-reviewer" }] } } },
     });
   });
 
@@ -660,11 +658,8 @@ describe("agentsCommand", () => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
       agents: {
-        chain: {
-          description: "kept",
-          items: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
-        },
-        base: { items: [{ provider: "gemini", model: "pro" }] },
+        chain: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
+        base: [{ provider: "gemini", model: "pro" }],
       },
     });
     const command = resolveCommand(["agents"]);
@@ -690,30 +685,27 @@ describe("agentsCommand", () => {
 
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toMatchObject({
       agents: {
-        chain: {
-          description: "kept",
-          items: [{ provider: "codex", model: "gpt-5" }, { ref: "base" }],
-        },
+        chain: [{ provider: "codex", model: "gpt-5" }, { ref: "base" }],
       },
     });
   });
 
-  it("renames the selected entry and refs across project-local, project, and user without changing literal providers", async ({
+  it("renames the selected entry and refs across local, project, and global without changing literal providers", async ({
     task,
   }) => {
     const cwd = tmpDir(task);
     const homeDir = join(cwd, "home");
     await writeJson(resolve(cwd, ".stepkit", "config-local.json"), {
-      agents: { local: { items: [{ ref: "reviewer" }] } },
+      agents: { local: [{ ref: "reviewer" }] },
     });
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
       agents: {
-        reviewer: { items: [{ provider: "claude", model: "sonnet" }] },
-        providerNamedReviewer: { items: [{ provider: "reviewer", model: "local" }] },
+        reviewer: [{ provider: "claude", model: "sonnet" }],
+        providerNamedReviewer: [{ provider: "reviewer", model: "local" }],
       },
     });
     await writeJson(resolve(homeDir, ".stepkit", "config.json"), {
-      workflows: { release: { reviewer: { items: [{ ref: "reviewer" }] } } },
+      workflows: { release: { reviewer: [{ ref: "reviewer" }] } },
     });
 
     const command = resolveCommand([
@@ -731,16 +723,16 @@ describe("agentsCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(await readJson(resolve(cwd, ".stepkit", "config-local.json"))).toEqual({
-      agents: { local: { items: [{ ref: "auditor" }] } },
+      agents: { local: [{ ref: "auditor" }] },
     });
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
       agents: {
-        providerNamedReviewer: { items: [{ provider: "reviewer", model: "local" }] },
-        auditor: { items: [{ provider: "claude", model: "sonnet" }] },
+        providerNamedReviewer: [{ provider: "reviewer", model: "local" }],
+        auditor: [{ provider: "claude", model: "sonnet" }],
       },
     });
     expect(await readJson(resolve(homeDir, ".stepkit", "config.json"))).toEqual({
-      workflows: { release: { reviewer: { items: [{ ref: "auditor" }] } } },
+      workflows: { release: { reviewer: [{ ref: "auditor" }] } },
     });
   });
 
@@ -750,8 +742,8 @@ describe("agentsCommand", () => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
       agents: {
-        reviewer: { items: [{ provider: "claude", model: "sonnet" }] },
-        base: { items: [{ provider: "gemini", model: "pro" }] },
+        reviewer: [{ provider: "claude", model: "sonnet" }],
+        base: [{ provider: "gemini", model: "pro" }],
       },
     });
     const command = resolveCommand(["agents"]);
@@ -776,7 +768,7 @@ describe("agentsCommand", () => {
 
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toMatchObject({
       agents: {
-        reviewer: { items: [{ provider: "claude", model: "sonnet" }, { ref: "base" }] },
+        reviewer: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
       },
     });
   });
@@ -785,10 +777,8 @@ describe("agentsCommand", () => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
       agents: {
-        chain: {
-          items: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
-        },
-        base: { items: [{ provider: "gemini", model: "pro" }] },
+        chain: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
+        base: [{ provider: "gemini", model: "pro" }],
       },
     });
     const command = resolveCommand(["agents"]);
@@ -811,7 +801,7 @@ describe("agentsCommand", () => {
 
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toMatchObject({
       agents: {
-        chain: { items: [{ ref: "base" }, { provider: "claude", model: "sonnet" }] },
+        chain: [{ ref: "base" }, { provider: "claude", model: "sonnet" }],
       },
     });
   });
@@ -822,10 +812,8 @@ describe("agentsCommand", () => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".stepkit", "config.json"), {
       agents: {
-        chain: {
-          items: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
-        },
-        base: { items: [{ provider: "gemini", model: "pro" }] },
+        chain: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
+        base: [{ provider: "gemini", model: "pro" }],
       },
     });
     const command = resolveCommand(["agents"]);
@@ -854,8 +842,8 @@ describe("agentsCommand", () => {
 
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toMatchObject({
       agents: {
-        chain: { items: [{ provider: "claude", model: "sonnet" }, { ref: "base" }] },
-        base: { items: [{ provider: "codex", model: "gpt-5" }] },
+        chain: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
+        base: [{ provider: "codex", model: "gpt-5" }],
       },
     });
   });

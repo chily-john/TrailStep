@@ -1,9 +1,9 @@
 import {
   addAgentEntryItem,
   editAgentEntryItem,
+  readAgentEntryItems,
   removeAgentEntryItem,
   reorderAgentEntryItem,
-  replaceAgentEntryItems,
 } from "../../agent-config/agent-entry-items-flow.js";
 import {
   blockDeleteWhenAgentReferrersExist,
@@ -26,6 +26,8 @@ import {
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 
 const THINKING_CHOICES = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+
+type AgentEntryItems = readonly Record<string, unknown>[];
 
 type AgentCommandArgs =
   | {
@@ -96,7 +98,7 @@ function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
   const flags = parseFlags(flagsArgv, ["--provider", "--model", "--thinking", "--scope"]);
   const scope = parseRequiredScope(
     flags.scope,
-    "stepkit agents set requires --scope <project|project-local|user>.",
+    "stepkit agents set requires --scope <local|project|global>.",
   );
   const provider = parseRequiredFlag(
     flags.provider,
@@ -124,7 +126,7 @@ function parseDeleteArgs(argv: readonly string[]): AgentCommandArgs {
     name,
     scope: parseRequiredScope(
       flags.scope,
-      "stepkit agents delete requires --scope <project|project-local|user>.",
+      "stepkit agents delete requires --scope <local|project|global>.",
     ),
   };
 }
@@ -143,7 +145,7 @@ function parseRenameArgs(argv: readonly string[]): AgentCommandArgs {
     newName,
     scope: parseRequiredScope(
       flags.scope,
-      "stepkit agents rename requires --scope <project|project-local|user>.",
+      "stepkit agents rename requires --scope <local|project|global>.",
     ),
   };
 }
@@ -179,8 +181,7 @@ async function setAgent(
   const configPath = configPathForScope(args.scope, context);
   const config = await readRawStepKitConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
-  const existingEntry = toMutableRecord(agents[args.name]);
-  agents[args.name] = replaceAgentEntryItems(existingEntry, [
+  agents[args.name] = [
     {
       provider: args.provider,
       model: args.model,
@@ -188,7 +189,7 @@ async function setAgent(
         ? {}
         : { thinking: args.thinking }),
     },
-  ]);
+  ];
   await writeRawStepKitConfigFile(configPath, { ...config, agents });
   context.io.writeLine(`Wrote agent ${args.name} to ${configPath}.`);
   return 0;
@@ -233,7 +234,7 @@ async function renameAgent(
   return 0;
 }
 
-const INTERACTIVE_SCOPES = ["Project-local", "Project", "User"] as const;
+const INTERACTIVE_SCOPES = ["Local", "Project", "Global"] as const;
 const RESERVED_AGENT_NAMES = ["default", "tiny", "small", "medium", "large", "xl"] as const;
 const PROVIDER_CHOICES = ["claude", "codex", "gemini", "pi"] as const;
 
@@ -353,7 +354,7 @@ async function createNamedAgent(
   if (outcome !== "save-as-new-permanent-agent") {
     return;
   }
-  await writeNamedAgent(scope, name, { items: [configured.target] }, context);
+  await writeNamedAgent(scope, name, [{ ...configured.target }], context);
 }
 
 async function editNamedAgent(
@@ -520,8 +521,8 @@ async function setWorkflowRoleToNamedAgent(
     if (outcome === "discard") {
       return;
     }
-    await writeNamedAgent(scope, name, { items: [configured.target] }, context);
-    await writeWorkflowRole(scope, row, { items: [{ ref: name }] }, context);
+    await writeNamedAgent(scope, name, [{ ...configured.target }], context);
+    await writeWorkflowRole(scope, row, [{ ref: name }], context);
     return;
   }
 
@@ -532,7 +533,7 @@ async function setWorkflowRoleToNamedAgent(
   if (outcome === "discard") {
     return;
   }
-  await writeWorkflowRole(scope, row, { items: [{ ref: selection }] }, context);
+  await writeWorkflowRole(scope, row, [{ ref: selection }], context);
 }
 
 async function setWorkflowRoleToInline(
@@ -556,12 +557,12 @@ async function setWorkflowRoleToInline(
     outcome === "save-as-one-off" ||
     outcome === "detach-one-off"
   ) {
-    await writeWorkflowRole(scope, row, { items: [configured.target] }, context);
+    await writeWorkflowRole(scope, row, [{ ...configured.target }], context);
   } else if (outcome === "create-new-agent" || outcome === "save-as-new-permanent-agent") {
     const name = (await context.prompts.text("New agent name")).trim();
     assertAgentName(name, "New agent name is required.");
-    await writeNamedAgent(scope, name, { items: [configured.target] }, context);
-    await writeWorkflowRole(scope, row, { items: [{ ref: name }] }, context);
+    await writeNamedAgent(scope, name, [{ ...configured.target }], context);
+    await writeWorkflowRole(scope, row, [{ ref: name }], context);
   }
 }
 
@@ -589,7 +590,7 @@ async function editWorkflowRoleInline(
     const name = (await context.prompts.text("New agent name")).trim();
     assertAgentName(name, "New agent name is required.");
     await writeNamedAgent(scope, name, nextEntry, context);
-    await writeWorkflowRole(scope, row, { items: [{ ref: name }] }, context);
+    await writeWorkflowRole(scope, row, [{ ref: name }], context);
   }
 }
 
@@ -597,11 +598,11 @@ async function readWorkflowRoleEntry(
   scope: WorkflowRegistryScope,
   row: InteractiveWorkflowRoleRow,
   context: CliCommandContext,
-): Promise<Record<string, unknown>> {
+): Promise<AgentEntryItems> {
   const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
   const workflowConfig = toMutableRecord(toMutableRecord(config.workflows)[row.workflowId]);
   const workflowAgents = toMutableRecord(workflowConfig.agents);
-  return toMutableRecord(workflowAgents[row.roleName]);
+  return readAgentEntryItems(workflowAgents[row.roleName]);
 }
 
 async function removeWorkflowRoleOverride(
@@ -655,7 +656,7 @@ async function editReferencedNamedAgent(
     const name = (await context.prompts.text("New agent name")).trim();
     assertAgentName(name, "New agent name is required.");
     await writeNamedAgent(scope, name, configured, context);
-    await writeWorkflowRole(scope, row, { items: [{ ref: name }] }, context);
+    await writeWorkflowRole(scope, row, [{ ref: name }], context);
   } else if (outcome === "detach-one-off") {
     await writeWorkflowRole(scope, row, configured, context);
   }
@@ -665,29 +666,29 @@ async function readNamedAgentEntry(
   scope: WorkflowRegistryScope,
   name: string,
   context: CliCommandContext,
-): Promise<Record<string, unknown>> {
+): Promise<AgentEntryItems> {
   const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
-  return toMutableRecord(toMutableRecord(config.agents)[name]);
+  return readAgentEntryItems(toMutableRecord(config.agents)[name]);
 }
 
 async function editNamedAgentEntry(
-  entry: Record<string, unknown>,
+  entry: AgentEntryItems,
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
-): Promise<Record<string, unknown>> {
+): Promise<AgentEntryItems> {
   if (context.prompts === undefined) {
     throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
   }
 
   let current = entry;
   for (;;) {
-    const items = readAgentEntryItems(current);
+    const items = current;
     if (items.length === 0) {
       const configured = await configureLiteralAgentTarget({
         prompts: context.prompts,
         providerChoices: PROVIDER_CHOICES,
       });
-      return replaceAgentEntryItems(current, [{ ...configured.target }]);
+      return [{ ...configured.target }];
     }
 
     const choices = [
@@ -741,9 +742,9 @@ async function editNamedAgentEntry(
 }
 
 async function addItemToEntry(
-  entry: Record<string, unknown>,
+  entry: AgentEntryItems,
   context: CliCommandContext,
-): Promise<Record<string, unknown>> {
+): Promise<AgentEntryItems> {
   if (context.prompts === undefined) {
     throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
   }
@@ -761,12 +762,12 @@ async function addItemToEntry(
 }
 
 async function editRefItemInPlace(
-  entry: Record<string, unknown>,
+  entry: AgentEntryItems,
   itemIndex: number,
   ref: string,
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
-): Promise<Record<string, unknown>> {
+): Promise<AgentEntryItems> {
   if (context.prompts === undefined) {
     throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
   }
@@ -790,15 +791,11 @@ async function editRefItemInPlace(
   return entry;
 }
 
-function readAgentEntryItems(entry: Record<string, unknown>): readonly Record<string, unknown>[] {
-  return Array.isArray(entry.items) && entry.items.every(isRecord) ? entry.items : [];
-}
-
 async function findNamedAgentScope(
   name: string,
   context: CliCommandContext,
 ): Promise<WorkflowRegistryScope> {
-  for (const scope of ["project-local", "project", "user"] as const) {
+  for (const scope of ["local", "project", "global"] as const) {
     const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
     if (name in toMutableRecord(config.agents)) {
       return scope;
@@ -809,7 +806,7 @@ async function findNamedAgentScope(
 
 async function listNamedAgentChoices(context: CliCommandContext): Promise<readonly string[]> {
   const names = new Set<string>(RESERVED_AGENT_NAMES);
-  for (const scope of ["project-local", "project", "user"] as const) {
+  for (const scope of ["local", "project", "global"] as const) {
     const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
     for (const name of Object.keys(toMutableRecord(config.agents))) {
       names.add(name);
@@ -837,7 +834,7 @@ async function listNamedAgentChoices(context: CliCommandContext): Promise<readon
 async function writeNamedAgent(
   scope: WorkflowRegistryScope,
   name: string,
-  entry: Record<string, unknown>,
+  entry: AgentEntryItems,
   context: CliCommandContext,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
@@ -851,7 +848,7 @@ async function writeNamedAgent(
 async function writeWorkflowRole(
   scope: WorkflowRegistryScope,
   row: InteractiveWorkflowRoleRow,
-  entry: Record<string, unknown>,
+  entry: AgentEntryItems,
   context: CliCommandContext,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
@@ -878,7 +875,7 @@ function agentItemSummary(item: Record<string, unknown>): string {
 function agentEntrySummary(value: unknown): string {
   const state = agentEntryState(value);
   if (state.kind === "dash") {
-    return "dash";
+    return "----";
   }
   if (state.kind === "ref") {
     return `ref ${state.ref}`;
@@ -896,10 +893,7 @@ function agentEntryState(
   | { readonly kind: "dash" }
   | { readonly kind: "ref"; readonly ref: string }
   | { readonly kind: "inline"; readonly item: Record<string, unknown> } {
-  if (!isRecord(value)) {
-    return { kind: "dash" };
-  }
-  const items = Array.isArray(value.items) ? value.items : [];
+  const items = Array.isArray(value) ? value : [];
   if (items.length === 0) {
     return { kind: "dash" };
   }
@@ -914,14 +908,14 @@ function agentEntryState(
 }
 
 function scopeForInteractiveLabel(label: string): WorkflowRegistryScope {
-  if (label === "Project-local") {
-    return "project-local";
+  if (label === "Local") {
+    return "local";
   }
   if (label === "Project") {
     return "project";
   }
-  if (label === "User") {
-    return "user";
+  if (label === "Global") {
+    return "global";
   }
   throw new CliUsageError(`Invalid agents scope selection: ${label}`);
 }
@@ -931,9 +925,9 @@ function parseRequiredScope(
   missingMessage: string,
 ): WorkflowRegistryScope {
   const scope = parseRequiredFlag(value, missingMessage);
-  if (scope !== "project" && scope !== "project-local" && scope !== "user") {
+  if (scope !== "local" && scope !== "project" && scope !== "global") {
     throw new CliUsageError(
-      "stepkit agents requires --scope project, --scope project-local, or --scope user.",
+      "stepkit agents requires --scope local, --scope project, or --scope global.",
     );
   }
   return scope;

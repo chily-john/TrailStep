@@ -16,16 +16,12 @@ describe("parseStepKitConfig", () => {
         },
       },
       agents: {
-        default: {
-          items: [{ provider: "local", model: "fast" }],
-        },
+        default: [{ provider: "local", model: "fast" }],
       },
       workflows: {
         review: {
           agents: {
-            reviewer: {
-              items: [{ provider: "claude", thinking: "high" }],
-            },
+            reviewer: [{ provider: "claude", thinking: "high" }],
           },
         },
       },
@@ -60,25 +56,15 @@ describe("parseStepKitConfig", () => {
       version: 1,
       customProviders: {},
       agents: {
-        workerA: {
-          items: [{ provider: "claude", model: "haiku" }],
-        },
-        workerB: {
-          items: [{ provider: "codex" }, { ref: "workerA" }],
-        },
-        medium: {
-          items: [{ ref: "workerB" }],
-        },
+        workerA: [{ provider: "claude", model: "haiku" }],
+        workerB: [{ provider: "codex" }, { ref: "workerA" }],
+        medium: [{ ref: "workerB" }],
       },
       workflows: {
         review: {
           agents: {
-            workerA: {
-              items: [{ provider: "gemini" }],
-            },
-            reviewer: {
-              items: [{ ref: "workerA" }],
-            },
+            workerA: [{ provider: "gemini" }],
+            reviewer: [{ ref: "workerA" }],
           },
         },
       },
@@ -99,9 +85,7 @@ describe("parseStepKitConfig", () => {
         version: 1,
         customProviders: {},
         agents: {
-          medium: {
-            items: [{ ref: "missing" }],
-          },
+          medium: [{ ref: "missing" }],
         },
       });
       throw new Error("Expected parseStepKitConfig to reject unknown refs.");
@@ -109,7 +93,7 @@ describe("parseStepKitConfig", () => {
       expect(error).toBeInstanceOf(StepKitFailureError);
       expect((error as StepKitFailureError).failure.code).toBe("agent_ref_unknown");
       expect((error as StepKitFailureError).failure.details).toEqual({
-        diagnostics: ["agents.medium.items[0].ref references unknown agent 'missing'."],
+        diagnostics: ["agents.medium[0].ref references unknown agent 'missing'."],
       });
     }
   });
@@ -120,12 +104,8 @@ describe("parseStepKitConfig", () => {
         version: 1,
         customProviders: {},
         agents: {
-          workerA: {
-            items: [{ ref: "workerB" }],
-          },
-          workerB: {
-            items: [{ ref: "workerA" }],
-          },
+          workerA: [{ ref: "workerB" }],
+          workerB: [{ ref: "workerA" }],
         },
       });
       throw new Error("Expected parseStepKitConfig to reject cyclic refs.");
@@ -134,7 +114,7 @@ describe("parseStepKitConfig", () => {
       expect((error as StepKitFailureError).failure.code).toBe("agent_ref_cycle");
       expect((error as StepKitFailureError).failure.details).toEqual({
         diagnostics: [
-          "agents.workerA.items[0].ref creates an agent ref cycle: workerA -> workerB -> workerA.",
+          "agents.workerA[0].ref creates an agent ref cycle: workerA -> workerB -> workerA.",
         ],
       });
     }
@@ -148,30 +128,30 @@ describe("parseStepKitConfig", () => {
     ).toThrow(StepKitFailureError);
   });
 
-  it("requires top-level and workflow agent mappings to use item entry objects", () => {
+  it("requires top-level and workflow agent mappings to use plain arrays", () => {
     try {
       parseStepKitConfig({
         version: 1,
         customProviders: {},
         agents: {
-          default: [{ provider: "claude" }],
+          default: { items: [{ provider: "claude" }] },
         },
         workflows: {
           review: {
             agents: {
-              reviewer: [{ provider: "claude" }],
+              reviewer: { items: [{ provider: "claude" }] },
             },
           },
         },
       });
-      throw new Error("Expected parseStepKitConfig to reject raw agent arrays.");
+      throw new Error("Expected parseStepKitConfig to reject items-wrapped agent entries.");
     } catch (error) {
       expect(error).toBeInstanceOf(StepKitFailureError);
       expect((error as StepKitFailureError).failure.code).toBe("validation_failed");
       expect((error as StepKitFailureError).failure.details).toEqual({
         diagnostics: [
-          "agents.default must be an object with an items array.",
-          "workflows.review.agents.reviewer must be an object with an items array.",
+          "agents.default must be an array.",
+          "workflows.review.agents.reviewer must be an array.",
         ],
       });
     }

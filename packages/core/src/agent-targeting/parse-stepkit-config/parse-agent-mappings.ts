@@ -18,13 +18,7 @@ export function parseAgentMappings(
   }
 
   for (const [name, entry] of Object.entries(value)) {
-    const entryPath = `${path}.${name}`;
-    if (!isRecord(entry)) {
-      diagnostics.push(`${entryPath} must be an object with an items array.`);
-      continue;
-    }
-
-    mappings[name] = parseTargetArray(`${entryPath}.items`, entry.items, diagnostics);
+    mappings[name] = parseTargetArray(`${path}.${name}`, entry, diagnostics);
   }
 
   return mappings;

@@ -119,7 +119,7 @@ function expandTargetArray(options: {
       return [target];
     }
 
-    const refPath = `${options.path}.items[${index}].ref`;
+    const refPath = `${options.path}[${index}].ref`;
     const referencedTargets = options.agents[target.ref];
     if (referencedTargets === undefined) {
       throwUnknownRef(refPath, target.ref);

@@ -224,12 +224,12 @@ async function confirmUpdate(
   args: UpdateCommandArgs,
   context: CliCommandContext,
 ): Promise<boolean> {
-  if (args.yes) {
+  if (args.assumeYes) {
     return true;
   }
   if (!context.prompts?.confirm) {
     throw new CliUsageError(
-      "Update requires --yes or an interactive confirm prompt before writing.",
+      "Update requires --assume-yes or an interactive confirm prompt before writing.",
     );
   }
   return context.prompts.confirm("Apply package updates and run install?");

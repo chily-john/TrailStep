@@ -44,7 +44,7 @@ function validateAgentMappings(
   }
 
   for (const [name, targets] of Object.entries(mappings)) {
-    validateTargetReferences(`${path}.${name}.items`, targets, providerNames, diagnostics);
+    validateTargetReferences(`${path}.${name}`, targets, providerNames, diagnostics);
   }
 }
 

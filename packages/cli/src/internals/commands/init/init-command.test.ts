@@ -54,7 +54,7 @@ describe("initCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
-      agents: { default: { items: [{ provider: "claude", model: "sonnet" }] } },
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
   });
 
@@ -85,8 +85,8 @@ describe("initCommand", () => {
         },
         async select(prompt, choices) {
           if (prompt === "Where should agent config be written?") {
-            expect(choices).toEqual(["project", "project-local", "user"]);
-            return "project-local";
+            expect(choices).toEqual(["local", "project", "global"]);
+            return "local";
           }
           if (prompt === "Provider" && choices.includes("custom")) {
             return textAnswers.length === 5 ? "claude" : "custom";
@@ -109,8 +109,8 @@ describe("initCommand", () => {
     expect(await readJson(resolve(cwd, ".stepkit", "config-local.json"))).toEqual({
       customProviders: { "local-agent": { binary: "agent-bin" } },
       agents: {
-        default: { items: [{ provider: "claude", model: "opus" }] },
-        reviewer: { items: [{ provider: "local-agent" }] },
+        default: [{ provider: "claude", model: "opus" }],
+        reviewer: [{ provider: "local-agent" }],
       },
     });
   });

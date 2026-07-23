@@ -9,7 +9,7 @@ describe("parseUpdateInvocation", () => {
     expect(parseUpdateInvocation(["update"])).toEqual({
       scope: { kind: "self" },
       force: false,
-      yes: false,
+      assumeYes: false,
     });
   });
 
@@ -28,11 +28,11 @@ describe("parseUpdateInvocation", () => {
     });
   });
 
-  it("parses force and yes options", () => {
-    expect(parseUpdateInvocation(["update", "--force", "--yes"])).toEqual({
+  it("parses force and assume-yes options", () => {
+    expect(parseUpdateInvocation(["update", "--force", "--assume-yes"])).toEqual({
       scope: { kind: "self" },
       force: true,
-      yes: true,
+      assumeYes: true,
     });
   });
 

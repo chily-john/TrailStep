@@ -1,0 +1,388 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { resolveCommand } from "../../command-registry.js";
+import { workflowsCommand } from "./workflows-command.js";
+
+function tmpDir(task: { readonly id: string }): string {
+  return join("node_modules", ".tmp-stepkit-workflows-command-tests", `${task.id}-${randomUUID()}`);
+}
+
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(join(path, ".."), { recursive: true });
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+describe("workflowsCommand", () => {
+  it("routes stepkit workflows through command-registry", () => {
+    const command = resolveCommand(["workflows"]);
+    expect(command.parseArgs(["workflows"])).toEqual({});
+  });
+
+  it("rejects unknown options", () => {
+    expect(() => workflowsCommand.parseArgs(["workflows", "--edit"])).toThrow(
+      /Unknown option for stepkit workflows/,
+    );
+  });
+
+  it("prints a message and any discoverable packages when there is nothing registered", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/stepkit-workflows",
+      version: "1.0.0",
+      type: "module",
+      main: "./index.mjs",
+      keywords: ["stepkit-workflow"],
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewFeature = { id: 'reviewFeature', inputShape: { task: 'string' }, start: (input) => ({ kind: 'done', output: input }) };",
+      "utf8",
+    );
+
+    const lines: string[] = [];
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toEqual([
+      "No registered workflows to edit.",
+      "@acme/stepkit-workflows:reviewFeature",
+    ]);
+  });
+
+  it("requires an interactive session when workflows are registered", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    await expect(
+      workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+        cwd,
+        homeDir: tmpDir(task),
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).rejects.toThrow(/requires an interactive session/);
+  });
+
+  it("prints registered entries grouped by scope, then discoverable packages, before prompting", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const homeDir = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, ".stepkit", "config-local.json"), {
+      workflows: { project: { scratch: "./scratch.mjs" } },
+    });
+    await writeJson(join(homeDir, ".stepkit", "config.json"), {
+      workflows: { deploy: { prod: "./deploy.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let sawExpectedChoices = false;
+    await expect(
+      workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+        cwd,
+        homeDir,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+        prompts: {
+          select: async (_prompt, choices) => {
+            expect(choices).toEqual([
+              "local: project/scratch -> ./scratch.mjs",
+              "project: project/review -> ./review.mjs",
+              "global: deploy/prod -> ./deploy.mjs",
+            ]);
+            sawExpectedChoices = true;
+            throw new Error("stop after selection assertion");
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt.");
+          },
+        },
+      }),
+    ).rejects.toThrow("stop after selection assertion");
+
+    expect(sawExpectedChoices).toBe(true);
+    expect(lines).toEqual([
+      "Local:",
+      "  project/scratch -> ./scratch.mjs",
+      "Project (shared):",
+      "  project/review -> ./review.mjs",
+      "Global:",
+      "  deploy/prod -> ./deploy.mjs",
+    ]);
+  });
+
+  it("drills into a workflow, edits its namespace, then returns to page B", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let pageBVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            pageBVisits += 1;
+            return pageBVisits === 1 ? "Namespace: project" : "Exit";
+          }
+          if (prompt === "New namespace") {
+            return "Type a new namespace...";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async (prompt) => {
+          if (prompt === "New namespace") {
+            return "acme";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("./review.mjs");
+    expect(lines).toContain("Renamed project: project/review -> acme/review");
+    const config = JSON.parse(
+      await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+    ) as unknown;
+    expect(config).toEqual({ workflows: { acme: { review: "./review.mjs" } } });
+  });
+
+  it("edits the name via a free-text prompt and writes immediately", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let pageBVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            pageBVisits += 1;
+            return pageBVisits === 1 ? "Name: review" : "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async (prompt) => {
+          if (prompt === "New name") {
+            return "reviewed";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("Renamed project: project/review -> project/reviewed");
+    const config = JSON.parse(
+      await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+    ) as unknown;
+    expect(config).toEqual({ workflows: { project: { reviewed: "./review.mjs" } } });
+  });
+
+  it("returns to the workflow list on 'Back to workflow list' and re-lists entries", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let pageBVisits = 0;
+    let workflowListVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            workflowListVisits += 1;
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            pageBVisits += 1;
+            return pageBVisits <= 2 ? "Back to workflow list" : "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(workflowListVisits).toBe(3);
+  });
+
+  it("asks to overwrite and aborts cleanly on 'no' when the destination already exists", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: {
+        project: { review: "./review.mjs", scratch: "./scratch.mjs" },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let pageBVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            const index = choices.indexOf("project: project/review -> ./review.mjs");
+            expect(index).toBeGreaterThanOrEqual(0);
+            return choices[index] as string;
+          }
+          if (prompt === "Select an action") {
+            pageBVisits += 1;
+            return pageBVisits === 1 ? "Name: review" : "Exit";
+          }
+          expect(prompt).toContain("project/scratch already exists");
+          return "no";
+        },
+        text: async (prompt) => {
+          if (prompt === "New name") {
+            return "scratch";
+          }
+          throw new Error(`Unexpected prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("Cancelled.");
+    const config = JSON.parse(
+      await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+    ) as unknown;
+    expect(config).toEqual({
+      workflows: {
+        project: { review: "./review.mjs", scratch: "./scratch.mjs" },
+      },
+    });
+  });
+
+  it("shows the target ref and a dimmed description (or placeholder) on page B", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(cwd, "review.mjs"),
+      "export const reviewFeature = { id: 'reviewFeature', description: 'Reviews things.', inputShape: {}, start: (input) => ({ kind: 'done', output: input }) };",
+      "utf8",
+    );
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            return "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("./review.mjs");
+    expect(lines).toContain("\x1b[2mReviews things.\x1b[22m");
+  });
+
+  it("shows a placeholder when the workflow has no description", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(cwd, "review.mjs"),
+      "export const reviewFeature = { id: 'reviewFeature', inputShape: {}, start: (input) => ({ kind: 'done', output: input }) };",
+      "utf8",
+    );
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            return "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("\x1b[2m(no description)\x1b[22m");
+  });
+});

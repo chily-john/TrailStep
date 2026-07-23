@@ -28,7 +28,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
 
     if (!resolvedWorkflow) {
       io.writeError(
-        `Workflow not found: ${args.workflowId}. Run stepkit list to see available workflows.`,
+        `Workflow not found: ${args.workflowId}. Run stepkit workflows to see available workflows.`,
       );
       return 1;
     }

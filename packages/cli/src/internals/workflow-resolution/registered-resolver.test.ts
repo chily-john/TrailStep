@@ -92,7 +92,7 @@ describe("registered workflow resolver", () => {
     });
   });
 
-  it("resolves user/name from an injected home directory and expands ~ targets", async ({
+  it("resolves global/name from an injected home directory and expands ~ targets", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
@@ -105,22 +105,22 @@ describe("registered workflow resolver", () => {
     await mkdir(join(homeDir, ".stepkit"), { recursive: true });
     await writeJson(join(homeDir, ".stepkit", "config.json"), {
       workflows: {
-        user: {
+        global: {
           cleanup: "~/.stepkit/workflows/cleanup.mjs",
         },
       },
     });
 
-    await expect(resolveWorkflowReference("user/cleanup", { cwd, homeDir })).resolves.toMatchObject(
-      {
-        id: "user/cleanup",
-        workflow: { id: "cleanup" },
-        workflowRef: {
-          kind: "direct-file",
-          packageName: resolve(homeDir, ".stepkit", "workflows", "cleanup.mjs"),
-        },
+    await expect(
+      resolveWorkflowReference("global/cleanup", { cwd, homeDir }),
+    ).resolves.toMatchObject({
+      id: "global/cleanup",
+      workflow: { id: "cleanup" },
+      workflowRef: {
+        kind: "direct-file",
+        packageName: resolve(homeDir, ".stepkit", "workflows", "cleanup.mjs"),
       },
-    );
+    });
   });
 
   it("names the requested registered ref when the namespace is missing", async ({ task }) => {

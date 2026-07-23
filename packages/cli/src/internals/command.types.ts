@@ -1,5 +1,5 @@
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@stepkit/core";
-
+import type { StepKitDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
 import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skills/skills-cli.js";
 
 export const usageText = [
@@ -16,6 +16,8 @@ export const usageText = [
   "  stepkit continue --json-file <path>",
   "  stepkit continue --json '<json>'",
   "  stepkit cancel [--reason '<text>']",
+  "  stepkit doctor",
+  "  stepkit update [--all | --workflows | --workflow <name>] [--force] [--yes]",
   "  stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
   "  stepkit <workflow-ref> <workflowRunName> --resume",
   "",
@@ -49,6 +51,22 @@ export interface StepkitCliPrompts {
   confirm?: (prompt: string) => Promise<boolean>;
 }
 
+export interface PackageCommandRequest {
+  command: string;
+  args: readonly string[];
+  cwd: string;
+}
+
+export interface PackageCommandResult {
+  exitCode: number;
+  stdout?: string;
+  stderr?: string;
+}
+
+export type PackageCommandRunner = (
+  request: PackageCommandRequest,
+) => Promise<PackageCommandResult>;
+
 export interface CliCommandContext {
   cwd: string;
   homeDir?: string;
@@ -62,6 +80,8 @@ export interface CliCommandContext {
   skillsCliProcessRunner?: SkillsCliProcessRunner;
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
+  packageCommandRunner?: PackageCommandRunner;
+  deprecationManifest?: readonly StepKitDeprecationEntry[];
 }
 
 export interface CliCommand<TArgs> {

@@ -40,11 +40,16 @@
   "dependencies": {
     "@clack/prompts": "^1.7.0",
     "@stepkit/core": "workspace:*",
+    "semver": "^7.8.5",
     "skills": "^1.5.19"
+  },
+  "peerDependencies": {
+    "@stepkit/core": "^0.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
     "@types/node": "^26.1.1",
+    "@types/semver": "^7.7.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

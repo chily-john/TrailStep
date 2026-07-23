@@ -3,11 +3,13 @@ import { addCommand } from "./commands/add/add-command.js";
 import { agentsCommand } from "./commands/agents/agents-command.js";
 import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
+import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
 import { listCommand } from "./commands/list/list-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
 import { runCommand } from "./commands/run/run-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
+import { updateCommand } from "./commands/update/update-command.js";
 
 /**
  * Resolves the CLI command implementation for a given argv.
@@ -45,6 +47,14 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "cancel") {
     return cancelCommand;
+  }
+
+  if (argv[0] === "update") {
+    return updateCommand;
+  }
+
+  if (argv[0] === "doctor") {
+    return doctorCommand;
   }
 
   return runCommand;

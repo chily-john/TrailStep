@@ -4,12 +4,14 @@ import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from 
 import {
   type CliCommandContext,
   CliUsageError,
+  type PackageCommandRunner,
   type StepkitCliPrompts,
   usageText,
 } from "./internals/command.types.js";
 import { resolveCommand } from "./internals/command-registry.js";
 import { CliInputError } from "./internals/commands/run/load-run-input.js";
 import { CliConfigError } from "./internals/config/config.js";
+import type { StepKitDeprecationEntry } from "./internals/deprecation-scan/deprecation-scanner.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
 import { WorkflowResolutionError } from "./internals/workflow-resolution/workflow-resolution-error.js";
 
@@ -46,6 +48,8 @@ export interface StepkitMainOptions {
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
   prompts?: StepkitCliPrompts;
+  packageCommandRunner?: PackageCommandRunner;
+  deprecationManifest?: readonly StepKitDeprecationEntry[];
 }
 
 export async function main(options: StepkitMainOptions = {}): Promise<number> {
@@ -67,6 +71,8 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     runNameClock: options.runNameClock,
     runNameRandomSuffix: options.runNameRandomSuffix,
+    packageCommandRunner: options.packageCommandRunner,
+    deprecationManifest: options.deprecationManifest,
   };
 
   try {

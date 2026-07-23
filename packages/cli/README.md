@@ -10,6 +10,8 @@ stepkit agents [--scope <project|project-local|user>]
 stepkit add <workflow-file-or-bundle> [--scope <project|project-local|user>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]
 stepkit remove <namespace>/<name> [--scope <project|project-local|user>]
 stepkit list [--edit]
+stepkit doctor
+stepkit update [--all | --workflows | --workflow <name>] [--force] [--yes]
 stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
 stepkit <workflow-ref> <workflowRunName> --resume
 stepkit continue --session-file <path>
@@ -115,6 +117,12 @@ A custom namespace reused independently at both a project-family scope and `user
 `stepkit list` prints registered workflows grouped by scope — `Project (local)`, `Project (shared)`, then `User`, in that order, each heading omitted when it has no entries — followed by legacy package-discovered workflows under a `Discoverable workflow packages:` heading (or as a plain list with no heading, if there are no registered entries to disambiguate from). Package discovery reads the current project's direct dependencies and dev dependencies, resolves packages whose `package.json` contains the `stepkit-workflow` keyword, imports their module entry point, and prints exported workflow objects as package-qualified ids such as `@acme/workflows:releaseWorkflow`.
 
 Run `stepkit list --edit` for an interactive prompt to select a registered workflow and rename its namespace/name in place (scope cannot be changed this way — remove and re-add to move a registration across scopes).
+
+## Doctor and update
+
+`stepkit doctor` scans registered workflow sources and discoverable workflow packages for StepKit deprecation manifest findings. The scanner is intentionally conservative: it looks for named imports from `@stepkit/core`, `@stepkit/sdk`, and `@stepkit/cli` in Node-readable workflow source files, so dynamic usage and unreadable files are skipped until scanner coverage expands.
+
+`stepkit update` plans StepKit self-updates for `@stepkit/core`, `@stepkit/sdk`, and `@stepkit/cli`, scans workflows before writing, asks for confirmation unless `--yes` is passed, rewrites root `package.json`, and runs the detected package manager install. `--workflows` and `--workflow <name>` inspect registered workflow package targets without mutating local StepKit package entries; `--all` combines both scopes. Direct-file workflow registrations are scanned for deprecations during preflight, but skipped as update targets because local files have no package version to update.
 
 ## Execution
 

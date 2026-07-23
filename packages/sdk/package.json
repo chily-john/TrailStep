@@ -37,6 +37,9 @@
   "dependencies": {
     "@stepkit/core": "workspace:*"
   },
+  "peerDependencies": {
+    "@stepkit/core": "^0.0.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
     "@types/node": "^26.1.1",

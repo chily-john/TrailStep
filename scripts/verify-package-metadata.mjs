@@ -126,6 +126,16 @@ export function verifyPackageMetadata() {
     /^\^/u,
     "@stepkit/cli must depend on @clack/prompts for interactive commands",
   );
+  assert.equal(
+    cliPackageMetadata.dependencies?.["@stepkit/core"],
+    "workspace:*",
+    "@stepkit/cli must retain a workspace dependency on @stepkit/core for builds",
+  );
+  assert.equal(
+    cliPackageMetadata.peerDependencies?.["@stepkit/core"],
+    "^0.0.0",
+    "@stepkit/cli must declare @stepkit/core peer compatibility",
+  );
 
   const dashboardPackageJsonPath = "packages/dashboard/package.json";
   assertFile(dashboardPackageJsonPath);
@@ -155,6 +165,19 @@ export function verifyPackageMetadata() {
     assert.equal(packageMetadata.types, "./dist/index.d.ts");
     assert.equal(packageMetadata.exports?.["."].import, "./dist/index.js");
     assert.equal(packageMetadata.exports?.["."].types, "./dist/index.d.ts");
+
+    if (libraryPackage.name === "@stepkit/sdk") {
+      assert.equal(
+        packageMetadata.dependencies?.["@stepkit/core"],
+        "workspace:*",
+        "@stepkit/sdk must retain a workspace dependency on @stepkit/core for builds",
+      );
+      assert.equal(
+        packageMetadata.peerDependencies?.["@stepkit/core"],
+        "^0.0.0",
+        "@stepkit/sdk must declare @stepkit/core peer compatibility",
+      );
+    }
 
     for (const scriptName of ["build", "typecheck", "test", "lint"]) {
       assert.equal(

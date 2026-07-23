@@ -35,11 +35,13 @@
     "lint": "biome check src"
   },
   "dependencies": {
-    "ajv": "^8.17.1"
+    "ajv": "^8.17.1",
+    "semver": "^7.8.5"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
     "@types/node": "^26.1.1",
+    "@types/semver": "^7.7.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

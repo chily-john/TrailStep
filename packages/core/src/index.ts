@@ -58,6 +58,17 @@ export type {
   ShapeObject,
   ShapePrimitive,
 } from "./contracts/shapes/shape.types.js";
+export type { FindDeprecationsAsOfQuery } from "./deprecations/deprecation-manifest.js";
+export {
+  deprecationManifest,
+  findDeprecationsAsOf,
+} from "./deprecations/deprecation-manifest.js";
+export type {
+  DeprecationEntry,
+  DeprecationManifest,
+  DeprecationStatus,
+  DeprecationTargetPackage,
+} from "./deprecations/deprecations.types.js";
 export {
   type ProviderRegistryKey,
   providerRegistry,

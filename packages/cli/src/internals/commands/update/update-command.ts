@@ -1,17 +1,17 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { minVersion } from "semver";
-
 import { type CliCommand, type CliCommandContext, CliUsageError } from "../../command.types.js";
 import { formatDeprecationFinding } from "../../deprecation-scan/deprecation-formatter.js";
 import {
   type DeprecationFinding,
   scanWorkflowSourceForDeprecations,
 } from "../../deprecation-scan/deprecation-scanner.js";
+import { resolveInstalledStepKitVersions } from "../../deprecation-scan/resolve-installed-stepkit-versions.js";
 import { resolveDeprecationScanTargets } from "../../deprecation-scan/scan-targets.js";
 import { NpmRegistryError } from "../../package-manager/npm-registry.js";
 import { rewritePackageJsonDependencies } from "../../package-manager/package-json-rewrite.js";
-import { createPackageInstallRunner } from "../../package-manager/package-manager.js";
+import {
+  defaultPackageCommandRunner,
+  detectPackageManager,
+} from "../../package-manager/package-manager.js";
 import { parseUpdateInvocation } from "./parse-update-invocation.js";
 import type { UpdateCommandArgs } from "./update-command.types.js";
 import {
@@ -42,6 +42,7 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
               cwd: context.cwd,
               homeDir: context.homeDir,
               scope: args.scope,
+              packageCommandRunner: context.packageCommandRunner,
             })
           : undefined;
 
@@ -89,26 +90,33 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       if (hasWorkflowChanges && workflowPlan) {
         context.io.writeLine("Planned workflow package updates:");
         for (const target of workflowPlan.targets) {
-          context.io.writeLine(`  ${target.packageName} (${target.sourceFiles.join(", ")})`);
+          context.io.writeLine(
+            `  ${target.packageName}: ${target.currentRange} -> ${target.targetVersion}`,
+          );
         }
       }
 
-      if (!hasSelfChanges) {
-        return 0;
-      }
-
+      const updatesToApply = [...(selfPlan?.targets ?? []), ...(workflowPlan?.targets ?? [])];
       const confirmed = await confirmUpdate(args, context);
       if (!confirmed) {
         context.io.writeLine("Update cancelled.");
         return 0;
       }
 
-      await rewritePackageJsonDependencies({ cwd: context.cwd, updates: selfPlan?.targets ?? [] });
-      const installResult = await createPackageInstallRunner({
+      await rewritePackageJsonDependencies({ cwd: context.cwd, updates: updatesToApply });
+      const packageManager = await detectPackageManager({ cwd: context.cwd });
+      for (const warning of packageManager.warnings) {
+        context.io.writeLine(warning);
+      }
+      const runPackageCommand = context.packageCommandRunner ?? defaultPackageCommandRunner;
+      const installResult = await runPackageCommand({
+        command: packageManager.installCommand.command,
+        args: packageManager.installCommand.args,
         cwd: context.cwd,
-        packageCommandRunner: context.packageCommandRunner,
-      })();
+      });
       if (installResult.exitCode !== 0) {
+        // package.json may already contain the rewritten dependency ranges; users can recover
+        // by fixing the install issue and re-running their package manager install command.
         context.io.writeError(`Install failed with exit code ${installResult.exitCode}.`);
         if (installResult.stderr) {
           context.io.writeError(installResult.stderr);
@@ -141,17 +149,13 @@ async function collectPreflightFindings({
   workflowPlan,
 }: CollectPreflightFindingsOptions): Promise<readonly DeprecationFinding[]> {
   const findings: DeprecationFinding[] = [];
-  const rootPackageJson = await readPackageJson(context.cwd);
-  const installedVersions = readStepKitInstalledVersions(rootPackageJson);
+  const installedVersions = await resolveInstalledStepKitVersions({ cwd: context.cwd });
+  const targetStepKitVersions = selfPlan
+    ? versionsForPreflight(installedVersions, selfPlan)
+    : installedVersions;
 
   if (selfPlan) {
-    const versionsByPackageName = new Map(installedVersions);
-    for (const target of selfPlan.targets) {
-      versionsByPackageName.set(target.packageName, {
-        installedVersion: installedVersionFromRange(target.currentRange),
-        targetVersion: target.targetVersion,
-      });
-    }
+    const versionsByPackageName = targetStepKitVersions;
 
     const targets = await resolveDeprecationScanTargets({
       cwd: context.cwd,
@@ -162,14 +166,12 @@ async function collectPreflightFindings({
   }
 
   if (workflowPlan) {
-    const packageNames = workflowPlan.targets.map((target) => target.packageName);
-    const targets = await resolveDeprecationScanTargets({
-      cwd: context.cwd,
-      homeDir: context.homeDir,
-      packageNames,
-      includeDiscovered: args.scope.kind === "all",
-    });
-    findings.push(...(await scanTargets(targets, installedVersions, context)));
+    const targets = workflowPlan.targets.flatMap((target) =>
+      target.sourceFiles.map((sourceFile) => ({ sourceFile })),
+    );
+    const versionsByPackageName =
+      args.scope.kind === "all" ? targetStepKitVersions : installedVersions;
+    findings.push(...(await scanTargets(targets, versionsByPackageName, context)));
   }
 
   return dedupeFindings(findings);
@@ -200,39 +202,22 @@ async function scanTargets(
   return findings;
 }
 
-async function readPackageJson(cwd: string): Promise<Record<string, unknown>> {
-  try {
-    return JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-function readStepKitInstalledVersions(
-  packageJson: Record<string, unknown>,
-): Map<string, { readonly installedVersion?: string; readonly targetVersion: string }> {
-  const versions = new Map<
+function versionsForPreflight(
+  installedVersions: ReadonlyMap<
     string,
     { readonly installedVersion?: string; readonly targetVersion: string }
-  >();
-  for (const sectionName of ["dependencies", "devDependencies", "peerDependencies"] as const) {
-    const section = packageJson[sectionName];
-    if (!isRecord(section)) {
-      continue;
-    }
-    for (const packageName of ["@stepkit/core", "@stepkit/sdk", "@stepkit/cli"] as const) {
-      const range = section[packageName];
-      if (typeof range === "string") {
-        const version = installedVersionFromRange(range);
-        versions.set(packageName, { installedVersion: version, targetVersion: version ?? range });
-      }
-    }
+  >,
+  selfPlan: StepKitSelfUpdatePlan,
+): Map<string, { readonly installedVersion?: string; readonly targetVersion: string }> {
+  const versionsByPackageName = new Map(installedVersions);
+  for (const target of selfPlan.targets) {
+    const installedVersion = installedVersions.get(target.packageName)?.installedVersion;
+    versionsByPackageName.set(target.packageName, {
+      ...(installedVersion === undefined ? {} : { installedVersion }),
+      targetVersion: target.targetVersion,
+    });
   }
-  return versions;
-}
-
-function installedVersionFromRange(range: string): string | undefined {
-  return minVersion(range)?.version ?? (range.match(/^\d+\.\d+\.\d+/u) ? range : undefined);
+  return versionsByPackageName;
 }
 
 async function confirmUpdate(
@@ -260,8 +245,4 @@ function dedupeFindings(findings: readonly DeprecationFinding[]): readonly Depre
     seen.add(key);
     return true;
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

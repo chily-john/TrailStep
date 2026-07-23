@@ -21,7 +21,7 @@ async function createBundleWorkflow(cwd: string, source: string): Promise<void> 
     version: "1.0.0",
     main: "./index.mjs",
     keywords: ["stepkit-workflow"],
-    stepkit: { workflows: { release: "./index.mjs" } },
+    stepkit: { workflows: { release: "./index.mjs#release" } },
   });
   await writeFile(join(packageDir, "index.mjs"), source, "utf8");
   await writeJson(join(cwd, ".stepkit", "config.json"), {
@@ -49,12 +49,14 @@ describe("doctor command", () => {
     expect(errors).toEqual([]);
   });
 
-  it("exits 1 when a registered bundle workflow imports a symbol matching a warning-tier manifest entry", async ({
-    task,
-  }) => {
-    const cwd = tmpDir(task, "warning");
+  it("uses installed manifest versions for warning detection", async ({ task }) => {
+    const cwd = tmpDir(task, "installed-manifest-warning");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "1.0.0" },
+      dependencies: { "@stepkit/core": "^1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@stepkit", "core", "package.json"), {
+      name: "@stepkit/core",
+      version: "2.0.0",
     });
     await createBundleWorkflow(
       cwd,
@@ -71,7 +73,7 @@ describe("doctor command", () => {
         {
           packageName: "@stepkit/core",
           symbol: "oldStep",
-          deprecatedSince: "1.0.0",
+          deprecatedSince: "2.0.0",
           message: "oldStep is deprecated.",
         },
       ],
@@ -88,6 +90,10 @@ describe("doctor command", () => {
     const cwd = tmpDir(task, "blocking");
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@stepkit/core": "1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@stepkit", "core", "package.json"), {
+      name: "@stepkit/core",
+      version: "1.0.0",
     });
     await createBundleWorkflow(
       cwd,
@@ -116,11 +122,15 @@ describe("doctor command", () => {
     expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
   });
 
-  it("excludes a direct-file registered entry from the scan without crashing", async ({ task }) => {
+  it("scans registered direct-file workflow sources", async ({ task }) => {
     const cwd = tmpDir(task, "direct-file");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@stepkit/core": "1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@stepkit", "core", "package.json"), {
+      name: "@stepkit/core",
+      version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
@@ -130,6 +140,68 @@ describe("doctor command", () => {
       "import { oldStep } from '@stepkit/core';\nexport const review = oldStep;\n",
       "utf8",
     );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["doctor"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      deprecationManifest: [
+        {
+          packageName: "@stepkit/core",
+          symbol: "oldStep",
+          deprecatedSince: "1.0.0",
+          message: "oldStep is deprecated.",
+        },
+      ],
+    });
+
+    expect(exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("warning @stepkit/core/oldStep");
+    expect(lines.join("\n")).toContain("workflows/review.mjs");
+    expect(errors).toEqual(["Doctor found deprecation warnings."]);
+  });
+
+  it("prints clean output and exits zero when no findings exist", async ({ task }) => {
+    const cwd = tmpDir(task, "clean-registered");
+    await writeJson(join(cwd, "package.json"), {
+      dependencies: { "@stepkit/core": "1.0.0" },
+    });
+    await createBundleWorkflow(
+      cwd,
+      "import { step } from '@stepkit/core';\nexport const release = step;\n",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["doctor"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      deprecationManifest: [
+        {
+          packageName: "@stepkit/core",
+          symbol: "oldStep",
+          deprecatedSince: "1.0.0",
+          message: "oldStep is deprecated.",
+        },
+      ],
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toEqual(["No StepKit deprecation findings."]);
+    expect(errors).toEqual([]);
+  });
+
+  it("skips unreadable targets without crashing", async ({ task }) => {
+    const cwd = tmpDir(task, "unreadable-target");
+    await writeJson(join(cwd, "package.json"), {
+      dependencies: { "@stepkit/core": "1.0.0" },
+    });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { missing: "./workflows/missing.mjs" } },
+    });
     const lines: string[] = [];
     const errors: string[] = [];
 

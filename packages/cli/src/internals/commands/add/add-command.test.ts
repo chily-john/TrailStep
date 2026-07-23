@@ -1404,6 +1404,69 @@ describe("addCommand", () => {
     });
   });
 
+  it("lists bundle workflow names through the shared manifest reader", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "local-workflow-package");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "local-workflow-package",
+      type: "module",
+      stepkit: {
+        workflows: {
+          review: "./index.mjs#reviewWorkflow",
+          cleanup: "./index.mjs#cleanupWorkflow",
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      [
+        "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+        "export const cleanupWorkflow = { id: 'cleanup', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./local-workflow-package"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./local-workflow-package",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--name",
+        "cleanup",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt !== "Bundle workflow") {
+              return "no";
+            }
+            expect(choices).toEqual(["review", "cleanup"]);
+            return "cleanup";
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt");
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { acme: { cleanup: "./local-workflow-package#cleanup" } },
+    });
+  });
+
   it("prompts for which workflow to register from a bundle manifest", async ({ task }) => {
     const cwd = join(
       "node_modules",

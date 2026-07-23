@@ -73,7 +73,7 @@ describe("scanWorkflowSourceForDeprecations", () => {
       replacement: "step",
       line: 1,
       targetVersion: "2.0.0",
-      newlyTriggeredByThisUpdate: false,
+      newlyTriggeredByThisUpdate: true,
     });
     expect(findings[0]?.installedVersion).toBeUndefined();
   });
@@ -126,6 +126,63 @@ describe("scanWorkflowSourceForDeprecations", () => {
           symbol: "step",
           deprecatedSince: "1.0.0",
           message: "step is deprecated.",
+        },
+      ],
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("marks newlyTriggeredByThisUpdate true when an update turns a warning into blocking", async ({
+    task,
+  }) => {
+    const sourceFile = await writeSource(
+      tmpDir(task, "warning-to-blocking"),
+      "import { removedStep } from '@stepkit/core';\nexport const review = removedStep;\n",
+    );
+
+    const findings = await scanWorkflowSourceForDeprecations({
+      sourceFile,
+      versionsByPackageName: new Map([
+        ["@stepkit/core", { installedVersion: "2.5.0", targetVersion: "3.0.0" }],
+      ]),
+      manifest: [
+        {
+          packageName: "@stepkit/core",
+          symbol: "removedStep",
+          deprecatedSince: "2.0.0",
+          removedIn: "3.0.0",
+          message: "removedStep was removed.",
+        },
+      ],
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      packageName: "@stepkit/core",
+      symbol: "removedStep",
+      severity: "blocking",
+      installedVersion: "2.5.0",
+      targetVersion: "3.0.0",
+      newlyTriggeredByThisUpdate: true,
+    });
+  });
+
+  it("does not scan packages outside @stepkit/core and @stepkit/sdk", async ({ task }) => {
+    const sourceFile = await writeSource(
+      tmpDir(task, "unsupported-package"),
+      "import { legacyCommand } from '@stepkit/cli';\nexport const review = legacyCommand;\n",
+    );
+
+    const findings = await scanWorkflowSourceForDeprecations({
+      sourceFile,
+      versionsByPackageName: new Map([["@stepkit/cli", { targetVersion: "2.0.0" }]]),
+      manifest: [
+        {
+          packageName: "@stepkit/cli",
+          symbol: "legacyCommand",
+          deprecatedSince: "1.0.0",
+          message: "legacyCommand is deprecated.",
         },
       ],
     });

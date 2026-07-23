@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { PackageCommandRunner } from "../../command.types.js";
 import {
   resolveWorkflowPackageUpdateTargets,
   type WorkflowPackageUpdateTarget,
@@ -13,21 +14,129 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function createPackageCommandRunner(versionsByPackageName: Record<string, readonly string[]>): {
+  runner: PackageCommandRunner;
+  viewedPackages: string[];
+} {
+  const viewedPackages: string[] = [];
+  return {
+    viewedPackages,
+    runner: async ({ args }) => {
+      const packageName = args[1]?.replace(/@\*$/u, "");
+      const versions = packageName ? versionsByPackageName[packageName] : undefined;
+      if (!packageName || !versions) {
+        return { exitCode: 1, stderr: `missing metadata for ${packageName ?? "unknown"}` };
+      }
+      viewedPackages.push(packageName);
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(versions.map((version) => ({ version }))),
+      };
+    },
+  };
+}
+
 function targetSummary(targets: readonly WorkflowPackageUpdateTarget[]) {
   return targets.map((target) => ({
     packageName: target.packageName,
     registeredRefs: target.registeredRefs,
+    currentRange: target.currentRange,
+    dependencySection: target.dependencySection,
+    installedVersion: target.installedVersion,
+    targetVersion: target.targetVersion,
   }));
 }
 
 describe("resolveWorkflowPackageUpdateTargets", () => {
-  it("skips registered direct-file entries for update", async ({ task }) => {
+  it("resolves latest stable version and dependency section for registered workflow packages", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    await writeJson(join(cwd, "package.json"), {
+      devDependencies: { "@acme/review-workflow": "^1.2.0" },
+    });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "@acme/review-workflow" } },
+    });
+    await writeJson(join(cwd, "node_modules", "@acme", "review-workflow", "package.json"), {
+      name: "@acme/review-workflow",
+      version: "1.2.3",
+    });
+    const { runner } = createPackageCommandRunner({
+      "@acme/review-workflow": ["1.2.3", "2.0.0-beta.1", "1.4.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(targetSummary(plan.targets)).toEqual([
+      {
+        packageName: "@acme/review-workflow",
+        registeredRefs: ["project/review"],
+        currentRange: "^1.2.0",
+        dependencySection: "devDependencies",
+        installedVersion: "1.2.3",
+        targetVersion: "1.4.0",
+      },
+    ]);
+    expect(plan.skips).toEqual([]);
+  });
+
+  it("dedupes multiple registrations for the same package", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    await writeJson(join(cwd, "package.json"), {
+      dependencies: { "@acme/workflows": "^1.0.0" },
+    });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: {
+        project: {
+          review: "@acme/workflows#review",
+          release: "@acme/workflows#release",
+        },
+      },
+    });
+    await writeJson(join(cwd, "node_modules", "@acme", "workflows", "package.json"), {
+      name: "@acme/workflows",
+      version: "1.0.1",
+    });
+    const { runner, viewedPackages } = createPackageCommandRunner({
+      "@acme/workflows": ["1.0.1", "1.1.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(targetSummary(plan.targets)).toEqual([
+      {
+        packageName: "@acme/workflows",
+        registeredRefs: ["project/review", "project/release"],
+        currentRange: "^1.0.0",
+        dependencySection: "dependencies",
+        installedVersion: "1.0.1",
+        targetVersion: "1.1.0",
+      },
+    ]);
+    expect(viewedPackages).toEqual(["@acme/workflows"]);
+  });
+
+  it("reports direct-file registrations as skips without npm view calls", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
+    const { runner, viewedPackages } = createPackageCommandRunner({});
 
-    const plan = await resolveWorkflowPackageUpdateTargets({ cwd, scope: { kind: "workflows" } });
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
 
     expect(plan.targets).toEqual([]);
     expect(plan.skips).toEqual([
@@ -37,95 +146,77 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
         message: "Skipped project/review: local file source, no version to update.",
       },
     ]);
+    expect(viewedPackages).toEqual([]);
   });
 
-  it("resolves a registered plain package to one package update target", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: { project: { review: "@acme/review-workflow" } },
-    });
-
-    const plan = await resolveWorkflowPackageUpdateTargets({ cwd, scope: { kind: "workflows" } });
-
-    expect(targetSummary(plan.targets)).toEqual([
-      { packageName: "@acme/review-workflow", registeredRefs: ["project/review"] },
-    ]);
-    expect(plan.targets[0]?.sourceFiles).toEqual([join(cwd, ".stepkit", "config.json")]);
-    expect(plan.skips).toEqual([]);
-  });
-
-  it("dedupes registered bundle package targets across multiple workflow names", async ({
-    task,
-  }) => {
+  it("errors on ambiguous bare workflow names", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: {
-        project: {
-          review: "@acme/workflows#review",
-          release: "@acme/workflows#release",
-        },
+        project: { review: "@acme/project-review" },
+        other: { review: "@acme/other-review" },
       },
     });
+    const { runner } = createPackageCommandRunner({});
 
-    const plan = await resolveWorkflowPackageUpdateTargets({ cwd, scope: { kind: "workflows" } });
-
-    expect(targetSummary(plan.targets)).toEqual([
-      { packageName: "@acme/workflows", registeredRefs: ["project/review", "project/release"] },
-    ]);
+    await expect(
+      resolveWorkflowPackageUpdateTargets({
+        cwd,
+        scope: { kind: "workflow", name: "review" },
+        packageCommandRunner: runner,
+      }),
+    ).rejects.toThrow('Ambiguous workflow name "review" matches project/review, other/review.');
   });
 
-  it("resolves --workflow to only that registered target", async ({ task }) => {
+  it("falls back to raw package name when no registration matches", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: {
-        project: {
-          review: "@acme/review-workflow",
-          release: "@acme/release-workflow",
-        },
-      },
+    await writeJson(join(cwd, "package.json"), {
+      peerDependencies: { "@acme/workflows": "~2.0.0" },
     });
-
-    const plan = await resolveWorkflowPackageUpdateTargets({
-      cwd,
-      scope: { kind: "workflow", name: "project/review" },
+    await writeJson(join(cwd, "node_modules", "@acme", "workflows", "package.json"), {
+      name: "@acme/workflows",
+      version: "2.0.1",
     });
-
-    expect(targetSummary(plan.targets)).toEqual([
-      { packageName: "@acme/review-workflow", registeredRefs: ["project/review"] },
-    ]);
-  });
-
-  it("falls back from --workflow raw package names to a package target", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
-    await mkdir(cwd, { recursive: true });
+    const { runner } = createPackageCommandRunner({ "@acme/workflows": ["2.0.1", "2.1.0"] });
 
     const plan = await resolveWorkflowPackageUpdateTargets({
       cwd,
       scope: { kind: "workflow", name: "@acme/workflows" },
+      packageCommandRunner: runner,
     });
 
     expect(targetSummary(plan.targets)).toEqual([
-      { packageName: "@acme/workflows", registeredRefs: [] },
+      {
+        packageName: "@acme/workflows",
+        registeredRefs: [],
+        currentRange: "~2.0.0",
+        dependencySection: "peerDependencies",
+        installedVersion: "2.0.1",
+        targetVersion: "2.1.0",
+      },
     ]);
-    expect(plan.targets[0]?.sourceFiles).toEqual([join(cwd, "package.json")]);
   });
 
-  it("does not include discovered keyword packages in --workflows unless registered", async ({
-    task,
-  }) => {
+  it("errors clearly when target package is not in root dependencies", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
-    await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@acme/discovered-workflow": "^1.0.0" },
+    await writeJson(join(cwd, "package.json"), { dependencies: {} });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "@acme/review-workflow" } },
     });
-    await writeJson(join(cwd, "node_modules", "@acme", "discovered-workflow", "package.json"), {
-      name: "@acme/discovered-workflow",
-      version: "1.0.0",
-      keywords: ["stepkit-workflow"],
+    await writeJson(join(cwd, "node_modules", "@acme", "review-workflow", "package.json"), {
+      name: "@acme/review-workflow",
+      version: "1.2.3",
     });
+    const { runner } = createPackageCommandRunner({ "@acme/review-workflow": ["1.2.3"] });
 
-    const plan = await resolveWorkflowPackageUpdateTargets({ cwd, scope: { kind: "workflows" } });
-
-    expect(plan.targets).toEqual([]);
-    expect(plan.skips).toEqual([]);
+    await expect(
+      resolveWorkflowPackageUpdateTargets({
+        cwd,
+        scope: { kind: "workflows" },
+        packageCommandRunner: runner,
+      }),
+    ).rejects.toThrow(
+      "Cannot update @acme/review-workflow: package is not listed in root dependencies, devDependencies, or peerDependencies.",
+    );
   });
 });

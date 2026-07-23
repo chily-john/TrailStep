@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { discoverWorkflows } from "./discovery.js";
+import { discoverWorkflows, resolvePackageEntryFilePath } from "./discovery.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -32,6 +32,31 @@ async function createWorkflowPackage(cwd: string): Promise<void> {
 }
 
 describe("discoverWorkflows", () => {
+  it("resolves package entry files with exports/module/main/default precedence", () => {
+    const packageDir = resolve("node_modules", ".tmp-stepkit-entry-tests", "package");
+
+    expect(
+      resolvePackageEntryFilePath(
+        {
+          exports: { ".": { import: "./dist/index.mjs" } },
+          module: "./module.mjs",
+          main: "./main.cjs",
+        },
+        packageDir,
+      ),
+    ).toBe(join(packageDir, "dist", "index.mjs"));
+    expect(
+      resolvePackageEntryFilePath({ exports: "./exports.mjs", module: "./module.mjs" }, packageDir),
+    ).toBe(join(packageDir, "exports.mjs"));
+    expect(
+      resolvePackageEntryFilePath({ module: "./module.mjs", main: "./main.cjs" }, packageDir),
+    ).toBe(join(packageDir, "module.mjs"));
+    expect(resolvePackageEntryFilePath({ main: "./main.cjs" }, packageDir)).toBe(
+      join(packageDir, "main.cjs"),
+    );
+    expect(resolvePackageEntryFilePath({}, packageDir)).toBe(join(packageDir, "index.js"));
+  });
+
   it("discovers named continuation workflow exports from stepkit-workflow packages", async ({
     task,
   }) => {

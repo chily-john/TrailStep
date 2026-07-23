@@ -1,3 +1,4 @@
+import { accessSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -7,7 +8,7 @@ import type { Workflow } from "@stepkit/core";
 
 import { isWorkflow } from "../workflow-resolution/workflow-validator.js";
 
-type PackageJson = {
+export type PackageJson = {
   name?: string;
   main?: string;
   module?: string;
@@ -23,6 +24,12 @@ export interface DiscoveredWorkflow {
   readonly packageDir: string;
   readonly exportName: string;
   readonly workflow: Workflow;
+}
+
+export interface InstalledPackageManifest {
+  readonly packageJsonPath: string;
+  readonly packageDir: string;
+  readonly packageJson: PackageJson & Record<string, unknown>;
 }
 
 export interface DiscoverWorkflowsOptions {
@@ -41,18 +48,13 @@ export async function discoverWorkflows(
   const discovered: DiscoveredWorkflow[] = [];
 
   for (const dependencyName of dependencyNames) {
-    const packageJsonPath = resolvePackageJson(dependencyName, cwd);
-    if (!packageJsonPath) {
+    const manifest = await resolveInstalledPackageManifest(dependencyName, cwd);
+    if (!manifest || !isWorkflowPackage(manifest.packageJson)) {
       continue;
     }
 
-    const packageJson = await readPackageJson(packageJsonPath);
-    if (!isWorkflowPackage(packageJson)) {
-      continue;
-    }
-
+    const { packageJsonPath, packageDir, packageJson } = manifest;
     const packageName = packageJson.name ?? dependencyName;
-    const packageDir = dirname(packageJsonPath);
     const packageModule = await importPackage(packageJsonPath, packageJson);
 
     for (const [exportName, exportedValue] of Object.entries(packageModule)) {
@@ -77,13 +79,66 @@ async function readPackageJson(path: string): Promise<PackageJson> {
   return JSON.parse(await readFile(path, "utf8")) as PackageJson;
 }
 
+export async function resolveInstalledPackageManifest(
+  packageName: string,
+  cwd: string,
+): Promise<InstalledPackageManifest | undefined> {
+  const packageJsonPath = resolvePackageJson(packageName, cwd);
+  if (packageJsonPath === undefined) {
+    return undefined;
+  }
+
+  try {
+    return {
+      packageJsonPath,
+      packageDir: dirname(packageJsonPath),
+      packageJson: (await readPackageJson(packageJsonPath)) as PackageJson &
+        Record<string, unknown>,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function resolvePackageJson(packageName: string, cwd: string): string | undefined {
-  const requireFromCwd = createRequire(join(cwd, "package.json"));
+  const requireFromCwd = createRequire(resolve(cwd, "package.json"));
 
   try {
     return requireFromCwd.resolve(`${packageName}/package.json`);
   } catch {
-    return undefined;
+    try {
+      return findPackageJson(dirname(requireFromCwd.resolve(packageName)));
+    } catch {
+      const conventionalPackageJson = join(
+        cwd,
+        "node_modules",
+        ...packageName.split("/"),
+        "package.json",
+      );
+      try {
+        accessSync(conventionalPackageJson);
+        return conventionalPackageJson;
+      } catch {
+        return undefined;
+      }
+    }
+  }
+}
+
+function findPackageJson(startDir: string): string | undefined {
+  let currentDir = resolve(startDir);
+  while (true) {
+    const candidate = join(currentDir, "package.json");
+    try {
+      accessSync(candidate);
+      return candidate;
+    } catch {
+      const parentDir = dirname(currentDir);
+      if (parentDir === currentDir) {
+        return undefined;
+      }
+      currentDir = parentDir;
+    }
   }
 }
 
@@ -95,11 +150,13 @@ async function importPackage(
   packageJsonPath: string,
   packageJson: PackageJson,
 ): Promise<Record<string, unknown>> {
-  const packageRoot = dirname(packageJsonPath);
-  const entryPoint = getImportEntryPoint(packageJson);
-  const entryPath = join(packageRoot, entryPoint);
+  const entryPath = resolvePackageEntryFilePath(packageJson, dirname(packageJsonPath));
 
   return import(pathToFileURL(entryPath).href) as Promise<Record<string, unknown>>;
+}
+
+export function resolvePackageEntryFilePath(packageJson: PackageJson, packageDir: string): string {
+  return resolve(packageDir, getImportEntryPoint(packageJson));
 }
 
 function getImportEntryPoint(packageJson: PackageJson): string {

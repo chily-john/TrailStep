@@ -1,5 +1,4 @@
 import { readFile, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
 import {
@@ -29,6 +28,8 @@ import {
 import {
   type BundleWorkflowSpecifier,
   loadBundleWorkflow,
+  readBundleWorkflowManifest,
+  resolvePackageJsonPath,
 } from "../../workflow-resolution/bundle-resolver.js";
 import { loadDirectWorkflowFile } from "../../workflow-resolution/direct-file-resolver.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
@@ -642,7 +643,7 @@ async function isBundleSource(source: string, cwd: string): Promise<boolean> {
 }
 
 async function readBundleWorkflowNames(source: string, cwd: string): Promise<string[]> {
-  const packageJsonPath = resolveBundlePackageJsonPath(source, cwd);
+  const packageJsonPath = resolvePackageJsonPath(source, cwd);
   let parsed: unknown;
 
   try {
@@ -654,36 +655,11 @@ async function readBundleWorkflowNames(source: string, cwd: string): Promise<str
     );
   }
 
-  if (!isRecord(parsed) || !isRecord(parsed.stepkit) || !isRecord(parsed.stepkit.workflows)) {
-    throw new WorkflowResolutionError(
-      `Missing stepkit.workflows manifest metadata in bundle package: ${source}`,
-    );
-  }
-
-  const workflows = parsed.stepkit.workflows;
-  if (!Object.values(workflows).every((target) => typeof target === "string")) {
-    throw new WorkflowResolutionError(
-      `Invalid stepkit.workflows manifest metadata in bundle package: ${source}`,
-    );
-  }
-
-  return Object.keys(workflows);
+  return Object.keys(readBundleWorkflowManifest(parsed, source));
 }
 
 function bundleWorkflowSpecifier(source: string, workflowName: string): BundleWorkflowSpecifier {
   return { packageName: source, workflowName };
-}
-
-function resolveBundlePackageJsonPath(source: string, cwd: string): string {
-  if (isDirectWorkflowFileReference(source)) {
-    return resolve(cwd, source, "package.json");
-  }
-
-  try {
-    return createRequire(resolve(cwd, "package.json")).resolve(`${source}/package.json`);
-  } catch (error) {
-    throw new WorkflowResolutionError(`Bundle package not found: ${source}`, { cause: error });
-  }
 }
 
 function toMutableRecord(value: unknown): Record<string, unknown> {

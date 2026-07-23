@@ -105,7 +105,7 @@ function selectLatestPeerCompatibleVersion(metadata: NpmPackageMetadata, coreVer
   );
 }
 
-function selectLatestStable(versions: readonly string[]): string | undefined {
+export function selectLatestStable(versions: readonly string[]): string | undefined {
   const validVersions = versions.filter((version) => valid(version) !== null);
   const stable = validVersions.filter((version) => prerelease(version) === null);
   return (
@@ -122,22 +122,33 @@ function readCorePeerRange(
   return peerDependenciesByVersion[version]?.["@stepkit/core"];
 }
 
-async function readRootPackageJson(cwd: string): Promise<Record<string, unknown>> {
+export async function readRootPackageJson(cwd: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as Record<string, unknown>;
 }
 
-function readCurrentStepKitRanges(packageJson: Record<string, unknown>) {
-  const entries = new Map<StepkitPackageName, { range: string; section: DependencySection }>();
+export function readPackageDependencyEntry(
+  packageJson: Record<string, unknown>,
+  packageName: string,
+): { readonly range: string; readonly section: DependencySection } | undefined {
   for (const section of ["dependencies", "devDependencies", "peerDependencies"] as const) {
     const dependencies = packageJson[section];
     if (!isRecord(dependencies)) {
       continue;
     }
-    for (const packageName of stepkitPackageNames) {
-      const range = dependencies[packageName];
-      if (typeof range === "string") {
-        entries.set(packageName, { range, section });
-      }
+    const range = dependencies[packageName];
+    if (typeof range === "string") {
+      return { range, section };
+    }
+  }
+  return undefined;
+}
+
+function readCurrentStepKitRanges(packageJson: Record<string, unknown>) {
+  const entries = new Map<StepkitPackageName, { range: string; section: DependencySection }>();
+  for (const packageName of stepkitPackageNames) {
+    const entry = readPackageDependencyEntry(packageJson, packageName);
+    if (entry) {
+      entries.set(packageName, entry);
     }
   }
   return entries;

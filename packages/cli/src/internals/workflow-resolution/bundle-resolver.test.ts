@@ -3,7 +3,11 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { loadBundleWorkflow } from "./bundle-resolver.js";
+import {
+  loadBundleWorkflow,
+  parseManifestTarget,
+  readBundleWorkflowManifest,
+} from "./bundle-resolver.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -15,6 +19,33 @@ const workflowModuleSource = [
 ].join("\n");
 
 describe("loadBundleWorkflow", () => {
+  it("exports a bundle manifest reader used by loadBundleWorkflow", () => {
+    const manifest = readBundleWorkflowManifest(
+      { stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } } },
+      "@acme/workflows",
+    );
+
+    expect(manifest).toEqual({ review: "./index.mjs#reviewWorkflow" });
+    const target = manifest.review;
+    expect(target).toBeDefined();
+    expect(parseManifestTarget(target ?? "", "@acme/workflows", "review")).toEqual({
+      modulePath: "./index.mjs",
+      exportName: "reviewWorkflow",
+    });
+  });
+
+  it("pins valid and invalid bundle manifest target parsing", () => {
+    expect(
+      parseManifestTarget("./flows/review.mjs#reviewWorkflow", "@acme/workflows", "review"),
+    ).toEqual({ modulePath: "./flows/review.mjs", exportName: "reviewWorkflow" });
+    expect(() =>
+      parseManifestTarget("flows/review.mjs#reviewWorkflow", "@acme/workflows", "review"),
+    ).toThrow(/<relative-module-path>#<exportName>/i);
+    expect(() => parseManifestTarget("./flows/review.mjs", "@acme/workflows", "review")).toThrow(
+      /<relative-module-path>#<exportName>/i,
+    );
+  });
+
   it("resolves a scoped package manifest workflow to the named export", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");

@@ -1,18 +1,34 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, resolve } from "node:path";
 
+import {
+  discoverWorkflows,
+  type InstalledPackageManifest,
+  type PackageJson,
+  resolveInstalledPackageManifest,
+  resolvePackageEntryFilePath,
+} from "../discovery/discovery.js";
+import { parseBundleWorkflowId } from "../workflow-reference/workflow-reference.js";
 import { listRegisteredWorkflowEntries } from "../workflow-registry/workflow-registry.js";
+import {
+  parseManifestTarget,
+  readBundleWorkflowManifest,
+} from "../workflow-resolution/bundle-resolver.js";
 import { isDirectWorkflowFileReference } from "../workflow-resolution/workflow-resolution.js";
 
 export interface DeprecationScanTarget {
   readonly sourceFile: string;
 }
 
+export type DeprecationScanMode = "workflow-source" | "workflow-package-update";
+
 export interface ResolveDeprecationScanTargetsOptions {
   readonly cwd: string;
   readonly homeDir?: string;
   readonly includeDiscovered?: boolean;
   readonly packageNames?: readonly string[];
+  readonly scanMode?: DeprecationScanMode;
 }
 
 export async function resolveDeprecationScanTargets({
@@ -20,50 +36,121 @@ export async function resolveDeprecationScanTargets({
   homeDir,
   includeDiscovered = false,
   packageNames,
+  scanMode = "workflow-source",
 }: ResolveDeprecationScanTargetsOptions): Promise<readonly DeprecationScanTarget[]> {
   const sourceFiles = new Set<string>();
   const registeredEntries = await listRegisteredWorkflowEntries({ cwd, homeDir });
 
   for (const entry of registeredEntries) {
-    await addSourceFilesForTarget(sourceFiles, entry.targetRef, entry.name, cwd, packageNames);
+    await addSourceFilesForTarget(sourceFiles, {
+      targetRef: entry.targetRef,
+      workflowName: entry.name,
+      baseDir: baseDirForRegistryScope(entry.scope, cwd, homeDir),
+      cwd,
+      packageNames,
+      scanMode,
+    });
   }
 
   if (includeDiscovered) {
-    for (const packageName of await discoverWorkflowPackageNames(cwd)) {
-      if (packageNames && !packageNames.includes(packageName)) {
+    for (const workflow of await discoverWorkflows({ cwd }).catch(() => [])) {
+      if (packageNames && !packageNames.includes(workflow.packageName)) {
         continue;
       }
-      await addPackageSourceFile(sourceFiles, packageName, undefined, cwd);
+      await addPackageSourceFile(sourceFiles, workflow.packageName, undefined, cwd, scanMode);
     }
   }
 
   return [...sourceFiles].map((sourceFile) => ({ sourceFile }));
 }
 
+interface AddSourceFilesForTargetOptions {
+  readonly targetRef: string;
+  readonly workflowName: string;
+  readonly baseDir: string;
+  readonly cwd: string;
+  readonly packageNames?: readonly string[];
+  readonly scanMode: DeprecationScanMode;
+}
+
 async function addSourceFilesForTarget(
   sourceFiles: Set<string>,
-  targetRef: string,
-  workflowName: string,
-  cwd: string,
-  packageNames: readonly string[] | undefined,
+  options: AddSourceFilesForTargetOptions,
 ): Promise<void> {
-  if (
-    isDirectWorkflowFileReference(targetRef) ||
-    targetRef === "~" ||
-    targetRef.startsWith("~/") ||
-    targetRef.startsWith("~\\")
-  ) {
-    // Direct-file registered workflows have no npm version — there is nothing to update, and
-    // therefore nothing meaningful to scan for deprecated @stepkit/core/@stepkit/sdk symbol usage
-    // triggered by a package version bump. Exclude them from scan targets entirely.
+  const normalizedTargetRef = normalizeRegistryTargetRef(options.targetRef, options.baseDir);
+  const target = parseRegisteredPackageTarget(normalizedTargetRef, options.workflowName);
+  if (target !== undefined) {
+    if (options.packageNames && !options.packageNames.includes(target.packageName)) {
+      return;
+    }
+    await addPackageSourceFile(
+      sourceFiles,
+      target.packageName,
+      target.workflowName,
+      options.cwd,
+      options.scanMode,
+    );
     return;
   }
 
-  const [packageName, bundleWorkflowName] = splitBundleTarget(targetRef, workflowName);
-  if (packageNames && !packageNames.includes(packageName)) {
-    return;
+  const directSourceFile = resolveDirectSourceFile(normalizedTargetRef);
+  if (directSourceFile !== undefined && options.scanMode === "workflow-source") {
+    sourceFiles.add(directSourceFile);
   }
-  await addPackageSourceFile(sourceFiles, packageName, bundleWorkflowName, cwd);
+}
+
+function baseDirForRegistryScope(
+  scope: "project" | "project-local" | "user",
+  cwd: string,
+  homeDir: string | undefined,
+): string {
+  return scope === "user" ? (homeDir ?? homedir()) : cwd;
+}
+
+function normalizeRegistryTargetRef(targetRef: string, baseDir: string): string {
+  if (targetRef === "~") {
+    return baseDir;
+  }
+  if (targetRef.startsWith("~/") || targetRef.startsWith("~\\")) {
+    return resolve(baseDir, targetRef.slice(2));
+  }
+  if (isDirectWorkflowFileReference(targetRef) && !isAbsolute(targetRef)) {
+    return resolve(baseDir, targetRef);
+  }
+  return targetRef;
+}
+
+function resolveDirectSourceFile(targetRef: string): string | undefined {
+  if (!isDirectWorkflowFileReference(targetRef)) {
+    return undefined;
+  }
+  return resolve(targetRef);
+}
+
+interface RegisteredPackageTarget {
+  readonly packageName: string;
+  readonly workflowName?: string;
+}
+
+function parseRegisteredPackageTarget(
+  targetRef: string,
+  defaultWorkflowName: string,
+): RegisteredPackageTarget | undefined {
+  const bundleRef = parseBundleWorkflowId(targetRef);
+  if (bundleRef !== undefined) {
+    return { packageName: bundleRef.packageName, workflowName: bundleRef.workflowName };
+  }
+
+  const legacyIndex = targetRef.lastIndexOf(":");
+  if (legacyIndex > 0 && !isAbsolute(targetRef)) {
+    return { packageName: targetRef.slice(0, legacyIndex), workflowName: defaultWorkflowName };
+  }
+
+  if (isDirectWorkflowFileReference(targetRef)) {
+    return undefined;
+  }
+
+  return { packageName: targetRef };
 }
 
 async function addPackageSourceFile(
@@ -71,90 +158,145 @@ async function addPackageSourceFile(
   packageName: string,
   workflowName: string | undefined,
   cwd: string,
+  scanMode: DeprecationScanMode,
 ): Promise<void> {
-  const packageDir = join(cwd, "node_modules", ...packageName.split("/"));
-  const packageJsonPath = join(packageDir, "package.json");
-  let packageJson: Record<string, unknown>;
-  try {
-    packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;
-  } catch {
+  const manifest = await resolvePackageManifest(packageName, cwd);
+  if (manifest === undefined) {
     return;
   }
 
-  const manifestTarget = readBundleManifestTarget(packageJson, workflowName);
-  const relativeSource =
-    manifestTarget ?? (typeof packageJson.main === "string" ? packageJson.main : "index.js");
-  sourceFiles.add(resolve(packageDir, stripExportSuffix(relativeSource)));
-}
-
-function readBundleManifestTarget(
-  packageJson: Record<string, unknown>,
-  workflowName: string | undefined,
-): string | undefined {
-  const stepkit = packageJson.stepkit;
-  if (!isRecord(stepkit) || !isRecord(stepkit.workflows)) {
-    return undefined;
-  }
-  const workflows = stepkit.workflows;
-  const target = workflowName === undefined ? Object.values(workflows)[0] : workflows[workflowName];
-  return typeof target === "string" ? target : undefined;
-}
-
-async function discoverWorkflowPackageNames(cwd: string): Promise<readonly string[]> {
-  const packages: string[] = [];
-  const nodeModules = join(cwd, "node_modules");
-  let entries: string[];
-  try {
-    entries = await readdir(nodeModules);
-  } catch {
-    return [];
-  }
-  for (const entry of entries) {
-    if (entry.startsWith("@")) {
-      for (const scopedEntry of await readdir(join(nodeModules, entry)).catch(() => [])) {
-        await addIfWorkflowPackage(packages, `${entry}/${scopedEntry}`, cwd);
-      }
-    } else {
-      await addIfWorkflowPackage(packages, entry, cwd);
+  if (hasBundleWorkflowManifest(manifest.packageJson)) {
+    for (const sourceFile of resolveBundleManifestSourceFilesForMode({
+      packageJson: manifest.packageJson,
+      packageDir: manifest.packageDir,
+      packageName,
+      workflowName,
+      scanMode,
+    })) {
+      sourceFiles.add(sourceFile);
     }
+    return;
   }
-  return packages;
+
+  sourceFiles.add(resolvePackageEntryFilePath(manifest.packageJson, manifest.packageDir));
 }
 
-async function addIfWorkflowPackage(
-  packages: string[],
+async function resolvePackageManifest(
   packageName: string,
   cwd: string,
-): Promise<void> {
+): Promise<InstalledPackageManifest | undefined> {
+  if (!isLocalPackageReference(packageName)) {
+    return resolveInstalledPackageManifest(packageName, cwd);
+  }
+
+  const packageDir = resolve(cwd, packageName);
+  const packageJsonPath = resolve(packageDir, "package.json");
   try {
-    const packageJson = JSON.parse(
-      await readFile(join(cwd, "node_modules", ...packageName.split("/"), "package.json"), "utf8"),
-    ) as Record<string, unknown>;
-    if (Array.isArray(packageJson.keywords) && packageJson.keywords.includes("stepkit-workflow")) {
-      packages.push(packageName);
-    }
+    return {
+      packageJsonPath,
+      packageDir,
+      packageJson: JSON.parse(await readFile(packageJsonPath, "utf8")) as PackageJson &
+        Record<string, unknown>,
+    };
   } catch {
-    // Ignore unreadable packages during preflight target discovery.
+    return undefined;
   }
 }
 
-function splitBundleTarget(
-  targetRef: string,
-  defaultWorkflowName: string,
-): readonly [string, string | undefined] {
-  const hashIndex = targetRef.indexOf("#");
-  if (hashIndex > 0) {
-    return [targetRef.slice(0, hashIndex), targetRef.slice(hashIndex + 1)];
-  }
-  const legacyIndex = targetRef.lastIndexOf(":");
-  if (legacyIndex > 0) {
-    return [targetRef.slice(0, legacyIndex), defaultWorkflowName];
-  }
-  return [targetRef, undefined];
+function isLocalPackageReference(packageName: string): boolean {
+  return (
+    packageName.startsWith("./") ||
+    packageName.startsWith("../") ||
+    packageName.startsWith(".\\") ||
+    packageName.startsWith("..\\") ||
+    isAbsolute(packageName) ||
+    /^[A-Za-z]:[\\/]/u.test(packageName)
+  );
 }
 
-function stripExportSuffix(ref: string): string {
-  return ref.split("#")[0] ?? ref;
+function resolveBundleManifestSourceFilesForMode({
+  packageJson,
+  packageDir,
+  packageName,
+  workflowName,
+  scanMode,
+}: {
+  readonly packageJson: Record<string, unknown>;
+  readonly packageDir: string;
+  readonly packageName: string;
+  readonly workflowName: string | undefined;
+  readonly scanMode: DeprecationScanMode;
+}): readonly string[] {
+  if (scanMode === "workflow-package-update") {
+    return resolveBundleManifestSourceFiles(packageJson, packageDir, packageName);
+  }
+
+  const sourceFile = resolveBundleManifestSourceFile(
+    packageJson,
+    packageDir,
+    packageName,
+    workflowName,
+  );
+  return sourceFile === undefined ? [] : [sourceFile];
+}
+
+export async function resolveBundleWorkflowScanTargets(
+  packageName: string,
+  cwd: string,
+): Promise<readonly DeprecationScanTarget[]> {
+  const manifest = await resolvePackageManifest(packageName, cwd);
+  if (manifest === undefined || !hasBundleWorkflowManifest(manifest.packageJson)) {
+    return [];
+  }
+  return resolveBundleManifestSourceFiles(
+    manifest.packageJson,
+    manifest.packageDir,
+    packageName,
+  ).map((sourceFile) => ({ sourceFile }));
+}
+
+function resolveBundleManifestSourceFiles(
+  packageJson: Record<string, unknown>,
+  packageDir: string,
+  packageName: string,
+): readonly string[] {
+  try {
+    const workflows = readBundleWorkflowManifest(packageJson, packageName);
+    return Object.entries(workflows).map(([workflowName, target]) =>
+      resolve(packageDir, parseManifestTarget(target, packageName, workflowName).modulePath),
+    );
+  } catch {
+    // Ignore malformed bundle manifests during deprecation preflight target discovery.
+    return [];
+  }
+}
+
+function resolveBundleManifestSourceFile(
+  packageJson: Record<string, unknown>,
+  packageDir: string,
+  packageName: string,
+  workflowName: string | undefined,
+): string | undefined {
+  if (workflowName === undefined) {
+    return undefined;
+  }
+
+  try {
+    const workflows = readBundleWorkflowManifest(packageJson, packageName);
+    const target = workflows[workflowName];
+    if (target === undefined) {
+      return undefined;
+    }
+    return resolve(packageDir, parseManifestTarget(target, packageName, workflowName).modulePath);
+  } catch {
+    // Ignore malformed bundle manifests during deprecation preflight target discovery.
+    return undefined;
+  }
+}
+
+function hasBundleWorkflowManifest(packageJson: Record<string, unknown>): boolean {
+  const stepkit = packageJson.stepkit;
+  return isRecord(stepkit) && "workflows" in stepkit;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

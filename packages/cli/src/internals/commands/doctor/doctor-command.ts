@@ -1,13 +1,10 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { minVersion } from "semver";
-
 import { type CliCommand, CliUsageError } from "../../command.types.js";
 import { formatDeprecationFinding } from "../../deprecation-scan/deprecation-formatter.js";
 import {
   type DeprecationFinding,
   scanWorkflowSourceForDeprecations,
 } from "../../deprecation-scan/deprecation-scanner.js";
+import { resolveInstalledStepKitVersions } from "../../deprecation-scan/resolve-installed-stepkit-versions.js";
 import { resolveDeprecationScanTargets } from "../../deprecation-scan/scan-targets.js";
 
 interface DoctorCommandArgs {
@@ -26,7 +23,7 @@ export const doctorCommand: CliCommand<DoctorCommandArgs> = {
     return { includeDiscovered: true };
   },
   async run(args, context) {
-    const versionsByPackageName = await readInstalledStepKitVersions(context.cwd);
+    const versionsByPackageName = await resolveInstalledStepKitVersions({ cwd: context.cwd });
     const targets = await resolveDeprecationScanTargets({
       cwd: context.cwd,
       homeDir: context.homeDir,
@@ -66,44 +63,3 @@ export const doctorCommand: CliCommand<DoctorCommandArgs> = {
     return 1;
   },
 };
-
-async function readInstalledStepKitVersions(
-  cwd: string,
-): Promise<Map<string, { readonly installedVersion?: string; readonly targetVersion: string }>> {
-  let packageJson: Record<string, unknown>;
-  try {
-    packageJson = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as Record<
-      string,
-      unknown
-    >;
-  } catch {
-    return new Map();
-  }
-
-  const versions = new Map<
-    string,
-    { readonly installedVersion?: string; readonly targetVersion: string }
-  >();
-  for (const sectionName of ["dependencies", "devDependencies", "peerDependencies"] as const) {
-    const section = packageJson[sectionName];
-    if (!isRecord(section)) {
-      continue;
-    }
-    for (const packageName of ["@stepkit/core", "@stepkit/sdk", "@stepkit/cli"] as const) {
-      const range = section[packageName];
-      if (typeof range !== "string") {
-        continue;
-      }
-      const installedVersion = minVersion(range)?.version ?? range.match(/^\d+\.\d+\.\d+/u)?.[0];
-      versions.set(packageName, {
-        ...(installedVersion === undefined ? {} : { installedVersion }),
-        targetVersion: installedVersion ?? range,
-      });
-    }
-  }
-  return versions;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}

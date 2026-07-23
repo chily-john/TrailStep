@@ -134,7 +134,7 @@ describe("updateCommand", () => {
     expect(lines.join("\n")).toContain("Planned StepKit package updates:");
   });
 
-  it("excludes directly registered workflow files from StepKit self-update preflight scanning", async ({
+  it("includes directly registered workflow files in StepKit self-update preflight scanning", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
@@ -156,21 +156,22 @@ describe("updateCommand", () => {
       "utf8",
     );
     const lines: string[] = [];
+    const errors: string[] = [];
 
-    // Direct-file registered workflows have no npm version and are excluded from deprecation
-    // scan targets entirely (per design) — self-update's preflight scan never reads this file's
-    // source text, even though the entry itself is still reported as a skip elsewhere.
     const exitCode = await main({
       argv: ["update", "--yes"],
       cwd,
-      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitOne,
       deprecationManifest: [removedSdkSymbol],
     });
 
-    expect(exitCode).toBe(0);
-    expect(lines.join("\n")).not.toContain("workflows/review.mjs");
-    expect(lines.join("\n")).not.toContain("removedStep");
+    expect(exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("workflows/review.mjs");
+    expect(lines.join("\n")).toContain("removedStep");
+    expect(errors).toEqual([
+      "Update blocked: blocking deprecation findings found. Re-run with --force to continue.",
+    ]);
   });
 
   it("prints all findings before the blocking error line", async ({ task }) => {
@@ -283,6 +284,11 @@ describe("updateCommand", () => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
       join(cwd, ".stepkit", "config.json"),
       JSON.stringify({
         workflows: {
@@ -300,6 +306,10 @@ describe("updateCommand", () => {
       argv: ["update", "--workflows", "--yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify([{ version: "1.1.0" }]),
+      }),
     });
 
     expect(exitCode).toBe(0);
@@ -312,6 +322,343 @@ describe("updateCommand", () => {
         fs.readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
       ),
     ).toContain("@acme/workflows#release");
+  });
+
+  it("blocks updating a registered bundle workflow when another workflow in the bundle has a blocking finding", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "node_modules", "@stepkit", "sdk"), { recursive: true });
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    const packageJsonPath = join(cwd, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: {
+          "@stepkit/sdk": "1.0.0",
+          "@acme/workflows": "^1.0.0",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".stepkit", "config.json"),
+      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "node_modules", "@stepkit", "sdk", "package.json"),
+      JSON.stringify({ name: "@stepkit/sdk", version: "1.0.0" }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        stepkit: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "dist", "release.mjs"),
+      "export const release = {};\n",
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "dist", "cleanup.mjs"),
+      "import { removedStep } from '@stepkit/sdk';\nexport const cleanup = {};\n",
+      "utf8",
+    );
+    const originalPackageJson = await readFile(packageJsonPath, "utf8");
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const blockedExitCode = await main({
+      argv: ["update", "--workflow=project/release", "--yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestWorkflowPackage,
+      deprecationManifest: [removedSdkSymbol],
+    });
+
+    expect(blockedExitCode).toBe(1);
+    expect(lines.join("\n")).toContain("dist/cleanup.mjs");
+    expect(lines.join("\n")).toContain("@stepkit/sdk/removedStep");
+    expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
+    expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
+
+    const forceLines: string[] = [];
+    const forceExitCode = await main({
+      argv: ["update", "--workflow=project/release", "--yes", "--force"],
+      cwd,
+      io: { writeLine: (line) => forceLines.push(line), writeError: () => undefined },
+      packageCommandRunner: latestWorkflowPackage,
+      deprecationManifest: [removedSdkSymbol],
+    });
+
+    expect(forceExitCode).toBe(0);
+    expect(forceLines.join("\n")).toMatch(/Warning: --force/);
+    expect(forceLines.join("\n")).toContain("Planned workflow package updates:");
+  });
+
+  it("uses target StepKit versions during self-update preflight", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(join(cwd, "node_modules", "@stepkit", "sdk"), { recursive: true });
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "node_modules", "@stepkit", "sdk", "package.json"),
+      JSON.stringify({ name: "@stepkit/sdk", version: "0.1.0" }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".stepkit", "config.json"),
+      JSON.stringify({ workflows: { project: { review: "@acme/stepkit-workflows" } } }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({ name: "@acme/stepkit-workflows", version: "1.0.0", main: "index.mjs" }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "import { futureRemoval } from '@stepkit/sdk';\nexport const review = {};\n",
+      "utf8",
+    );
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--yes"],
+      cwd,
+      io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestStepkitTwo,
+      deprecationManifest: [
+        {
+          ...removedSdkSymbol,
+          symbol: "futureRemoval",
+          deprecatedSince: "1.5.0",
+          removedIn: "2.0.0",
+        },
+      ],
+    });
+
+    expect(exitCode).toBe(1);
+    expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
+  });
+
+  it("uses target StepKit versions for workflow package preflight during --all", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "node_modules", "@stepkit", "sdk"), { recursive: true });
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    const packageJsonPath = join(cwd, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: {
+          "@stepkit/core": "1.0.0",
+          "@stepkit/sdk": "1.0.0",
+          "@acme/workflows": "1.0.0",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "node_modules", "@stepkit", "sdk", "package.json"),
+      JSON.stringify({ name: "@stepkit/sdk", version: "1.0.0" }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".stepkit", "config.json"),
+      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        stepkit: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "dist", "release.mjs"),
+      "export const release = {};\n",
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "dist", "cleanup.mjs"),
+      "import { futureRemoval } from '@stepkit/sdk';\nexport const cleanup = {};\n",
+      "utf8",
+    );
+    const originalPackageJson = await readFile(packageJsonPath, "utf8");
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--all", "--yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestStepkitTwoAndWorkflowPackage,
+      deprecationManifest: [
+        {
+          ...removedSdkSymbol,
+          symbol: "futureRemoval",
+          deprecatedSince: "1.5.0",
+          removedIn: "2.0.0",
+        },
+      ],
+    });
+
+    expect(exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("dist/cleanup.mjs");
+    expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
+    expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
+  });
+
+  it("applies self and workflow package updates together for --all --yes", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
+    const packageJsonPath = join(cwd, "package.json");
+    await writeFile(
+      packageJsonPath,
+      `${JSON.stringify(
+        {
+          dependencies: {
+            "@stepkit/core": "^1.0.0",
+            "@stepkit/sdk": "~1.0.0",
+            "@acme/workflows": "^1.0.0",
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".stepkit", "config.json"),
+      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--all", "--yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        return latestStepkitTwoAndWorkflowPackage(request);
+      },
+    });
+
+    const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Planned StepKit package updates:");
+    expect(lines.join("\n")).toContain("Planned workflow package updates:");
+    expect(packageJson.dependencies["@stepkit/core"]).toBe("^2.0.0");
+    expect(packageJson.dependencies["@stepkit/sdk"]).toBe("~2.0.0");
+    expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
+    expect(installRequests).toEqual([{ command: "pnpm", args: ["install"], cwd }]);
+  });
+
+  it("applies workflow package updates with --workflows even when there are no self updates", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    const packageJsonPath = join(cwd, "package.json");
+    await writeFile(
+      packageJsonPath,
+      `${JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".stepkit", "config.json"),
+      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      "utf8",
+    );
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--yes"],
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          return { exitCode: 0 };
+        }
+        return latestWorkflowPackage(request);
+      },
+    });
+
+    const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(exitCode).toBe(0);
+    expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
+  });
+
+  it("prints default npm warning before running install when no package manager is detected", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      `${JSON.stringify({ dependencies: { "@stepkit/core": "^1.0.0" } }, null, 2)}\n`,
+      "utf8",
+    );
+    const events: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--yes"],
+      cwd,
+      io: { writeLine: (line) => events.push(`line:${line}`), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          events.push("install");
+          return { exitCode: 0 };
+        }
+        return latestStepkitTwo(request);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toContain("line:No lockfile or packageManager field found; defaulting to npm.");
+    expect(
+      events.indexOf("line:No lockfile or packageManager field found; defaulting to npm."),
+    ).toBeLessThan(events.indexOf("install"));
   });
 
   it("applies self update with --yes, prints version changes, and runs detected install", async ({
@@ -516,6 +863,14 @@ const removedSdkSymbol = {
   replacement: "step",
 };
 
+async function latestWorkflowPackage(request: { readonly args: readonly string[] }) {
+  const packageName = String(request.args[1]).replace(/@\*$/u, "");
+  if (packageName === "@acme/workflows") {
+    return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]) };
+  }
+  return latestStepkitOne(request);
+}
+
 async function latestStepkitTwo(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@stepkit/core": [{ version: "2.0.0" }],
@@ -524,6 +879,14 @@ async function latestStepkitTwo(request: { readonly args: readonly string[] }) {
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");
   return { exitCode: 0, stdout: JSON.stringify(metadata[packageName]) };
+}
+
+async function latestStepkitTwoAndWorkflowPackage(request: { readonly args: readonly string[] }) {
+  const packageName = String(request.args[1]).replace(/@\*$/u, "");
+  if (packageName === "@acme/workflows") {
+    return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]) };
+  }
+  return latestStepkitTwo(request);
 }
 
 async function latestStepkitOne(request: { readonly args: readonly string[] }) {

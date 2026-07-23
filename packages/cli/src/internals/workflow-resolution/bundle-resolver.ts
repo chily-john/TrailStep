@@ -34,7 +34,7 @@ export async function loadBundleWorkflow(
   const packageJsonPath = resolvePackageJsonPath(specifier.packageName, options.cwd);
   const packageDir = dirname(packageJsonPath);
   const packageJson = await readPackageJson(packageJsonPath, specifier.packageName);
-  const workflows = readStepkitWorkflows(packageJson, specifier.packageName);
+  const workflows = readBundleWorkflowManifest(packageJson, specifier.packageName);
   const target = workflows[specifier.workflowName];
 
   if (target === undefined) {
@@ -80,7 +80,7 @@ export async function loadBundleWorkflow(
   };
 }
 
-function resolvePackageJsonPath(packageName: string, cwd: string): string {
+export function resolvePackageJsonPath(packageName: string, cwd: string): string {
   if (isLocalPackageReference(packageName)) {
     return resolve(cwd, packageName, "package.json");
   }
@@ -116,7 +116,10 @@ async function readPackageJson(path: string, packageName: string): Promise<unkno
   }
 }
 
-function readStepkitWorkflows(packageJson: unknown, packageName: string): Record<string, string> {
+export function readBundleWorkflowManifest(
+  packageJson: unknown,
+  packageName: string,
+): Record<string, string> {
   if (!isPlainObject(packageJson)) {
     throw new WorkflowResolutionError(
       `Invalid package manifest for bundle package: ${packageName}`,
@@ -140,11 +143,16 @@ function readStepkitWorkflows(packageJson: unknown, packageName: string): Record
   return workflows as Record<string, string>;
 }
 
-function parseManifestTarget(
+export interface ParsedManifestTarget {
+  readonly modulePath: string;
+  readonly exportName: string;
+}
+
+export function parseManifestTarget(
   target: string,
   packageName: string,
   workflowName: string,
-): { modulePath: string; exportName: string } {
+): ParsedManifestTarget {
   const separatorIndex = target.lastIndexOf("#");
   if (separatorIndex <= 0 || separatorIndex === target.length - 1) {
     throw new WorkflowResolutionError(

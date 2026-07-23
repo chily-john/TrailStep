@@ -1,11 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { main } from "./index.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
@@ -387,7 +388,7 @@ describe("main", () => {
     expect(errors).toEqual([]);
   });
 
-  it("doctor excludes direct-file registered workflows from the deprecation scan", async ({
+  it("doctor includes direct-file registered workflows in the deprecation scan", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-doctor-direct-file`);
@@ -395,6 +396,10 @@ describe("main", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@stepkit/sdk": "1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@stepkit", "sdk", "package.json"), {
+      name: "@stepkit/sdk",
+      version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
@@ -407,9 +412,6 @@ describe("main", () => {
     const lines: string[] = [];
     const errors: string[] = [];
 
-    // Direct-file registered workflows have no npm version and are excluded from deprecation
-    // scan targets entirely (per design), so even a symbol that would otherwise be blocking
-    // produces no finding here.
     await expect(
       main({
         argv: ["doctor"],
@@ -417,10 +419,11 @@ describe("main", () => {
         io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
         deprecationManifest: [removedSdkSymbol],
       }),
-    ).resolves.toBe(0);
+    ).resolves.toBe(2);
 
-    expect(lines.join("\n")).toMatch(/no StepKit deprecation findings/i);
-    expect(errors).toEqual([]);
+    expect(lines.join("\n")).toContain("blocking @stepkit/sdk/removedStep");
+    expect(lines.join("\n")).toContain("workflows/review.mjs");
+    expect(errors).toEqual(["Doctor found blocking deprecation findings."]);
   });
 
   it("doctor reports warning deprecations without blocking", async ({ task }) => {
@@ -430,6 +433,10 @@ describe("main", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@stepkit/sdk": "1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@stepkit", "sdk", "package.json"), {
+      name: "@stepkit/sdk",
+      version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "@acme/stepkit-workflows" } },
@@ -465,6 +472,10 @@ describe("main", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@stepkit/sdk": "1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@stepkit", "sdk", "package.json"), {
+      name: "@stepkit/sdk",
+      version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "@acme/stepkit-workflows" } },
@@ -539,7 +550,9 @@ describe("main", () => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-update-workflows`);
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
-    await writeJson(packageJsonPath, { dependencies: { "@stepkit/core": "^1.0.0" } });
+    await writeJson(packageJsonPath, {
+      dependencies: { "@stepkit/core": "^1.0.0", "@acme/workflows": "^1.0.0" },
+    });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "@acme/workflows#review" } },
     });
@@ -549,7 +562,10 @@ describe("main", () => {
         argv: ["update", "--workflows", "--yes"],
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
-        packageCommandRunner: async () => ({ exitCode: 0, stdout: "[]" }),
+        packageCommandRunner: async () => ({
+          exitCode: 0,
+          stdout: JSON.stringify([{ version: "1.1.0" }]),
+        }),
       }),
     ).resolves.toBe(0);
 
@@ -585,12 +601,12 @@ describe("main", () => {
       }),
     ).resolves.toBe(0);
 
-    // Direct-file registered workflows have no npm version, so they are excluded from
-    // deprecation scan targets entirely — the skip message still comes from update's own,
-    // separate skipped-direct-file reporting, but no finding is produced for its source text.
+    // Direct-file registrations still produce workflow-package update skip messages, but the
+    // StepKit self-update preflight scans their source because StepKit API changes can affect
+    // direct workflow files too.
     expect(lines.join("\n")).toContain("Skipped project/review: local file source");
-    expect(lines.join("\n")).not.toContain("warning @stepkit/sdk/oldStep");
-    expect(lines.join("\n")).not.toContain("workflows/review.mjs");
+    expect(lines.join("\n")).toContain("warning @stepkit/sdk/oldStep");
+    expect(lines.join("\n")).toContain("workflows/review.mjs");
   });
 
   it("update self-update uses the detected package manager from main()", async ({ task }) => {

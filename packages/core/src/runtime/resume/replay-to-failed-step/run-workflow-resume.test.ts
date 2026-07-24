@@ -37,13 +37,11 @@ async function createRunWithEvents(events: readonly Event[]): Promise<string> {
 function replayWorkflow(): Workflow<{ value: number }, { value: number }> {
   const secondStep = step({
     id: "second",
-    outputShape: { value: "number" },
-  }).next(({ value }: { value: number }) => done({ value: value + 1 }));
+  }).do(({ value }: { value: number }) => done({ value: value + 1 }));
 
   const firstStep = step({
     id: "first",
-    outputShape: { value: "number" },
-  }).next(({ value }: { value: number }) => secondStep({ value: value + 1 }));
+  }).do(({ value }: { value: number }) => secondStep({ value: value + 1 }));
 
   return {
     id: "history-workflow",
@@ -63,8 +61,7 @@ describe("runWorkflow resume", () => {
 
     const secondStep = step({
       id: "second",
-      outputShape: { value: "number" },
-    }).next(({ value }: { value: number }) => {
+    }).do(({ value }: { value: number }) => {
       if (shouldFailSecondStep) {
         throw new Error("second step unavailable");
       }
@@ -74,8 +71,7 @@ describe("runWorkflow resume", () => {
 
     const firstStep = step({
       id: "first",
-      outputShape: { value: "number" },
-    }).next(({ value }: { value: number }) => {
+    }).do(({ value }: { value: number }) => {
       firstStepRuns += 1;
       return secondStep({ value: value + 1 });
     });
@@ -110,10 +106,10 @@ describe("runWorkflow resume", () => {
     expect(resumed.runId).toBe(failed.runId);
     expect(resumed.runDir).toBe(failed.runDir);
     expect(resumed.output).toEqual({ value: 3 });
-    // A no-prompt step's .next(...) is both its computation and its continuation
+    // A no-prompt step's .do(...) is both its computation and its continuation
     // decision fused into one closure — unlike the old separate run()'s plain,
     // serializable output, there is nothing to persist and feed back in its place.
-    // Resuming past a completed no-prompt step therefore re-invokes its .next(...)
+    // Resuming past a completed no-prompt step therefore re-invokes its .do(...)
     // (from the same input) rather than skipping it, so firstStepRuns goes to 2.
     expect(firstStepRuns).toBe(2);
     expect(eventTypes(resumed.events)).toEqual([
@@ -234,7 +230,7 @@ describe("runWorkflow resume", () => {
 
   it("resumes through a completed no-prompt orchestration-only step", async () => {
     // There is no separate "orchestration step" kind — a step with no .prompt(...) is
-    // always just a no-prompt step, whether its .next(...) does arithmetic or pure
+    // always just a no-prompt step, whether its .do(...) does arithmetic or pure
     // branching. Resume treats every no-prompt step identically (only a step with a
     // prompt makes resume-through-it unsupported), so this now succeeds.
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -244,13 +240,11 @@ describe("runWorkflow resume", () => {
       start(input) {
         const secondStep = step({
           id: "second",
-          outputShape: { value: "number" },
-        }).next(({ value }: { value: number }) => done({ value: value + 1 }));
+        }).do(({ value }: { value: number }) => done({ value: value + 1 }));
 
         const orchestrationStep = step({
           id: "orchestration",
-          outputShape: { value: "number" },
-        }).next((firstOutput: { value: number }) => secondStep(firstOutput));
+        }).do((firstOutput: { value: number }) => secondStep(firstOutput));
 
         return orchestrationStep(input);
       },
@@ -287,8 +281,7 @@ describe("runWorkflow resume", () => {
       start(input) {
         return step({
           id: "only",
-          outputShape: { value: "number" },
-        }).next(({ value }: { value: number }) => done({ value }))(input);
+        }).do(({ value }: { value: number }) => done({ value }))(input);
       },
     };
 
@@ -332,12 +325,13 @@ describe("runWorkflow resume", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { notes: "string" },
-          agent: "reviewer",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output: { notes: string }) => done({ notes: output.notes }))(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do((output: { notes: string }) => done({ notes: output.notes }))(input);
       },
     };
 

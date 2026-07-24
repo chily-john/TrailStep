@@ -36,8 +36,7 @@ describe("SDK workflow authoring", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: greetingOutput,
-        }).next((stepInput: GreetingInput) => done({ message: `Hello, ${stepInput.name}!` }))({
+        }).do((stepInput: GreetingInput) => done({ message: `Hello, ${stepInput.name}!` }))({
           name: input.person,
         });
       },
@@ -81,11 +80,12 @@ describe("SDK workflow authoring", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { approved: "boolean" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Review ${input.path}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.path}.`, {
+            output: { approved: "boolean" },
+            agent: "reviewer",
+          })
+          .do(done)(input);
       },
     });
 

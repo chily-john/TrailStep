@@ -18,12 +18,6 @@ describe("step input mapping", () => {
       required: ["starting", "factor"],
       additionalProperties: false,
     });
-    const firstOutput = jsonSchema<{ value: number }>({
-      type: "object",
-      properties: { value: { type: "number" } },
-      required: ["value"],
-      additionalProperties: false,
-    });
     const mappedInput = jsonSchema<{ value: number; multiplier: number; runName: string }>({
       type: "object",
       properties: {
@@ -50,7 +44,7 @@ describe("step input mapping", () => {
       },
     };
 
-    const seedStep = step({ id: "seed", outputShape: firstOutput }).next(
+    const seedStep = step({ id: "seed" }).do(
       async (stepInput: { starting: number; factor: number }) => {
         const seedOutput = { value: stepInput.starting + 1 };
         expect(seedOutput).toEqual({ value: 5 });
@@ -68,7 +62,7 @@ describe("step input mapping", () => {
       },
     );
 
-    const multiplyStep = step({ id: "multiply", outputShape: finalOutput }).next(
+    const multiplyStep = step({ id: "multiply" }).do(
       async (stepInput: { value: number; multiplier: number; runName: string }) =>
         done({ result: stepInput.value * stepInput.multiplier }),
     );

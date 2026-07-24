@@ -1,13 +1,12 @@
-import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../../agent-execution/interactive-agent/protocol/default-interactive-output-shape.js";
-import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult, StepNode } from "../../../authoring/step/continuation.types.js";
 import { isStepNode } from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
-import type { PlainObject, ShapeInput } from "../../../contracts/shapes/shape.types.js";
+import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
+import { resolveStepOutputSchema } from "../../continuation/resolve-step-output-schema/resolve-step-output-schema.js";
 
 /**
  * Walks a workflow's `start(...)` continuation forward through its recorded
@@ -76,10 +75,16 @@ export async function replayCompletedSteps<
         };
       }
 
-      const effectiveOutputShape =
-        node.config.outputShape ??
-        (node.config.agentMode === "interactive" ? DEFAULT_INTERACTIVE_OUTPUT_SHAPE : undefined);
-      const outputSchema = normalizeShape(effectiveOutputShape as ShapeInput<PlainObject>);
+      const outputSchema = resolveStepOutputSchema(node.config);
+      if (!outputSchema) {
+        return {
+          status: "failure",
+          failure: replayFailure(
+            "resume_output_schema_unresolvable",
+            `Step ${node.config.id} has no resolvable output schema to replay with.`,
+          ),
+        };
+      }
       const validatedOutput = outputSchema.assert(recordedOutput, `step ${node.config.id} output`);
 
       node = await node.onOutput(validatedOutput);

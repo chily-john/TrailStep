@@ -4,11 +4,11 @@ interface DailyNoteOutput extends Record<string, unknown> {
   readonly isDone: boolean;
 }
 
-const outputShape = shape<DailyNoteOutput>({ isDone: "boolean" });
-
-const stepOne = step({ id: "write-note", outputShape })
-  .prompt("Create a new file in the project root that contains a greeting in it.")
-  .next(done);
+const stepOne = step({ id: "write-note" })
+  .prompt("Create a new file in the project root that contains a greeting in it.", {
+    output: shape<DailyNoteOutput>({ isDone: "boolean" }),
+  })
+  .do(done);
 
 export const dailyNote = defineWorkflow({
   id: "daily-note",

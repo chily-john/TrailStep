@@ -1,7 +1,5 @@
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
-import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../../agent-execution/interactive-agent/protocol/default-interactive-output-shape.js";
 import type { StepKitConfig } from "../../../agent-targeting/targeting.types.js";
-import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import { isDoneNode, isFailNode, isStepNode } from "../../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
@@ -13,6 +11,7 @@ import type {
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { createEvent } from "../../events/create-run-event.js";
+import { resolveStepOutputSchema } from "../resolve-step-output-schema/resolve-step-output-schema.js";
 
 export interface RunContinuationOptions {
   readonly node: ContinuationResult;
@@ -87,21 +86,16 @@ export async function runContinuation(
       let paramForNext: PlainObject;
 
       if (hasPrompt) {
-        const effectiveOutputShape =
-          config.outputShape ??
-          (config.agentMode === "interactive" ? DEFAULT_INTERACTIVE_OUTPUT_SHAPE : undefined);
-        if (!effectiveOutputShape) {
-          throw new Error(`step ${config.id} with a prompt requires an outputShape`);
+        const outputSchema = resolveStepOutputSchema(config);
+        if (!outputSchema) {
+          throw new Error(`step ${config.id} with a prompt requires an output shape`);
         }
 
-        const outputSchema = normalizeShape(effectiveOutputShape);
         const rawOutput = await dispatchAgentStep({
           config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
           outputSchema,
           interactiveOutputMode:
-            config.agentMode === "interactive" && config.outputShape !== undefined
-              ? "json"
-              : "session-file",
+            config.mode === "interactive" && config.output !== undefined ? "json" : "session-file",
           runId: options.runId,
           workflowId: options.workflowId,
           emit: options.emit,
@@ -132,9 +126,9 @@ export async function runContinuation(
       const nextNode = await stepNode.onOutput(paramForNext);
 
       if (!hasPrompt) {
-        // A no-prompt step's .next(...) IS its work — only report completion once it has
+        // A no-prompt step's .do(...) IS its work — only report completion once it has
         // actually run without throwing, matching the with-prompt case's "step.completed
-        // means the step's own work succeeded" meaning (a thrown .next() must never be
+        // means the step's own work succeeded" meaning (a thrown .do() must never be
         // preceded by step.completed, or resume's already-completed guard sees both).
         await options.emit(
           createEvent({

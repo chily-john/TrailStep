@@ -33,14 +33,20 @@ describe("runWorkingAgentCommand", () => {
       outputShape: { answer: "string" },
       agents: { reviewer: { size: "medium" } },
       start(input) {
-        return step({ id: "prepare" }).next(() =>
-          step({ id: "review", outputShape: { answer: "string" }, agent: "reviewer" })
-            .prompt(({ input }) => `First review for ${input.task}.`)
-            .next((first) =>
-              step({ id: "record" }).next(() =>
-                step({ id: "review", outputShape: { answer: "string" }, agent: "reviewer" })
-                  .prompt("Second review.")
-                  .next((second) => done({ answer: `${first.answer}/${second.answer}` }))({}),
+        return step({ id: "prepare" }).do(() =>
+          step({ id: "review" })
+            .prompt(({ input }) => `First review for ${input.task}.`, {
+              output: { answer: "string" },
+              agent: "reviewer",
+            })
+            .do((first) =>
+              step({ id: "record" }).do(() =>
+                step({ id: "review" })
+                  .prompt("Second review.", {
+                    output: { answer: "string" },
+                    agent: "reviewer",
+                  })
+                  .do((second) => done({ answer: `${first.answer}/${second.answer}` }))({}),
               )(first),
             )({ task: input.task }),
         )(input);
@@ -110,11 +116,12 @@ describe("runWorkingAgentCommand", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { answer: "string" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -319,9 +326,12 @@ describe("raw-text capture mode", () => {
         outputShape: { name: "string", content: "string" },
         agents: { writer: { size: "medium" } },
         start(input) {
-          return step({ id: "write", outputShape: document("notes"), agent: "writer" })
-            .prompt(({ input }) => `Write notes about ${input.topic}.`)
-            .next((doc) => done({ name: doc.name, content: doc.content }))(input);
+          return step({ id: "write" })
+            .prompt(({ input }) => `Write notes about ${input.topic}.`, {
+              output: document("notes"),
+              agent: "writer",
+            })
+            .do((doc) => done({ name: doc.name, content: doc.content }))(input);
         },
       };
 

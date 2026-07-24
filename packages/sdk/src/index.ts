@@ -1,6 +1,7 @@
 export type {
   Document,
   FailNode,
+  PromptOptions,
   PromptTemplateSource,
   Schema,
   ShapeInput,

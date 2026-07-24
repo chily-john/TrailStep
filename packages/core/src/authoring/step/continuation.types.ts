@@ -11,33 +11,35 @@ export interface PromptTemplateSource {
   readonly path: string;
 }
 
-/**
- * The object passed to `step(...)`. No `input` (supplied when the resulting
- * `StepFactory` is called) and no `run` (there is no separate code runner —
- * omitting `.prompt(...)` means `.next(...)` receives the step's input
- * directly and does the work itself). `outputShape` only matters when
- * `.prompt(...)` is used — it constrains the agent's structured-output tool;
- * it's unused for a step with no prompt.
- */
-export interface StepConfig<TOutput extends PlainObject = PlainObject> {
+/** The object passed to `step(...)`. Always relevant, regardless of whether `.prompt(...)` is called. */
+export interface StepConfig {
   readonly id: string;
-  readonly outputShape?: ShapeInput<TOutput>;
+}
+
+/**
+ * The object passed as `.prompt(...)`'s second argument -- config that only
+ * matters when a step dispatches to an agent, so it lives here instead of
+ * on `StepConfig` where a no-prompt step could set it and have it silently
+ * ignored. `output` constrains the agent's structured-output tool.
+ */
+export interface PromptOptions<TOutput extends PlainObject = PlainObject> {
+  readonly output?: ShapeInput<TOutput>;
   readonly agent?: string;
-  readonly agentMode?: "working" | "interactive";
+  readonly mode?: "working" | "interactive";
   readonly adapter?: AgentAdapterSelection<PlainObject, TOutput>;
 }
 
-/** The runtime shape stored in `StepNode.config` — `StepConfig` plus the resolved `input` and `prompt` source. */
+/** The runtime shape stored in `StepNode.config` -- `StepConfig` plus `PromptOptions` (when a prompt was given) plus the resolved `input` and `prompt` source. */
 export interface ContinuationStepConfig<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > {
   readonly id: string;
   readonly input: TInput;
-  readonly outputShape?: ShapeInput<TOutput>;
+  readonly output?: ShapeInput<TOutput>;
   readonly prompt?: AgentPrompt<TInput> | PromptTemplateSource;
   readonly agent?: string;
-  readonly agentMode?: "working" | "interactive";
+  readonly mode?: "working" | "interactive";
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
 }
 
@@ -60,11 +62,11 @@ export interface StepNode<
 }
 
 /**
- * Returned by `step(...).prompt(...)?.next(...)`: a reusable step definition,
+ * Returned by `step(...).prompt(...)?.do(...)`: a reusable step definition,
  * called with a live input value to produce an actual `StepNode`
  * (`stepA(input)`). Chain `.catch(...)` to add an error continuation before
  * calling it. When `TInput` has no required keys (e.g. a step that ignores
- * its input), the call is `stepA()` — the input argument is optional.
+ * its input), the call is `stepA()` -- the input argument is optional.
  */
 export type StepFactory<
   TInput extends PlainObject = PlainObject,
@@ -81,7 +83,7 @@ export interface DoneNode<TOutput extends PlainObject = PlainObject> {
   readonly output: TOutput;
 }
 
-/** Terminates the workflow as a failure without dispatching a step — no step.* events, just workflow.failed. */
+/** Terminates the workflow as a failure without dispatching a step -- no step.* events, just workflow.failed. */
 export interface FailNode {
   readonly kind: "fail";
   readonly failure: Failure;

@@ -6,9 +6,9 @@ import { createEvent } from "../../events/create-run-event.js";
 import { runContinuation } from "./run-continuation.js";
 
 describe("runContinuation", () => {
-  it("still requires outputShape for working prompted steps", async () => {
+  it("still requires an output shape for working prompted steps", async () => {
     const result = await runContinuation({
-      node: step({ id: "draft", agent: "writer" }).prompt("Draft the plan.").next(done)({}),
+      node: step({ id: "draft" }).prompt("Draft the plan.", { agent: "writer" }).do(done)({}),
       runId: "working-missing-output-shape-run",
       workflowId: "working-missing-output-shape-workflow",
       emit: async () => {},
@@ -28,7 +28,7 @@ describe("runContinuation", () => {
     if (result.status !== "failure") {
       throw new Error("Expected runContinuation to fail.");
     }
-    expect(result.failure.message).toContain("requires an outputShape");
+    expect(result.failure.message).toContain("requires an output shape");
   });
 
   it("routes a thrown step error through an error continuation to done", async () => {
@@ -47,9 +47,8 @@ describe("runContinuation", () => {
 
     const firstNode = step({
       id: "explode",
-      outputShape: { value: "number" },
     })
-      .next(() => {
+      .do(() => {
         throw new Error("Boom");
       })
       .catch((error) => done({ status: "failed", summary: error.message }))({ value: 1 });

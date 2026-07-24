@@ -32,12 +32,13 @@ function reattachWorkflow(): Workflow<{ task: string }, { notes: string }> {
     start(input) {
       return step({
         id: "review",
-        outputShape: { notes: "string" },
-        agent: "reviewer",
-        agentMode: "interactive",
       })
-        .prompt(({ input }) => `Review ${input.task}.`)
-        .next((output: { notes: string }) => done({ notes: output.notes }))(input);
+        .prompt(({ input }) => `Review ${input.task}.`, {
+          output: { notes: "string" },
+          agent: "reviewer",
+          mode: "interactive",
+        })
+        .do((output: { notes: string }) => done({ notes: output.notes }))(input);
     },
   };
 }

@@ -29,6 +29,7 @@ export type {
   ContinuationStepConfig,
   DoneNode,
   FailNode,
+  PromptOptions,
   PromptTemplateSource,
   StepConfig,
   StepContinuation,

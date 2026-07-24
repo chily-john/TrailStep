@@ -67,17 +67,17 @@ describe("agent steps", () => {
 
     const agentStep = step({
       id: "agent",
-      outputShape: agentOutputSchema,
-      agent: "helper",
-      adapter,
     })
-      .prompt("Return a short answer.")
-      .next((agentOutput) => finalizeStep(agentOutput));
+      .prompt("Return a short answer.", {
+        output: agentOutputSchema,
+        agent: "helper",
+        adapter,
+      })
+      .do((agentOutput) => finalizeStep(agentOutput));
 
     const finalizeStep = step({
       id: "finalize",
-      outputShape: finalOutputSchema,
-    }).next((finalizeInput) => done({ final: finalizeInput.answer }));
+    }).do((finalizeInput) => done({ final: finalizeInput.answer }));
 
     const workflow: Workflow<{ task: string }, { final: string }> = {
       id: "agent-workflow",
@@ -138,16 +138,17 @@ describe("agent steps", () => {
       start(input) {
         return step({
           id: "agent",
-          outputShape: { answer: "string" },
-          agent: "helper",
-          adapter: async (request) => {
-            capturedPrompt = request.messages[0]?.content;
-            capturedInput = request.input as { task: string };
-            await request.tools[0]?.call({ answer: `done: ${capturedInput.task}` });
-          },
         })
-          .prompt(({ input }) => `Summarize ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Summarize ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "helper",
+            adapter: async (request) => {
+              capturedPrompt = request.messages[0]?.content;
+              capturedInput = request.input as { task: string };
+              await request.tools[0]?.call({ answer: `done: ${capturedInput.task}` });
+            },
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -181,11 +182,12 @@ describe("agent steps", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { answer: "string" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -249,11 +251,12 @@ describe("agent steps", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { answer: "string" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -316,11 +319,12 @@ describe("agent steps", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { answer: "string" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -380,11 +384,12 @@ describe("agent steps", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { answer: "string" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -445,11 +450,12 @@ describe("agent steps", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { answer: "string" },
-          agent: "reviewer",
         })
-          .prompt(({ input }) => `Original prompt for ${input.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Original prompt for ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -498,11 +504,12 @@ describe("registry-vs-customProviders dispatch split", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: { greeting: "string" },
-          agent: "writer",
         })
-          .prompt(({ input }) => `Greet ${input.name}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Greet ${input.name}.`, {
+            output: { greeting: "string" },
+            agent: "writer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -550,11 +557,12 @@ describe("registry-vs-customProviders dispatch split", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: { greeting: "string" },
-          agent: "writer",
         })
-          .prompt(({ input }) => `Greet ${input.name}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Greet ${input.name}.`, {
+            output: { greeting: "string" },
+            agent: "writer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -614,11 +622,12 @@ describe("registry-vs-customProviders dispatch split", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: { greeting: "string" },
-          agent: "writer",
         })
-          .prompt(({ input }) => `Greet ${input.name}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Greet ${input.name}.`, {
+            output: { greeting: "string" },
+            agent: "writer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -684,11 +693,12 @@ describe("registry-vs-customProviders dispatch split", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: { greeting: "string" },
-          agent: "writer",
         })
-          .prompt(({ input }) => `Greet ${input.name}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Greet ${input.name}.`, {
+            output: { greeting: "string" },
+            agent: "writer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -746,11 +756,12 @@ describe("registry-vs-customProviders dispatch split", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: { greeting: "string" },
-          agent: "writer",
         })
-          .prompt(({ input }) => `Greet ${input.name}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Greet ${input.name}.`, {
+            output: { greeting: "string" },
+            agent: "writer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -798,11 +809,12 @@ describe("registry-vs-customProviders dispatch split", () => {
       start(input) {
         return step({
           id: "greet",
-          outputShape: { greeting: "string" },
-          agent: "writer",
         })
-          .prompt(({ input }) => `Greet ${input.name}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input }) => `Greet ${input.name}.`, {
+            output: { greeting: "string" },
+            agent: "writer",
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -867,15 +879,16 @@ describe("promptTemplate prompt source", () => {
       start(input) {
         return step({
           id: "ask",
-          outputShape: outputSchema,
-          agent: "assistant",
-          adapter: async (request) => {
-            capturedPrompt = request.messages[0]?.content;
-            await request.tools[0]?.call({ answer: "hi" });
-          },
         })
-          .prompt(promptTemplate("prompt.md"))
-          .next((output) => done(output))(input);
+          .prompt(promptTemplate("prompt.md"), {
+            output: outputSchema,
+            agent: "assistant",
+            adapter: async (request) => {
+              capturedPrompt = request.messages[0]?.content;
+              await request.tools[0]?.call({ answer: "hi" });
+            },
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -911,14 +924,15 @@ describe("promptTemplate prompt source", () => {
       start(input) {
         return step({
           id: "ask",
-          outputShape: outputSchema,
-          agent: "assistant",
-          adapter: async () => {
-            throw new Error("should not run");
-          },
         })
-          .prompt(promptTemplate("missing.md"))
-          .next(() => done({ status: "unexpected" }))
+          .prompt(promptTemplate("missing.md"), {
+            output: outputSchema,
+            agent: "assistant",
+            adapter: async () => {
+              throw new Error("should not run");
+            },
+          })
+          .do(() => done({ status: "unexpected" }))
           .catch((failure) => done({ status: `failed: ${failure.code}: ${failure.message}` }))(
           input,
         );

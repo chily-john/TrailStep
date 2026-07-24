@@ -32,12 +32,13 @@ describe("SDK agent step prompt rendering", () => {
       start(input) {
         return step({
           id: "agent",
-          outputShape: schema,
-          agent: "assistant",
-          adapter,
         })
-          .prompt("# Transform\n\nReturn the value with a suffix.")
-          .next((output) => done(output))(input);
+          .prompt("# Transform\n\nReturn the value with a suffix.", {
+            output: schema,
+            agent: "assistant",
+            adapter,
+          })
+          .do((output) => done(output))(input);
       },
     });
 
@@ -86,12 +87,13 @@ describe("SDK agent step prompt rendering", () => {
       start(input) {
         return step({
           id: "explain",
-          outputShape,
-          agent: "assistant",
-          adapter,
         })
-          .prompt(({ input: liveInput }) => `Explain ${liveInput.topic} for StepKit.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input: liveInput }) => `Explain ${liveInput.topic} for StepKit.`, {
+            output: outputShape,
+            agent: "assistant",
+            adapter,
+          })
+          .do((output) => done(output))(input);
       },
     });
 

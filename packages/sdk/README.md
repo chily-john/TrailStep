@@ -26,11 +26,12 @@ export const sampleWorkflow = defineWorkflow({
   start(input) {
     return step({
       id: "prepare",
-      outputShape: shape({ greeting: "string" }),
-      agent: "writer",
     })
-      .prompt(({ input }) => `Write a concise greeting for ${input.name}.`)
-      .next((output) => done(output))(input);
+      .prompt(({ input }) => `Write a concise greeting for ${input.name}.`, {
+        output: shape({ greeting: "string" }),
+        agent: "writer",
+      })
+      .do((output) => done(output))(input);
   },
 });
 ```

@@ -26,12 +26,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "approve-plan",
-          agent: "reviewer",
-          agentMode: "interactive",
-          outputShape: { approved: "boolean", notes: "string" },
         })
-          .prompt(({ input }) => `Approve ${input.task}?`)
-          .next(({ approved, notes }) => done({ notes: approved ? notes : "Denied." }))(input);
+          .prompt(({ input }) => `Approve ${input.task}?`, {
+            output: { approved: "boolean", notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do(({ approved, notes }) => done({ notes: approved ? notes : "Denied." }))(input);
       },
     };
 
@@ -104,24 +105,26 @@ describe("continuation interactive agent roles", () => {
         reviewer: { size: "small" },
       },
       start(input) {
-        return step({ id: "prepare" }).next(() =>
+        return step({ id: "prepare" }).do(() =>
           step({
             id: "review",
-            outputShape: { notes: "string" },
-            agent: "reviewer",
-            agentMode: "interactive",
           })
-            .prompt(({ input }) => `First review for ${input.task}.`)
-            .next((first) =>
-              step({ id: "record" }).next(() =>
+            .prompt(({ input }) => `First review for ${input.task}.`, {
+              output: { notes: "string" },
+              agent: "reviewer",
+              mode: "interactive",
+            })
+            .do((first) =>
+              step({ id: "record" }).do(() =>
                 step({
                   id: "review",
-                  outputShape: { notes: "string" },
-                  agent: "reviewer",
-                  agentMode: "interactive",
                 })
-                  .prompt("Second review.")
-                  .next((second) => done({ notes: `${first.notes}/${second.notes}` }))({}),
+                  .prompt("Second review.", {
+                    output: { notes: "string" },
+                    agent: "reviewer",
+                    mode: "interactive",
+                  })
+                  .do((second) => done({ notes: `${first.notes}/${second.notes}` }))({}),
               )(first),
             )({ task: input.task }),
         )(input);
@@ -186,12 +189,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { notes: "string" },
-          agent: "reviewer",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -245,12 +249,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { notes: "string" },
-          agent: "reviewer",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -287,12 +292,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { notes: "string" },
-          agent: "reviewer",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -339,12 +345,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { approved: "boolean", notes: "string" },
-          agent: "reviewer",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { approved: "boolean", notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -394,9 +401,12 @@ describe("continuation interactive agent roles", () => {
       outputShape: { sessionFile: "string" },
       agents: { designer: { size: "small" } },
       start(input) {
-        return step({ id: "discuss", agent: "designer", agentMode: "interactive" })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(done)(input);
+        return step({ id: "discuss" })
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            agent: "designer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -446,9 +456,12 @@ describe("continuation interactive agent roles", () => {
       outputShape: { sessionFile: "string" },
       agents: { designer: { size: "small" } },
       start(input) {
-        return step({ id: "discuss", agent: "designer", agentMode: "interactive" })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(done)(input);
+        return step({ id: "discuss" })
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            agent: "designer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -489,9 +502,12 @@ describe("continuation interactive agent roles", () => {
       outputShape: { sessionFile: "string" },
       agents: { designer: { size: "small" } },
       start(input) {
-        return step({ id: "discuss", agent: "designer", agentMode: "interactive" })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(done)(input);
+        return step({ id: "discuss" })
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            agent: "designer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
     const customWorkflow: Workflow<{ task: string }, { notes: string }> = {
@@ -502,12 +518,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { notes: "string" },
-          agent: "reviewer",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { notes: "string" },
+            agent: "reviewer",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -573,9 +590,12 @@ describe("continuation interactive agent roles", () => {
         designer: { description: "Designs features.", size: "small" },
       },
       start(input) {
-        return step({ id: "discuss-feature", agent: "designer", agentMode: "interactive" })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(({ sessionFile }) => done({ sessionFile }))(input);
+        return step({ id: "discuss-feature" })
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            agent: "designer",
+            mode: "interactive",
+          })
+          .do(({ sessionFile }) => done({ sessionFile }))(input);
       },
     };
 
@@ -672,12 +692,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "implement",
-          outputShape: { exitCode: "number" },
-          agent: "implementor",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Implement ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Implement ${input.task}.`, {
+            output: { exitCode: "number" },
+            agent: "implementor",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -729,12 +750,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "discuss",
-          outputShape: { exitCode: "number" },
-          agent: "implementor",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            output: { exitCode: "number" },
+            agent: "implementor",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -778,12 +800,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "discuss",
-          outputShape: { exitCode: "number" },
-          agent: "implementor",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            output: { exitCode: "number" },
+            agent: "implementor",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 
@@ -839,12 +862,13 @@ describe("continuation interactive agent roles", () => {
       start(input) {
         return step({
           id: "discuss",
-          outputShape: { exitCode: "number" },
-          agent: "implementor",
-          agentMode: "interactive",
         })
-          .prompt(({ input }) => `Discuss ${input.task}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            output: { exitCode: "number" },
+            agent: "implementor",
+            mode: "interactive",
+          })
+          .do(done)(input);
       },
     };
 

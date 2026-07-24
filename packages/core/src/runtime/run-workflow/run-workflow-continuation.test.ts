@@ -24,19 +24,14 @@ describe("runWorkflow", () => {
       inputShape: { shouldReview: "boolean" },
       outputShape: { destination: "string" },
       start(input) {
-        return step({ id: "implementation", outputShape: { destination: "string" } }).next(
-          (stepInput) => {
-            const output = {
-              destination: stepInput.shouldReview ? "review" : "failure",
-            };
-            return step({
-              id: output.destination,
-              outputShape: { destination: "string" },
-            }).next((nextInput) => done({ destination: `${nextInput.destination}-complete` }))(
-              output,
-            );
-          },
-        )(input);
+        return step({ id: "implementation" }).do((stepInput) => {
+          const output = {
+            destination: stepInput.shouldReview ? "review" : "failure",
+          };
+          return step({
+            id: output.destination,
+          }).do((nextInput) => done({ destination: `${nextInput.destination}-complete` }))(output);
+        })(input);
       },
     };
 
@@ -78,11 +73,12 @@ describe("runWorkflow", () => {
       start(input) {
         return step({
           id: "review",
-          outputShape: { approved: "boolean" },
-          agent: "missing-reviewer",
         })
-          .prompt(({ input }) => `Review ${input.path}.`)
-          .next(done)(input);
+          .prompt(({ input }) => `Review ${input.path}.`, {
+            output: { approved: "boolean" },
+            agent: "missing-reviewer",
+          })
+          .do(done)(input);
       },
     };
 
@@ -108,14 +104,12 @@ describe("runWorkflow", () => {
   it("passes durable ambient state to orchestration step continuations", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
 
-    const rememberStep = step({ id: "remember", outputShape: { value: "number" } }).next(
-      async (input: { value: number }) => {
-        await state.set("count", { value: input.value });
-        return recallStep(input);
-      },
-    );
+    const rememberStep = step({ id: "remember" }).do(async (input: { value: number }) => {
+      await state.set("count", { value: input.value });
+      return recallStep(input);
+    });
 
-    const recallStep = step({ id: "recall", outputShape: { value: "number" } }).next(async () => {
+    const recallStep = step({ id: "recall" }).do(async () => {
       const stored = await state.get("count");
       return done(stored as { value: number });
     });
@@ -151,12 +145,12 @@ describe("runWorkflow", () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];
 
-    const firstStep = step({ id: "first", outputShape: { value: "number" } }).next(
-      (input: { value: number }) => secondStep({ value: input.value + 1 }),
+    const firstStep = step({ id: "first" }).do((input: { value: number }) =>
+      secondStep({ value: input.value + 1 }),
     );
 
-    const secondStep = step({ id: "second", outputShape: { value: "number" } }).next(
-      (input: { value: number }) => done({ value: input.value + 1 }),
+    const secondStep = step({ id: "second" }).do((input: { value: number }) =>
+      done({ value: input.value + 1 }),
     );
 
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -212,7 +206,7 @@ describe("runWorkflow", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step({ id: "explode", outputShape: { value: "number" } }).next(() => {
+        return step({ id: "explode" }).do(() => {
           throw new Error("boom");
         })(input);
       },
@@ -261,8 +255,8 @@ describe("runWorkflow", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start(input) {
-        return step({ id: "increment", outputShape: { value: "number" } }).next(
-          (stepInput: { value: number }) => done({ value: (stepInput.value + 1) * 2 }),
+        return step({ id: "increment" }).do((stepInput: { value: number }) =>
+          done({ value: (stepInput.value + 1) * 2 }),
         )(input);
       },
     };
@@ -302,7 +296,7 @@ describe("runWorkflow", () => {
     expect(persistedEvents[1]?.stepId).toBe("increment");
   });
 
-  it("runs a prompt step whose outputShape is document(...), delivering a Document to .next(...)", async () => {
+  it("runs a prompt step whose output is document(...), delivering a Document to .do(...)", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-"));
 
     const workflow: Workflow<{ topic: string }, { name: string; content: string }> = {
@@ -311,9 +305,12 @@ describe("runWorkflow", () => {
       outputShape: { name: "string", content: "string" },
       agents: { writer: { size: "medium" } },
       start(input) {
-        return step({ id: "draft", outputShape: document("draft"), agent: "writer" })
-          .prompt(({ input }) => `Draft notes about ${input.topic}.`)
-          .next((doc) => done({ name: doc.name, content: doc.content }))(input);
+        return step({ id: "draft" })
+          .prompt(({ input }) => `Draft notes about ${input.topic}.`, {
+            output: document("draft"),
+            agent: "writer",
+          })
+          .do((doc) => done({ name: doc.name, content: doc.content }))(input);
       },
     };
 

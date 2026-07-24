@@ -18,9 +18,12 @@ describe("runWorkflow runtime front-door", () => {
       outputShape: { answer: "string" },
       agents: { reviewer: { size: "small" } },
       start(input) {
-        return step({ id: "review", agent: "reviewer", outputShape: { answer: "string" } })
-          .prompt(({ input }) => `Review ${input.task}.`)
-          .next((output) => done(output))(input);
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            agent: "reviewer",
+            output: { answer: "string" },
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -51,12 +54,12 @@ describe("runWorkflow runtime front-door", () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];
 
-    const firstStep = step({ id: "first", outputShape: { value: "number" } }).next(
-      (input: { value: number }) => secondStep({ value: input.value + 1 }),
+    const firstStep = step({ id: "first" }).do((input: { value: number }) =>
+      secondStep({ value: input.value + 1 }),
     );
 
-    const secondStep = step({ id: "second", outputShape: { value: "number" } }).next(
-      (input: { value: number }) => done({ value: input.value + 1 }),
+    const secondStep = step({ id: "second" }).do((input: { value: number }) =>
+      done({ value: input.value + 1 }),
     );
 
     const workflow: Workflow<{ value: number }, { value: number }> = {

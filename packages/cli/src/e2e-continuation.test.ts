@@ -37,9 +37,8 @@ async function writeContinuationWorkflowPackage(cwd: string): Promise<void> {
       output: summaryShape,
       start: (input) => step({
         id: 'summarize',
-        outputShape: summaryShape,
       })
-        .next(({ task }) => done({ task, summary: 'completed: ' + task }))(input),
+        .do(({ task }) => done({ task, summary: 'completed: ' + task }))(input),
     });`,
     "utf8",
   );

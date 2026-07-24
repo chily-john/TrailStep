@@ -5,6 +5,7 @@ import type {
   ContinuationStepConfig,
   DoneNode,
   FailNode,
+  PromptOptions,
   PromptTemplateSource,
   StepConfig,
   StepContinuation,
@@ -15,28 +16,28 @@ import type {
 
 /**
  * The only step-authoring primitive. `.prompt(...)` is optional; when present,
- * the step dispatches to an agent and `.next(...)` receives its structured
- * output. When absent, nothing is dispatched — `.next(...)` receives the
+ * the step dispatches to an agent and `.do(...)` receives its structured
+ * output. When absent, nothing is dispatched -- `.do(...)` receives the
  * step's input directly and is responsible for the work and the continuation
- * in one function. Either way, `.next(...)` produces a reusable `StepFactory`
- * — call it with a live input value (`stepA(input)`) to get a `StepNode`.
+ * in one function. Either way, `.do(...)` produces a reusable `StepFactory`
+ * -- call it with a live input value (`stepA(input)`) to get a `StepNode`.
  * When the inferred input type has no required keys, the argument is
  * optional (`stepA()`) and defaults to `{}`.
  */
-export function step<TOutput extends PlainObject = PlainObject>(
-  config: StepConfig<TOutput>,
-): {
-  prompt<TInput extends PlainObject = PlainObject>(
+export function step(config: StepConfig): {
+  prompt<TInput extends PlainObject = PlainObject, TOutput extends PlainObject = PlainObject>(
     source: AgentPrompt<TInput> | PromptTemplateSource,
+    options?: PromptOptions<TOutput>,
   ): {
-    next(onOutput: StepContinuation<TOutput>): StepFactory<TInput, TOutput>;
+    do(onOutput: StepContinuation<TOutput>): StepFactory<TInput, TOutput>;
   };
-  next<TInput extends PlainObject = PlainObject>(
+  do<TInput extends PlainObject = PlainObject>(
     onOutput: StepContinuation<TInput>,
   ): StepFactory<TInput, TInput>;
 } {
   const buildFactory = <TInput extends PlainObject, TStepOutput extends PlainObject>(
     prompt: AgentPrompt<TInput> | PromptTemplateSource | undefined,
+    promptOptions: PromptOptions<TStepOutput> | undefined,
     onOutput: StepContinuation<TStepOutput>,
     onError?: StepErrorContinuation,
   ): StepFactory<TInput, TStepOutput> => {
@@ -44,6 +45,7 @@ export function step<TOutput extends PlainObject = PlainObject>(
       kind: "step",
       config: {
         ...config,
+        ...promptOptions,
         prompt,
         input: input ?? ({} as TInput),
       } as ContinuationStepConfig<TInput, TStepOutput>,
@@ -52,19 +54,19 @@ export function step<TOutput extends PlainObject = PlainObject>(
     })) as StepFactory<TInput, TStepOutput>;
 
     factory.catch = (nextOnError: StepErrorContinuation) =>
-      buildFactory(prompt, onOutput, nextOnError);
+      buildFactory(prompt, promptOptions, onOutput, nextOnError);
 
     return factory;
   };
 
   return {
-    prompt(source) {
+    prompt(source, options) {
       return {
-        next: (onOutput) => buildFactory(source, onOutput),
+        do: (onOutput) => buildFactory(source, options, onOutput),
       };
     },
-    next(onOutput) {
-      return buildFactory(undefined, onOutput);
+    do(onOutput) {
+      return buildFactory(undefined, undefined, onOutput);
     },
   };
 }

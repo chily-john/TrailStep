@@ -26,7 +26,7 @@ const result = await runWorkflow({
     outputShape: shape({ greeting: "string" }),
     start(input) {
       return step({ id: "greet" })
-        .next(({ name }) => done({ greeting: `Hello, ${name}!` }))(input);
+        .do(({ name }) => done({ greeting: `Hello, ${name}!` }))(input);
     },
   },
   input: { name: "Ada" },

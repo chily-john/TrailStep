@@ -40,13 +40,11 @@ async function createRunWithEvents(events: readonly Event[]): Promise<string> {
 function replayWorkflow(): Workflow<{ value: number }, { value: number }> {
   const secondStep = step({
     id: "second",
-    outputShape: { value: "number" },
-  }).next(({ value }: { value: number }) => done({ value: value + 1 }));
+  }).do(({ value }: { value: number }) => done({ value: value + 1 }));
 
   const firstStep = step({
     id: "first",
-    outputShape: { value: "number" },
-  }).next(({ value }: { value: number }) => secondStep({ value: value + 1 }));
+  }).do(({ value }: { value: number }) => secondStep({ value: value + 1 }));
 
   return {
     id: "history-workflow",
@@ -67,8 +65,7 @@ describe("replayToFailedStep", () => {
 
     const secondStep = step({
       id: "second",
-      outputShape: { value: "number" },
-    }).next(({ value }: { value: number }) => {
+    }).do(({ value }: { value: number }) => {
       if (shouldFailSecondStep) {
         throw new Error("second step unavailable");
       }
@@ -78,8 +75,7 @@ describe("replayToFailedStep", () => {
 
     const firstStep = step({
       id: "first",
-      outputShape: { value: "number" },
-    }).next(({ value }: { value: number }) => {
+    }).do(({ value }: { value: number }) => {
       firstStepRuns += 1;
       return secondStep({ value: value + 1 });
     });
@@ -114,10 +110,10 @@ describe("replayToFailedStep", () => {
     expect(resumed.runId).toBe(failed.runId);
     expect(resumed.runDir).toBe(failed.runDir);
     expect(resumed.output).toEqual({ value: 3 });
-    // A no-prompt step's .next(...) is both its computation and its continuation
+    // A no-prompt step's .do(...) is both its computation and its continuation
     // decision fused into one closure — unlike the old separate run()'s plain,
     // serializable output, there is nothing to persist and feed back in its place.
-    // Resuming past a completed no-prompt step therefore re-invokes its .next(...)
+    // Resuming past a completed no-prompt step therefore re-invokes its .do(...)
     // (from the same input) rather than skipping it, so firstStepRuns goes to 2.
     expect(firstStepRuns).toBe(2);
     expect(eventTypes(resumed.events)).toEqual([
@@ -238,7 +234,7 @@ describe("replayToFailedStep", () => {
 
   it("resumes through a completed no-prompt orchestration-only step", async () => {
     // There is no separate "orchestration step" kind — a step with no .prompt(...) is
-    // always just a no-prompt step, whether its .next(...) does arithmetic or pure
+    // always just a no-prompt step, whether its .do(...) does arithmetic or pure
     // branching. Resume treats every no-prompt step identically (only a step with a
     // prompt makes resume-through-it unsupported), so this now succeeds.
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -248,13 +244,11 @@ describe("replayToFailedStep", () => {
       start(input) {
         const secondStep = step({
           id: "second",
-          outputShape: { value: "number" },
-        }).next(({ value }: { value: number }) => done({ value: value + 1 }));
+        }).do(({ value }: { value: number }) => done({ value: value + 1 }));
 
         const orchestrationStep = step({
           id: "orchestration",
-          outputShape: { value: "number" },
-        }).next((firstOutput: { value: number }) => secondStep(firstOutput));
+        }).do((firstOutput: { value: number }) => secondStep(firstOutput));
 
         return orchestrationStep(input);
       },
@@ -289,8 +283,7 @@ describe("replayToFailedStep", () => {
     let adapterCalls = 0;
     const secondStep = step({
       id: "second",
-      outputShape: { value: "number" },
-    }).next(({ value }: { value: number }) => done({ value }));
+    }).do(({ value }: { value: number }) => done({ value }));
 
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "history-workflow",
@@ -300,15 +293,16 @@ describe("replayToFailedStep", () => {
       start(input) {
         return step({
           id: "first",
-          outputShape: { value: "number" },
-          agent: "assistant",
-          adapter: async (request) => {
-            adapterCalls += 1;
-            await request.tools[0]?.call({ value: 0 });
-          },
         })
-          .prompt(() => "produce a value")
-          .next((output: { value: number }) => secondStep({ value: output.value }))(input);
+          .prompt(() => "produce a value", {
+            output: { value: "number" },
+            agent: "assistant",
+            adapter: async (request) => {
+              adapterCalls += 1;
+              await request.tools[0]?.call({ value: 0 });
+            },
+          })
+          .do((output: { value: number }) => secondStep({ value: output.value }))(input);
       },
     };
 
@@ -352,14 +346,15 @@ describe("replayToFailedStep", () => {
       start(input) {
         return step({
           id: "first",
-          outputShape: { value: "number" },
-          agent: "assistant",
-          adapter: async (request) => {
-            await request.tools[0]?.call({ value: 2 });
-          },
         })
-          .prompt(() => "produce a value")
-          .next((output: { value: number }) => done(output))(input);
+          .prompt(() => "produce a value", {
+            output: { value: "number" },
+            agent: "assistant",
+            adapter: async (request) => {
+              await request.tools[0]?.call({ value: 2 });
+            },
+          })
+          .do((output: { value: number }) => done(output))(input);
       },
     };
 
@@ -393,8 +388,7 @@ describe("replayToFailedStep", () => {
       start(input) {
         return step({
           id: "only",
-          outputShape: { value: "number" },
-        }).next(({ value }: { value: number }) => done({ value }))(input);
+        }).do(({ value }: { value: number }) => done({ value }))(input);
       },
     };
 

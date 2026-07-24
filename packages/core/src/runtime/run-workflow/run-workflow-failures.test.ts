@@ -28,8 +28,7 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "not-started",
-          outputShape: objectWithValue,
-        }).next((stepInput) => done(stepInput))(input);
+        }).do((stepInput) => done(stepInput))(input);
       },
     };
 
@@ -60,14 +59,17 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "break-output",
-          outputShape: objectWithValue,
-          agent: "assistant",
-          adapter: async (request) => {
-            await request.tools[0]?.call({ value: "not-a-number" } as unknown as { value: number });
-          },
         })
-          .prompt(() => "Return a value.")
-          .next((output) => done(output))(input);
+          .prompt(() => "Return a value.", {
+            output: objectWithValue,
+            agent: "assistant",
+            adapter: async (request) => {
+              await request.tools[0]?.call({ value: "not-a-number" } as unknown as {
+                value: number;
+              });
+            },
+          })
+          .do((output) => done(output))(input);
       },
     };
 
@@ -115,8 +117,7 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "produce-value",
-          outputShape: objectWithValue,
-        }).next((stepInput) => done(stepInput as unknown as { name: string }))(input);
+        }).do((stepInput) => done(stepInput as unknown as { name: string }))(input);
       },
     };
 
@@ -173,9 +174,8 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "choose-next",
-          outputShape: { value: "number" },
         })
-          .next(() => ({ nope: true }) as never)
+          .do(() => ({ nope: true }) as never)
           .catch(() => done({ value: 0 }))(input);
       },
     };
@@ -214,9 +214,8 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "explode",
-          outputShape: { value: "number" },
         })
-          .next(() => {
+          .do(() => {
             throw new Error("Boom");
           })
           .catch((error) => done({ status: "failed", summary: error.message }))(input);
@@ -257,16 +256,20 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "render-prompt",
-          outputShape: { answer: "string" },
-          agent: "assistant",
-          adapter: async (request) => {
-            await request.tools[0]?.call({ answer: "unexpected" });
-          },
         })
-          .prompt(() => {
-            throw new Error("Cannot render prompt");
-          })
-          .next(() => done({ status: "unexpected", summary: "should not continue" }))
+          .prompt(
+            () => {
+              throw new Error("Cannot render prompt");
+            },
+            {
+              output: { answer: "string" },
+              agent: "assistant",
+              adapter: async (request) => {
+                await request.tools[0]?.call({ answer: "unexpected" });
+              },
+            },
+          )
+          .do(() => done({ status: "unexpected", summary: "should not continue" }))
           .catch((error) => done({ status: "failed", summary: error.message }))(input);
       },
     };
@@ -304,9 +307,8 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "explode",
-          outputShape: { value: "number" },
         })
-          .next(() => {
+          .do(() => {
             throw new Error("Boom");
           })
           .catch(() => ({ nope: true }) as never)(input);
@@ -347,11 +349,12 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "delegate",
-          outputShape: { answer: "string" },
-          agent: "builder",
         })
-          .prompt(({ input: stepInput }) => `Answer ${stepInput.task}.`)
-          .next((output) => done(output))(input);
+          .prompt(({ input: stepInput }) => `Answer ${stepInput.task}.`, {
+            output: { answer: "string" },
+            agent: "builder",
+          })
+          .do((output) => done(output))(input);
       },
     };
     const requests: unknown[] = [];
@@ -388,8 +391,7 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "explode",
-          outputShape: objectWithValue,
-        }).next(async () => {
+        }).do(async () => {
           throw new Error("Boom from code step");
         })(input);
       },
@@ -445,8 +447,7 @@ describe("runWorkflow failure paths", () => {
       start(input) {
         return step({
           id: "check",
-          outputShape: objectWithValue,
-        }).next((stepInput: { value: number }) =>
+        }).do((stepInput: { value: number }) =>
           stepInput.value < 0
             ? fail({ code: "negative_value", message: "value must not be negative" })
             : done(stepInput),

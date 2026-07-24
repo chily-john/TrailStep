@@ -56,7 +56,7 @@ export async function dispatchAgentStep(options: {
   });
 
   const renderedPrompt = await resolvePromptSource(config.prompt, config.input, options.cwd);
-  const agentMode = config.agentMode ?? "working";
+  const agentMode = config.mode ?? "working";
 
   const agentStep = {
     kind: "agent" as const,

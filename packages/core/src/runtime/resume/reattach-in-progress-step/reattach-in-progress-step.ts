@@ -1,18 +1,17 @@
-import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../../agent-execution/interactive-agent/protocol/default-interactive-output-shape.js";
 import {
   readCompletedInteractiveOutput,
   waitForInteractiveCompletion,
 } from "../../../agent-execution/interactive-agent/run-interactive-agent-command/run-interactive-agent-command.js";
-import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
-import type { PlainObject, Schema, ShapeInput } from "../../../contracts/shapes/shape.types.js";
+import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
+import { resolveStepOutputSchema } from "../../continuation/resolve-step-output-schema/resolve-step-output-schema.js";
 import { replayCompletedSteps } from "../replay-completed-steps/replay-completed-steps.js";
 
 /**
@@ -126,10 +125,16 @@ export async function reattachInProgressStep<
     stepIndex,
   });
 
-  const effectiveOutputShape =
-    node.config.outputShape ??
-    (node.config.agentMode === "interactive" ? DEFAULT_INTERACTIVE_OUTPUT_SHAPE : undefined);
-  const outputSchema = normalizeShape(effectiveOutputShape as ShapeInput<PlainObject>);
+  const outputSchema = resolveStepOutputSchema(node.config);
+  if (!outputSchema) {
+    return {
+      status: "failure",
+      failure: resumeFailure(
+        "resume_output_schema_unresolvable",
+        `Step ${node.config.id} has no resolvable output schema to reattach with.`,
+      ),
+    };
+  }
 
   const reattached = await readReattachedInteractiveOutput({
     stepId: anchor.stepId,

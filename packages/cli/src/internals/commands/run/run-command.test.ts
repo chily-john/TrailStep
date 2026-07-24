@@ -25,8 +25,8 @@ async function writeDirectWorkflowFile(cwd: string): Promise<void> {
       id: 'review',
       input: schema,
       output: schema,
-      start: (input) => step({ id: 'prepare', outputShape: schema })
-        .next((stepInput) => done({ ...stepInput, prepared: true }))(input),
+      start: (input) => step({ id: 'prepare' })
+        .do((stepInput) => done({ ...stepInput, prepared: true }))(input),
     };`,
     "utf8",
   );
@@ -100,8 +100,8 @@ async function writeRegisteredWorkflowFile(
       id: '${workflowName}',
       input: schema,
       output: schema,
-      start: (input) => step({ id: 'prepare', outputShape: schema })
-        .next((stepInput) => done({ ...stepInput, ...${JSON.stringify(output)} }))(input),
+      start: (input) => step({ id: 'prepare' })
+        .do((stepInput) => done({ ...stepInput, ...${JSON.stringify(output)} }))(input),
     };`,
     "utf8",
   );
@@ -158,8 +158,8 @@ async function writeBundleWorkflowPackage(cwd: string): Promise<void> {
       id: 'reviewWorkflow',
       input: schema,
       output: schema,
-      start: (input) => step({ id: 'prepare', outputShape: schema })
-        .next((stepInput) => done({ ...stepInput, prepared: true }))(input),
+      start: (input) => step({ id: 'prepare' })
+        .do((stepInput) => done({ ...stepInput, prepared: true }))(input),
     };`,
     "utf8",
   );
@@ -197,8 +197,7 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
       output: schema,
       start: (input) => step({
         id: 'prepare',
-        outputShape: schema,
-      }).next((stepInput) => done({ ...stepInput, prepared: true }))(input),
+      }).do((stepInput) => done({ ...stepInput, prepared: true }))(input),
     };
     export const resumeFeature = {
       id: 'resumeFeature',
@@ -207,8 +206,7 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
       start: (input) => {
         const finishStep = step({
           id: 'finish',
-          outputShape: schema,
-        }).next((stepInput) => {
+        }).do((stepInput) => {
           if (shouldFailResumeFeature) {
             shouldFailResumeFeature = false;
             throw new Error('finish unavailable');
@@ -218,8 +216,7 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
 
         const prepareStep = step({
           id: 'prepare',
-          outputShape: schema,
-        }).next((stepInput) => finishStep({ ...stepInput, prepared: true }));
+        }).do((stepInput) => finishStep({ ...stepInput, prepared: true }));
 
         return prepareStep(input);
       },

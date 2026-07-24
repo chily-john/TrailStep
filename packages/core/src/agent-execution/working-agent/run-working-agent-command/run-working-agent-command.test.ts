@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   Document,
-  document,
+  documentOutput,
   done,
   jsonSchema,
   parseStepKitConfig,
@@ -15,6 +15,10 @@ import {
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../../index.js";
+import { createRunDirectory } from "../../../runtime/artifacts/run-storage.js";
+import { createRunContext } from "../../../runtime/run-context/create-run-context.js";
+import { runContextStorage } from "../../../runtime/run-context/run-context-storage.js";
+import { withStepContext } from "../../../runtime/run-context/with-step-context.js";
 import {
   buildProviderWorkingPrompt,
   buildWorkingAgentPrompt,
@@ -231,59 +235,36 @@ describe("raw-text capture mode", () => {
   });
 
   describe("readWorkingAgentOutput", () => {
-    it("writes a document artifact and returns an asserted Document, skipping JSON.parse", async () => {
+    it("writes a document artifact under the current step's directory and returns an asserted Document, skipping JSON.parse", async () => {
       const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-rawtext-"));
+      const { runId, runDir } = await createRunDirectory({ cwd, runName: "write-doc-run" });
+      const runContext = createRunContext({ runId, runName: "write-doc-run", runDir });
+      const stepDir = join(runDir, "steps", "0001-write-doc");
       const outputFile = join(cwd, "output.json");
       await writeFile(outputFile, "# Not JSON\n\nJust markdown prose.", "utf8");
 
-      const doc = await readWorkingAgentOutput({
-        stepId: "write-doc",
-        outputFile,
-        runDir: cwd,
-        step: {
-          id: "write-doc",
-          output: document("changelog"),
-          prompt: "unused",
-          requirements: { size: "default" },
-        },
-      });
+      const doc = await runContextStorage.run(runContext, () =>
+        withStepContext("write-doc", stepDir, () =>
+          readWorkingAgentOutput({
+            stepId: "write-doc",
+            outputFile,
+            step: {
+              id: "write-doc",
+              output: documentOutput,
+              prompt: "unused",
+              requirements: { size: "default" },
+            },
+          }),
+        ),
+      );
 
       expect(doc).toBeInstanceOf(Document);
       expect(doc).toMatchObject({
-        name: "changelog",
         content: "# Not JSON\n\nJust markdown prose.",
-        path: join(cwd, "documents", "changelog.md"),
+        path: join(stepDir, "document-1.md"),
       });
-      await expect(readFile(join(cwd, "documents", "changelog.md"), "utf8")).resolves.toBe(
+      await expect(readFile(join(stepDir, "document-1.md"), "utf8")).resolves.toBe(
         "# Not JSON\n\nJust markdown prose.",
-      );
-    });
-
-    it("falls back to the step id as the document name when the schema declares none", async () => {
-      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-rawtext-fallback-"));
-      const outputFile = join(cwd, "output.json");
-      await writeFile(outputFile, "Raw content with no documentName set.", "utf8");
-
-      const schemaWithoutDocumentName = {
-        ...document("ignored"),
-        documentName: undefined,
-      };
-
-      const doc = await readWorkingAgentOutput({
-        stepId: "unnamed-step",
-        outputFile,
-        runDir: cwd,
-        step: {
-          id: "unnamed-step",
-          output: schemaWithoutDocumentName,
-          prompt: "unused",
-          requirements: { size: "default" },
-        },
-      });
-
-      expect(doc).toMatchObject({ name: "unnamed-step" });
-      await expect(readFile(join(cwd, "documents", "unnamed-step.md"), "utf8")).resolves.toBe(
-        "Raw content with no documentName set.",
       );
     });
 
@@ -296,7 +277,6 @@ describe("raw-text capture mode", () => {
         readWorkingAgentOutput({
           stepId: "summarize",
           outputFile,
-          runDir: cwd,
           step: {
             id: "summarize",
             output: jsonSchema({
@@ -317,21 +297,21 @@ describe("raw-text capture mode", () => {
   });
 
   describe("runWorkingAgentCommand end-to-end", () => {
-    it("captures a working agent's raw stdout as a Document under <runDir>/documents/<name>.md", async () => {
+    it("captures a working agent's raw stdout as a Document under the step's own artifact directory", async () => {
       const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-doc-e2e-"));
 
-      const workflow: Workflow<{ topic: string }, { name: string; content: string }> = {
+      const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
         id: "working-agent-document-workflow",
         inputShape: { topic: "string" },
-        outputShape: { name: "string", content: "string" },
+        outputShape: { path: "string", content: "string" },
         agents: { writer: { size: "medium" } },
         start(input) {
           return step({ id: "write" })
             .prompt(({ input }) => `Write notes about ${input.topic}.`, {
-              output: document("notes"),
+              output: documentOutput,
               agent: "writer",
             })
-            .do((doc) => done({ name: doc.name, content: doc.content }))(input);
+            .do((doc) => done({ path: doc.path, content: doc.content }))(input);
         },
       };
 
@@ -356,12 +336,12 @@ describe("raw-text capture mode", () => {
         throw new Error(result.failure.message);
       }
 
+      const documentPath = join(result.runDir, "steps", "0001-write", "document-1.md");
       expect(result.output).toEqual({
-        name: "notes",
+        path: documentPath,
         content: "# Notes\n\nSome free-form prose, not JSON.",
       });
 
-      const documentPath = join(result.runDir, "documents", "notes.md");
       await expect(readFile(documentPath, "utf8")).resolves.toBe(
         "# Notes\n\nSome free-form prose, not JSON.",
       );

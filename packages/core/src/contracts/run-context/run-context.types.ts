@@ -8,4 +8,9 @@ export interface RunContext {
   readonly name: string;
   readonly path: string;
   readonly state: RunContextState;
+  readonly currentStep?: {
+    readonly id: string;
+    readonly dir: string;
+    nextDocumentIndex(): number;
+  };
 }

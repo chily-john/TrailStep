@@ -12,6 +12,7 @@ import type {
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { resolveStepOutputSchema } from "../../continuation/resolve-step-output-schema/resolve-step-output-schema.js";
+import { withStepContext } from "../../run-context/with-step-context.js";
 import { replayCompletedSteps } from "../replay-completed-steps/replay-completed-steps.js";
 
 /**
@@ -113,6 +114,7 @@ export async function reattachInProgressStep<
     events: options.events,
     input,
     targetStepId: anchor.stepId,
+    runDir: options.runDir,
   });
   if (replay.status === "failure") {
     return replay;
@@ -145,8 +147,8 @@ export async function reattachInProgressStep<
     return reattached;
   }
 
-  const nextNode = await node.onOutput(
-    outputSchema.assert(reattached.output, `step ${node.config.id} output`),
+  const nextNode = await withStepContext(anchor.stepId, artifactPaths.stepDir, async () =>
+    node.onOutput(outputSchema.assert(reattached.output, `step ${node.config.id} output`)),
   );
 
   return {

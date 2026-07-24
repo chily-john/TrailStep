@@ -11,6 +11,7 @@ export type {
 export {
   Document,
   document,
+  documentOutput,
   done,
   fail,
   isDoneNode,

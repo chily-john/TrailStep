@@ -11,7 +11,6 @@ export interface Schema<T extends PlainObject = PlainObject> {
   readonly assert: (value: unknown, label?: string) => T;
   readonly jsonSchema: Record<string, unknown>;
   readonly captureMode?: "json" | "raw-text";
-  readonly documentName?: string;
 }
 
 export type ShapePrimitive = "string" | "number" | "boolean";

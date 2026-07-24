@@ -323,6 +323,7 @@ describe("replayToFailedStep", () => {
     const replay = await replayToFailedStep({
       workflow,
       events: await readRunEvents(runDir),
+      runDir,
     });
 
     expect(replay.status).toBe("success");
@@ -368,6 +369,7 @@ describe("replayToFailedStep", () => {
     const replay = await replayToFailedStep({
       workflow,
       events: await readRunEvents(runDir),
+      runDir,
     });
 
     expect(replay.status).toBe("success");

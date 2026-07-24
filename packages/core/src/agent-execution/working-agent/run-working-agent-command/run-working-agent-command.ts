@@ -6,14 +6,13 @@ import type {
   StepKitAgentTarget,
   StepKitConfig,
 } from "../../../agent-targeting/targeting.types.js";
-import { Document } from "../../../authoring/document/document.js";
+import { document } from "../../../authoring/document/document.js";
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { providerRegistry } from "../../../known-cli-providers/registry/provider-registry.js";
 import type { ProviderWorkingRunner } from "../../../known-cli-providers/registry/provider-registry.types.js";
-import { writeDocumentArtifact } from "../../../runtime/artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../../../runtime/artifacts/step-artifacts.js";
 import type {
   WorkingAgentProcessResult,
@@ -241,7 +240,6 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
       stepId: options.step.id,
       outputFile: options.files.outputFile,
       step: options.step,
-      runDir: options.runDir,
     });
   }
 
@@ -302,7 +300,6 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
     stepId: options.step.id,
     outputFile: options.files.outputFile,
     step: options.step,
-    runDir: options.runDir,
   });
 }
 
@@ -378,7 +375,6 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
   readonly stepId: string;
   readonly outputFile: string;
   readonly step: AgentStepRequestConfig<PlainObject, TOutput>;
-  readonly runDir: string;
 }): Promise<TOutput> {
   let raw: string;
   try {
@@ -395,11 +391,15 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
   }
 
   if (options.step.output.captureMode === "raw-text") {
-    const documentName = options.step.output.documentName ?? options.stepId;
-    const documentPath = await writeDocumentArtifact(options.runDir, documentName, raw);
-    const document = new Document(documentName, raw, documentPath);
+    // Delegates to the shared `document(...)` capture path (the same one
+    // code-authored steps use), so agent-captured and code-captured
+    // documents share one persistence implementation. `document(...)`
+    // resolves its target directory and index from the ambient step
+    // context (`currentStep`), which is active for the whole duration of
+    // this step's dispatch (see `withStepContext` in run-continuation.ts).
+    const capturedDocument = await document(raw);
 
-    return options.step.output.assert(document, `step ${options.stepId} output`);
+    return options.step.output.assert(capturedDocument, `step ${options.stepId} output`);
   }
 
   let parsed: unknown;

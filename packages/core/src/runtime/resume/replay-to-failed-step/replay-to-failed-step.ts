@@ -13,6 +13,7 @@ export async function replayToFailedStep<
 >(options: {
   readonly workflow: RunWorkflowOptions<TInput, TOutput>["workflow"];
   readonly events: readonly Event[];
+  readonly runDir: string;
 }): Promise<
   | {
       readonly status: "success";
@@ -117,6 +118,7 @@ export async function replayToFailedStep<
     events: options.events,
     input,
     targetStepId: failedStepEvent.stepId,
+    runDir: options.runDir,
   });
   if (replay.status === "failure") {
     return replay;

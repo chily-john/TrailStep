@@ -4,7 +4,17 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { done, type Event, runWorkflow, step, type Workflow } from "../../../index.js";
+import {
+  Document,
+  document,
+  documentOutput,
+  done,
+  type Event,
+  parseStepKitConfig,
+  runWorkflow,
+  step,
+  type Workflow,
+} from "../../../index.js";
 import { appendEvent, createRunDirectory } from "../../artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 
@@ -439,5 +449,141 @@ describe("runWorkflow resume", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as Event);
     expect(eventTypes(persistedEvents)).toEqual(eventTypes(resumed.events));
+  });
+
+  it("resumes through an already-completed document-producing prompt step to a later failed step, reconstructing a real Document from the replayed output", async () => {
+    // This is the exact scenario the resume-correctness fix targets: a completed
+    // step whose output schema is `documentOutput` gets its recorded output
+    // replayed from events.jsonl as a plain JSON object (never a live Document
+    // instance). Before the duck-typing fix, `documentOutput.assert(...)` would
+    // reject that plain object with a validation failure because of an
+    // `instanceof Document` check. It must now succeed and hand the "draft"
+    // step's `.do()` continuation a genuine, working `Document`.
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-document-"));
+    let shouldFailReview = true;
+    const receivedDocs: Document[] = [];
+
+    const reviewStep = step({ id: "review" }).do(({ content }: { content: string }) => {
+      if (shouldFailReview) {
+        throw new Error("review unavailable");
+      }
+      return done({ content });
+    });
+
+    const draftStep = step({ id: "draft" })
+      .prompt(({ input }) => `Draft notes about ${input.topic}.`, {
+        output: documentOutput,
+        agent: "writer",
+      })
+      .do((doc) => {
+        receivedDocs.push(doc);
+        return reviewStep({ content: doc.content });
+      });
+
+    const workflow: Workflow<{ topic: string }, { content: string }> = {
+      id: "resume-through-document-workflow",
+      inputShape: { topic: "string" },
+      outputShape: { content: "string" },
+      agents: { writer: { size: "medium" } },
+      start(input) {
+        return draftStep(input);
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: { topic: "resume correctness" },
+      runName: "resume-through-document-run",
+      cwd,
+      stepkitConfig: parseStepKitConfig({
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { medium: [{ provider: "worker" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        await writeFile(request.outputFile, "# Draft\n\nOriginal live-captured draft.", "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(failed.status).toBe("failure");
+    expect(receivedDocs).toHaveLength(1);
+    expect(receivedDocs[0]).toBeInstanceOf(Document);
+
+    const documentPath = join(failed.runDir, "steps", "0001-draft", "document-1.md");
+    expect(receivedDocs[0]?.path).toBe(documentPath);
+
+    shouldFailReview = false;
+    const resumed = await runWorkflow({ workflow, resume: { runDir: failed.runDir } });
+
+    expect(resumed.status).toBe("success");
+    if (resumed.status !== "success") {
+      throw new Error(resumed.failure.message);
+    }
+    expect(resumed.output).toEqual({ content: "# Draft\n\nOriginal live-captured draft." });
+
+    // The replay re-invoked draft's .do() continuation a second time with the
+    // reconstructed Document -- assert that reconstruction produced a working
+    // Document with the exact same content/path as the original live capture.
+    expect(receivedDocs).toHaveLength(2);
+    const replayedDoc = receivedDocs[1];
+    expect(replayedDoc).toBeInstanceOf(Document);
+    expect(replayedDoc?.content).toBe("# Draft\n\nOriginal live-captured draft.");
+    expect(replayedDoc?.path).toBe(documentPath);
+  });
+
+  it("overwrites a document(...) file on disk with the second run's content when its step is retried after resume", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-document-retry-"));
+    let attempt = 1;
+    let shouldFailReview = true;
+
+    const reviewStep = step({ id: "review" }).do(({ path }: { path: string }) => {
+      if (shouldFailReview) {
+        throw new Error("review unavailable");
+      }
+      return done({ path });
+    });
+
+    const draftStep = step({ id: "draft" }).do(async (_input: { topic: string }) => {
+      const content = attempt === 1 ? "first attempt content" : "second attempt content";
+      const doc = await document(content);
+      return reviewStep({ path: doc.path });
+    });
+
+    const workflow: Workflow<{ topic: string }, { path: string }> = {
+      id: "resume-document-retry-workflow",
+      inputShape: { topic: "string" },
+      outputShape: { path: "string" },
+      start(input) {
+        return draftStep(input);
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: { topic: "retry-overwrite" },
+      runName: "resume-document-retry-run",
+      cwd,
+    });
+
+    expect(failed.status).toBe("failure");
+
+    const documentPath = join(failed.runDir, "steps", "0001-draft", "document-1.md");
+    await expect(readFile(documentPath, "utf8")).resolves.toBe("first attempt content");
+
+    attempt = 2;
+    shouldFailReview = false;
+    const resumed = await runWorkflow({ workflow, resume: { runDir: failed.runDir } });
+
+    expect(resumed.status).toBe("success");
+    if (resumed.status !== "success") {
+      throw new Error(resumed.failure.message);
+    }
+    expect(resumed.output).toEqual({ path: documentPath });
+
+    // Rerunning draft's .do() on resume overwrites the same document-1.md file
+    // in place with the second run's content, rather than appending to it or
+    // failing because the file already exists.
+    await expect(readFile(documentPath, "utf8")).resolves.toBe("second attempt content");
   });
 });

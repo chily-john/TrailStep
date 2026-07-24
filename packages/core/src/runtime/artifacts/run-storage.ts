@@ -82,14 +82,13 @@ export async function persistEvents(runDir: string, events: readonly Event[]): P
 }
 
 export async function writeDocumentArtifact(
-  runDir: string,
-  name: string,
+  dir: string,
+  filename: string,
   content: string,
 ): Promise<string> {
-  const documentsDir = join(runDir, "documents");
-  await mkdir(documentsDir, { recursive: true });
+  await mkdir(dir, { recursive: true });
 
-  const documentPath = join(documentsDir, `${name}.md`);
+  const documentPath = join(dir, filename);
   await writeFile(documentPath, content, "utf8");
 
   return documentPath;

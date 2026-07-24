@@ -121,6 +121,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         : await replayToFailedStep({
             workflow: options.workflow,
             events: previousEvents,
+            runDir,
           });
       if (replay.status === "failure") {
         return failResumeValidation(replay.failure);

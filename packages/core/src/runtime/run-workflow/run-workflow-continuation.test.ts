@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   document,
+  documentOutput,
   done,
   type Event,
   parseStepKitConfig,
@@ -296,21 +297,21 @@ describe("runWorkflow", () => {
     expect(persistedEvents[1]?.stepId).toBe("increment");
   });
 
-  it("runs a prompt step whose output is document(...), delivering a Document to .do(...)", async () => {
+  it("runs a prompt step whose output is documentOutput, delivering a Document to .do(...)", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-"));
 
-    const workflow: Workflow<{ topic: string }, { name: string; content: string }> = {
+    const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
       id: "document-workflow",
       inputShape: { topic: "string" },
-      outputShape: { name: "string", content: "string" },
+      outputShape: { path: "string", content: "string" },
       agents: { writer: { size: "medium" } },
       start(input) {
         return step({ id: "draft" })
           .prompt(({ input }) => `Draft notes about ${input.topic}.`, {
-            output: document("draft"),
+            output: documentOutput,
             agent: "writer",
           })
-          .do((doc) => done({ name: doc.name, content: doc.content }))(input);
+          .do((doc) => done({ path: doc.path, content: doc.content }))(input);
       },
     };
 
@@ -339,15 +340,52 @@ describe("runWorkflow", () => {
       throw new Error(result.failure.message);
     }
 
+    const documentPath = join(result.runDir, "steps", "0001-draft", "document-1.md");
     expect(result.output).toEqual({
-      name: "draft",
+      path: documentPath,
       content: "# Draft\n\nFree-form prose about continuations, not JSON.",
     });
 
-    const documentPath = join(result.runDir, "documents", "draft.md");
     await expect(readFile(documentPath, "utf8")).resolves.toBe(
       "# Draft\n\nFree-form prose about continuations, not JSON.",
     );
+  });
+
+  it("writes two document(...) calls in one code step to auto-numbered files in that step's directory", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-multi-"));
+
+    const workflow: Workflow<{ topic: string }, { first: string; second: string }> = {
+      id: "multi-document-workflow",
+      inputShape: { topic: "string" },
+      outputShape: { first: "string", second: "string" },
+      start(input) {
+        return step({ id: "draft" }).do(async ({ topic }) => {
+          const firstDoc = await document(`# ${topic} part one`);
+          const secondDoc = await document(`# ${topic} part two`);
+          return done({ first: firstDoc.path, second: secondDoc.path });
+        })(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { topic: "continuations" },
+      runName: "multi-document-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    const stepDir = join(result.runDir, "steps", "0001-draft");
+    const firstPath = join(stepDir, "document-1.md");
+    const secondPath = join(stepDir, "document-2.md");
+
+    expect(result.output).toEqual({ first: firstPath, second: secondPath });
+    await expect(readFile(firstPath, "utf8")).resolves.toBe("# continuations part one");
+    await expect(readFile(secondPath, "utf8")).resolves.toBe("# continuations part two");
   });
 });
 

@@ -6,7 +6,9 @@ import type {
   Event,
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
+import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { resolveStepOutputSchema } from "../../continuation/resolve-step-output-schema/resolve-step-output-schema.js";
+import { withStepContext } from "../../run-context/with-step-context.js";
 
 /**
  * Walks a workflow's `start(...)` continuation forward through its recorded
@@ -25,6 +27,7 @@ export async function replayCompletedSteps<
   readonly events: readonly Event[];
   readonly input: PlainObject;
   readonly targetStepId: string;
+  readonly runDir: string;
 }): Promise<
   | { readonly status: "success"; readonly node: StepNode }
   | { readonly status: "failure"; readonly failure: Failure }
@@ -32,7 +35,8 @@ export async function replayCompletedSteps<
   let node: ContinuationResult = options.workflow.start(options.input as TInput);
   const completedStepEvents = options.events.filter((event) => event.type === "step.completed");
 
-  for (const completedEvent of completedStepEvents) {
+  for (const [completedIndex, completedEvent] of completedStepEvents.entries()) {
+    const stepIndex = completedIndex + 1;
     if (!isStepNode(node)) {
       return {
         status: "failure",
@@ -87,9 +91,25 @@ export async function replayCompletedSteps<
       }
       const validatedOutput = outputSchema.assert(recordedOutput, `step ${node.config.id} output`);
 
-      node = await node.onOutput(validatedOutput);
+      const stepDir = resolveStepArtifactPaths({
+        runDir: options.runDir,
+        stepId: node.config.id,
+        stepIndex,
+      }).stepDir;
+      const completedNode = node;
+      node = await withStepContext(completedNode.config.id, stepDir, async () =>
+        completedNode.onOutput(validatedOutput),
+      );
     } else {
-      node = await node.onOutput(node.config.input);
+      const stepDir = resolveStepArtifactPaths({
+        runDir: options.runDir,
+        stepId: node.config.id,
+        stepIndex,
+      }).stepDir;
+      const completedNode = node;
+      node = await withStepContext(completedNode.config.id, stepDir, async () =>
+        completedNode.onOutput(completedNode.config.input),
+      );
     }
   }
 

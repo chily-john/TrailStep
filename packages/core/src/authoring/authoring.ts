@@ -2,7 +2,7 @@
 // public authoring surface from its constituent modules so consumers (and
 // the package entry point) have a single place to import from.
 
-export { Document, document } from "./document/document.js";
+export { Document, document, documentOutput } from "./document/document.js";
 export { promptTemplate } from "./prompt-template/prompt-template.js";
 export { type JsonSchemaObject, jsonSchema, normalizeShape, shape } from "./shape/json-schema.js";
 export { state } from "./state/state.js";

@@ -13,6 +13,7 @@ export type {
 } from "@stepkit/core";
 export {
   document,
+  documentOutput,
   done,
   fail,
   jsonSchema,

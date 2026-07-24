@@ -132,11 +132,11 @@ describe("agentsCommand", () => {
       cwd,
       homeDir,
       io: { writeLine: () => undefined, writeError: () => undefined },
-      prompts: scriptedPrompts(["Project", "Done"], selections),
+      prompts: scriptedPrompts(["project", "Done"], selections),
     });
 
     expect(exitCode).toBe(0);
-    expect(selections[0]?.choices).toEqual(["Local", "Project", "Global"]);
+    expect(selections[0]?.choices).toEqual(["local", "project", "global"]);
     expect(selections[1]?.choices).toContain("medium — ----");
   });
 
@@ -161,7 +161,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ----",
           "Create inline one-off",
           "claude",
@@ -204,7 +204,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ----",
           "Use named agent",
           "+ Create new agent",
@@ -271,7 +271,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "reviewer — one-off claude/sonnet",
           "Edit",
           "Edit item 1 — one-off claude/sonnet",
@@ -292,7 +292,7 @@ describe("agentsCommand", () => {
       cwd,
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
-        ["Project", "reviewer — one-off codex/gpt-5", "Rename", "auditor", "Save to original"],
+        ["project", "reviewer — one-off codex/gpt-5", "Rename", "auditor", "Save to original"],
         [],
       ),
     });
@@ -304,7 +304,7 @@ describe("agentsCommand", () => {
       cwd,
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
-        ["Project", "auditor — one-off codex/gpt-5", "Delete", "Save to original"],
+        ["project", "auditor — one-off codex/gpt-5", "Delete", "Save to original"],
         [],
       ),
     });
@@ -325,7 +325,7 @@ describe("agentsCommand", () => {
       command.run(command.parseArgs(["agents"]) as never, {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
-        prompts: scriptedPrompts(["Project", "reviewer — one-off claude/sonnet", "Delete"], []),
+        prompts: scriptedPrompts(["project", "reviewer — one-off claude/sonnet", "Delete"], []),
       }),
     ).rejects.toThrow("Cannot delete agent reviewer");
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
@@ -345,7 +345,7 @@ describe("agentsCommand", () => {
       cwd,
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
-        ["Project", "+ Create new agent", "draft", "claude", "sonnet", "none", "Discard"],
+        ["project", "+ Create new agent", "draft", "claude", "sonnet", "none", "Discard"],
         [],
       ),
     });
@@ -356,7 +356,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "+ Create new agent",
           "reviewer",
           "claude",
@@ -400,7 +400,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ref reviewer",
           "Edit referenced shared agent",
           "Edit item 1 — one-off claude/sonnet",
@@ -423,7 +423,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ref reviewer",
           "Remove override",
           "Save to original (shared, affects every other referrer)",
@@ -446,7 +446,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ref reviewer",
           "Replace override",
           "Use named agent",
@@ -491,7 +491,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — one-off claude/haiku",
           "Edit inline one-off",
           "Edit item 1 — one-off claude/haiku",
@@ -516,7 +516,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — one-off gemini/pro",
           "Replace override",
           "Use named agent",
@@ -536,7 +536,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ref reviewer",
           "Remove override",
           "Save to original (shared, affects every other referrer)",
@@ -573,7 +573,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — one-off claude/haiku",
           "Edit inline one-off",
           "Add item",
@@ -622,7 +622,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "workflow release reviewer — ref shared",
           "Edit referenced shared agent",
           "Edit item 1 — one-off claude/sonnet",
@@ -669,7 +669,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "chain — one-off claude/sonnet",
           "Edit",
           "Edit item 1 — one-off claude/sonnet",
@@ -753,7 +753,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "reviewer — one-off claude/sonnet",
           "Edit",
           "Add item",
@@ -788,7 +788,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "chain — one-off claude/sonnet",
           "Edit",
           "Move item 1 down",
@@ -823,7 +823,7 @@ describe("agentsCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: scriptedPrompts(
         [
-          "Project",
+          "project",
           "chain — one-off claude/sonnet",
           "Edit",
           "Edit item 2 — ref base",

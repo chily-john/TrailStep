@@ -24,9 +24,9 @@ const SCOPE_HEADINGS: readonly {
   readonly scope: RegisteredWorkflowEntry["scope"];
   readonly heading: string;
 }[] = [
-  { scope: "local", heading: "Local" },
-  { scope: "project", heading: "Project (shared)" },
-  { scope: "global", heading: "Global" },
+  { scope: "local", heading: "local" },
+  { scope: "project", heading: "project (shared)" },
+  { scope: "global", heading: "global" },
 ];
 
 const NAMESPACE_PRESETS = ["local", "project", "global"] as const;

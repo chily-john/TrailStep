@@ -234,7 +234,7 @@ async function renameAgent(
   return 0;
 }
 
-const INTERACTIVE_SCOPES = ["Local", "Project", "Global"] as const;
+const INTERACTIVE_SCOPES = ["local", "project", "global"] as const;
 const RESERVED_AGENT_NAMES = ["default", "tiny", "small", "medium", "large", "xl"] as const;
 const PROVIDER_CHOICES = ["claude", "codex", "gemini", "pi"] as const;
 
@@ -908,13 +908,13 @@ function agentEntryState(
 }
 
 function scopeForInteractiveLabel(label: string): WorkflowRegistryScope {
-  if (label === "Local") {
+  if (label === "local") {
     return "local";
   }
-  if (label === "Project") {
+  if (label === "project") {
     return "project";
   }
-  if (label === "Global") {
+  if (label === "global") {
     return "global";
   }
   throw new CliUsageError(`Invalid agents scope selection: ${label}`);

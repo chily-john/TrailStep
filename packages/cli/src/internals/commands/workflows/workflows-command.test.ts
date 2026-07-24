@@ -123,11 +123,11 @@ describe("workflowsCommand", () => {
 
     expect(sawExpectedChoices).toBe(true);
     expect(lines).toEqual([
-      "Local:",
+      "local:",
       "  project/scratch -> ./scratch.mjs",
-      "Project (shared):",
+      "project (shared):",
       "  project/review -> ./review.mjs",
-      "Global:",
+      "global:",
       "  deploy/prod -> ./deploy.mjs",
     ]);
   });

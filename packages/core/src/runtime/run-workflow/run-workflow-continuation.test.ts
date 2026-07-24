@@ -1,10 +1,19 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { done, type Event, runWorkflow, step, type Workflow } from "../../index.js";
+import {
+  document,
+  done,
+  type Event,
+  parseStepKitConfig,
+  runWorkflow,
+  state,
+  step,
+  type Workflow,
+} from "../../index.js";
 
 describe("runWorkflow", () => {
   it("branches to the next continuation step based on validated output", async () => {
@@ -96,22 +105,20 @@ describe("runWorkflow", () => {
     expect(result.failure.message).toContain("portable-review");
   });
 
-  it("passes durable RunContext state to orchestration step continuations", async () => {
+  it("passes durable ambient state to orchestration step continuations", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
 
     const rememberStep = step({ id: "remember", outputShape: { value: "number" } }).next(
-      async (input: { value: number }, ctx) => {
-        await ctx.state.set("count", { value: input.value });
+      async (input: { value: number }) => {
+        await state.set("count", { value: input.value });
         return recallStep(input);
       },
     );
 
-    const recallStep = step({ id: "recall", outputShape: { value: "number" } }).next(
-      async (_input: { value: number }, ctx) => {
-        const stored = await ctx.state.get("count");
-        return done(stored as { value: number });
-      },
-    );
+    const recallStep = step({ id: "recall", outputShape: { value: "number" } }).next(async () => {
+      const stored = await state.get("count");
+      return done(stored as { value: number });
+    });
 
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "stateful-workflow",
@@ -293,6 +300,57 @@ describe("runWorkflow", () => {
       result.events.map((event) => event.type),
     );
     expect(persistedEvents[1]?.stepId).toBe("increment");
+  });
+
+  it("runs a prompt step whose outputShape is document(...), delivering a Document to .next(...)", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-"));
+
+    const workflow: Workflow<{ topic: string }, { name: string; content: string }> = {
+      id: "document-workflow",
+      inputShape: { topic: "string" },
+      outputShape: { name: "string", content: "string" },
+      agents: { writer: { size: "medium" } },
+      start(input) {
+        return step({ id: "draft", outputShape: document("draft"), agent: "writer" })
+          .prompt(({ input }) => `Draft notes about ${input.topic}.`)
+          .next((doc) => done({ name: doc.name, content: doc.content }))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { topic: "continuations" },
+      runName: "document-run",
+      cwd,
+      stepkitConfig: parseStepKitConfig({
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { medium: [{ provider: "worker" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        await writeFile(
+          request.outputFile,
+          "# Draft\n\nFree-form prose about continuations, not JSON.",
+          "utf8",
+        );
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({
+      name: "draft",
+      content: "# Draft\n\nFree-form prose about continuations, not JSON.",
+    });
+
+    const documentPath = join(result.runDir, "documents", "draft.md");
+    await expect(readFile(documentPath, "utf8")).resolves.toBe(
+      "# Draft\n\nFree-form prose about continuations, not JSON.",
+    );
   });
 });
 

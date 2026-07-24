@@ -5,14 +5,22 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  Document,
+  document,
   done,
+  jsonSchema,
   parseStepKitConfig,
   runWorkflow,
   step,
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../../index.js";
-import { runWorkingAgentCommand } from "./run-working-agent-command.js";
+import {
+  buildProviderWorkingPrompt,
+  buildWorkingAgentPrompt,
+  readWorkingAgentOutput,
+  runWorkingAgentCommand,
+} from "./run-working-agent-command.js";
 
 describe("runWorkingAgentCommand", () => {
   it("writes repeated working-agent outputs to distinct ordered step directories", async () => {
@@ -139,6 +147,10 @@ describe("runWorkingAgentCommand", () => {
     });
 
     expect(requests.map((request) => request.model)).toEqual(["first-model", "second-model"]);
+    for (const request of requests) {
+      expect(request.cwd).toBe(cwd);
+      expect(request.cwd).not.toBe(result.runDir);
+    }
     expect(result.status).toBe("failure");
     if (result.status !== "failure") {
       throw new Error("Expected all working targets to fail");
@@ -150,6 +162,199 @@ describe("runWorkingAgentCommand", () => {
         { target: "first", model: "first-model", code: "agent_provider_failed" },
         { target: "second", model: "second-model", code: "validation_failed" },
       ],
+    });
+  });
+});
+
+describe("raw-text capture mode", () => {
+  describe("buildWorkingAgentPrompt", () => {
+    it("swaps in document-writing instructions when captureMode is raw-text", () => {
+      const prompt = buildWorkingAgentPrompt({
+        prompt: "Write the changelog.",
+        outputFile: "/run/steps/0001-doc/output.json",
+        outputSchema: { type: "string" },
+        captureMode: "raw-text",
+      });
+
+      expect(prompt).toContain("write the document content to the output file");
+      expect(prompt).toContain("no JSON wrapper");
+      expect(prompt).toContain("/run/steps/0001-doc/output.json");
+      expect(prompt).toContain("Write the changelog.");
+      expect(prompt).not.toContain("JSON object");
+      expect(prompt).not.toContain("```json");
+    });
+
+    it("keeps the JSON-object instructions completely unchanged when captureMode is absent (regression)", () => {
+      const prompt = buildWorkingAgentPrompt({
+        prompt: "Summarize the PR.",
+        outputFile: "/run/steps/0001-review/output.json",
+        outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+      });
+
+      expect(prompt).toContain("write exactly one JSON object");
+      expect(prompt).toContain('"summary"');
+      expect(prompt).toContain("Summarize the PR.");
+      expect(prompt).not.toContain("document content");
+    });
+  });
+
+  describe("buildProviderWorkingPrompt", () => {
+    it("swaps in document-writing instructions when captureMode is raw-text", () => {
+      const prompt = buildProviderWorkingPrompt({
+        prompt: "Write the changelog.",
+        outputSchema: { type: "string" },
+        captureMode: "raw-text",
+      });
+
+      expect(prompt).toContain("Print the document content directly");
+      expect(prompt).toContain("Do not write output to a file.");
+      expect(prompt).not.toContain("JSON object");
+    });
+
+    it("keeps the JSON-envelope instructions completely unchanged when captureMode is absent (regression)", () => {
+      const prompt = buildProviderWorkingPrompt({
+        prompt: "Summarize the PR.",
+        outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+      });
+
+      expect(prompt).toContain("Respond with exactly one JSON object");
+      expect(prompt).toContain('"summary"');
+      expect(prompt).not.toContain("document content");
+    });
+  });
+
+  describe("readWorkingAgentOutput", () => {
+    it("writes a document artifact and returns an asserted Document, skipping JSON.parse", async () => {
+      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-rawtext-"));
+      const outputFile = join(cwd, "output.json");
+      await writeFile(outputFile, "# Not JSON\n\nJust markdown prose.", "utf8");
+
+      const doc = await readWorkingAgentOutput({
+        stepId: "write-doc",
+        outputFile,
+        runDir: cwd,
+        step: {
+          id: "write-doc",
+          output: document("changelog"),
+          prompt: "unused",
+          requirements: { size: "default" },
+        },
+      });
+
+      expect(doc).toBeInstanceOf(Document);
+      expect(doc).toMatchObject({
+        name: "changelog",
+        content: "# Not JSON\n\nJust markdown prose.",
+        path: join(cwd, "documents", "changelog.md"),
+      });
+      await expect(readFile(join(cwd, "documents", "changelog.md"), "utf8")).resolves.toBe(
+        "# Not JSON\n\nJust markdown prose.",
+      );
+    });
+
+    it("falls back to the step id as the document name when the schema declares none", async () => {
+      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-rawtext-fallback-"));
+      const outputFile = join(cwd, "output.json");
+      await writeFile(outputFile, "Raw content with no documentName set.", "utf8");
+
+      const schemaWithoutDocumentName = {
+        ...document("ignored"),
+        documentName: undefined,
+      };
+
+      const doc = await readWorkingAgentOutput({
+        stepId: "unnamed-step",
+        outputFile,
+        runDir: cwd,
+        step: {
+          id: "unnamed-step",
+          output: schemaWithoutDocumentName,
+          prompt: "unused",
+          requirements: { size: "default" },
+        },
+      });
+
+      expect(doc).toMatchObject({ name: "unnamed-step" });
+      await expect(readFile(join(cwd, "documents", "unnamed-step.md"), "utf8")).resolves.toBe(
+        "Raw content with no documentName set.",
+      );
+    });
+
+    it("still requires JSON.parse to succeed when captureMode is absent (regression)", async () => {
+      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-json-regression-"));
+      const outputFile = join(cwd, "output.json");
+      await writeFile(outputFile, "this is not JSON", "utf8");
+
+      await expect(
+        readWorkingAgentOutput({
+          stepId: "summarize",
+          outputFile,
+          runDir: cwd,
+          step: {
+            id: "summarize",
+            output: jsonSchema({
+              type: "object",
+              properties: { summary: { type: "string" } },
+              required: ["summary"],
+            }),
+            prompt: "unused",
+            requirements: { size: "default" },
+          },
+        }),
+      ).rejects.toMatchObject({
+        failure: { code: "agent_output_invalid_json" },
+      });
+
+      await expect(readdir(cwd)).resolves.not.toContain("documents");
+    });
+  });
+
+  describe("runWorkingAgentCommand end-to-end", () => {
+    it("captures a working agent's raw stdout as a Document under <runDir>/documents/<name>.md", async () => {
+      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-doc-e2e-"));
+
+      const workflow: Workflow<{ topic: string }, { name: string; content: string }> = {
+        id: "working-agent-document-workflow",
+        inputShape: { topic: "string" },
+        outputShape: { name: "string", content: "string" },
+        agents: { writer: { size: "medium" } },
+        start(input) {
+          return step({ id: "write", outputShape: document("notes"), agent: "writer" })
+            .prompt(({ input }) => `Write notes about ${input.topic}.`)
+            .next((doc) => done({ name: doc.name, content: doc.content }))(input);
+        },
+      };
+
+      const result = await runWorkflow({
+        workflow,
+        input: { topic: "raw-text capture" },
+        runName: "working-agent-document-run",
+        cwd,
+        stepkitConfig: parseStepKitConfig({
+          version: 1,
+          customProviders: { worker: { binary: "worker-agent" } },
+          agents: { medium: [{ provider: "worker" }] },
+        }),
+        workingAgentProcessRunner: async (request) => {
+          await writeFile(request.outputFile, "# Notes\n\nSome free-form prose, not JSON.", "utf8");
+          return { exitCode: 0 };
+        },
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error(result.failure.message);
+      }
+
+      expect(result.output).toEqual({
+        name: "notes",
+        content: "# Notes\n\nSome free-form prose, not JSON.",
+      });
+
+      const documentPath = join(result.runDir, "documents", "notes.md");
+      await expect(readFile(documentPath, "utf8")).resolves.toBe(
+        "# Notes\n\nSome free-form prose, not JSON.",
+      );
     });
   });
 });

@@ -7,7 +7,6 @@ import { isDoneNode, isFailNode, isStepNode } from "../../../authoring/step/step
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
-import type { RunContext } from "../../../contracts/run-context/run-context.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
@@ -25,7 +24,6 @@ export interface RunContinuationOptions {
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
   readonly cwd: string;
-  readonly runContext: RunContext;
   readonly stepkitConfig?: StepKitConfig;
   readonly workingAgentProcessRunner?: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner?: RunWorkflowOptions["providerWorkingRunner"];
@@ -131,7 +129,7 @@ export async function runContinuation(
         paramForNext = config.input;
       }
 
-      const nextNode = await stepNode.onOutput(paramForNext, options.runContext);
+      const nextNode = await stepNode.onOutput(paramForNext);
 
       if (!hasPrompt) {
         // A no-prompt step's .next(...) IS its work — only report completion once it has

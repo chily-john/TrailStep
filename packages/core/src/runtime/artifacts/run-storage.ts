@@ -81,6 +81,20 @@ export async function persistEvents(runDir: string, events: readonly Event[]): P
   await writeFile(join(runDir, "events.jsonl"), `${jsonl}\n`, "utf8");
 }
 
+export async function writeDocumentArtifact(
+  runDir: string,
+  name: string,
+  content: string,
+): Promise<string> {
+  const documentsDir = join(runDir, "documents");
+  await mkdir(documentsDir, { recursive: true });
+
+  const documentPath = join(documentsDir, `${name}.md`);
+  await writeFile(documentPath, content, "utf8");
+
+  return documentPath;
+}
+
 export async function readRunState(runDir: string): Promise<RunState> {
   try {
     const contents = await readFile(join(runDir, "state.json"), "utf8");

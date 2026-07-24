@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { done, step } from "../../../authoring/authoring.js";
 import type { Event } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { createEvent } from "../../events/create-run-event.js";
-import { createRunContext } from "../../run-context/create-run-context.js";
 import { runContinuation } from "./run-continuation.js";
 
 describe("runContinuation", () => {
@@ -18,11 +17,6 @@ describe("runContinuation", () => {
       workflowAgents: { writer: { size: "small" } },
       runDir: ".",
       cwd: process.cwd(),
-      runContext: createRunContext({
-        runId: "working-missing-output-shape-run",
-        runName: "working-missing-output-shape-run",
-        runDir: ".",
-      }),
       stepkitConfig: {
         version: 1,
         customProviders: {},
@@ -72,7 +66,6 @@ describe("runContinuation", () => {
       workflowAgents: {},
       runDir: ".",
       cwd: process.cwd(),
-      runContext: createRunContext({ runId, runName: runId, runDir: "." }),
     });
 
     expect(result).toEqual({

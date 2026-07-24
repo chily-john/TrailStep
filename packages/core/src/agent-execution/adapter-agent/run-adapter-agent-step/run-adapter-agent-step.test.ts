@@ -221,7 +221,7 @@ describe("agent steps", () => {
     expect(requests[0]).toMatchObject({
       command: "local-agent",
       args: [requests[0]?.promptFile, requests[0]?.outputFile, "test-model"],
-      cwd: result.runDir,
+      cwd,
       shell: false,
       stdio: "inherit",
     });
@@ -534,7 +534,7 @@ describe("registry-vs-customProviders dispatch split", () => {
     expect(providerCalls[0]).toMatchObject({
       command: "claude",
       args: expect.arrayContaining(["--model", "sonnet", "--effort", "medium"]),
-      cwd: result.runDir,
+      cwd,
     });
   });
 
@@ -597,7 +597,7 @@ describe("registry-vs-customProviders dispatch split", () => {
         "-c",
         'model_reasoning_effort="medium"',
       ]),
-      cwd: result.runDir,
+      cwd,
     });
     expect(providerCalls[0]?.args).toContain("-o");
   });
@@ -667,7 +667,7 @@ describe("registry-vs-customProviders dispatch split", () => {
     expect(providerCalls[0]).toMatchObject({
       command: "pi",
       args: expect.arrayContaining(["-p", "--model", "openai-codex/gpt-5.5", "--thinking", "high"]),
-      cwd: result.runDir,
+      cwd,
     });
     expect(providerCalls[0]?.args).toEqual(expect.arrayContaining(["--mode", "json"]));
   });
@@ -726,7 +726,7 @@ describe("registry-vs-customProviders dispatch split", () => {
     expect(providerCalls[0]).toMatchObject({
       command: "gemini",
       args: expect.arrayContaining(["-p", "--yolo", "-m", "gemini-2.5-pro"]),
-      cwd: result.runDir,
+      cwd,
     });
     expect(providerCalls[0]?.args).toEqual(expect.arrayContaining(["--output-format", "json"]));
   });

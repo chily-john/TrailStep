@@ -8,7 +8,6 @@ import { done, step } from "../../../authoring/authoring.js";
 import type { Workflow } from "../../../authoring/workflow/workflow.types.js";
 import type { Event } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { appendEvent, createRunDirectory, readRunEvents } from "../../artifacts/run-storage.js";
-import { createRunContext } from "../../run-context/create-run-context.js";
 import { runWorkflow } from "../../run-workflow/run-workflow.js";
 import { replayToFailedStep } from "./replay-to-failed-step.js";
 
@@ -327,11 +326,9 @@ describe("replayToFailedStep", () => {
       event({ id: "workflow-failed", type: "workflow.failed" }),
     ]);
 
-    const runContext = createRunContext({ runId: "history-run", runName: "history-run", runDir });
     const replay = await replayToFailedStep({
       workflow,
       events: await readRunEvents(runDir),
-      runContext,
     });
 
     expect(replay.status).toBe("success");
@@ -373,11 +370,9 @@ describe("replayToFailedStep", () => {
       event({ id: "workflow-failed", type: "workflow.failed" }),
     ]);
 
-    const runContext = createRunContext({ runId: "history-run", runName: "history-run", runDir });
     const replay = await replayToFailedStep({
       workflow,
       events: await readRunEvents(runDir),
-      runContext,
     });
 
     expect(replay.status).toBe("success");

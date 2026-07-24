@@ -3,7 +3,6 @@ import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult, StepNode } from "../../../authoring/step/continuation.types.js";
 import { isStepNode } from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
-import type { RunContext } from "../../../contracts/run-context/run-context.types.js";
 import type { PlainObject, ShapeInput } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
@@ -25,7 +24,6 @@ export async function replayCompletedSteps<
 >(options: {
   readonly workflow: RunWorkflowOptions<TInput, TOutput>["workflow"];
   readonly events: readonly Event[];
-  readonly runContext: RunContext;
   readonly input: PlainObject;
   readonly targetStepId: string;
 }): Promise<
@@ -84,9 +82,9 @@ export async function replayCompletedSteps<
       const outputSchema = normalizeShape(effectiveOutputShape as ShapeInput<PlainObject>);
       const validatedOutput = outputSchema.assert(recordedOutput, `step ${node.config.id} output`);
 
-      node = await node.onOutput(validatedOutput, options.runContext);
+      node = await node.onOutput(validatedOutput);
     } else {
-      node = await node.onOutput(node.config.input, options.runContext);
+      node = await node.onOutput(node.config.input);
     }
   }
 

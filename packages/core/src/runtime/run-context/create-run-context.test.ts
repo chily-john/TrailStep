@@ -23,4 +23,26 @@ describe("createRunContext", () => {
     await expect(second.state.get("count")).resolves.toEqual({ value: 1 });
     await expect(second.state.get("missing")).resolves.toBeUndefined();
   });
+
+  it("does not lose updates from concurrent set calls on the same instance", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-context-"));
+    const { runId, runDir } = await createRunDirectory({ cwd, runName: "concurrent-state" });
+
+    const context = createRunContext({ runId, runName: "concurrent-state", runDir });
+
+    await Promise.all([
+      context.state.set("a", 1),
+      context.state.set("b", 2),
+      context.state.set("c", 3),
+    ]);
+
+    await expect(context.state.get("a")).resolves.toBe(1);
+    await expect(context.state.get("b")).resolves.toBe(2);
+    await expect(context.state.get("c")).resolves.toBe(3);
+
+    const reloaded = createRunContext({ runId, runName: "concurrent-state", runDir });
+    await expect(reloaded.state.get("a")).resolves.toBe(1);
+    await expect(reloaded.state.get("b")).resolves.toBe(2);
+    await expect(reloaded.state.get("c")).resolves.toBe(3);
+  });
 });

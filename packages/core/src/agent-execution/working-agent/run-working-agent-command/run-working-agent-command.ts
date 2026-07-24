@@ -6,12 +6,14 @@ import type {
   StepKitAgentTarget,
   StepKitConfig,
 } from "../../../agent-targeting/targeting.types.js";
+import { Document } from "../../../authoring/document/document.js";
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { providerRegistry } from "../../../known-cli-providers/registry/provider-registry.js";
 import type { ProviderWorkingRunner } from "../../../known-cli-providers/registry/provider-registry.types.js";
+import { writeDocumentArtifact } from "../../../runtime/artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../../../runtime/artifacts/step-artifacts.js";
 import type {
   WorkingAgentProcessResult,
@@ -43,7 +45,24 @@ export function buildWorkingAgentPrompt(options: {
   readonly prompt: string;
   readonly outputFile: string;
   readonly outputSchema: Record<string, unknown>;
+  readonly captureMode?: "json" | "raw-text";
 }): string {
+  if (options.captureMode === "raw-text") {
+    return [
+      "# StepKit working-agent task",
+      "",
+      "Run the task described below and write the document content to the output file.",
+      "Print the document content directly as your entire response — no JSON wrapper, no surrounding commentary, no markdown fences unless they are literally part of the document content itself.",
+      "",
+      `Output file: ${options.outputFile}`,
+      "",
+      "## Original prompt",
+      "",
+      options.prompt,
+      "",
+    ].join("\n");
+  }
+
   return [
     "# StepKit working-agent task",
     "",
@@ -75,7 +94,22 @@ export function buildWorkingAgentPrompt(options: {
 export function buildProviderWorkingPrompt(options: {
   readonly prompt: string;
   readonly outputSchema: Record<string, unknown>;
+  readonly captureMode?: "json" | "raw-text";
 }): string {
+  if (options.captureMode === "raw-text") {
+    return [
+      "# StepKit working-agent task",
+      "",
+      "Print the document content directly as your entire response — no JSON wrapper, no surrounding commentary, no markdown fences unless they are literally part of the document content itself.",
+      "Do not write output to a file.",
+      "",
+      "## Original prompt",
+      "",
+      options.prompt,
+      "",
+    ].join("\n");
+  }
+
   return [
     "# StepKit working-agent task",
     "",
@@ -103,6 +137,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly step: AgentStepRequestConfig<PlainObject, TOutput>;
   readonly renderedPrompt: string;
   readonly runDir: string;
+  readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
@@ -126,6 +161,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
       prompt: options.renderedPrompt,
       outputFile: files.outputFile,
       outputSchema: options.step.output.jsonSchema,
+      captureMode: options.step.output.captureMode,
     }),
     "utf8",
   );
@@ -166,6 +202,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
   readonly step: AgentStepRequestConfig<PlainObject, TOutput>;
   readonly renderedPrompt: string;
   readonly runDir: string;
+  readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
@@ -182,6 +219,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
       buildProviderWorkingPrompt({
         prompt: options.renderedPrompt,
         outputSchema: options.step.output.jsonSchema,
+        captureMode: options.step.output.captureMode,
       }),
       "utf8",
     );
@@ -192,7 +230,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
         promptFile: options.files.promptFile,
         outputFile: options.files.outputFile,
         usageFile: options.files.usageFile,
-        cwd: options.runDir,
+        cwd: options.cwd,
         ...(options.target.model === undefined ? {} : { model: options.target.model }),
         ...(thinking === undefined ? {} : { thinking }),
       },
@@ -203,6 +241,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
       stepId: options.step.id,
       outputFile: options.files.outputFile,
       step: options.step,
+      runDir: options.runDir,
     });
   }
 
@@ -227,7 +266,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
     result = await (options.runner ?? spawnWorkingAgentProcess)({
       command: agentConfig.binary,
       args,
-      cwd: options.runDir,
+      cwd: options.cwd,
       shell: false,
       stdio: "inherit",
       promptFile: options.files.promptFile,
@@ -263,6 +302,7 @@ async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options
     stepId: options.step.id,
     outputFile: options.files.outputFile,
     step: options.step,
+    runDir: options.runDir,
   });
 }
 
@@ -338,6 +378,7 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
   readonly stepId: string;
   readonly outputFile: string;
   readonly step: AgentStepRequestConfig<PlainObject, TOutput>;
+  readonly runDir: string;
 }): Promise<TOutput> {
   let raw: string;
   try {
@@ -351,6 +392,14 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
           ? { path: options.outputFile, cause: error.message }
           : { path: options.outputFile },
     });
+  }
+
+  if (options.step.output.captureMode === "raw-text") {
+    const documentName = options.step.output.documentName ?? options.stepId;
+    const documentPath = await writeDocumentArtifact(options.runDir, documentName, raw);
+    const document = new Document(documentName, raw, documentPath);
+
+    return options.step.output.assert(document, `step ${options.stepId} output`);
   }
 
   let parsed: unknown;

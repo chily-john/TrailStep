@@ -9,6 +9,8 @@ export type {
   StepKitWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
 export {
+  Document,
+  document,
   done,
   fail,
   isDoneNode,
@@ -19,6 +21,7 @@ export {
   normalizeShape,
   promptTemplate,
   shape,
+  state,
   step,
 } from "./authoring/authoring.js";
 export type {
@@ -50,7 +53,6 @@ export type {
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
 export type { Failure } from "./contracts/failures/failure.js";
-export type { RunContext, RunContextState } from "./contracts/run-context/run-context.types.js";
 export type {
   PlainObject,
   Schema,
@@ -82,7 +84,6 @@ export type {
   ProviderWorkingRunner,
 } from "./known-cli-providers/registry/provider-registry.types.js";
 export { readRunEvents, readRunState, writeRunState } from "./runtime/artifacts/run-storage.js";
-export { createRunContext } from "./runtime/run-context/create-run-context.js";
 export { runWorkflow } from "./runtime/run-workflow/run-workflow.js";
 export type {
   Event,

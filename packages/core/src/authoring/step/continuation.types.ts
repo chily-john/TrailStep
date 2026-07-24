@@ -3,7 +3,6 @@ import type {
   AgentPrompt,
 } from "../../contracts/agents/agent-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
-import type { RunContext } from "../../contracts/run-context/run-context.types.js";
 import type { PlainObject, ShapeInput } from "../../contracts/shapes/shape.types.js";
 
 /** A local text file to load a prompt's content from, resolved relative to the workflow's `cwd` at dispatch time. */
@@ -43,10 +42,7 @@ export interface ContinuationStepConfig<
 }
 
 export type StepContinuation<TOutput extends PlainObject = PlainObject> = {
-  bivarianceHack(
-    output: TOutput,
-    ctx: RunContext,
-  ): ContinuationResult | Promise<ContinuationResult>;
+  bivarianceHack(output: TOutput): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
 
 export type StepErrorContinuation = {

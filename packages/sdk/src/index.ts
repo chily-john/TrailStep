@@ -1,8 +1,7 @@
 export type {
+  Document,
   FailNode,
   PromptTemplateSource,
-  RunContext,
-  RunContextState,
   Schema,
   ShapeInput,
   ShapeObject,
@@ -11,7 +10,16 @@ export type {
   StepFactory,
   Workflow,
 } from "@stepkit/core";
-export { done, fail, jsonSchema, promptTemplate, shape, step } from "@stepkit/core";
+export {
+  document,
+  done,
+  fail,
+  jsonSchema,
+  promptTemplate,
+  shape,
+  state,
+  step,
+} from "@stepkit/core";
 export { defineWorkflow } from "./workflow-builder/workflow-builder.js";
 export type {
   DefinedWorkflow,

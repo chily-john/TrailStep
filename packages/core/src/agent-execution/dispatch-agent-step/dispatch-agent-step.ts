@@ -129,6 +129,7 @@ export async function dispatchAgentStep(options: {
         step: agentStep,
         renderedPrompt,
         runDir: options.runDir,
+        cwd: options.cwd,
         runner: options.workingAgentProcessRunner,
         providerWorkingRunner: options.providerWorkingRunner,
         stepIndex: options.stepIndex,

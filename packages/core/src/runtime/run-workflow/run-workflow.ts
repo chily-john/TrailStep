@@ -23,6 +23,7 @@ import {
 } from "../resume/reattach-in-progress-step/reattach-in-progress-step.js";
 import { replayToFailedStep } from "../resume/replay-to-failed-step/replay-to-failed-step.js";
 import { createRunContext } from "../run-context/create-run-context.js";
+import { runContextStorage } from "../run-context/run-context-storage.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,
@@ -96,6 +97,12 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   });
 
   try {
+    return await runContextStorage.run(runContext, () => runWorkflowBody());
+  } catch (error) {
+    return await failWorkflow(unknownWorkflowFailure(error));
+  }
+
+  async function runWorkflowBody(): Promise<Result<TOutput>> {
     const inputSchema = options.workflow.inputShape
       ? normalizeShape(options.workflow.inputShape)
       : options.workflow.input;
@@ -109,13 +116,11 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         ? await reattachInProgressStep({
             workflow: options.workflow,
             events: previousEvents,
-            runContext,
             runDir,
           })
         : await replayToFailedStep({
             workflow: options.workflow,
             events: previousEvents,
-            runContext,
           });
       if (replay.status === "failure") {
         return failResumeValidation(replay.failure);
@@ -163,7 +168,6 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       workflowAgents: options.workflow.agents ?? {},
       runDir,
       cwd,
-      runContext,
       stepkitConfig,
       workingAgentProcessRunner: options.workingAgentProcessRunner,
       providerWorkingRunner: options.providerWorkingRunner,
@@ -199,8 +203,6 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       output,
       events,
     };
-  } catch (error) {
-    return await failWorkflow(unknownWorkflowFailure(error));
   }
 }
 

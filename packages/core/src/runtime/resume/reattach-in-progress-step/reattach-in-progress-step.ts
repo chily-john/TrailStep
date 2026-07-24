@@ -7,7 +7,6 @@ import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
-import type { RunContext } from "../../../contracts/run-context/run-context.types.js";
 import type { PlainObject, Schema, ShapeInput } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
@@ -45,7 +44,6 @@ export async function reattachInProgressStep<
 >(options: {
   readonly workflow: RunWorkflowOptions<TInput, TOutput>["workflow"];
   readonly events: readonly Event[];
-  readonly runContext: RunContext;
   readonly runDir: string;
 }): Promise<
   | {
@@ -114,7 +112,6 @@ export async function reattachInProgressStep<
   const replay = await replayCompletedSteps({
     workflow: options.workflow,
     events: options.events,
-    runContext: options.runContext,
     input,
     targetStepId: anchor.stepId,
   });
@@ -145,7 +142,6 @@ export async function reattachInProgressStep<
 
   const nextNode = await node.onOutput(
     outputSchema.assert(reattached.output, `step ${node.config.id} output`),
-    options.runContext,
   );
 
   return {

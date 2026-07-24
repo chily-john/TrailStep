@@ -10,7 +10,6 @@ import type { Workflow } from "../../../authoring/workflow/workflow.types.js";
 import type { Event } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { appendEvent, createRunDirectory } from "../../artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
-import { createRunContext } from "../../run-context/create-run-context.js";
 import { reattachInProgressStep } from "./reattach-in-progress-step.js";
 
 function event(overrides: Partial<Event> & Pick<Event, "id" | "type">): Event {
@@ -109,11 +108,9 @@ describe("reattachInProgressStep", () => {
     const { outputFile } = await writeInteractiveProtocol(runDir, "completed");
     await writeFile(outputFile, `${JSON.stringify({ notes: "Approved before crash." })}\n`, "utf8");
 
-    const runContext = createRunContext({ runId: "reattach-run", runName: "reattach-run", runDir });
     const result = await reattachInProgressStep({
       workflow: reattachWorkflow(),
       events,
-      runContext,
       runDir,
     });
 
@@ -130,12 +127,9 @@ describe("reattachInProgressStep", () => {
     const { runDir, events } = await createDanglingRun();
     const { interactiveFile, outputFile } = await writeInteractiveProtocol(runDir, "active");
 
-    const runContext = createRunContext({ runId: "reattach-run", runName: "reattach-run", runDir });
-
     const reattachPromise = reattachInProgressStep({
       workflow: reattachWorkflow(),
       events,
-      runContext,
       runDir,
     });
 
@@ -161,11 +155,9 @@ describe("reattachInProgressStep", () => {
     const { runDir, events } = await createDanglingRun();
     await writeInteractiveProtocol(runDir, "cancelled", { reason: "Requirements changed." });
 
-    const runContext = createRunContext({ runId: "reattach-run", runName: "reattach-run", runDir });
     const result = await reattachInProgressStep({
       workflow: reattachWorkflow(),
       events,
-      runContext,
       runDir,
     });
 
@@ -179,11 +171,9 @@ describe("reattachInProgressStep", () => {
   it("fails with a resume failure when interactive.json is missing entirely", async () => {
     const { runDir, events } = await createDanglingRun();
 
-    const runContext = createRunContext({ runId: "reattach-run", runName: "reattach-run", runDir });
     const result = await reattachInProgressStep({
       workflow: reattachWorkflow(),
       events,
-      runContext,
       runDir,
     });
 

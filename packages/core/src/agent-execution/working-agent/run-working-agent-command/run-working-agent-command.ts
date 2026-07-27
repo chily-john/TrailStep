@@ -140,6 +140,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
+  readonly files?: WorkingAgentFiles;
 }): Promise<TOutput> {
   const targets = resolveAgentTargets({
     config: options.config,
@@ -148,11 +149,13 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
     roleSize: options.role.size,
   });
 
-  const files = resolveStepAgentFiles({
-    runDir: options.runDir,
-    stepId: options.step.id,
-    stepIndex: options.stepIndex,
-  });
+  const files =
+    options.files ??
+    resolveStepAgentFiles({
+      runDir: options.runDir,
+      stepId: options.step.id,
+      stepIndex: options.stepIndex,
+    });
   await mkdir(files.stepDir, { recursive: true });
   await writeFile(
     files.promptFile,

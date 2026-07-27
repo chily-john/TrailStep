@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AgentAdapter, AgentAdapterRequest } from "./contracts/agents/agent-adapter.types.js";
-import { jsonSchema, runWorkflow } from "./index.js";
+import { jsonSchema, runWorkflow, subPrompt } from "./index.js";
 
 describe("@stepkit/core public API", () => {
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
@@ -22,6 +22,53 @@ describe("@stepkit/core public API", () => {
 
     expect(publicAdapter).toBe(adapter);
     expect(publicRequest).toBe(request);
+  });
+
+  it("exports subPrompt and preserves the intended curried type surface", () => {
+    expect(subPrompt).toBeTypeOf("function");
+
+    const assertPublicSubPromptTypes = () => {
+      const output = jsonSchema<{ answer: string }>({
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      });
+      const requiredInputSubPrompt = subPrompt<{ path: string }, { answer: string }>(
+        ({ input }) => `Read ${input.path}`,
+        { output },
+      );
+      requiredInputSubPrompt({ path: "story.md" });
+      // @ts-expect-error required input keys must be provided.
+      requiredInputSubPrompt();
+
+      // biome-ignore lint/complexity/noBannedTypes: public subPrompt authoring supports `{}` as the no-required-input type.
+      const optionalInputSubPrompt = subPrompt<{}, { answer: string }>("Answer briefly.", {
+        output,
+      });
+      optionalInputSubPrompt();
+      optionalInputSubPrompt({});
+
+      const subPromptOptions = {
+        output,
+        agent: "researcher",
+        adapter: async () => undefined,
+        maxSubPrompts: 3,
+      } satisfies import("./index.js").SubPromptOptions<{ answer: string }>;
+      const subPromptOptionsWithMode = {
+        // @ts-expect-error subPrompt options intentionally do not support prompt mode selection.
+        mode: "working",
+      } satisfies import("./index.js").SubPromptOptions<{
+        answer: string;
+      }>;
+      const promptOptions = {
+        mode: "interactive",
+        maxSubPrompts: 3,
+      } satisfies import("./index.js").PromptOptions<{ answer: string }>;
+
+      return { promptOptions, subPromptOptions, subPromptOptionsWithMode };
+    };
+
+    expect(assertPublicSubPromptTypes).toBeTypeOf("function");
   });
 
   it("keeps shared contracts out of runtime and deleted engine folders", async () => {

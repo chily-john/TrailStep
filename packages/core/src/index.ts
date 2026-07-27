@@ -24,6 +24,7 @@ export {
   shape,
   state,
   step,
+  subPrompt,
 } from "./authoring/authoring.js";
 export type {
   ContinuationResult,
@@ -37,6 +38,8 @@ export type {
   StepErrorContinuation,
   StepFactory,
   StepNode,
+  SubPromptFactory,
+  SubPromptOptions,
 } from "./authoring/step/continuation.types.js";
 export type { Workflow } from "./authoring/workflow/workflow.types.js";
 export type {

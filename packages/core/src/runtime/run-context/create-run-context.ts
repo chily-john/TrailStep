@@ -1,10 +1,25 @@
-import type { RunContext } from "../../contracts/run-context/run-context.types.js";
+import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
+import type {
+  RunContext,
+  RunContextEvent,
+  RunContextProviderWorkingRunner,
+  RunContextWorkingAgentProcessRunner,
+} from "../../contracts/run-context/run-context.types.js";
 import { type RunState, readRunState, writeRunState } from "../artifacts/run-storage.js";
 
 export function createRunContext(options: {
   readonly runId: string;
   readonly runName: string;
   readonly runDir: string;
+  readonly workflowId?: string;
+  readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
+  readonly cwd?: string;
+  readonly stepkitConfig?: StepKitConfig;
+  readonly workingAgentProcessRunner?: RunContextWorkingAgentProcessRunner;
+  readonly providerWorkingRunner?: RunContextProviderWorkingRunner;
+  readonly emit?: (event: RunContextEvent) => Promise<void>;
+  readonly events?: () => readonly RunContextEvent[];
 }): RunContext {
   // Cache + load memoization scope this instance's state to a single process:
   // a resumed run creates a fresh RunContext and reloads from disk, so staleness
@@ -39,6 +54,14 @@ export function createRunContext(options: {
     id: options.runId,
     name: options.runName,
     path: options.runDir,
+    workflowId: options.workflowId,
+    workflowAgents: options.workflowAgents,
+    cwd: options.cwd,
+    stepkitConfig: options.stepkitConfig,
+    workingAgentProcessRunner: options.workingAgentProcessRunner,
+    providerWorkingRunner: options.providerWorkingRunner,
+    emit: options.emit,
+    events: options.events,
     state: {
       async get<T = unknown>(key: string): Promise<T | undefined> {
         const state = await ensureLoaded();

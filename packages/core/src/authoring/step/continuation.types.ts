@@ -27,6 +27,14 @@ export interface PromptOptions<TOutput extends PlainObject = PlainObject> {
   readonly agent?: string;
   readonly mode?: "working" | "interactive";
   readonly adapter?: AgentAdapterSelection<PlainObject, TOutput>;
+  readonly maxSubPrompts?: number;
+}
+
+export interface SubPromptOptions<TOutput extends PlainObject = PlainObject> {
+  readonly output?: ShapeInput<TOutput>;
+  readonly agent?: string;
+  readonly adapter?: AgentAdapterSelection<PlainObject, TOutput>;
+  readonly maxSubPrompts?: number;
 }
 
 /** The runtime shape stored in `StepNode.config` -- `StepConfig` plus `PromptOptions` (when a prompt was given) plus the resolved `input` and `prompt` source. */
@@ -41,6 +49,7 @@ export interface ContinuationStepConfig<
   readonly agent?: string;
   readonly mode?: "working" | "interactive";
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
+  readonly maxSubPrompts?: number;
 }
 
 export type StepContinuation<TOutput extends PlainObject = PlainObject> = {
@@ -77,6 +86,12 @@ export type StepFactory<
   : (input: TInput) => StepNode<TInput, TOutput>) & {
   catch(onError: StepErrorContinuation): StepFactory<TInput, TOutput>;
 };
+
+export type SubPromptFactory<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+  // biome-ignore lint/complexity/noBannedTypes: `{}` here is the standard conditional-type idiom for "TInput has no required keys", not a stand-in for "any value".
+> = {} extends TInput ? (input?: TInput) => Promise<TOutput> : (input: TInput) => Promise<TOutput>;
 
 export interface DoneNode<TOutput extends PlainObject = PlainObject> {
   readonly kind: "done";

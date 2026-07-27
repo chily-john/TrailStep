@@ -158,7 +158,7 @@ export async function dispatchAgentStep(options: {
  * dispatch, so an unreadable file becomes a normal step failure. Any other
  * source (string or callback) renders synchronously via `renderAgentPrompt`.
  */
-async function resolvePromptSource<TInput extends PlainObject>(
+export async function resolvePromptSource<TInput extends PlainObject>(
   source: AgentPrompt<TInput> | PromptTemplateSource,
   input: TInput,
   cwd: string,
@@ -205,7 +205,7 @@ const BUILTIN_DEFAULT_AGENT_ROLE: WorkflowAgentRole = { size: "default" };
  * against `.stepkit/config.json`'s unified `agents.default` mapping. An explicit `.agent(...)` naming an undeclared
  * role is still a hard error (typo protection).
  */
-function resolveWorkflowAgentRole(options: {
+export function resolveWorkflowAgentRole(options: {
   readonly agent: string | undefined;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowId: string;

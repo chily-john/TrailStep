@@ -62,13 +62,26 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       : parseStepKitConfigInput(options.stepkitConfig);
   const cwd = options.cwd ?? process.cwd();
   const events: Event[] = [...previousEvents];
-  const runContext = createRunContext({ runId, runName, runDir });
 
   const emit = async (event: Event): Promise<void> => {
     events.push(event);
     await appendEvent(runDir, event);
     await options.eventSink?.(event);
   };
+
+  const runContext = createRunContext({
+    runId,
+    runName,
+    runDir,
+    workflowId: options.workflow.id,
+    workflowAgents: options.workflow.agents ?? {},
+    cwd,
+    stepkitConfig,
+    workingAgentProcessRunner: options.workingAgentProcessRunner,
+    providerWorkingRunner: options.providerWorkingRunner,
+    emit,
+    events: () => events,
+  });
 
   const failWorkflow = async (failure: Failure): Promise<Result<TOutput>> => {
     await emit(

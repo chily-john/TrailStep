@@ -73,6 +73,9 @@ export async function runContinuation(
     const stepNode = node;
     const { config } = stepNode;
     const hasPrompt = config.prompt !== undefined;
+    const maxSubPrompts =
+      config.maxSubPrompts ??
+      stepkitConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
 
     await options.emit(
       createEvent({
@@ -91,69 +94,74 @@ export async function runContinuation(
         stepIndex,
       }).stepDir;
 
-      const nextNode = await withStepContext(config.id, stepDir, async () => {
-        let paramForNext: PlainObject;
+      const nextNode = await withStepContext(
+        config.id,
+        stepDir,
+        async () => {
+          let paramForNext: PlainObject;
 
-        if (hasPrompt) {
-          const outputSchema = resolveStepOutputSchema(config);
-          if (!outputSchema) {
-            throw new Error(`step ${config.id} with a prompt requires an output shape`);
+          if (hasPrompt) {
+            const outputSchema = resolveStepOutputSchema(config);
+            if (!outputSchema) {
+              throw new Error(`step ${config.id} with a prompt requires an output shape`);
+            }
+
+            const rawOutput = await dispatchAgentStep({
+              config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
+              outputSchema,
+              interactiveOutputMode:
+                config.mode === "interactive" && config.output !== undefined
+                  ? "json"
+                  : "session-file",
+              runId: options.runId,
+              workflowId: options.workflowId,
+              emit: options.emit,
+              workflowAgents: options.workflowAgents,
+              runDir: options.runDir,
+              cwd: options.cwd,
+              stepkitConfig,
+              workingAgentProcessRunner: options.workingAgentProcessRunner,
+              providerWorkingRunner: options.providerWorkingRunner,
+              processRunner: options.processRunner,
+              stepIndex,
+            });
+            paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
+
+            await options.emit(
+              createEvent({
+                runId: options.runId,
+                workflowId: options.workflowId,
+                stepId: config.id,
+                type: "step.completed",
+                payload: { output: paramForNext },
+              }),
+            );
+          } else {
+            paramForNext = config.input;
           }
 
-          const rawOutput = await dispatchAgentStep({
-            config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
-            outputSchema,
-            interactiveOutputMode:
-              config.mode === "interactive" && config.output !== undefined
-                ? "json"
-                : "session-file",
-            runId: options.runId,
-            workflowId: options.workflowId,
-            emit: options.emit,
-            workflowAgents: options.workflowAgents,
-            runDir: options.runDir,
-            cwd: options.cwd,
-            stepkitConfig,
-            workingAgentProcessRunner: options.workingAgentProcessRunner,
-            providerWorkingRunner: options.providerWorkingRunner,
-            processRunner: options.processRunner,
-            stepIndex,
-          });
-          paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
+          const nextNode = await stepNode.onOutput(paramForNext);
 
-          await options.emit(
-            createEvent({
-              runId: options.runId,
-              workflowId: options.workflowId,
-              stepId: config.id,
-              type: "step.completed",
-              payload: { output: paramForNext },
-            }),
-          );
-        } else {
-          paramForNext = config.input;
-        }
+          if (!hasPrompt) {
+            // A no-prompt step's .do(...) IS its work — only report completion once it has
+            // actually run without throwing, matching the with-prompt case's "step.completed
+            // means the step's own work succeeded" meaning (a thrown .do() must never be
+            // preceded by step.completed, or resume's already-completed guard sees both).
+            await options.emit(
+              createEvent({
+                runId: options.runId,
+                workflowId: options.workflowId,
+                stepId: config.id,
+                type: "step.completed",
+                payload: {},
+              }),
+            );
+          }
 
-        const nextNode = await stepNode.onOutput(paramForNext);
-
-        if (!hasPrompt) {
-          // A no-prompt step's .do(...) IS its work — only report completion once it has
-          // actually run without throwing, matching the with-prompt case's "step.completed
-          // means the step's own work succeeded" meaning (a thrown .do() must never be
-          // preceded by step.completed, or resume's already-completed guard sees both).
-          await options.emit(
-            createEvent({
-              runId: options.runId,
-              workflowId: options.workflowId,
-              stepId: config.id,
-              type: "step.completed",
-              payload: {},
-            }),
-          );
-        }
-
-        return nextNode;
-      });
+          return nextNode;
+        },
+        { maxSubPrompts },
+      );
 
       if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
         const failure = continuationFailure(`step ${config.id}`);

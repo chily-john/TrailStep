@@ -23,22 +23,29 @@ export async function withStepContext<T>(
   stepId: string,
   stepDir: string,
   fn: () => Promise<T>,
+  options: { readonly maxSubPrompts?: unknown } = {},
 ): Promise<T> {
   const parentContext = runContextStorage.getStore();
   if (!parentContext) {
     return await fn();
   }
 
-  let nextIndex = 0;
+  let nextDocumentIndex = 0;
+  let nextSubPromptIndex = 0;
 
   const stepContext = {
     ...parentContext,
     currentStep: {
       id: stepId,
       dir: stepDir,
+      maxSubPrompts: options.maxSubPrompts,
       nextDocumentIndex(): number {
-        nextIndex += 1;
-        return nextIndex;
+        nextDocumentIndex += 1;
+        return nextDocumentIndex;
+      },
+      nextSubPromptIndex(): number {
+        nextSubPromptIndex += 1;
+        return nextSubPromptIndex;
       },
     },
   };

@@ -5,9 +5,10 @@ import type { TakeItAwayInput } from "../shared/input-schema.js";
 import { createFeatureDocPrompt } from "./prompt.js";
 
 /**
- * The only step whose input can't come from `state` — it's how the
- * workflow's own input (from `defineWorkflow`'s sync `start`) enters the run.
- * Every step after this one pulls what it needs from `state` instead.
+ * The only step invoked directly by `defineWorkflow`'s sync `start(...)`
+ * rather than from a previous step's continuation — it's how the workflow's
+ * own input enters the run. Every step after this one receives its input as
+ * an explicit argument from whichever step's `.do(...)` continuation returns it.
  */
 export function createFeatureDocStep(input: TakeItAwayInput): StepNode {
   return step({ id: "create-feature-doc" })
@@ -17,7 +18,6 @@ export function createFeatureDocStep(input: TakeItAwayInput): StepNode {
     })
     .do(async (featureDoc) => {
       await state.set("featureDoc", featureDoc);
-      await state.set("implementationDocReviewAttempts", 1);
-      return createOrImproveImplementationDocStep();
+      return createOrImproveImplementationDocStep({ featureDoc, attempt: 1 });
     })(input);
 }

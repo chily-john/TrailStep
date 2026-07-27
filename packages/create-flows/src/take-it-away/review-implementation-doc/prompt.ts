@@ -13,6 +13,7 @@ const implementationDocFormat = readFileSync(
 export interface ReviewImplementationDocInput extends Record<string, unknown> {
   readonly featureDoc: Document;
   readonly implementationDoc: Document;
+  readonly attempt: number;
 }
 
 export function reviewImplementationDocPrompt({

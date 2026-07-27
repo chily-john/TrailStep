@@ -3,13 +3,17 @@ import { type Document, document, fail, state, step } from "@stepkit/sdk";
 import { implementStoryStep } from "../implement-story/step.js";
 import { STORY_BOUNDARY } from "../shared/constants.js";
 
-export const splitImplementationStoriesStep = step({ id: "split-implementation-stories" }).do(
-  async (): Promise<ContinuationResult> => {
-    const implementationDoc = await state.get<Document>("implementationDoc");
-    if (!implementationDoc) {
-      throw new Error("split-implementation-stories: implementationDoc missing from state.");
-    }
+export interface SplitImplementationStoriesInput extends Record<string, unknown> {
+  readonly implementationDoc: Document;
+}
 
+/**
+ * Has no prompt, so `.do(...)` receives this step's own input directly
+ * (there's no agent output to receive instead) — no wrapper needed to relay
+ * `implementationDoc` forward the way the prompt steps require.
+ */
+export const splitImplementationStoriesStep = step({ id: "split-implementation-stories" }).do(
+  async ({ implementationDoc }: SplitImplementationStoriesInput): Promise<ContinuationResult> => {
     const chunks = implementationDoc.content
       .split(STORY_BOUNDARY)
       .slice(1) // drop the overview section before the first boundary
@@ -24,15 +28,16 @@ export const splitImplementationStoriesStep = step({ id: "split-implementation-s
       });
     }
 
-    const storyQueue: Document[] = [];
+    const storyDocs: Document[] = [];
     for (const chunk of chunks) {
-      storyQueue.push(await document(chunk));
+      storyDocs.push(await document(chunk));
     }
 
-    await state.set("storyQueue", storyQueue);
+    // storyDocs.length === chunks.length, already guarded above to be > 0.
+    const [firstStory, ...remaining] = storyDocs as [Document, ...Document[]];
+    await state.set("storyQueue", remaining);
     await state.set("completedStories", []);
-    await state.set("storyReviewAttempts", 1);
 
-    return implementStoryStep();
+    return implementStoryStep({ currentStory: firstStory, attempt: 1 });
   },
 );

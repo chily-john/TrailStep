@@ -12,6 +12,7 @@ const storyContract = readFileSync(
 
 export interface ReviewStoryImplementationInput extends Record<string, unknown> {
   readonly currentStory: Document;
+  readonly attempt: number;
 }
 
 export function reviewStoryImplementationPrompt({

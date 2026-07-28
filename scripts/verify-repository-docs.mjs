@@ -52,7 +52,7 @@ export function verifyRepositoryDocs() {
 
   const packageReadmes = new Map([
     ["packages/core/README.md", assertFile("packages/core/README.md")],
-    ["packages/sdk/README.md", assertFile("packages/sdk/README.md")],
+    ["packages/authoring/README.md", assertFile("packages/authoring/README.md")],
     ["packages/cli/README.md", assertFile("packages/cli/README.md")],
     ["packages/dashboard/README.md", assertFile("packages/dashboard/README.md")],
     ["packages/testkit/README.md", assertFile("packages/testkit/README.md")],
@@ -64,9 +64,9 @@ export function verifyRepositoryDocs() {
     "packages/core/README.md",
   );
   assertIncludes(
-    packageReadmes.get("packages/sdk/README.md") ?? "",
+    packageReadmes.get("packages/authoring/README.md") ?? "",
     "defineWorkflow",
-    "packages/sdk/README.md",
+    "packages/authoring/README.md",
   );
   assertIncludes(
     packageReadmes.get("packages/cli/README.md") ?? "",

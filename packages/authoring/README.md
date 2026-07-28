@@ -1,4 +1,4 @@
-# @stepkit/sdk
+# @stepkit/authoring
 
 TypeScript authoring helpers for StepKit workflows.
 
@@ -14,7 +14,7 @@ TypeScript authoring helpers for StepKit workflows.
 ## Minimal workflow package export
 
 ```ts
-import { defineWorkflow, done, shape, step } from "@stepkit/sdk";
+import { defineWorkflow, done, shape, step } from "@stepkit/authoring";
 
 export const sampleWorkflow = defineWorkflow({
   id: "sample",

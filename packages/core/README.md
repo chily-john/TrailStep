@@ -44,4 +44,4 @@ If an interactive process exits before `stepkit continue` marks `interactive.jso
 
 ## Scope notes
 
-`@stepkit/core` owns the runtime and event model. `@stepkit/sdk` provides authoring helpers, and `@stepkit/cli` handles package discovery and local execution. Agent execution is provider-neutral and command-backed by local `.stepkit/config.json` mappings.
+`@stepkit/core` owns the runtime and event model. `@stepkit/authoring` provides authoring helpers, and `@stepkit/cli` handles package discovery and local execution. Agent execution is provider-neutral and command-backed by local `.stepkit/config.json` mappings.

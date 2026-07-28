@@ -1,5 +1,5 @@
 // Isolated token-extraction step of the deprecation scanner: finds every named import bound to
-// "@stepkit/core" or "@stepkit/sdk" in a workflow's source text and returns each imported symbol's
+// "@stepkit/core" or "@stepkit/authoring" in a workflow's source text and returns each imported symbol's
 // name plus its character offset (used by the scanner to report a line/column).
 //
 // Known limitations (deliberate, regex/text-based scanning, not a type-checker — see
@@ -14,7 +14,8 @@ export interface ImportSpecifierToken {
   readonly offset: number;
 }
 
-const IMPORT_CLAUSE_PATTERN = /import\s*\{([\s\S]*?)\}\s*from\s*["'](@stepkit\/(?:core|sdk))["']/gu;
+const IMPORT_CLAUSE_PATTERN =
+  /import\s*\{([\s\S]*?)\}\s*from\s*["'](@stepkit\/(?:core|authoring))["']/gu;
 const ALIASED_IMPORT_CLAUSE = /^(?:type\s+)?[A-Za-z_$][\w$]*\s+as\s+[A-Za-z_$][\w$]*$/u;
 const SYMBOL_IMPORT_CLAUSE = /^(?:type\s+)?([A-Za-z_$][\w$]*)$/u;
 

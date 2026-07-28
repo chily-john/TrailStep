@@ -1,4 +1,4 @@
-import { fail, step } from "@stepkit/sdk";
+import { fail, step } from "@stepkit/authoring";
 import { createOrImproveImplementationDocStep } from "../create-or-improve-implementation-doc/step.js";
 import { MAX_IMPLEMENTATION_DOC_REVIEW_ATTEMPTS } from "../shared/constants.js";
 import type { ReviewResult } from "../shared/review-schema.js";

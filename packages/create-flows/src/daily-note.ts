@@ -1,4 +1,4 @@
-import { defineWorkflow, done, shape, step } from "@stepkit/sdk";
+import { defineWorkflow, done, shape, step } from "@stepkit/authoring";
 
 interface DailyNoteOutput extends Record<string, unknown> {
   readonly isDone: boolean;

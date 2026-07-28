@@ -14,7 +14,7 @@ interface GreetingOutput extends Record<string, unknown> {
   readonly message: string;
 }
 
-describe("SDK workflow authoring", () => {
+describe("authoring workflow builders", () => {
   it("defines a continuation workflow with step and done that runs through core", async () => {
     const greetingOutput = jsonSchema<GreetingOutput>({
       type: "object",
@@ -52,11 +52,11 @@ describe("SDK workflow authoring", () => {
       description: "Builds a greeting from mapped input.",
     });
 
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-sdk-builder-test-"));
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-builder-test-"));
     const result = await runWorkflow({
       workflow,
       input: { person: "Ada" },
-      runName: "sdk-builder-test",
+      runName: "authoring-builder-test",
       cwd,
     });
 

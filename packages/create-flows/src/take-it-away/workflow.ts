@@ -1,4 +1,4 @@
-import { defineWorkflow } from "@stepkit/sdk";
+import { defineWorkflow } from "@stepkit/authoring";
 import { createFeatureDocStep } from "./create-feature-doc/step.js";
 import { takeItAwayInput } from "./shared/input-schema.js";
 import { takeItAwayOutput } from "./shared/output-schema.js";

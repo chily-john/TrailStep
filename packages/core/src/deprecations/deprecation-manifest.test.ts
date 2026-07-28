@@ -9,9 +9,9 @@ describe("findDeprecationsAsOf", () => {
     expect(findDeprecationsAsOf(manifest, { package: "@stepkit/core", version: "1.0.0" })).toEqual(
       [],
     );
-    expect(findDeprecationsAsOf(manifest, { package: "@stepkit/sdk", version: "9.9.9" })).toEqual(
-      [],
-    );
+    expect(
+      findDeprecationsAsOf(manifest, { package: "@stepkit/authoring", version: "9.9.9" }),
+    ).toEqual([]);
   });
 
   it("marks an entry with no removedIn as severity warning once deprecatedSince is at/below the query version", () => {
@@ -65,20 +65,20 @@ describe("findDeprecationsAsOf", () => {
       deprecatedSince: "1.0.0",
       message: "core deprecation.",
     };
-    const sdkEntry: DeprecationEntry = {
-      package: "@stepkit/sdk",
+    const authoringEntry: DeprecationEntry = {
+      package: "@stepkit/authoring",
       symbol: "defineWorkflow",
       deprecatedSince: "1.0.0",
-      message: "sdk deprecation.",
+      message: "authoring deprecation.",
     };
-    const manifest: DeprecationManifest = [coreEntry, sdkEntry];
+    const manifest: DeprecationManifest = [coreEntry, authoringEntry];
 
     expect(findDeprecationsAsOf(manifest, { package: "@stepkit/core", version: "1.0.0" })).toEqual([
       { ...coreEntry, severity: "warning" },
     ]);
-    expect(findDeprecationsAsOf(manifest, { package: "@stepkit/sdk", version: "1.0.0" })).toEqual([
-      { ...sdkEntry, severity: "warning" },
-    ]);
+    expect(
+      findDeprecationsAsOf(manifest, { package: "@stepkit/authoring", version: "1.0.0" }),
+    ).toEqual([{ ...authoringEntry, severity: "warning" }]);
   });
 
   it("cumulatively surfaces every deprecation crossed in a multi-major jump in a single call", () => {

@@ -16,7 +16,7 @@ describe("rewritePackageJsonDependencies", () => {
         {
           dependencies: {
             "@stepkit/core": "^1.0.0",
-            "@stepkit/sdk": "~1.0.0",
+            "@stepkit/authoring": "~1.0.0",
           },
           devDependencies: {
             "@stepkit/cli": "1.0.0",
@@ -32,7 +32,11 @@ describe("rewritePackageJsonDependencies", () => {
       cwd,
       updates: [
         { packageName: "@stepkit/core", targetVersion: "2.0.0", dependencySection: "dependencies" },
-        { packageName: "@stepkit/sdk", targetVersion: "2.0.0", dependencySection: "dependencies" },
+        {
+          packageName: "@stepkit/authoring",
+          targetVersion: "2.0.0",
+          dependencySection: "dependencies",
+        },
         {
           packageName: "@stepkit/cli",
           targetVersion: "2.0.0",
@@ -46,7 +50,7 @@ describe("rewritePackageJsonDependencies", () => {
       devDependencies: Record<string, string>;
     };
     expect(rewritten.dependencies["@stepkit/core"]).toBe("^2.0.0");
-    expect(rewritten.dependencies["@stepkit/sdk"]).toBe("~2.0.0");
+    expect(rewritten.dependencies["@stepkit/authoring"]).toBe("~2.0.0");
     expect(rewritten.devDependencies["@stepkit/cli"]).toBe("2.0.0");
   });
 

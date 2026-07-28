@@ -1,5 +1,5 @@
 {
-  "name": "@stepkit/sdk",
+  "name": "@stepkit/authoring",
   "version": "0.0.0",
   "description": "TypeScript authoring helpers for StepKit workflows.",
   "license": "Apache-2.0",

@@ -11,7 +11,7 @@ Use injected `.pi/rules` context as the first source of project-specific guidanc
 ```text
 ├── packages/             # Publishable workspace packages
 │   ├── core/             # Framework-neutral runtime, shapes, continuation engine, events, agent targeting, provider CLI registry
-│   ├── sdk/              # TypeScript authoring helpers layered over core primitives
+│   ├── authoring/        # TypeScript authoring helpers layered over core primitives
 │   ├── cli/              # `stepkit` workflow discovery, skill checks, config loading, and local execution command
 │   ├── testkit/          # Workflow testing utilities package surface
 │   └── dashboard/        # Svelte/Vite local workflow run observability UI

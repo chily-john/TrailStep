@@ -1,4 +1,4 @@
-import { jsonSchema } from "@stepkit/sdk";
+import { jsonSchema } from "@stepkit/authoring";
 
 import { REVIEW_PASS_THRESHOLD } from "./constants.js";
 

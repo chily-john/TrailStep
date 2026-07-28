@@ -1,4 +1,4 @@
-import { shape } from "@stepkit/sdk";
+import { shape } from "@stepkit/authoring";
 
 export interface TakeItAwayInput extends Record<string, unknown> {
   readonly conversation: string;

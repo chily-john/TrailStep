@@ -111,7 +111,7 @@ export function verifyPackageMetadata() {
 
   const libraryPackages = [
     { directory: "core", name: "@stepkit/core" },
-    { directory: "sdk", name: "@stepkit/sdk" },
+    { directory: "authoring", name: "@stepkit/authoring" },
     { directory: "testkit", name: "@stepkit/testkit" },
   ];
 
@@ -166,16 +166,16 @@ export function verifyPackageMetadata() {
     assert.equal(packageMetadata.exports?.["."].import, "./dist/index.js");
     assert.equal(packageMetadata.exports?.["."].types, "./dist/index.d.ts");
 
-    if (libraryPackage.name === "@stepkit/sdk") {
+    if (libraryPackage.name === "@stepkit/authoring") {
       assert.equal(
         packageMetadata.dependencies?.["@stepkit/core"],
         "workspace:*",
-        "@stepkit/sdk must retain a workspace dependency on @stepkit/core for builds",
+        "@stepkit/authoring must retain a workspace dependency on @stepkit/core for builds",
       );
       assert.equal(
         packageMetadata.peerDependencies?.["@stepkit/core"],
         "^0.0.0",
-        "@stepkit/sdk must declare @stepkit/core peer compatibility",
+        "@stepkit/authoring must declare @stepkit/core peer compatibility",
       );
     }
 

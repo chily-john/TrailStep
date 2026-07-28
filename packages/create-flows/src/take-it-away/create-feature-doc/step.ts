@@ -1,4 +1,4 @@
-import { Document, state, step } from "@stepkit/sdk";
+import { Document, state, step } from "@stepkit/authoring";
 import { createOrImproveImplementationDocStep } from "../create-or-improve-implementation-doc/step.js";
 import { createFeatureDocPrompt } from "./prompt.js";
 

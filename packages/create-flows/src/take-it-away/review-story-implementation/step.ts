@@ -1,5 +1,5 @@
-import type { Document } from "@stepkit/sdk";
-import { done, fail, state, step } from "@stepkit/sdk";
+import type { Document } from "@stepkit/authoring";
+import { done, fail, state, step } from "@stepkit/authoring";
 import { implementStoryStep } from "../implement-story/step.js";
 import { MAX_STORY_REVIEW_ATTEMPTS } from "../shared/constants.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";

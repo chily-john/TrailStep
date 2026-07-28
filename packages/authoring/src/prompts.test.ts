@@ -6,9 +6,9 @@ import { type AgentAdapterObject, jsonSchema, runWorkflow } from "@stepkit/core"
 import { describe, expect, it } from "vitest";
 import { defineWorkflow, done, step } from "./index.js";
 
-describe("SDK agent step prompt rendering", () => {
+describe("authoring agent step prompt rendering", () => {
   it("splits an agent prompt into adapter messages before a custom adapter is called", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-sdk-agent-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-agent-prompt-"));
     const schema = jsonSchema<{ value: string }>({
       type: "object",
       properties: { value: { type: "string" } },
@@ -45,7 +45,7 @@ describe("SDK agent step prompt rendering", () => {
     const result = await runWorkflow({
       workflow,
       input: { value: "input" },
-      runName: "sdk-agent-prompt",
+      runName: "authoring-agent-prompt",
       cwd,
     });
 
@@ -57,7 +57,7 @@ describe("SDK agent step prompt rendering", () => {
   });
 
   it("defines an agent step whose prompt function renders from live input", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-sdk-agent-function-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-agent-function-prompt-"));
     const inputShape = jsonSchema<{ topic: string }>({
       type: "object",
       properties: { topic: { type: "string" } },
@@ -100,7 +100,7 @@ describe("SDK agent step prompt rendering", () => {
     const result = await runWorkflow({
       workflow,
       input: { topic: "live input" },
-      runName: "sdk-agent-function-prompt",
+      runName: "authoring-agent-function-prompt",
       cwd,
     });
 

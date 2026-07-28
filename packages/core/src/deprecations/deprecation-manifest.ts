@@ -8,7 +8,7 @@ import type {
 } from "./deprecations.types.js";
 
 // Scaffolding only — genuinely empty. No deprecation exists yet in this codebase. Real entries get
-// appended here the day a real breaking change to @stepkit/core or @stepkit/sdk's authoring API
+// appended here the day a real breaking change to @stepkit/core or @stepkit/authoring's authoring API
 // actually happens. Do not add a fake/example entry to this array.
 export const deprecationManifest: DeprecationManifest = [];
 

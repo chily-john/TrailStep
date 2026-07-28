@@ -1,4 +1,4 @@
-import { fail, step } from "@stepkit/sdk";
+import { fail, step } from "@stepkit/authoring";
 import { reviewStoryImplementationStep } from "../review-story-implementation/step.js";
 import {
   type ImplementStoryInput,

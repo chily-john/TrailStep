@@ -42,17 +42,17 @@ describe("fetchNpmPackageMetadata", () => {
     await expect(
       fetchNpmPackageMetadata({
         cwd: "/repo",
-        packageName: "@stepkit/sdk",
+        packageName: "@stepkit/authoring",
         packageCommandRunner: async () => ({ exitCode: 1, stderr: "registry unavailable" }),
       }),
     ).rejects.toThrow(NpmRegistryError);
     await expect(
       fetchNpmPackageMetadata({
         cwd: "/repo",
-        packageName: "@stepkit/sdk",
+        packageName: "@stepkit/authoring",
         packageCommandRunner: async () => ({ exitCode: 1, stderr: "registry unavailable" }),
       }),
-    ).rejects.toThrow(/@stepkit\/sdk.*registry unavailable/s);
+    ).rejects.toThrow(/@stepkit\/authoring.*registry unavailable/s);
   });
 
   it("reports malformed npm view JSON clearly", async () => {

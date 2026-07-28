@@ -1,8 +1,8 @@
-export type DeprecationTargetPackage = "@stepkit/core" | "@stepkit/sdk";
+export type DeprecationTargetPackage = "@stepkit/core" | "@stepkit/authoring";
 
 export interface DeprecationEntry {
   /** Which published package exports this symbol. A symbol re-exported by both (like `step`,
-   * which sdk re-exports from core) needs one entry per package it's importable from, since a
+   * which authoring re-exports from core) needs one entry per package it's importable from, since a
    * workflow author might import it from either. */
   readonly package: DeprecationTargetPackage;
   /** The exact named export identifier, e.g. "step". Matched literally against import statement

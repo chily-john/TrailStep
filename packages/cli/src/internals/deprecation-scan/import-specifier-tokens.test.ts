@@ -16,10 +16,10 @@ describe("extractStepKitImportTokens", () => {
     expect(tokens.every((token) => token.packageName === "@stepkit/core")).toBe(true);
   });
 
-  it("extracts named imports bound to @stepkit/sdk", () => {
-    const tokens = extractStepKitImportTokens('import { step } from "@stepkit/sdk";\n');
+  it("extracts named imports bound to @stepkit/authoring", () => {
+    const tokens = extractStepKitImportTokens('import { step } from "@stepkit/authoring";\n');
 
-    expect(tokens).toEqual([{ packageName: "@stepkit/sdk", symbol: "step", offset: 9 }]);
+    expect(tokens).toEqual([{ packageName: "@stepkit/authoring", symbol: "step", offset: 9 }]);
   });
 
   it("ignores imports from unrelated packages", () => {

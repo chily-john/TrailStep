@@ -1,5 +1,5 @@
-import type { Document } from "@stepkit/sdk";
-import { loadFragments, promptSections, section } from "@stepkit/sdk";
+import type { Document } from "@stepkit/authoring";
+import { loadFragments, promptSections, section } from "@stepkit/authoring";
 
 const fragments = loadFragments(import.meta.dirname, {
   methodology: "../shared/feature-methodology.md",

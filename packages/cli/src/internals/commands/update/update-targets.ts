@@ -9,7 +9,7 @@ import {
   type NpmPackageMetadata,
 } from "../../package-manager/npm-registry.js";
 
-const stepkitPackageNames = ["@stepkit/core", "@stepkit/sdk", "@stepkit/cli"] as const;
+const stepkitPackageNames = ["@stepkit/core", "@stepkit/authoring", "@stepkit/cli"] as const;
 
 type StepkitPackageName = (typeof stepkitPackageNames)[number];
 
@@ -48,9 +48,9 @@ export async function resolveStepKitSelfUpdateTargets({
     return { targets: [] };
   }
 
-  const [coreMetadata, sdkMetadata, cliMetadata] = await Promise.all([
+  const [coreMetadata, authoringMetadata, cliMetadata] = await Promise.all([
     fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/core", packageCommandRunner }),
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/sdk", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/authoring", packageCommandRunner }),
     fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/cli", packageCommandRunner }),
   ]);
 
@@ -59,10 +59,10 @@ export async function resolveStepKitSelfUpdateTargets({
     throw new UpdateTargetResolutionError("No published @stepkit/core versions were found.");
   }
 
-  const targetSdk = selectLatestPeerCompatibleVersion(sdkMetadata, targetCore);
-  if (!targetSdk) {
+  const targetAuthoring = selectLatestPeerCompatibleVersion(authoringMetadata, targetCore);
+  if (!targetAuthoring) {
     throw new UpdateTargetResolutionError(
-      `No @stepkit/sdk version has a @stepkit/core peer dependency compatible with ${targetCore}.`,
+      `No @stepkit/authoring version has a @stepkit/core peer dependency compatible with ${targetCore}.`,
     );
   }
 
@@ -76,7 +76,7 @@ export async function resolveStepKitSelfUpdateTargets({
   return {
     targets: [
       createTarget("@stepkit/core", current, targetCore),
-      createTarget("@stepkit/sdk", current, targetSdk),
+      createTarget("@stepkit/authoring", current, targetAuthoring),
       createTarget("@stepkit/cli", current, targetCli),
     ].filter((target) => target.currentRange !== ""),
   };

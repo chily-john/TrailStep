@@ -16,7 +16,7 @@ describe("updateCommand", () => {
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
       packageJsonPath,
-      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
@@ -31,7 +31,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { removedStep } from '@stepkit/sdk';\nexport const review = {};\n",
+      "import { removedStep } from '@stepkit/authoring';\nexport const review = {};\n",
       "utf8",
     );
     const originalPackageJson = await readFile(packageJsonPath, "utf8");
@@ -43,11 +43,11 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitOne,
-      deprecationManifest: [removedSdkSymbol],
+      deprecationManifest: [removedAuthoringSymbol],
     });
 
     expect(exitCode).toBe(1);
-    expect(lines.join("\n")).toContain("@stepkit/sdk/removedStep");
+    expect(lines.join("\n")).toContain("@stepkit/authoring/removedStep");
     expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
     expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
   });
@@ -61,7 +61,7 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
@@ -76,7 +76,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { removedStep } from '@stepkit/sdk';\nexport const review = {};\n",
+      "import { removedStep } from '@stepkit/authoring';\nexport const review = {};\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -86,7 +86,7 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: latestStepkitOne,
-      deprecationManifest: [removedSdkSymbol],
+      deprecationManifest: [removedAuthoringSymbol],
     });
 
     expect(exitCode).toBe(0);
@@ -101,7 +101,7 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
@@ -116,7 +116,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { oldStep } from '@stepkit/sdk';\nexport const review = {};\n",
+      "import { oldStep } from '@stepkit/authoring';\nexport const review = {};\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -126,11 +126,11 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: latestStepkitOne,
-      deprecationManifest: [{ ...removedSdkSymbol, symbol: "oldStep", removedIn: undefined }],
+      deprecationManifest: [{ ...removedAuthoringSymbol, symbol: "oldStep", removedIn: undefined }],
     });
 
     expect(exitCode).toBe(0);
-    expect(lines.join("\n")).toContain("warning @stepkit/sdk/oldStep");
+    expect(lines.join("\n")).toContain("warning @stepkit/authoring/oldStep");
     expect(lines.join("\n")).toContain("Planned StepKit package updates:");
   });
 
@@ -142,7 +142,7 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
@@ -152,7 +152,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, "workflows", "review.mjs"),
-      "import { removedStep } from '@stepkit/sdk';\nexport const review = {};\n",
+      "import { removedStep } from '@stepkit/authoring';\nexport const review = {};\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -163,7 +163,7 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestStepkitOne,
-      deprecationManifest: [removedSdkSymbol],
+      deprecationManifest: [removedAuthoringSymbol],
     });
 
     expect(exitCode).toBe(1);
@@ -181,7 +181,7 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
@@ -196,7 +196,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { removedStep, removedWorkflow } from '@stepkit/sdk';\nexport const review = {};\n",
+      "import { removedStep, removedWorkflow } from '@stepkit/authoring';\nexport const review = {};\n",
       "utf8",
     );
     const output: string[] = [];
@@ -209,7 +209,10 @@ describe("updateCommand", () => {
         writeError: (line) => output.push(`error:${line}`),
       },
       packageCommandRunner: latestStepkitOne,
-      deprecationManifest: [removedSdkSymbol, { ...removedSdkSymbol, symbol: "removedWorkflow" }],
+      deprecationManifest: [
+        removedAuthoringSymbol,
+        { ...removedAuthoringSymbol, symbol: "removedWorkflow" },
+      ],
     });
 
     const rendered = output.join("\n");
@@ -247,7 +250,7 @@ describe("updateCommand", () => {
       JSON.stringify({
         dependencies: {
           "@stepkit/core": "^0.0.1",
-          "@stepkit/sdk": "^0.0.1",
+          "@stepkit/authoring": "^0.0.1",
           "@stepkit/cli": "^0.0.1",
         },
       }),
@@ -263,7 +266,9 @@ describe("updateCommand", () => {
       packageCommandRunner: async (request) => {
         const metadata: Record<string, unknown> = {
           "@stepkit/core": [{ version: "1.0.0" }],
-          "@stepkit/sdk": [{ version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
+          "@stepkit/authoring": [
+            { version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } },
+          ],
           "@stepkit/cli": [{ version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
         };
         const packageName = String(request.args[1]).replace(/@\*$/u, "");
@@ -330,14 +335,14 @@ describe("updateCommand", () => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
-    await mkdir(join(cwd, "node_modules", "@stepkit", "sdk"), { recursive: true });
+    await mkdir(join(cwd, "node_modules", "@stepkit", "authoring"), { recursive: true });
     await mkdir(join(packageDir, "dist"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
       packageJsonPath,
       JSON.stringify({
         dependencies: {
-          "@stepkit/sdk": "1.0.0",
+          "@stepkit/authoring": "1.0.0",
           "@acme/workflows": "^1.0.0",
         },
       }),
@@ -349,8 +354,8 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, "node_modules", "@stepkit", "sdk", "package.json"),
-      JSON.stringify({ name: "@stepkit/sdk", version: "1.0.0" }),
+      join(cwd, "node_modules", "@stepkit", "authoring", "package.json"),
+      JSON.stringify({ name: "@stepkit/authoring", version: "1.0.0" }),
       "utf8",
     );
     await writeFile(
@@ -374,7 +379,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "dist", "cleanup.mjs"),
-      "import { removedStep } from '@stepkit/sdk';\nexport const cleanup = {};\n",
+      "import { removedStep } from '@stepkit/authoring';\nexport const cleanup = {};\n",
       "utf8",
     );
     const originalPackageJson = await readFile(packageJsonPath, "utf8");
@@ -386,12 +391,12 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestWorkflowPackage,
-      deprecationManifest: [removedSdkSymbol],
+      deprecationManifest: [removedAuthoringSymbol],
     });
 
     expect(blockedExitCode).toBe(1);
     expect(lines.join("\n")).toContain("dist/cleanup.mjs");
-    expect(lines.join("\n")).toContain("@stepkit/sdk/removedStep");
+    expect(lines.join("\n")).toContain("@stepkit/authoring/removedStep");
     expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
     expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
 
@@ -401,7 +406,7 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: (line) => forceLines.push(line), writeError: () => undefined },
       packageCommandRunner: latestWorkflowPackage,
-      deprecationManifest: [removedSdkSymbol],
+      deprecationManifest: [removedAuthoringSymbol],
     });
 
     expect(forceExitCode).toBe(0);
@@ -413,16 +418,16 @@ describe("updateCommand", () => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
     await mkdir(packageDir, { recursive: true });
-    await mkdir(join(cwd, "node_modules", "@stepkit", "sdk"), { recursive: true });
+    await mkdir(join(cwd, "node_modules", "@stepkit", "authoring"), { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@stepkit/core": "0.1.0", "@stepkit/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
-      join(cwd, "node_modules", "@stepkit", "sdk", "package.json"),
-      JSON.stringify({ name: "@stepkit/sdk", version: "0.1.0" }),
+      join(cwd, "node_modules", "@stepkit", "authoring", "package.json"),
+      JSON.stringify({ name: "@stepkit/authoring", version: "0.1.0" }),
       "utf8",
     );
     await writeFile(
@@ -437,7 +442,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { futureRemoval } from '@stepkit/sdk';\nexport const review = {};\n",
+      "import { futureRemoval } from '@stepkit/authoring';\nexport const review = {};\n",
       "utf8",
     );
     const errors: string[] = [];
@@ -449,7 +454,7 @@ describe("updateCommand", () => {
       packageCommandRunner: latestStepkitTwo,
       deprecationManifest: [
         {
-          ...removedSdkSymbol,
+          ...removedAuthoringSymbol,
           symbol: "futureRemoval",
           deprecatedSince: "1.5.0",
           removedIn: "2.0.0",
@@ -467,7 +472,7 @@ describe("updateCommand", () => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
-    await mkdir(join(cwd, "node_modules", "@stepkit", "sdk"), { recursive: true });
+    await mkdir(join(cwd, "node_modules", "@stepkit", "authoring"), { recursive: true });
     await mkdir(join(packageDir, "dist"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -475,15 +480,15 @@ describe("updateCommand", () => {
       JSON.stringify({
         dependencies: {
           "@stepkit/core": "1.0.0",
-          "@stepkit/sdk": "1.0.0",
+          "@stepkit/authoring": "1.0.0",
           "@acme/workflows": "1.0.0",
         },
       }),
       "utf8",
     );
     await writeFile(
-      join(cwd, "node_modules", "@stepkit", "sdk", "package.json"),
-      JSON.stringify({ name: "@stepkit/sdk", version: "1.0.0" }),
+      join(cwd, "node_modules", "@stepkit", "authoring", "package.json"),
+      JSON.stringify({ name: "@stepkit/authoring", version: "1.0.0" }),
       "utf8",
     );
     await writeFile(
@@ -512,7 +517,7 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(packageDir, "dist", "cleanup.mjs"),
-      "import { futureRemoval } from '@stepkit/sdk';\nexport const cleanup = {};\n",
+      "import { futureRemoval } from '@stepkit/authoring';\nexport const cleanup = {};\n",
       "utf8",
     );
     const originalPackageJson = await readFile(packageJsonPath, "utf8");
@@ -526,7 +531,7 @@ describe("updateCommand", () => {
       packageCommandRunner: latestStepkitTwoAndWorkflowPackage,
       deprecationManifest: [
         {
-          ...removedSdkSymbol,
+          ...removedAuthoringSymbol,
           symbol: "futureRemoval",
           deprecatedSince: "1.5.0",
           removedIn: "2.0.0",
@@ -553,7 +558,7 @@ describe("updateCommand", () => {
         {
           dependencies: {
             "@stepkit/core": "^1.0.0",
-            "@stepkit/sdk": "~1.0.0",
+            "@stepkit/authoring": "~1.0.0",
             "@acme/workflows": "^1.0.0",
           },
         },
@@ -590,7 +595,7 @@ describe("updateCommand", () => {
     expect(lines.join("\n")).toContain("Planned StepKit package updates:");
     expect(lines.join("\n")).toContain("Planned workflow package updates:");
     expect(packageJson.dependencies["@stepkit/core"]).toBe("^2.0.0");
-    expect(packageJson.dependencies["@stepkit/sdk"]).toBe("~2.0.0");
+    expect(packageJson.dependencies["@stepkit/authoring"]).toBe("~2.0.0");
     expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
     expect(installRequests).toEqual([{ command: "pnpm", args: ["install"], cwd }]);
   });
@@ -672,7 +677,7 @@ describe("updateCommand", () => {
     await writeFile(
       join(cwd, "package.json"),
       `${JSON.stringify(
-        { dependencies: { "@stepkit/core": "^1.0.0", "@stepkit/sdk": "~1.0.0" } },
+        { dependencies: { "@stepkit/core": "^1.0.0", "@stepkit/authoring": "~1.0.0" } },
         null,
         2,
       )}\n`,
@@ -700,7 +705,7 @@ describe("updateCommand", () => {
     expect(exitCode).toBe(0);
     expect(lines.join("\n")).toContain("@stepkit/core: ^1.0.0 -> 2.0.0");
     expect(packageJson.dependencies["@stepkit/core"]).toBe("^2.0.0");
-    expect(packageJson.dependencies["@stepkit/sdk"]).toBe("~2.0.0");
+    expect(packageJson.dependencies["@stepkit/authoring"]).toBe("~2.0.0");
     expect(installRequests).toEqual([{ command: "pnpm", args: ["install"], cwd }]);
   });
 
@@ -856,8 +861,8 @@ describe("updateCommand", () => {
   });
 });
 
-const removedSdkSymbol = {
-  packageName: "@stepkit/sdk",
+const removedAuthoringSymbol = {
+  packageName: "@stepkit/authoring",
   symbol: "removedStep",
   deprecatedSince: "0.5.0",
   removedIn: "1.0.0",
@@ -876,7 +881,7 @@ async function latestWorkflowPackage(request: { readonly args: readonly string[]
 async function latestStepkitTwo(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@stepkit/core": [{ version: "2.0.0" }],
-    "@stepkit/sdk": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
+    "@stepkit/authoring": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
     "@stepkit/cli": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");
@@ -894,7 +899,7 @@ async function latestStepkitTwoAndWorkflowPackage(request: { readonly args: read
 async function latestStepkitOne(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@stepkit/core": [{ version: "1.0.0" }],
-    "@stepkit/sdk": [{ version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
+    "@stepkit/authoring": [{ version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
     "@stepkit/cli": [{ version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");

@@ -6,7 +6,7 @@ import type { DeprecationFinding } from "./deprecation-scanner.js";
 function baseFinding(overrides: Partial<DeprecationFinding> = {}): DeprecationFinding {
   return {
     sourceFile: "C:\\repo\\workflows\\review.mjs",
-    packageName: "@stepkit/sdk",
+    packageName: "@stepkit/authoring",
     symbol: "oldStep",
     severity: "warning",
     message: "oldStep is deprecated.",
@@ -21,7 +21,7 @@ function baseFinding(overrides: Partial<DeprecationFinding> = {}): DeprecationFi
 describe("formatDeprecationFinding", () => {
   it("pins the exact output for a warning finding", () => {
     expect(formatDeprecationFinding(baseFinding())).toBe(
-      "warning @stepkit/sdk/oldStep C:/repo/workflows/review.mjs:3:10 oldStep is deprecated.",
+      "warning @stepkit/authoring/oldStep C:/repo/workflows/review.mjs:3:10 oldStep is deprecated.",
     );
   });
 
@@ -35,13 +35,13 @@ describe("formatDeprecationFinding", () => {
         }),
       ),
     ).toBe(
-      "blocking @stepkit/sdk/removedStep C:/repo/workflows/review.mjs:3:10 removedStep was removed.",
+      "blocking @stepkit/authoring/removedStep C:/repo/workflows/review.mjs:3:10 removedStep was removed.",
     );
   });
 
   it("appends a Replacement clause when a replacement suggestion is present", () => {
     expect(formatDeprecationFinding(baseFinding({ replacement: "step" }))).toBe(
-      "warning @stepkit/sdk/oldStep C:/repo/workflows/review.mjs:3:10 oldStep is deprecated. Replacement: step.",
+      "warning @stepkit/authoring/oldStep C:/repo/workflows/review.mjs:3:10 oldStep is deprecated. Replacement: step.",
     );
   });
 

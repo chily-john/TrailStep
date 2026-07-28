@@ -12,7 +12,7 @@ async function writeRootPackageJson(cwd: string) {
     JSON.stringify(
       {
         dependencies: { "@stepkit/core": "^0.0.1" },
-        devDependencies: { "@stepkit/sdk": "~0.0.1", "@stepkit/cli": "0.0.1" },
+        devDependencies: { "@stepkit/authoring": "~0.0.1", "@stepkit/cli": "0.0.1" },
       },
       null,
       2,
@@ -30,7 +30,9 @@ function registryRunner(metadata: Record<string, unknown>, requests: PackageComm
 }
 
 describe("resolveStepKitSelfUpdateTargets", () => {
-  it("selects the latest stable core and matching stable SDK and CLI peers", async ({ task }) => {
+  it("selects the latest stable core and matching stable authoring and CLI peers", async ({
+    task,
+  }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
@@ -38,7 +40,7 @@ describe("resolveStepKitSelfUpdateTargets", () => {
       cwd,
       packageCommandRunner: registryRunner({
         "@stepkit/core": [{ version: "1.0.0" }, { version: "1.1.0-beta.1" }, { version: "1.1.0" }],
-        "@stepkit/sdk": [
+        "@stepkit/authoring": [
           { version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } },
           { version: "1.1.0", peerDependencies: { "@stepkit/core": "^1.1.0" } },
           { version: "1.2.0", peerDependencies: { "@stepkit/core": "^2.0.0" } },
@@ -59,7 +61,7 @@ describe("resolveStepKitSelfUpdateTargets", () => {
         dependencySection: "dependencies",
       },
       {
-        packageName: "@stepkit/sdk",
+        packageName: "@stepkit/authoring",
         currentRange: "~0.0.1",
         targetVersion: "1.1.0",
         dependencySection: "devDependencies",
@@ -73,7 +75,9 @@ describe("resolveStepKitSelfUpdateTargets", () => {
     ]);
   });
 
-  it("selects SDK and CLI versions using npm semver range compatibility", async ({ task }) => {
+  it("selects authoring and CLI versions using npm semver range compatibility", async ({
+    task,
+  }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
@@ -81,7 +85,7 @@ describe("resolveStepKitSelfUpdateTargets", () => {
       cwd,
       packageCommandRunner: registryRunner({
         "@stepkit/core": [{ version: "1.5.0" }],
-        "@stepkit/sdk": [
+        "@stepkit/authoring": [
           { version: "1.4.0", peerDependencies: { "@stepkit/core": "1.4.x" } },
           { version: "1.5.0", peerDependencies: { "@stepkit/core": ">=1.0.0 <2.0.0" } },
           { version: "1.6.0", peerDependencies: { "@stepkit/core": "~1.6.0" } },
@@ -102,7 +106,7 @@ describe("resolveStepKitSelfUpdateTargets", () => {
         dependencySection: "dependencies",
       },
       {
-        packageName: "@stepkit/sdk",
+        packageName: "@stepkit/authoring",
         currentRange: "~0.0.1",
         targetVersion: "1.5.0",
         dependencySection: "devDependencies",
@@ -116,7 +120,7 @@ describe("resolveStepKitSelfUpdateTargets", () => {
     ]);
   });
 
-  it("ignores prerelease SDK and CLI candidates when compatible stable versions exist", async ({
+  it("ignores prerelease authoring and CLI candidates when compatible stable versions exist", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
@@ -126,7 +130,7 @@ describe("resolveStepKitSelfUpdateTargets", () => {
       cwd,
       packageCommandRunner: registryRunner({
         "@stepkit/core": [{ version: "1.5.0" }],
-        "@stepkit/sdk": [
+        "@stepkit/authoring": [
           { version: "1.5.0", peerDependencies: { "@stepkit/core": "^1.5.0" } },
           { version: "1.6.0-beta.1", peerDependencies: { "@stepkit/core": "^1.5.0" } },
         ],
@@ -139,12 +143,12 @@ describe("resolveStepKitSelfUpdateTargets", () => {
 
     expect(plan.targets.map((target) => [target.packageName, target.targetVersion])).toEqual([
       ["@stepkit/core", "1.5.0"],
-      ["@stepkit/sdk", "1.5.0"],
+      ["@stepkit/authoring", "1.5.0"],
       ["@stepkit/cli", "1.5.0"],
     ]);
   });
 
-  it("blocks when no SDK version peer range satisfies the target core", async ({ task }) => {
+  it("blocks when no authoring version peer range satisfies the target core", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
@@ -153,7 +157,9 @@ describe("resolveStepKitSelfUpdateTargets", () => {
         cwd,
         packageCommandRunner: registryRunner({
           "@stepkit/core": [{ version: "2.0.0" }],
-          "@stepkit/sdk": [{ version: "1.9.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
+          "@stepkit/authoring": [
+            { version: "1.9.0", peerDependencies: { "@stepkit/core": "^1.0.0" } },
+          ],
           "@stepkit/cli": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
         }),
       }),
@@ -169,7 +175,9 @@ describe("resolveStepKitSelfUpdateTargets", () => {
         cwd,
         packageCommandRunner: registryRunner({
           "@stepkit/core": [{ version: "2.0.0" }],
-          "@stepkit/sdk": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
+          "@stepkit/authoring": [
+            { version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } },
+          ],
           "@stepkit/cli": [{ version: "1.9.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
         }),
       }),

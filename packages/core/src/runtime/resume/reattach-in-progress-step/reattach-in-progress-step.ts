@@ -148,7 +148,10 @@ export async function reattachInProgressStep<
   }
 
   const nextNode = await withStepContext(anchor.stepId, artifactPaths.stepDir, async () =>
-    node.onOutput(outputSchema.assert(reattached.output, `step ${node.config.id} output`)),
+    node.onOutput(
+      outputSchema.assert(reattached.output, `step ${node.config.id} output`),
+      node.config.input,
+    ),
   );
 
   return {

@@ -29,16 +29,16 @@ export function step(config: StepConfig): {
     source: AgentPrompt<TInput> | PromptTemplateSource,
     options?: PromptOptions<TOutput>,
   ): {
-    do(onOutput: StepContinuation<TOutput>): StepFactory<TInput, TOutput>;
+    do(onOutput: StepContinuation<TInput, TOutput>): StepFactory<TInput, TOutput>;
   };
   do<TInput extends PlainObject = PlainObject>(
-    onOutput: StepContinuation<TInput>,
+    onOutput: StepContinuation<TInput, TInput>,
   ): StepFactory<TInput, TInput>;
 } {
   const buildFactory = <TInput extends PlainObject, TStepOutput extends PlainObject>(
     prompt: AgentPrompt<TInput> | PromptTemplateSource | undefined,
     promptOptions: PromptOptions<TStepOutput> | undefined,
-    onOutput: StepContinuation<TStepOutput>,
+    onOutput: StepContinuation<TInput, TStepOutput>,
     onError?: StepErrorContinuation,
   ): StepFactory<TInput, TStepOutput> => {
     const factory = ((input?: TInput): StepNode<TInput, TStepOutput> => ({

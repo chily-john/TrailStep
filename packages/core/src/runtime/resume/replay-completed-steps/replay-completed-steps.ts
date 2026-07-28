@@ -98,7 +98,7 @@ export async function replayCompletedSteps<
       }).stepDir;
       const completedNode = node;
       node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        completedNode.onOutput(validatedOutput),
+        completedNode.onOutput(validatedOutput, completedNode.config.input),
       );
     } else {
       const stepDir = resolveStepArtifactPaths({
@@ -108,7 +108,7 @@ export async function replayCompletedSteps<
       }).stepDir;
       const completedNode = node;
       node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        completedNode.onOutput(completedNode.config.input),
+        completedNode.onOutput(completedNode.config.input, completedNode.config.input),
       );
     }
   }

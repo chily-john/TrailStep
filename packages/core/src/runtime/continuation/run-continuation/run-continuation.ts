@@ -140,7 +140,7 @@ export async function runContinuation(
             paramForNext = config.input;
           }
 
-          const nextNode = await stepNode.onOutput(paramForNext);
+          const nextNode = await stepNode.onOutput(paramForNext, config.input);
 
           if (!hasPrompt) {
             // A no-prompt step's .do(...) IS its work — only report completion once it has

@@ -52,8 +52,11 @@ export interface ContinuationStepConfig<
   readonly maxSubPrompts?: number;
 }
 
-export type StepContinuation<TOutput extends PlainObject = PlainObject> = {
-  bivarianceHack(output: TOutput): ContinuationResult | Promise<ContinuationResult>;
+export type StepContinuation<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = {
+  bivarianceHack(output: TOutput, input: TInput): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
 
 export type StepErrorContinuation = {
@@ -66,7 +69,8 @@ export interface StepNode<
 > {
   readonly kind: "step";
   readonly config: ContinuationStepConfig<TInput, TOutput>;
-  readonly onOutput: StepContinuation<TOutput>;
+  /** Receives the step's own input as the second argument, alongside its output as the first. */
+  readonly onOutput: StepContinuation<TInput, TOutput>;
   readonly onError?: StepErrorContinuation;
 }
 

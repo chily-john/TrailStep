@@ -94,7 +94,7 @@ export async function importDirectWorkflowModule(path: string): Promise<Record<s
   try {
     if (isTypeScriptSourcePath(path)) {
       return (await tsImport(pathToFileURL(path).href, {
-        parentURL: pathToFileURL(`${process.cwd()}/`).href,
+        parentURL: pathToFileURL(path).href,
       })) as Record<string, unknown>;
     }
 

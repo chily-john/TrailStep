@@ -3,3 +3,4 @@
 # core.autocrlf=true rewrite tracked LF files to CRLF on disk, which biome
 # (formatter.lineEnding defaults to "lf") then reports as formatting diffs.
 * text=auto eol=lf
+graphify-out/graph.json merge=graphify

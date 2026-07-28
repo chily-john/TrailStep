@@ -1,12 +1,9 @@
 import type { Document } from "@stepkit/authoring";
-import { list, loadFragments, promptSections, section } from "@stepkit/authoring";
+import { list, promptSections, section } from "@stepkit/authoring";
 import type { ReviewResult } from "../shared/review-schema.js";
-
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  architectureGuidance: "../shared/project-architecture-guidance.md",
-  implementationDocFormat: "../shared/implementation-doc-format.md",
-});
+import implementationDocFormat from "../shared/implementation-doc-format.md";
+import methodology from "../shared/feature-methodology.md";
+import architectureGuidance from "../shared/project-architecture-guidance.md";
 
 export interface CreateOrImproveImplementationDocInput extends Record<string, unknown> {
   readonly featureDoc: Document;
@@ -28,9 +25,9 @@ export function createOrImproveImplementationDocPrompt({
         );
 
   return promptSections(
-    fragments.methodology,
-    fragments.architectureGuidance,
-    fragments.implementationDocFormat,
+    methodology,
+    architectureGuidance,
+    implementationDocFormat,
     section("Feature doc", input.featureDoc.content),
     section(
       "Task",

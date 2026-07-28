@@ -1,18 +1,8 @@
-import {
-  type Document,
-  jsonSchema,
-  list,
-  loadFragments,
-  promptSections,
-  section,
-} from "@stepkit/authoring";
+import { type Document, jsonSchema, list, promptSections, section } from "@stepkit/authoring";
 import type { ReviewResult } from "../shared/review-schema.js";
-
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  architectureGuidance: "../shared/project-architecture-guidance.md",
-  storyContract: "../shared/story-implementation-contract.md",
-});
+import methodology from "../shared/feature-methodology.md";
+import architectureGuidance from "../shared/project-architecture-guidance.md";
+import storyContract from "../shared/story-implementation-contract.md";
 
 export interface ImplementStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -50,9 +40,9 @@ export function implementStoryPrompt({ input }: { readonly input: ImplementStory
         );
 
   return promptSections(
-    fragments.methodology,
-    fragments.architectureGuidance,
-    fragments.storyContract,
+    methodology,
+    architectureGuidance,
+    storyContract,
     section("Story", input.currentStory.content),
     section(
       "Task",

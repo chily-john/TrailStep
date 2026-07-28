@@ -688,10 +688,15 @@ async function listAddWorkflowCandidates(
   source: string,
   cwd: string,
 ): Promise<readonly AddWorkflowCandidate[]> {
-  if (await isBundleSource(source, cwd)) {
-    return listBundleAddWorkflowCandidates(source, cwd);
+  const candidates = (await isBundleSource(source, cwd))
+    ? await listBundleAddWorkflowCandidates(source, cwd)
+    : await listDirectAddWorkflowCandidates(source, cwd);
+
+  if (candidates.length === 0) {
+    throw new WorkflowResolutionError(`No workflows found in ${source}.`);
   }
-  return listDirectAddWorkflowCandidates(source, cwd);
+
+  return candidates;
 }
 
 async function listBundleAddWorkflowCandidates(

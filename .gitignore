@@ -4,6 +4,7 @@ coverage/
 .turbo/
 .pi/
 .workflower/
+graphify-out/
 .vite/
 mock-local-test/
 .env

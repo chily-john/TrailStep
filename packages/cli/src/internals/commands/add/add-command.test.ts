@@ -2474,4 +2474,100 @@ describe("addCommand", () => {
       ),
     ).rejects.toThrow(/Bundle package not found: @acme\/workflows/);
   });
+
+  it("throws before prompting when a bundle manifest declares zero workflows", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "local-workflow-package");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "local-workflow-package",
+      type: "module",
+      stepkit: { workflows: {} },
+    });
+
+    const command = resolveCommand(["add", "./local-workflow-package"]);
+    let multiSelectCalled = false;
+    await expect(
+      command.run(
+        command.parseArgs([
+          "add",
+          "./local-workflow-package",
+          "--scope",
+          "project",
+          "--namespace",
+          "acme",
+        ]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+          prompts: {
+            select: async (prompt) => {
+              throw new Error(`Unexpected select prompt: ${prompt}`);
+            },
+            multiSelect: async () => {
+              multiSelectCalled = true;
+              return [];
+            },
+            text: async () => {
+              throw new Error("Unexpected text prompt");
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow(/No workflows found in \.\/local-workflow-package\./);
+    expect(multiSelectCalled).toBe(false);
+  });
+
+  it("throws before prompting when a direct barrel file has zero workflow exports", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      "export const notAWorkflow = { id: 'not-a-workflow' };",
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    let multiSelectCalled = false;
+    await expect(
+      command.run(
+        command.parseArgs([
+          "add",
+          "./workflows",
+          "--scope",
+          "project",
+          "--namespace",
+          "acme",
+        ]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+          prompts: {
+            select: async (prompt) => {
+              throw new Error(`Unexpected select prompt: ${prompt}`);
+            },
+            multiSelect: async () => {
+              multiSelectCalled = true;
+              return [];
+            },
+            text: async () => {
+              throw new Error("Unexpected text prompt");
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow(/No workflows found in \.\/workflows\./);
+    expect(multiSelectCalled).toBe(false);
+  });
 });

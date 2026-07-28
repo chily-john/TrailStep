@@ -352,6 +352,36 @@ describe("main", () => {
     expect(errors.join("\n")).toMatch(/invalid JSON/i);
   });
 
+  it("prints the full error.cause chain when a direct workflow file fails to import", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-main-tests",
+      `${task.id}-direct-import-cause`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(
+      join(cwd, "workflows", "broken.mjs"),
+      "throw new Error('inner failure detail');\n",
+      "utf8",
+    );
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["./workflows/broken.mjs", "direct-run", "--input", "{}"],
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    expect(errors).toContainEqual(
+      expect.stringContaining("Unable to import direct workflow source"),
+    );
+    expect(errors).toContainEqual(expect.stringMatching(/^Caused by: .*inner failure detail/));
+  });
+
   it("doctor reports a clean deprecation scan for registered workflow packages", async ({
     task,
   }) => {

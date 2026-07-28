@@ -1,15 +1,12 @@
-import { loadFragments, promptSections, section } from "@stepkit/authoring";
+import { promptSections, section } from "@stepkit/authoring";
 import type { TakeItAwayInput } from "../shared/input-schema.js";
-
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  featureDocFormat: "../shared/feature-doc-format.md",
-});
+import featureDocFormat from "../shared/feature-doc-format.md";
+import methodology from "../shared/feature-methodology.md";
 
 export function createFeatureDocPrompt({ input }: { readonly input: TakeItAwayInput }): string {
   return promptSections(
-    fragments.methodology,
-    fragments.featureDocFormat,
+    methodology,
+    featureDocFormat,
     section("Conversation / feature request", input.conversation),
     section(
       "Task",

@@ -87,6 +87,11 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
       error instanceof WorkflowResolutionError
     ) {
       io.writeError(error.message);
+      let cause = error.cause;
+      while (cause instanceof Error) {
+        io.writeError(`Caused by: ${cause.message}`);
+        cause = cause.cause;
+      }
       return 1;
     }
 

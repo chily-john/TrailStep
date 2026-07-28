@@ -1,7 +1,10 @@
 import type { Document } from "@stepkit/authoring";
-import { list, promptSections, section } from "@stepkit/authoring";
-import implementationDocFormat from "../shared/implementation-doc-format.md";
-import methodology from "../shared/feature-methodology.md";
+import { list, loadFragments, promptSections, section } from "@stepkit/authoring";
+
+const fragments = loadFragments(import.meta.dirname, {
+  methodology: "../shared/feature-methodology.md",
+  implementationDocFormat: "../shared/implementation-doc-format.md",
+});
 
 export interface ReviewImplementationDocInput extends Record<string, unknown> {
   readonly featureDoc: Document;
@@ -26,8 +29,8 @@ export function reviewImplementationDocPrompt({
   ]);
 
   return promptSections(
-    methodology,
-    implementationDocFormat,
+    fragments.methodology,
+    fragments.implementationDocFormat,
     section("Feature doc", input.featureDoc.content),
     section("Implementation doc under review", input.implementationDoc.content),
     section(

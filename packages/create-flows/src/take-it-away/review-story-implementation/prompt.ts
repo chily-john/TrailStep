@@ -1,7 +1,10 @@
 import type { Document } from "@stepkit/authoring";
-import { promptSections, section } from "@stepkit/authoring";
-import methodology from "../shared/feature-methodology.md";
-import storyContract from "../shared/story-implementation-contract.md";
+import { loadFragments, promptSections, section } from "@stepkit/authoring";
+
+const fragments = loadFragments(import.meta.dirname, {
+  methodology: "../shared/feature-methodology.md",
+  storyContract: "../shared/story-implementation-contract.md",
+});
 
 export interface ReviewStoryImplementationInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -14,8 +17,8 @@ export function reviewStoryImplementationPrompt({
   readonly input: ReviewStoryImplementationInput;
 }): string {
   return promptSections(
-    methodology,
-    storyContract,
+    fragments.methodology,
+    fragments.storyContract,
     section("Story", input.currentStory.content),
     section(
       "Task",

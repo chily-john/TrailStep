@@ -1,0 +1,14 @@
+{
+  "workflows": {
+    "project": {
+      "take-it-away": "./packages/create-flows/src"
+    }
+  },
+  "agents": {
+    "default": [
+      {
+        "provider": "claude",
+      }
+    ]
+  }
+}

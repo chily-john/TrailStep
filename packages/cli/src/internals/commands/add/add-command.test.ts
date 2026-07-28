@@ -255,7 +255,7 @@ describe("addCommand", () => {
     ).rejects.toThrow(/Namespace "project" is reserved/);
   });
 
-  it("catches a duplicate registration across project and local scope", async ({ task }) => {
+  it("warns for a duplicate registration across project and local scope", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-stepkit-add-command-tests",
@@ -276,22 +276,26 @@ describe("addCommand", () => {
       "--name",
       "review",
     ]);
-    await expect(
-      command.run(
-        command.parseArgs([
-          "add",
-          "./workflows/review.mjs",
-          "--scope",
-          "local",
-          "--name",
-          "review",
-        ]) as never,
-        {
-          cwd,
-          io: { writeLine: () => undefined, writeError: () => undefined },
-        },
-      ),
-    ).rejects.toThrow(/already exists: project\/review \(in project config\)/);
+    const errors: string[] = [];
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows/review.mjs",
+        "--scope",
+        "local",
+        "--name",
+        "review",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(errors).toContain(
+      "Warning: skipped project/review because it already exists in project config. Use --force to replace it.",
+    );
   });
 
   it("skips optional skill prompts in non-interactive add without skill flags", async ({
@@ -912,6 +916,243 @@ describe("addCommand", () => {
     });
   });
 
+  it("prompts once for shared uncovered bulk role names and fans out the mapping", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      agents: {
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', agents: { reviewer: { size: 'medium', description: 'Review code' } }, start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', agents: { reviewer: { size: 'medium', description: 'Review code' } }, start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const prompts: string[] = [];
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            prompts.push(prompt);
+            if (prompt === "Configure workflow role reviewer (medium) — Review code") {
+              expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
+              return "Use named agent";
+            }
+            if (prompt === "Named agent for workflow role reviewer") {
+              expect(choices).toContain("reviewerAgent");
+              return "reviewerAgent";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual([
+      "Configure workflow role reviewer (medium) — Review code",
+      "Named agent for workflow role reviewer",
+    ]);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      agents: {
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
+      },
+      workflows: {
+        acme: { alpha: "./workflows#alpha", beta: "./workflows#beta" },
+        alpha: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+        beta: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+      },
+    });
+  });
+
+  it("does not prompt for skipped-conflict workflow roles", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      agents: {
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
+      },
+      workflows: { acme: { alpha: "./workflows/existing.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', agents: { reviewer: { size: 'medium', description: 'Review code' } }, start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', agents: { reviewer: { size: 'medium', description: 'Review code' } }, start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const prompts: string[] = [];
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            prompts.push(prompt);
+            if (prompt === "Configure workflow role reviewer (medium) — Review code") {
+              expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
+              return "Use named agent";
+            }
+            if (prompt === "Named agent for workflow role reviewer") {
+              return "reviewerAgent";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual([
+      "Configure workflow role reviewer (medium) — Review code",
+      "Named agent for workflow role reviewer",
+    ]);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      agents: {
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
+      },
+      workflows: {
+        acme: { alpha: "./workflows/existing.mjs", beta: "./workflows#beta" },
+        beta: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+      },
+    });
+  });
+
+  it("dedupes role prompts by role name regardless of size", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      agents: {
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', agents: { reviewer: { size: 'small', description: 'Review code' } }, start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', agents: { reviewer: { size: 'large', description: 'Review code' } }, start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const prompts: string[] = [];
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            prompts.push(prompt);
+            if (prompt === "Configure workflow role reviewer (small) — Review code") {
+              expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
+              return "Use named agent";
+            }
+            if (prompt === "Named agent for workflow role reviewer") {
+              return "reviewerAgent";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual([
+      "Configure workflow role reviewer (small) — Review code",
+      "Named agent for workflow role reviewer",
+    ]);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      agents: {
+        reviewerAgent: [{ provider: "claude", model: "sonnet" }],
+      },
+      workflows: {
+        acme: { alpha: "./workflows#alpha", beta: "./workflows#beta" },
+        alpha: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+        beta: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+      },
+    });
+  });
+
   it("does not prompt for workflow roles covered by default fallback", async ({ task }) => {
     const cwd = join(
       "node_modules",
@@ -1034,6 +1275,132 @@ describe("addCommand", () => {
     });
     expect(lines).toEqual(["Registered acme/review -> ./workflows/review.mjs in project config."]);
     expect(errors).toEqual([]);
+  });
+
+  it("registers a selected workflow from a direct source barrel", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "daily-note.ts"),
+      [
+        "const schema = { validate: () => true, diagnostics: () => [], assert: (value: unknown) => value };",
+        "export const dailyNote = { id: 'dailyNote', inputShape: schema, start: (input: unknown) => ({ kind: 'done', output: input }) };",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "workflows", "release.ts"),
+      "export const release = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export { release } from './release.js';",
+        "export { dailyNote } from './daily-note.js';",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand([
+      "add",
+      "./workflows",
+      "--workflow",
+      "dailyNote",
+      "--scope",
+      "project",
+      "--namespace",
+      "acme",
+    ]);
+    const lines: string[] = [];
+
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--workflow",
+        "dailyNote",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { acme: { dailyNote: "./workflows#dailyNote" } },
+    });
+    expect(lines).toEqual([
+      "Registered acme/dailyNote -> ./workflows#dailyNote in project config.",
+    ]);
+  });
+
+  it("lists direct barrel workflow choices in alphabetical order", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const zebra = { id: 'zebra', start: () => ({ kind: 'done', output: {} }) };",
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              expect(choices).toEqual(["yes", "no"]);
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Workflow");
+            expect(choices).toEqual(["Select all", "alpha", "zebra"]);
+            return ["zebra"];
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt");
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { acme: { zebra: "./workflows#zebra" } },
+    });
   });
 
   it("adds a direct workflow file to local config without touching project config", async ({
@@ -1400,7 +1767,7 @@ describe("addCommand", () => {
     });
   });
 
-  it("lists bundle workflow names through the shared manifest reader", async ({ task }) => {
+  it("preserves bundle manifest order when listing add candidates", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-stepkit-add-command-tests",
@@ -1443,12 +1810,16 @@ describe("addCommand", () => {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
-          select: async (prompt, choices) => {
-            if (prompt !== "Bundle workflow") {
+          select: async (prompt) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               return "no";
             }
-            expect(choices).toEqual(["review", "cleanup"]);
-            return "cleanup";
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Bundle workflow");
+            expect(choices).toEqual(["Select all", "review", "cleanup"]);
+            return ["cleanup"];
           },
           text: async () => {
             throw new Error("Unexpected text prompt");
@@ -1515,9 +1886,12 @@ describe("addCommand", () => {
               expect(choices).toEqual(["yes", "no"]);
               return "no";
             }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
             expect(prompt).toBe("Bundle workflow");
-            expect(choices).toEqual(["review", "cleanup"]);
-            return "cleanup";
+            expect(choices).toEqual(["Select all", "review", "cleanup"]);
+            return ["cleanup"];
           },
           text: async () => {
             throw new Error("Unexpected text prompt");
@@ -1530,6 +1904,457 @@ describe("addCommand", () => {
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
       workflows: { acme: { cleanup: "./local-workflow-package#cleanup" } },
     });
+  });
+
+  it("prompts with Select all and registers all selected workflows", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "local-workflow-package");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "local-workflow-package",
+      type: "module",
+      stepkit: {
+        workflows: {
+          review: "./index.mjs#reviewWorkflow",
+          cleanup: "./index.mjs#cleanupWorkflow",
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      [
+        "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+        "export const cleanupWorkflow = { id: 'cleanup', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./local-workflow-package"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./local-workflow-package",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              expect(choices).toEqual(["yes", "no"]);
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Bundle workflow");
+            expect(choices).toEqual(["Select all", "review", "cleanup"]);
+            return ["review", "cleanup"];
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt");
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: {
+        acme: {
+          review: "./local-workflow-package#review",
+          cleanup: "./local-workflow-package#cleanup",
+        },
+      },
+    });
+  });
+
+  it("treats Select all as a submit-time override", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Workflow");
+            expect(choices).toEqual(["Select all", "alpha", "beta"]);
+            return ["Select all", "alpha"];
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt");
+          },
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { acme: { alpha: "./workflows#alpha", beta: "./workflows#beta" } },
+    });
+  });
+
+  it("registers all bundle workflows for --workflow '*'", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "local-workflow-package");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "local-workflow-package",
+      type: "module",
+      stepkit: {
+        workflows: {
+          review: "./index.mjs#reviewWorkflow",
+          cleanup: "./index.mjs#cleanupWorkflow",
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      [
+        "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+        "export const cleanupWorkflow = { id: 'cleanup', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./local-workflow-package"]);
+    const lines: string[] = [];
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./local-workflow-package",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: {
+        acme: {
+          review: "./local-workflow-package#review",
+          cleanup: "./local-workflow-package#cleanup",
+        },
+      },
+    });
+    expect(lines).toContain("Summary: registered 2, skipped conflicts 0, skill warnings 0.");
+  });
+
+  it("registers a comma-separated direct barrel subset in source order", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', start: () => ({ kind: 'done', output: {} }) };",
+        "export const gamma = { id: 'gamma', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "gamma,alpha",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { acme: { alpha: "./workflows#alpha", gamma: "./workflows#gamma" } },
+    });
+  });
+
+  it("allows --name for exactly one selected workflow", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "alpha",
+        "--name",
+        "custom",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { acme: { custom: "./workflows#alpha" } },
+    });
+  });
+
+  it("rejects --name for multiple selected workflows", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    await expect(
+      command.run(
+        command.parseArgs([
+          "add",
+          "./workflows",
+          "--scope",
+          "project",
+          "--namespace",
+          "acme",
+          "--workflow",
+          "alpha,beta",
+          "--name",
+          "custom",
+        ]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+        },
+      ),
+    ).rejects.toThrow(/--name can only be used when registering one workflow/);
+  });
+
+  it("skips only conflicting workflows without --force", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { acme: { alpha: "./workflows/existing.mjs", settings: { agents: {} } } },
+    });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const errors: string[] = [];
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: {
+        acme: {
+          alpha: "./workflows/existing.mjs",
+          beta: "./workflows#beta",
+          settings: { agents: {} },
+        },
+      },
+    });
+    expect(errors).toContain(
+      "Warning: skipped acme/alpha because it already exists in project config. Use --force to replace it.",
+    );
+  });
+
+  it("generates one project skill per successfully registered workflow", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', description: 'Alpha flow.', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', description: 'Beta flow.', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+        "--project-skill",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readFile(join(cwd, ".stepkit", "skills", "acme-alpha", "SKILL.md"), "utf8"))
+      .toContain("stepkit acme/alpha");
+    expect(await readFile(join(cwd, ".stepkit", "skills", "acme-beta", "SKILL.md"), "utf8"))
+      .toContain("stepkit acme/beta");
+  });
+
+  it("prints a bulk registration summary", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { acme: { alpha: "./workflows/existing.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const beta = { id: 'beta', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const lines: string[] = [];
+    const command = resolveCommand(["add", "./workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--workflow",
+        "*",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
   });
 
   it("adds a selected installed package bundle workflow by package ref", async ({ task }) => {
@@ -1577,6 +2402,45 @@ describe("addCommand", () => {
     expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
       workflows: { acme: { review: "@acme/workflows#review" } },
     });
+  });
+
+  it("errors with available choices for an invalid --workflow", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeFile(
+      join(cwd, "workflows", "index.ts"),
+      [
+        "export const alpha = { id: 'alpha', start: () => ({ kind: 'done', output: {} }) };",
+        "export const zebra = { id: 'zebra', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "./workflows"]);
+    await expect(
+      command.run(
+        command.parseArgs([
+          "add",
+          "./workflows",
+          "--workflow",
+          "missing",
+          "--scope",
+          "project",
+          "--namespace",
+          "acme",
+        ]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+        },
+      ),
+    ).rejects.toThrow(/Workflow not found: missing\. Available workflows: alpha, zebra\./);
   });
 
   it("fails clearly when an installed bundle package cannot be resolved", async ({ task }) => {

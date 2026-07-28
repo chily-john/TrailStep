@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,10 @@ function tmpDir(task: { readonly id: string }): string {
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function readJson(path: string): Promise<unknown> {
+  return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
 describe("workflowsCommand", () => {
@@ -216,6 +220,132 @@ describe("workflowsCommand", () => {
       await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
     ) as unknown;
     expect(config).toEqual({ workflows: { project: { reviewed: "./review.mjs" } } });
+  });
+
+  it("removes a selected workflow after confirmation and returns to the list", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs", scratch: "./scratch.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let workflowListVisits = 0;
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            workflowListVisits += 1;
+            if (workflowListVisits === 1) {
+              return choices[0] as string;
+            }
+            return "project: project/scratch -> ./scratch.mjs";
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            expect(choices).toContain("Remove");
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "yes";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(workflowListVisits).toBe(2);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { project: { scratch: "./scratch.mjs" } },
+    });
+  });
+
+  it("keeps config unchanged when remove confirmation is declined", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "no";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(actionMenuVisits).toBe(2);
+    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+      workflows: { project: { review: "./review.mjs" } },
+    });
+  });
+
+  it("warns that an existing generated skill directory was not removed", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const skillDirectory = join(cwd, ".stepkit", "skills", "project-review");
+    await writeJson(join(cwd, ".stepkit", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+    await mkdir(skillDirectory, { recursive: true });
+
+    const errors: string[] = [];
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "yes";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(errors).toEqual([
+      `Note: skill directory ${skillDirectory} was not removed; delete it manually if desired.`,
+    ]);
+    await expect(stat(skillDirectory)).resolves.toBeTruthy();
   });
 
   it("returns to the workflow list on 'Back to workflow list' and re-lists entries", async ({

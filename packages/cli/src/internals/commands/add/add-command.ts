@@ -15,7 +15,12 @@ import {
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { loadStepKitProjectConfig } from "../../config/config.js";
-import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
+import {
+  promptMultiSelect,
+  promptSelect,
+  promptText,
+  promptYesNo,
+} from "../../prompts/prompt-helpers.js";
 import {
   assertNamespaceMatchesScope,
   configPathForScope,
@@ -31,7 +36,7 @@ import {
   readBundleWorkflowManifest,
   resolvePackageJsonPath,
 } from "../../workflow-resolution/bundle-resolver.js";
-import { loadDirectWorkflowFile } from "../../workflow-resolution/direct-file-resolver.js";
+import { loadDirectWorkflowExports } from "../../workflow-resolution/direct-file-resolver.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
 import { WorkflowResolutionError } from "../../workflow-resolution/workflow-resolution-error.js";
 import {
@@ -68,10 +73,16 @@ interface ResolvedAddCommandArgs {
   readonly userSkill: boolean;
 }
 
+interface AddRegistration {
+  readonly registryTarget: AddRegistryTarget;
+  readonly name: string;
+}
+
 const SCOPE_PROMPT_LABEL =
   "Where should this workflow be registered? (local = just you on this repo, " +
   "project = shared with your team, global = global across all your projects)";
 const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
+const SELECT_ALL_WORKFLOWS_CHOICE = "Select all";
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -118,27 +129,45 @@ export const addCommand: CliCommand<AddCommandArgs> = {
         "stepkit add requires --scope <local|project|global>.",
       ));
 
-    const registryTarget = await validateAndBuildRegistryTarget(
+    const registryTargets = await validateAndBuildRegistryTargets(
       { source: args.source, workflow: args.workflow },
       context.cwd,
       context,
     );
 
+    if (args.name !== undefined && registryTargets.length > 1) {
+      throw new CliUsageError("stepkit add --name can only be used when registering one workflow.");
+    }
+
     const namespace = await resolveNamespace(args.namespace, scope, context.prompts);
-    const name = args.name ?? deriveDefaultWorkflowName(registryTarget.workflow);
     assertNamespaceMatchesScope(namespace, scope);
 
     const resolvedArgs = await resolveSkillArgs(args, context.prompts);
+    const registrations = registryTargets.map((registryTarget) => ({
+      registryTarget,
+      name: args.name ?? deriveDefaultWorkflowName(registryTarget.workflow),
+    }));
 
-    const existingScope = await findExistingRegistrationScope(namespace, name, scope, {
-      cwd: context.cwd,
-      homeDir: context.homeDir,
-    });
-    if (!args.force && existingScope !== undefined) {
-      throw new CliUsageError(
-        `Workflow registration already exists: ${namespace}/${name} (in ${existingScope} config). ` +
-          "Use --force to replace it, or --name <name> to register under a different name.",
+    const successfulRegistrations: AddRegistration[] = [];
+    let skippedConflicts = 0;
+    for (const registration of registrations) {
+      const existingScope = await findExistingRegistrationScope(
+        namespace,
+        registration.name,
+        scope,
+        {
+          cwd: context.cwd,
+          homeDir: context.homeDir,
+        },
       );
+      if (!args.force && existingScope !== undefined) {
+        skippedConflicts += 1;
+        context.io.writeError(
+          `Warning: skipped ${namespace}/${registration.name} because it already exists in ${existingScope} config. Use --force to replace it.`,
+        );
+        continue;
+      }
+      successfulRegistrations.push(registration);
     }
 
     const configPath = configPathForScope(scope, context);
@@ -146,27 +175,56 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     const workflows = toMutableWorkflowRegistry(config.workflows);
     const namespaceBucket = workflows[namespace] ?? {};
 
-    workflows[namespace] = { ...namespaceBucket, [name]: registryTarget.targetRef };
-    await writeRawStepKitConfigFile(configPath, { ...config, workflows });
-    context.io.writeLine(
-      `Registered ${namespace}/${name} -> ${registryTarget.targetRef} in ${scope} config.`,
+    if (successfulRegistrations.length > 0) {
+      workflows[namespace] = {
+        ...namespaceBucket,
+        ...Object.fromEntries(
+          successfulRegistrations.map((registration) => [
+            registration.name,
+            registration.registryTarget.targetRef,
+          ]),
+        ),
+      };
+      await writeRawStepKitConfigFile(configPath, { ...config, workflows });
+    }
+
+    for (const registration of successfulRegistrations) {
+      context.io.writeLine(
+        `Registered ${namespace}/${registration.name} -> ${registration.registryTarget.targetRef} in ${scope} config.`,
+      );
+    }
+
+    await promptForUncoveredWorkflowRolesForRegistrations(
+      { scope, registrations: successfulRegistrations },
+      context,
     );
 
-    const finalArgs: ResolvedAddCommandArgs = {
-      source: args.source,
-      scope,
-      namespace,
-      name,
-      workflow: args.workflow,
-      force: args.force,
-      projectSkill: resolvedArgs.projectSkill,
-      userSkill: resolvedArgs.userSkill,
-    };
+    let skillWarnings = 0;
+    for (const registration of successfulRegistrations) {
+      const finalArgs: ResolvedAddCommandArgs = {
+        source: args.source,
+        scope,
+        namespace,
+        name: registration.name,
+        workflow: args.workflow,
+        force: args.force,
+        projectSkill: resolvedArgs.projectSkill,
+        userSkill: resolvedArgs.userSkill,
+      };
 
-    await promptForUncoveredWorkflowRoles({ scope, workflow: registryTarget.workflow }, context);
+      if (finalArgs.projectSkill || finalArgs.userSkill) {
+        skillWarnings += await tryWriteAndDistributeWorkflowSkill(
+          finalArgs,
+          registration.registryTarget,
+          context,
+        );
+      }
+    }
 
-    if (finalArgs.projectSkill || finalArgs.userSkill) {
-      await tryWriteAndDistributeWorkflowSkill(finalArgs, registryTarget, context);
+    if (registrations.length > 1 || skippedConflicts > 0) {
+      context.io.writeLine(
+        `Summary: registered ${successfulRegistrations.length}, skipped conflicts ${skippedConflicts}, skill warnings ${skillWarnings}.`,
+      );
     }
 
     return 0;
@@ -290,22 +348,22 @@ async function resolveSkillArgs(
   };
 }
 
-interface PromptForUncoveredWorkflowRolesOptions {
+interface PromptForUncoveredWorkflowRolesForRegistrationsOptions {
   readonly scope: WorkflowRegistryScope;
-  readonly workflow?: WorkflowSkillMetadata;
+  readonly registrations: readonly AddRegistration[];
 }
 
-async function promptForUncoveredWorkflowRoles(
-  options: PromptForUncoveredWorkflowRolesOptions,
+interface UncoveredWorkflowRoleGroup {
+  readonly roleName: string;
+  readonly role: WorkflowAgentRole;
+  readonly workflowIds: Set<string>;
+}
+
+async function promptForUncoveredWorkflowRolesForRegistrations(
+  options: PromptForUncoveredWorkflowRolesForRegistrationsOptions,
   context: CliCommandContext,
 ): Promise<void> {
-  const workflow = options.workflow;
-  const workflowAgents = workflow?.agents;
-  if (
-    workflow === undefined ||
-    workflowAgents === undefined ||
-    Object.keys(workflowAgents).length === 0
-  ) {
+  if (options.registrations.length === 0) {
     return;
   }
 
@@ -315,19 +373,67 @@ async function promptForUncoveredWorkflowRoles(
     return;
   }
 
-  for (const roleName of Object.keys(workflowAgents).sort()) {
-    const role = workflowAgents[roleName];
-    if (role === undefined || !isWorkflowAgentRole(role)) {
+  const roleGroups = collectUncoveredWorkflowRoleGroups(options.registrations, effectiveConfig);
+  for (const roleName of Object.keys(roleGroups).sort()) {
+    const group = roleGroups[roleName];
+    if (group === undefined) {
       continue;
     }
-    if (isRoleCoveredByEffectiveConfig(effectiveConfig, workflow.id, roleName, role)) {
-      continue;
-    }
-    await promptForWorkflowRoleMapping(
-      { scope: options.scope, workflowId: workflow.id, roleName, role },
+    const workflowIds = [...group.workflowIds];
+    const entry = await promptForWorkflowRoleMapping(
+      {
+        scope: options.scope,
+        workflowId: workflowIds[0] ?? "",
+        roleName: group.roleName,
+        role: group.role,
+      },
       context,
     );
+    if (entry === undefined) {
+      continue;
+    }
+    for (const workflowId of workflowIds) {
+      await writeWorkflowRoleMapping(options.scope, workflowId, group.roleName, entry, context);
+    }
   }
+}
+
+function collectUncoveredWorkflowRoleGroups(
+  registrations: readonly AddRegistration[],
+  effectiveConfig: StepKitConfig,
+): Record<string, UncoveredWorkflowRoleGroup> {
+  const groups: Record<string, UncoveredWorkflowRoleGroup> = {};
+
+  for (const registration of registrations) {
+    const workflow = registration.registryTarget.workflow;
+    const workflowAgents = workflow?.agents;
+    if (
+      workflow === undefined ||
+      workflowAgents === undefined ||
+      Object.keys(workflowAgents).length === 0
+    ) {
+      continue;
+    }
+
+    for (const roleName of Object.keys(workflowAgents).sort()) {
+      const role = workflowAgents[roleName];
+      if (role === undefined || !isWorkflowAgentRole(role)) {
+        continue;
+      }
+      if (isRoleCoveredByEffectiveConfig(effectiveConfig, workflow.id, roleName, role)) {
+        continue;
+      }
+
+      groups[roleName] = groups[roleName] ?? {
+        roleName,
+        role,
+        workflowIds: new Set<string>(),
+      };
+      groups[roleName].workflowIds.add(workflow.id);
+    }
+  }
+
+  return groups;
 }
 
 function isRoleCoveredByEffectiveConfig(
@@ -363,7 +469,7 @@ interface PromptForWorkflowRoleMappingOptions {
 async function promptForWorkflowRoleMapping(
   options: PromptForWorkflowRoleMappingOptions,
   context: CliCommandContext,
-): Promise<void> {
+): Promise<readonly Record<string, unknown>[] | undefined> {
   if (context.prompts === undefined) {
     throw new CliUsageError(
       `Workflow ${options.workflowId} role ${options.roleName} has no configured agent targets; run interactively or configure agents first.`,
@@ -376,21 +482,14 @@ async function promptForWorkflowRoleMapping(
     "Skip",
   ]);
   if (action === "Skip") {
-    return;
+    return undefined;
   }
   if (action === "Use named agent") {
     const namedAgent = await context.prompts.select(
       `Named agent for workflow role ${options.roleName}`,
       await listNamedAgentChoices(context),
     );
-    await writeWorkflowRoleMapping(
-      options.scope,
-      options.workflowId,
-      options.roleName,
-      [{ ref: namedAgent }],
-      context,
-    );
-    return;
+    return [{ ref: namedAgent }];
   }
 
   const name = (
@@ -410,13 +509,7 @@ async function promptForWorkflowRoleMapping(
     context,
     configured.customProvider,
   );
-  await writeWorkflowRoleMapping(
-    options.scope,
-    options.workflowId,
-    options.roleName,
-    [{ ref: name }],
-    context,
-  );
+  return [{ ref: name }];
 }
 
 function workflowRolePrompt(options: PromptForWorkflowRoleMappingOptions): string {
@@ -484,7 +577,7 @@ async function tryWriteAndDistributeWorkflowSkill(
   args: ResolvedAddCommandArgs,
   registryTarget: AddRegistryTarget,
   context: CliCommandContext,
-): Promise<void> {
+): Promise<number> {
   const skillName = workflowSkillName(args.namespace, args.name);
 
   let writtenSkill: { readonly skillName: string; readonly skillDirectory: string };
@@ -510,17 +603,19 @@ async function tryWriteAndDistributeWorkflowSkill(
     context.io.writeError(
       `Warning: registered ${args.namespace}/${args.name} but could not write project workflow skill ${skillName}.`,
     );
-    return;
+    return 1;
   }
 
   warnForSkillScopeMismatch(args, writtenSkill.skillName, context);
 
+  let warnings = 0;
   if (args.projectSkill) {
-    await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "project", context);
+    warnings += await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "project", context);
   }
   if (args.userSkill) {
-    await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "user", context);
+    warnings += await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "user", context);
   }
+  return warnings;
 }
 
 function warnForSkillScopeMismatch(
@@ -545,7 +640,7 @@ async function tryDistributeWorkflowSkill(
   skillDirectory: string,
   target: SkillsCliDistributionTarget,
   context: CliCommandContext,
-): Promise<void> {
+): Promise<number> {
   const skillName = workflowSkillName(args.namespace, args.name);
 
   try {
@@ -555,10 +650,12 @@ async function tryDistributeWorkflowSkill(
       resolver: context.skillsCliResolver,
       runner: context.skillsCliProcessRunner,
     });
+    return 0;
   } catch (error) {
     context.io.writeError(
       `Warning: registered ${args.namespace}/${args.name} but could not distribute ${target} workflow skill ${skillName}: ${error instanceof Error ? error.message : "unknown error"}`,
     );
+    return 1;
   }
 }
 
@@ -568,57 +665,155 @@ interface AddRegistryTarget {
   readonly bundleSpecifier?: BundleWorkflowSpecifier;
 }
 
+interface AddWorkflowCandidate extends AddRegistryTarget {
+  readonly selectionName: string;
+  readonly sourceKind: "bundle" | "direct";
+}
+
 interface SourceResolutionArgs {
   readonly source: string;
   readonly workflow?: string;
 }
 
-async function validateAndBuildRegistryTarget(
+async function validateAndBuildRegistryTargets(
   args: SourceResolutionArgs,
   cwd: string,
   context: CliCommandContext,
-): Promise<AddRegistryTarget> {
-  if (await isBundleSource(args.source, cwd)) {
-    const workflowNames = await readBundleWorkflowNames(args.source, cwd);
-    const workflowName =
-      args.workflow ??
-      (workflowNames.length === 1
-        ? workflowNames[0]
-        : await promptSelect(
-            "Bundle workflow",
-            workflowNames,
-            context.prompts,
-            `Bundle ${args.source} contains multiple workflows. Choose one with --workflow <workflow>.`,
-          ));
+): Promise<readonly AddRegistryTarget[]> {
+  const candidates = await listAddWorkflowCandidates(args.source, cwd);
+  return selectAddWorkflowCandidates(candidates, args, context);
+}
 
-    if (!workflowName) {
-      throw new CliUsageError(
-        `Bundle ${args.source} contains multiple workflows. Choose one with --workflow <workflow>.`,
-      );
-    }
+async function listAddWorkflowCandidates(
+  source: string,
+  cwd: string,
+): Promise<readonly AddWorkflowCandidate[]> {
+  if (await isBundleSource(source, cwd)) {
+    return listBundleAddWorkflowCandidates(source, cwd);
+  }
+  return listDirectAddWorkflowCandidates(source, cwd);
+}
 
-    if (!workflowNames.includes(workflowName)) {
-      throw new WorkflowResolutionError(
-        `Bundle manifest workflow key not found: ${workflowName} in ${args.source}`,
-      );
-    }
+async function listBundleAddWorkflowCandidates(
+  source: string,
+  cwd: string,
+): Promise<readonly AddWorkflowCandidate[]> {
+  const workflowNames = await readBundleWorkflowNames(source, cwd);
+  const candidates: AddWorkflowCandidate[] = [];
 
-    const specifier = bundleWorkflowSpecifier(args.source, workflowName);
+  for (const workflowName of workflowNames) {
+    const specifier = bundleWorkflowSpecifier(source, workflowName);
     const bundleWorkflow = await loadBundleWorkflow(specifier, { cwd });
-
-    return {
-      targetRef: `${args.source}#${workflowName}`,
+    candidates.push({
+      selectionName: workflowName,
+      sourceKind: "bundle",
+      targetRef: `${source}#${workflowName}`,
       workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
       bundleSpecifier: specifier,
-    };
+    });
   }
 
+  return candidates;
+}
+
+async function listDirectAddWorkflowCandidates(
+  source: string,
+  cwd: string,
+): Promise<readonly AddWorkflowCandidate[]> {
+  const directWorkflowExports = await loadDirectWorkflowExports(source, { cwd });
+  return directWorkflowExports.workflows.map((entry) => ({
+    selectionName: entry.name,
+    sourceKind: "direct",
+    targetRef:
+      directWorkflowExports.workflows.length === 1 && directWorkflowExports.exportName === undefined
+        ? source
+        : `${source}#${entry.name}`,
+    workflow: entry.workflow as WorkflowSkillMetadata,
+  }));
+}
+
+async function selectAddWorkflowCandidates(
+  candidates: readonly AddWorkflowCandidate[],
+  args: SourceResolutionArgs,
+  context: CliCommandContext,
+): Promise<readonly AddRegistryTarget[]> {
   if (args.workflow !== undefined) {
-    throw new CliUsageError("--workflow is only valid for bundle package registrations.");
+    return selectCandidatesFromWorkflowFlag(candidates, args.workflow);
   }
 
-  const directWorkflow = await loadDirectWorkflowFile(args.source, { cwd });
-  return { targetRef: args.source, workflow: directWorkflow.workflow as WorkflowSkillMetadata };
+  if (candidates.length === 1) {
+    const candidate = candidates[0];
+    if (candidate === undefined) {
+      throw new CliUsageError(
+        `Source ${args.source} contains multiple workflows. Choose one with --workflow <workflow>.`,
+      );
+    }
+    return [candidate];
+  }
+
+  const selectedNames = await promptMultiSelect(
+    workflowPromptLabel(candidates),
+    [SELECT_ALL_WORKFLOWS_CHOICE, ...candidates.map((candidate) => candidate.selectionName)],
+    context.prompts,
+    `Source ${args.source} contains multiple workflows. Choose one or more with --workflow <workflow>.`,
+  );
+
+  if (selectedNames.includes(SELECT_ALL_WORKFLOWS_CHOICE)) {
+    return candidates;
+  }
+
+  return selectedNames.map((workflowName) => findAddWorkflowCandidate(candidates, workflowName));
+}
+
+function selectCandidatesFromWorkflowFlag(
+  candidates: readonly AddWorkflowCandidate[],
+  workflowFlag: string,
+): readonly AddWorkflowCandidate[] {
+  if (workflowFlag === "*") {
+    return candidates;
+  }
+
+  const selectedNames = workflowFlag.split(",").map((part) => part.trim());
+  if (selectedNames.some((name) => name.length === 0)) {
+    throw new CliUsageError("stepkit add --workflow entries must be non-empty workflow names.");
+  }
+  const selectedNameSet = new Set(selectedNames);
+  if (selectedNameSet.size !== selectedNames.length) {
+    throw new CliUsageError("stepkit add --workflow entries must not contain duplicates.");
+  }
+
+  for (const selectedName of selectedNames) {
+    findAddWorkflowCandidate(candidates, selectedName);
+  }
+
+  return candidates.filter((candidate) => selectedNameSet.has(candidate.selectionName));
+}
+
+function findAddWorkflowCandidate(
+  candidates: readonly AddWorkflowCandidate[],
+  workflowName: string,
+): AddWorkflowCandidate {
+  const candidate = candidates.find((entry) => entry.selectionName === workflowName);
+  if (candidate === undefined) {
+    throw new WorkflowResolutionError(
+      `Workflow not found: ${workflowName}. ${formatAvailableWorkflowCandidates(candidates)}`,
+    );
+  }
+
+  return candidate;
+}
+
+function workflowPromptLabel(candidates: readonly AddWorkflowCandidate[]): string {
+  return candidates.every((candidate) => candidate.sourceKind === "bundle")
+    ? "Bundle workflow"
+    : "Workflow";
+}
+
+function formatAvailableWorkflowCandidates(candidates: readonly AddWorkflowCandidate[]): string {
+  if (candidates.length === 0) {
+    return "Available workflows: none.";
+  }
+  return `Available workflows: ${candidates.map((candidate) => candidate.selectionName).join(", ")}.`;
 }
 
 async function isBundleSource(source: string, cwd: string): Promise<boolean> {
@@ -626,8 +821,24 @@ async function isBundleSource(source: string, cwd: string): Promise<boolean> {
     return true;
   }
 
+  const sourcePath = resolve(cwd, source);
+  let sourceStats: Awaited<ReturnType<typeof stat>>;
   try {
-    return (await stat(resolve(cwd, source))).isDirectory();
+    sourceStats = await stat(sourcePath);
+  } catch {
+    return false;
+  }
+
+  if (!sourceStats.isDirectory()) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      await readFile(resolve(sourcePath, "package.json"), "utf8"),
+    ) as unknown;
+    const stepkit = isRecord(parsed) ? parsed.stepkit : undefined;
+    return isRecord(stepkit) && isRecord(stepkit.workflows);
   } catch {
     return false;
   }

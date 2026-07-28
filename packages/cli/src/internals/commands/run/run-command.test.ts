@@ -308,8 +308,8 @@ describe("run command", () => {
       }),
     ).resolves.toBe(1);
 
-    expect(errors.join("\n")).toMatch(/exactly one workflow/i);
-    expect(errors.join("\n")).toMatch(/bundle manifest|package/i);
+    expect(errors.join("\n")).toMatch(/path#exportName.*bulk add/i);
+    expect(errors.join("\n")).toMatch(/Available workflow exports: cleanup, review/i);
     await expect(stat(join(cwd, ".stepkit", "runs", "ambiguous-run"))).rejects.toThrow();
   });
 

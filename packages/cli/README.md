@@ -27,11 +27,12 @@ stepkit ./workflows/review.mjs run-one
 stepkit project/review
 stepkit global/cleanup
 stepkit @acme/workflows#release
+stepkit ./workflows/index.ts#reviewWorkflow
 ```
 
 ## Workflow refs
 
-- Direct local files use a relative or absolute path such as `./workflows/review.mjs`. Direct files must be native Node-loadable ESM today; `.mjs` is supported, while direct `.ts` and `.tsx` files are rejected until StepKit chooses a TypeScript loader policy.
+- Direct local source refs use a relative or absolute path such as `./workflows/review.ts`, `./workflows/index.ts#reviewWorkflow`, or `./workflows#reviewWorkflow`. Direct refs may be `.ts`, `.mts`, `.js`, `.mjs`, extensionless files, or directories with an index file; append `path#exportName` to select a named workflow export. `.tsx` is intentionally unsupported.
 - Registered refs such as `project/review`, `global/cleanup`, or unqualified `review` resolve through string entries under `.stepkit/config.json`, `.stepkit/config-local.json`, or `~/.stepkit/config.json` `workflows`. `.stepkit/config-local.json` is gitignored and merges over the committed `.stepkit/config.json` per workflow name, so project and local registrations coexist. Project entries take precedence for unqualified names.
 - Bundle refs use `#`, for example `@acme/workflows#release`. The package must expose `stepkit.workflows` manifest metadata mapping workflow names to module exports.
 - Legacy `package:export` refs remain supported for compatibility with package export discovery.
@@ -85,8 +86,10 @@ stepkit project/review
 With no flags, `add` prompts once for scope (a single select — `local` for personal-to-you-in-this-repo, `project` for shared with your team, `global` for global across all your projects; there is no silent default). Namespace then defaults to `"project"` for `project`/`local` scope, or to `"global"` for `global` scope (with an optional follow-up prompt to pick a custom namespace, useful for avoiding collisions across multiple globally-registered bundles). Name defaults to the workflow's own `id` (set by the author via `defineWorkflow({ id: "..." })`). Pass `--scope`/`--namespace`/`--name` explicitly to skip any of these prompts or override the default:
 
 ```bash
-stepkit add ./workflows/review.mjs --scope local
+stepkit add ./workflows/review.ts#reviewWorkflow --scope local
 stepkit add @acme/workflows --workflow review --scope global --namespace acme --name review
+stepkit add @acme/workflows --workflow review,release,cleanup
+stepkit add @acme/workflows --workflow '*'
 ```
 
 A workflow `id` containing `/`, `#`, `:`, or that looks like a file path can't be used as a default registration name (each of those breaks or ambiguates how registered refs are resolved) — pass `--name` explicitly for those.
@@ -97,7 +100,7 @@ Prefer matching the registration scope and skill scope. A project skill that poi
 
 Generated skills pass workflow input through `stepkit <workflow-ref> --input-file <path>`. Workflow input must be a JSON object. For dense conversation context, write the context to a markdown file and pass an object wrapper such as `{ "sessionFile": ".stepkit/inputs/project-review-context.md" }`.
 
-Remove a registration with `stepkit remove <namespace>/<name>`. Since `project` and `local` scope both default to the same `"project"` namespace, the same ref can exist in either (or both) config files; `remove` searches local, then project, then global unless `--scope` is passed, and asks you to disambiguate with `--scope` if the ref matches more than one:
+Remove a registration with `stepkit remove <namespace>/<name>` or the Remove action in `stepkit workflows`. Since `project` and `local` scope both default to the same `"project"` namespace, the same ref can exist in either (or both) config files; `remove` searches local, then project, then global unless `--scope` is passed, and asks you to disambiguate with `--scope` if the ref matches more than one:
 
 ```bash
 stepkit remove project/review

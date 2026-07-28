@@ -119,6 +119,18 @@ function createTerminalPrompts(): StepkitCliPrompts {
       }
       return String(answer);
     },
+    async multiSelect(prompt, choices) {
+      const { isCancel, multiselect } = await import("@clack/prompts");
+      const answer = await multiselect({
+        message: prompt,
+        options: choices.map((choice) => ({ value: choice, label: choice })),
+        required: true,
+      });
+      if (isCancel(answer)) {
+        throw new CliUsageError(`Prompt cancelled: ${prompt}.`);
+      }
+      return answer.map(String);
+    },
     async confirm(prompt) {
       const { confirm, isCancel } = await import("@clack/prompts");
       const answer = await confirm({ message: prompt });

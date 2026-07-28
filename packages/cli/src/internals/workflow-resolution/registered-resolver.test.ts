@@ -39,6 +39,26 @@ async function writeWorkflowFile(
   );
 }
 
+async function writeBundleWorkflowPackage(
+  packageDir: string,
+  workflowName: string,
+  exportName: string,
+  packageName = "local-workflows",
+): Promise<void> {
+  await mkdir(packageDir, { recursive: true });
+  await writeJson(join(packageDir, "package.json"), {
+    name: packageName,
+    type: "module",
+    stepkit: { workflows: { [workflowName]: `./index.mjs#${exportName}` } },
+  });
+  await writeFile(
+    join(packageDir, "index.mjs"),
+    `const schema = { validate: () => true, diagnostics: () => [], assert: (value) => value };
+    export const ${exportName} = { id: '${exportName}', inputShape: schema, start: (input) => ({ kind: 'done', output: input }) };`,
+    "utf8",
+  );
+}
+
 describe("registered workflow resolver", () => {
   it("resolves project/name from .stepkit/config.json to a direct workflow file relative to cwd", async ({
     task,
@@ -66,6 +86,94 @@ describe("registered workflow resolver", () => {
       workflowRef: {
         kind: "direct-file",
         packageName: resolve(cwd, ".stepkit", "workflows", "release.mjs"),
+      },
+    });
+  });
+
+  it("dispatches direct-looking hash refs to the direct resolver before bundle parsing", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
+    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
+    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+      recursive: true,
+      force: true,
+    });
+
+    await expect(
+      resolveWorkflowReference("./workflows/missing.ts#release", { cwd, homeDir }),
+    ).rejects.toThrow(/Direct workflow source not found:/);
+  });
+
+  it("preserves clean metadata for direct named exports", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
+    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
+    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+      recursive: true,
+      force: true,
+    });
+    await writeWorkflowFile(join(cwd, "workflows"), "dailyNote", { released: true });
+
+    await expect(
+      resolveWorkflowReference("./workflows/dailyNote.mjs#dailyNote", { cwd, homeDir }),
+    ).resolves.toMatchObject({
+      id: `${resolve(cwd, "workflows", "dailyNote.mjs")}#dailyNote`,
+      workflow: { id: "dailyNote" },
+      workflowRef: {
+        kind: "direct-file",
+        packageName: resolve(cwd, "workflows", "dailyNote.mjs"),
+        exportName: "dailyNote",
+      },
+    });
+  });
+
+  it("keeps bare package hash refs in bundle mode", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
+    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
+    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+      recursive: true,
+      force: true,
+    });
+    await writeBundleWorkflowPackage(
+      join(cwd, "node_modules", "@acme", "workflows"),
+      "release",
+      "releaseWorkflow",
+      "@acme/workflows",
+    );
+
+    await expect(
+      resolveWorkflowReference("@acme/workflows#release", { cwd, homeDir }),
+    ).resolves.toMatchObject({
+      id: "@acme/workflows#release",
+      workflowRef: {
+        kind: "bundle",
+        packageName: "@acme/workflows",
+        workflowName: "release",
+      },
+    });
+  });
+
+  it("keeps direct-looking package refs with bundle workflow manifests in bundle resolution", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
+    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
+    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+      recursive: true,
+      force: true,
+    });
+    await writeBundleWorkflowPackage(join(cwd, "local-workflows"), "review", "reviewWorkflow");
+
+    await expect(
+      resolveWorkflowReference("./local-workflows#review", { cwd, homeDir }),
+    ).resolves.toMatchObject({
+      id: "./local-workflows#review",
+      workflow: { id: "reviewWorkflow" },
+      workflowRef: {
+        kind: "bundle",
+        packageName: "./local-workflows",
+        workflowName: "review",
+        exportName: "reviewWorkflow",
       },
     });
   });

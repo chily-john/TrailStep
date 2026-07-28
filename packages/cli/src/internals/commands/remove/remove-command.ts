@@ -1,6 +1,3 @@
-import { stat } from "node:fs/promises";
-import { join } from "node:path";
-
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import {
@@ -11,7 +8,7 @@ import {
   type WorkflowRegistryScope,
   writeRawStepKitConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
-import { workflowSkillName } from "../../workflow-skills/workflow-skill-content.js";
+import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 
 interface RemoveCommandArgs {
   readonly ref: string;
@@ -87,17 +84,7 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
 
     context.io.writeLine(`Removed ${args.ref} from ${scope} config.`);
 
-    const skillDirectory = join(
-      context.cwd,
-      ".stepkit",
-      "skills",
-      workflowSkillName(parsed.namespace, parsed.name),
-    );
-    if (await pathExists(skillDirectory)) {
-      context.io.writeError(
-        `Note: skill directory ${skillDirectory} was not removed; delete it manually if desired.`,
-      );
-    }
+    await warnIfGeneratedSkillDirectoryExists(context, parsed.namespace, parsed.name);
 
     return 0;
   },
@@ -132,13 +119,4 @@ function parseNamespaceNameRef(
     return undefined;
   }
   return { namespace: ref.slice(0, separatorIndex), name: ref.slice(separatorIndex + 1) };
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }

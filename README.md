@@ -39,7 +39,7 @@ export const helloWorkflow = defineWorkflow({
 });
 ```
 
-A conceptual `.stepkit/config.json` maps reusable `customProviders`, `agents.*`, and workflow role bindings.
+A conceptual `.stepkit/config.json` maps reusable `customProviders`, `agents.*.items`, and workflow role bindings.
 
 Then run it from the consuming project using a direct local file, a registered ref, a bundle ref, or the legacy package-export form:
 
@@ -54,7 +54,7 @@ stepkit @acme/workflows#hello
 stepkit <package:workflowExport> hello-run --resume
 ```
 
-Run names are optional when starting a run; StepKit generates one if omitted. Resume always needs an explicit run name so the CLI can locate the existing `.stepkit/runs/<workflowRunName>` directory. `stepkit list` reports registered refs grouped by scope and then legacy package export discovery.
+Run names are optional when starting a run; StepKit generates one if omitted. Resume always needs an explicit run name so the CLI can locate the existing `.stepkit/runs/<workflowRunName>` directory. `stepkit workflows` reports registered refs grouped by scope and then legacy package export discovery.
 
 Runs create `.stepkit/runs/<actualRunName>/` in the consuming project. Events are written to `.stepkit/runs/<actualRunName>/events.jsonl`.
 

@@ -80,6 +80,20 @@ export async function loadBundleWorkflow(
   };
 }
 
+export async function hasBundleWorkflowManifest(
+  packageName: string,
+  options: LoadBundleWorkflowOptions,
+): Promise<boolean> {
+  try {
+    const packageJsonPath = resolvePackageJsonPath(packageName, options.cwd);
+    const packageJson = await readPackageJson(packageJsonPath, packageName);
+    readBundleWorkflowManifest(packageJson, packageName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function resolvePackageJsonPath(packageName: string, cwd: string): string {
   if (isLocalPackageReference(packageName)) {
     return resolve(cwd, packageName, "package.json");

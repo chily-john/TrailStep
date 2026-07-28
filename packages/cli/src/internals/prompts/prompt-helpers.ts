@@ -35,6 +35,24 @@ export async function promptSelect<T extends string>(
   return selected as T;
 }
 
+export async function promptMultiSelect<T extends string>(
+  label: string,
+  choices: readonly T[],
+  prompts: CliCommandContext["prompts"],
+  usageHint: string,
+): Promise<readonly T[]> {
+  if (prompts?.multiSelect === undefined) {
+    throw new CliUsageError(usageHint);
+  }
+  const selected = await prompts.multiSelect(label, choices);
+  for (const selection of selected) {
+    if (!choices.includes(selection as T)) {
+      throw new CliUsageError(`Invalid selection for ${label}: ${selection}`);
+    }
+  }
+  return selected as readonly T[];
+}
+
 export async function promptYesNo(
   label: string,
   prompts: CliCommandContext["prompts"],

@@ -24,8 +24,14 @@ export const usageText = [
   "stepkit add defaults: scope prompts interactively when omitted (no default); namespace",
   'defaults to "project" for --scope project/local, or to "global" for --scope global',
   "unless you opt into a custom one; name defaults to the workflow's own id.",
+  "For bundle packages with multiple workflows, --workflow accepts one name, a comma-separated",
+  "list such as --workflow review,release,cleanup, or --workflow '*' for every workflow.",
+  "Direct source refs may point at .ts/.mts/.js/.mjs files or source directories; append",
+  "path#exportName to select a named export when a file or directory exports multiple workflows.",
   "",
   "Workflow refs:",
+  "  ./workflow.ts#reviewWorkflow      direct local TypeScript file export",
+  "  ./workflows#takeItAway            direct local source directory export",
   "  ./workflow.mjs                    direct local workflow file",
   "  project/review                    registered project workflow",
   "  global/cleanup                    registered global workflow",
@@ -48,6 +54,7 @@ export interface StepkitCliIo {
 export interface StepkitCliPrompts {
   text: (prompt: string) => Promise<string>;
   select: (prompt: string, choices: readonly string[]) => Promise<string>;
+  multiSelect?: (prompt: string, choices: readonly string[]) => Promise<readonly string[]>;
   confirm?: (prompt: string) => Promise<boolean>;
 }
 

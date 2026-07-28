@@ -56,6 +56,7 @@ export function verifyRepositoryDocs() {
     ["packages/cli/README.md", assertFile("packages/cli/README.md")],
     ["packages/dashboard/README.md", assertFile("packages/dashboard/README.md")],
     ["packages/testkit/README.md", assertFile("packages/testkit/README.md")],
+    ["packages/create-flows/README.md", assertFile("packages/create-flows/README.md")],
   ]);
 
   assertIncludes(
@@ -80,7 +81,7 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(
     packageReadmes.get("packages/cli/README.md") ?? "",
-    "stepkit list",
+    "stepkit workflows",
     "packages/cli/README.md",
   );
   assertIncludes(
@@ -93,12 +94,33 @@ export function verifyRepositoryDocs() {
     "workflow",
     "packages/testkit/README.md",
   );
+  assertIncludes(
+    packageReadmes.get("packages/create-flows/README.md") ?? "",
+    "stepkit add ./packages/create-flows/src/index.ts#takeItAway",
+    "packages/create-flows/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/create-flows/README.md") ?? "",
+    "loadFragments(import.meta.dirname, ...)",
+    "packages/create-flows/README.md",
+  );
 
   for (const [path, text] of packageReadmes) {
     for (const forbidden of ["do" + "cs/", "sc" + "affold", "v" + "0"]) {
       assertNotIncludes(text, forbidden, path);
     }
   }
+
+  assertIncludes(
+    assertFile(".pi/rules/packages/core/src/authoring/authoring.md"),
+    "Built workflow packages must preserve the caller directory structure",
+    ".pi/rules/packages/core/src/authoring/authoring.md",
+  );
+  assertIncludes(
+    assertFile(".pi/rules/packages/create-flows/create-flows.md"),
+    "non-bundled `tsup` output",
+    ".pi/rules/packages/create-flows/create-flows.md",
+  );
 
   assertFile(".github/branch-protection.md");
 }

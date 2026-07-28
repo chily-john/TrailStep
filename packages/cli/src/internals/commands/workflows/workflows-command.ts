@@ -16,6 +16,7 @@ import {
   writeRawStepKitConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
+import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 import type { WorkflowSkillMetadata } from "../../workflow-skills/workflow-skill-content.js";
 
 type WorkflowsCommandArgs = Record<string, never>;
@@ -31,6 +32,7 @@ const SCOPE_HEADINGS: readonly {
 
 const NAMESPACE_PRESETS = ["local", "project", "global"] as const;
 const CUSTOM_NAMESPACE_OPTION = "Type a new namespace...";
+const REMOVE_OPTION = "Remove";
 const BACK_OPTION = "Back to workflow list";
 const EXIT_OPTION = "Exit";
 const usageHint = "stepkit workflows requires an interactive session.";
@@ -128,7 +130,7 @@ async function runEntryFlow(
     const nameLabel = `Name: ${selected.name}`;
     const choice = await promptSelect(
       "Select an action",
-      [namespaceLabel, nameLabel, BACK_OPTION, EXIT_OPTION],
+      [namespaceLabel, nameLabel, REMOVE_OPTION, BACK_OPTION, EXIT_OPTION],
       context.prompts,
       usageHint,
     );
@@ -138,6 +140,13 @@ async function runEntryFlow(
     }
     if (choice === EXIT_OPTION) {
       return "exit";
+    }
+    if (choice === REMOVE_OPTION) {
+      const removed = await removeSelectedEntry(selected, context, registryContext);
+      if (removed) {
+        return "back";
+      }
+      continue;
     }
 
     const updated =
@@ -168,6 +177,37 @@ async function describeWorkflow(
 
 function dim(text: string): string {
   return `\x1b[2m${text}\x1b[22m`;
+}
+
+async function removeSelectedEntry(
+  selected: RegisteredWorkflowEntry,
+  context: CliCommandContext,
+  registryContext: WorkflowRegistryContext,
+): Promise<boolean> {
+  const confirmed = await promptYesNo(
+    `Remove ${selected.scope}: ${selected.namespace}/${selected.name}? This cannot be undone.`,
+    context.prompts,
+    "Confirmation required.",
+  );
+  if (!confirmed) {
+    context.io.writeLine("Cancelled.");
+    return false;
+  }
+
+  const path = configPathForScope(selected.scope, registryContext);
+  const config = await readRawStepKitConfigFile(path);
+  const workflows = deleteWorkflowRegistryEntry(
+    toMutableWorkflowRegistry(config.workflows),
+    selected.namespace,
+    selected.name,
+  );
+  await writeRawStepKitConfigFile(path, { ...config, workflows });
+
+  context.io.writeLine(
+    `Removed ${selected.namespace}/${selected.name} from ${selected.scope} config.`,
+  );
+  await warnIfGeneratedSkillDirectoryExists(context, selected.namespace, selected.name);
+  return true;
 }
 
 async function editNamespace(

@@ -9,8 +9,11 @@ import {
   parseBundleWorkflowId,
   parseWorkflowId,
 } from "../workflow-reference/workflow-reference.js";
-import type { WorkflowReference } from "../workflow-reference/workflow-reference.types.js";
-import { loadBundleWorkflow } from "./bundle-resolver.js";
+import type {
+  BundleWorkflowReference,
+  WorkflowReference,
+} from "../workflow-reference/workflow-reference.types.js";
+import { hasBundleWorkflowManifest, loadBundleWorkflow } from "./bundle-resolver.js";
 import { loadDirectWorkflowFile } from "./direct-file-resolver.js";
 import { WorkflowResolutionError } from "./workflow-resolution-error.js";
 
@@ -27,15 +30,29 @@ export interface ResolvedWorkflowReference {
 }
 
 export function isDirectWorkflowFileReference(rawRef: string): boolean {
+  return isDirectWorkflowFileReferencePrefix(stripExportName(rawRef));
+}
+
+function isDirectWorkflowFileReferencePrefix(pathRef: string): boolean {
   return (
-    rawRef.startsWith("./") ||
-    rawRef.startsWith("../") ||
-    rawRef.startsWith(".\\") ||
-    rawRef.startsWith("..\\") ||
-    isAbsolute(rawRef) ||
-    /^[A-Za-z]:[\\/]/u.test(rawRef) ||
-    rawRef.startsWith("\\\\")
+    pathRef.startsWith("./") ||
+    pathRef.startsWith("../") ||
+    pathRef.startsWith(".\\") ||
+    pathRef.startsWith("..\\") ||
+    isAbsolute(pathRef) ||
+    /^[A-Za-z]:[\\/]/u.test(pathRef) ||
+    pathRef.startsWith("\\\\")
   );
+}
+
+function stripExportName(rawRef: string): string {
+  const hashIndex = rawRef.lastIndexOf("#");
+  return hashIndex === -1 ? rawRef : rawRef.slice(0, hashIndex);
+}
+
+function readExportName(rawRef: string): string | undefined {
+  const hashIndex = rawRef.lastIndexOf("#");
+  return hashIndex === -1 ? undefined : rawRef.slice(hashIndex + 1);
 }
 
 export async function resolveWorkflowReference(
@@ -50,22 +67,29 @@ async function resolveWorkflowReferenceInternal(
   options: ResolveWorkflowReferenceOptions,
   resolvingRefs: Set<string>,
 ): Promise<ResolvedWorkflowReference | undefined> {
-  const bundleRef = parseBundleWorkflowId(rawRef);
-  if (bundleRef) {
-    return loadBundleWorkflow(bundleRef, options);
-  }
-
   if (isDirectWorkflowFileReference(rawRef)) {
+    const bundleRef = parseDirectLookingBundleWorkflowId(rawRef);
+    if (bundleRef && (await hasBundleWorkflowManifest(bundleRef.packageName, options))) {
+      return loadBundleWorkflow(bundleRef, options);
+    }
+
     const directWorkflow = await loadDirectWorkflowFile(rawRef, options);
+    const exportName = readExportName(rawRef);
     return {
-      id: directWorkflow.id,
+      id: exportName === undefined ? directWorkflow.id : `${directWorkflow.id}#${exportName}`,
       workflow: directWorkflow.workflow,
       workflowRef: {
         kind: "direct-file",
         packageName: directWorkflow.id,
-        exportName: directWorkflow.workflow.id,
+        exportName: exportName ?? directWorkflow.workflow.id,
       },
     };
+  }
+
+  const bundleRef = parseBundleWorkflowId(rawRef);
+
+  if (bundleRef) {
+    return loadBundleWorkflow(bundleRef, options);
   }
 
   const registeredWorkflow = await resolveRegisteredWorkflowReference(
@@ -90,6 +114,16 @@ async function resolveWorkflowReferenceInternal(
     workflow: discoveredWorkflow.workflow,
     workflowRef: parsedRef,
   };
+}
+
+function parseDirectLookingBundleWorkflowId(
+  rawRef: string,
+): BundleWorkflowReference | undefined {
+  try {
+    return parseBundleWorkflowId(rawRef);
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolveRegisteredWorkflowReference(

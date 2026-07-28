@@ -92,7 +92,7 @@ describe("loadDirectWorkflowFile", () => {
     await writeFile(workflowPath, multipleWorkflowSource, "utf8");
 
     await expect(loadDirectWorkflowFile("./workflows/review.mjs", { cwd })).rejects.toThrow(
-      /exactly one workflow/i,
+      /path#exportName.*bulk add/i,
     );
   });
 
@@ -123,8 +123,60 @@ describe("loadDirectWorkflowFile", () => {
     );
 
     await expect(loadDirectWorkflowFile("./workflows/review.mjs", { cwd })).rejects.toThrow(
-      /exactly one workflow/i,
+      /path#exportName.*bulk add/i,
     );
+  });
+
+  it("selects a named workflow export from a direct source ref", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "index.mjs"), multipleWorkflowSource, "utf8");
+
+    await expect(loadDirectWorkflowFile("./workflows/index.mjs#cleanup", { cwd })).resolves.toEqual(
+      {
+        id: resolve(cwd, "workflows", "index.mjs"),
+        workflow: expect.objectContaining({ id: "cleanup" }),
+      },
+    );
+  });
+
+  it("selects #default when default is a workflow", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "index.mjs"), workflowSource, "utf8");
+
+    await expect(loadDirectWorkflowFile("./workflows/index.mjs#default", { cwd })).resolves.toEqual(
+      {
+        id: resolve(cwd, "workflows", "index.mjs"),
+        workflow: expect.objectContaining({ id: "review" }),
+      },
+    );
+  });
+
+  it("errors with available workflows when a direct named export is missing", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "index.mjs"), multipleWorkflowSource, "utf8");
+
+    await expect(
+      loadDirectWorkflowFile("./workflows/index.mjs#dailyNote", { cwd }),
+    ).rejects.toThrow(
+      /missing workflow export dailyNote.*available workflow exports: cleanup, review/i,
+    );
+  });
+
+  it("errors with available workflows when a named export is not a workflow", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "index.mjs"), namedWorkflowSource, "utf8");
+
+    await expect(
+      loadDirectWorkflowFile("./workflows/index.mjs#notAWorkflow", { cwd }),
+    ).rejects.toThrow(/invalid workflow export notAWorkflow.*available workflow exports: review/i);
   });
 
   it("preserves direct file import errors as the diagnostic cause", async ({ task }) => {
@@ -139,13 +191,69 @@ describe("loadDirectWorkflowFile", () => {
     });
   });
 
-  it("fails clearly for direct TypeScript workflow files until a loader decision exists", async ({
-    task,
-  }) => {
+  it("loads a TypeScript workflow source with emitted-style .js specifiers", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(
+      join(workflowDir, "daily-note.ts"),
+      "const schema = { validate: () => true, diagnostics: () => [], assert: (value: unknown) => value };\nexport const dailyNote = { id: 'dailyNote', inputShape: schema, start: (input: unknown) => ({ kind: 'done', output: input }) };",
+      "utf8",
+    );
+    await writeFile(
+      join(workflowDir, "index.ts"),
+      "export { dailyNote } from './daily-note.js';",
+      "utf8",
+    );
+
+    await expect(
+      loadDirectWorkflowFile("./workflows/index.ts#dailyNote", { cwd }),
+    ).resolves.toEqual({
+      id: resolve(cwd, "workflows", "index.ts"),
+      workflow: expect.objectContaining({ id: "dailyNote" }),
+    });
+  });
+
+  it("resolves extensionless direct source candidates", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "review.ts"), workflowSource, "utf8");
+
+    await expect(loadDirectWorkflowFile("./workflows/review", { cwd })).resolves.toEqual({
+      id: resolve(cwd, "workflows", "review.ts"),
+      workflow: expect.objectContaining({ id: "review" }),
+    });
+  });
+
+  it("resolves direct source directories through index candidates", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "index.ts"), workflowSource, "utf8");
+
+    await expect(loadDirectWorkflowFile("./workflows", { cwd })).resolves.toEqual({
+      id: resolve(cwd, "workflows", "index.ts"),
+      workflow: expect.objectContaining({ id: "review" }),
+    });
+  });
+
+  it("rejects .tsx direct source refs clearly", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const workflowDir = join(cwd, "workflows");
+    await mkdir(workflowDir, { recursive: true });
+    await writeFile(join(workflowDir, "review.tsx"), workflowSource, "utf8");
+
+    await expect(loadDirectWorkflowFile("./workflows/review.tsx", { cwd })).rejects.toThrow(
+      /unsupported.*\.tsx.*JSX/i,
+    );
+  });
+
+  it("reports missing direct source refs before bundle mode", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
 
-    await expect(loadDirectWorkflowFile("./workflows/review.ts", { cwd })).rejects.toThrow(
-      /TypeScript direct-file workflow loading requires a future loader decision/,
+    await expect(loadDirectWorkflowFile("./workflows/missing.ts#review", { cwd })).rejects.toThrow(
+      /Direct workflow source not found:/,
     );
   });
 });

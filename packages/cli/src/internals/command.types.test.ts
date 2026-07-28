@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { CliCommandContext, PackageCommandRunner } from "./command.types.js";
+import type {
+  CliCommandContext,
+  PackageCommandRunner,
+  StepkitCliPrompts,
+} from "./command.types.js";
 import { usageText } from "./command.types.js";
 
 describe("usageText", () => {
@@ -15,6 +19,24 @@ describe("usageText", () => {
     expect(usageText).toContain(
       "stepkit update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]",
     );
+  });
+
+  it("documents direct source workflow refs and bulk add selection syntax", () => {
+    expect(usageText).toContain("./workflow.ts#reviewWorkflow");
+    expect(usageText).toContain("./workflows#takeItAway");
+    expect(usageText).toContain("path#exportName");
+    expect(usageText).toContain("--workflow review,release,cleanup");
+    expect(usageText).toContain("--workflow '*'");
+  });
+
+  it("allows CLI prompts to expose multiSelect choices", async () => {
+    const prompts: StepkitCliPrompts = {
+      text: async () => "",
+      select: async () => "a",
+      multiSelect: async () => ["a", "b"],
+    };
+
+    await expect(prompts.multiSelect?.("Label", ["a", "b"])).resolves.toEqual(["a", "b"]);
   });
 
   it("threads a generic package command runner through command context", async () => {

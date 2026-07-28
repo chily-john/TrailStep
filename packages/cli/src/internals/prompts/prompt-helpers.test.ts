@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { promptSelect, promptText, promptYesNo } from "./prompt-helpers.js";
+import { promptMultiSelect, promptSelect, promptText, promptYesNo } from "./prompt-helpers.js";
 
 describe("promptText", () => {
   it("returns the explicit value without prompting", async () => {
@@ -47,6 +47,44 @@ describe("promptSelect", () => {
   it("throws when the selection is not one of the choices", async () => {
     await expect(
       promptSelect("Label", ["a", "b"], { text: async () => "", select: async () => "c" }, "hint"),
+    ).rejects.toThrow("Invalid selection for Label: c");
+  });
+});
+
+describe("promptMultiSelect", () => {
+  it("throws the usage hint when multiSelect prompts are unavailable", async () => {
+    await expect(promptMultiSelect("Label", ["a", "b"], undefined, "usage hint")).rejects.toThrow(
+      "usage hint",
+    );
+    await expect(
+      promptMultiSelect(
+        "Label",
+        ["a", "b"],
+        { text: async () => "", select: async () => "a" },
+        "usage hint",
+      ),
+    ).rejects.toThrow("usage hint");
+  });
+
+  it("returns the selected choices", async () => {
+    await expect(
+      promptMultiSelect(
+        "Label",
+        ["a", "b", "c"],
+        { text: async () => "", select: async () => "a", multiSelect: async () => ["b", "c"] },
+        "hint",
+      ),
+    ).resolves.toEqual(["b", "c"]);
+  });
+
+  it("throws when any selection is not one of the choices", async () => {
+    await expect(
+      promptMultiSelect(
+        "Label",
+        ["a", "b"],
+        { text: async () => "", select: async () => "a", multiSelect: async () => ["a", "c"] },
+        "hint",
+      ),
     ).rejects.toThrow("Invalid selection for Label: c");
   });
 });

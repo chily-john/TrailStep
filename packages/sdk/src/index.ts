@@ -1,5 +1,4 @@
 export type {
-  Document,
   FailNode,
   PromptOptions,
   PromptTemplateSource,
@@ -12,12 +11,16 @@ export type {
   Workflow,
 } from "@stepkit/core";
 export {
+  Document,
   document,
-  documentOutput,
   done,
   fail,
   jsonSchema,
+  list,
+  loadFragments,
+  promptSections,
   promptTemplate,
+  section,
   shape,
   state,
   step,

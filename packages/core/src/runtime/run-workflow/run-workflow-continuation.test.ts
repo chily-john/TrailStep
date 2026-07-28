@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  Document,
   document,
-  documentOutput,
   done,
   type Event,
   parseStepKitConfig,
@@ -297,7 +297,7 @@ describe("runWorkflow", () => {
     expect(persistedEvents[1]?.stepId).toBe("increment");
   });
 
-  it("runs a prompt step whose output is documentOutput, delivering a Document to .do(...)", async () => {
+  it("runs a prompt step whose output is Document, delivering a Document to .do(...)", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-"));
 
     const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
@@ -308,7 +308,7 @@ describe("runWorkflow", () => {
       start(input) {
         return step({ id: "draft" })
           .prompt(({ input }) => `Draft notes about ${input.topic}.`, {
-            output: documentOutput,
+            output: Document,
             agent: "writer",
           })
           .do((doc) => done({ path: doc.path, content: doc.content }))(input);

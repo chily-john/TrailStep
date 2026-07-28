@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 import {
   Document,
   document,
-  documentOutput,
   done,
   type Event,
   parseStepKitConfig,
@@ -453,9 +452,9 @@ describe("runWorkflow resume", () => {
 
   it("resumes through an already-completed document-producing prompt step to a later failed step, reconstructing a real Document from the replayed output", async () => {
     // This is the exact scenario the resume-correctness fix targets: a completed
-    // step whose output schema is `documentOutput` gets its recorded output
+    // step whose output schema is `Document` gets its recorded output
     // replayed from events.jsonl as a plain JSON object (never a live Document
-    // instance). Before the duck-typing fix, `documentOutput.assert(...)` would
+    // instance). Before the duck-typing fix, `Document.assert(...)` would
     // reject that plain object with a validation failure because of an
     // `instanceof Document` check. It must now succeed and hand the "draft"
     // step's `.do()` continuation a genuine, working `Document`.
@@ -472,7 +471,7 @@ describe("runWorkflow resume", () => {
 
     const draftStep = step({ id: "draft" })
       .prompt(({ input }) => `Draft notes about ${input.topic}.`, {
-        output: documentOutput,
+        output: Document,
         agent: "writer",
       })
       .do((doc) => {

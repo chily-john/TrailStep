@@ -1,19 +1,18 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { type Document, jsonSchema } from "@stepkit/sdk";
+import {
+  type Document,
+  jsonSchema,
+  list,
+  loadFragments,
+  promptSections,
+  section,
+} from "@stepkit/sdk";
 import type { ReviewResult } from "../shared/review-schema.js";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const methodology = readFileSync(join(here, "../shared/feature-methodology.md"), "utf8");
-const storyContract = readFileSync(
-  join(here, "../shared/story-implementation-contract.md"),
-  "utf8",
-);
-const architectureGuidance = readFileSync(
-  join(here, "../shared/project-architecture-guidance.md"),
-  "utf8",
-);
+const fragments = loadFragments(import.meta.dirname, {
+  methodology: "../shared/feature-methodology.md",
+  architectureGuidance: "../shared/project-architecture-guidance.md",
+  storyContract: "../shared/story-implementation-contract.md",
+});
 
 export interface ImplementStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -42,31 +41,22 @@ export const implementStoryOutput = jsonSchema<ImplementStoryOutput>({
 });
 
 export function implementStoryPrompt({ input }: { readonly input: ImplementStoryInput }): string {
-  return [
-    methodology,
-    "",
-    architectureGuidance,
-    "",
-    storyContract,
-    "",
-    "## Story",
-    "",
-    input.currentStory.content,
-    "",
-    "## Task",
-    "",
-    ...(input.previousStoryReview === undefined
-      ? ["Implement this story."]
-      : [
+  const taskBody =
+    input.previousStoryReview === undefined
+      ? "Implement this story."
+      : promptSections(
           `This is retry attempt ${input.attempt} for this story. A previous review scored the implementation ${input.previousStoryReview.score}/5: ${input.previousStoryReview.summary}`,
-          "",
-          "Required improvements to address, without discarding what already works:",
-          "",
-          ...input.previousStoryReview.requiredImprovements.map(
-            (improvement) => `- ${improvement}`,
-          ),
-        ]),
-    "",
-    "Set `blocked: true` with a clear `blockedReason` instead of guessing or pretending the story is complete. Otherwise set `blocked: false` and use `summary` to report files changed, commands run, and their results.",
-  ].join("\n");
+          `Required improvements to address, without discarding what already works:\n\n${list(input.previousStoryReview.requiredImprovements)}`,
+        );
+
+  return promptSections(
+    fragments.methodology,
+    fragments.architectureGuidance,
+    fragments.storyContract,
+    section("Story", input.currentStory.content),
+    section(
+      "Task",
+      `${taskBody}\n\nSet \`blocked: true\` with a clear \`blockedReason\` instead of guessing or pretending the story is complete. Otherwise set \`blocked: false\` and use \`summary\` to report files changed, commands run, and their results.`,
+    ),
+  );
 }

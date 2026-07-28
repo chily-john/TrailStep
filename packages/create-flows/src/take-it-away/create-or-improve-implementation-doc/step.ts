@@ -1,17 +1,13 @@
-import type { Document } from "@stepkit/sdk";
-import { documentOutput, state, step } from "@stepkit/sdk";
+import { Document, state, step } from "@stepkit/sdk";
 import { reviewImplementationDocStep } from "../review-implementation-doc/step.js";
-import {
-  type CreateOrImproveImplementationDocInput,
-  createOrImproveImplementationDocPrompt,
-} from "./prompt.js";
+import { createOrImproveImplementationDocPrompt } from "./prompt.js";
 
 export const createOrImproveImplementationDocStep = step({
   id: "create-or-improve-implementation-doc",
 })
-  .prompt<CreateOrImproveImplementationDocInput, Document>(createOrImproveImplementationDocPrompt, {
+  .prompt(createOrImproveImplementationDocPrompt, {
     agent: "planner",
-    output: documentOutput,
+    output: Document,
   })
   .do(async (implementationDoc, input) => {
     await state.set("implementationDoc", implementationDoc);

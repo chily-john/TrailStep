@@ -1,13 +1,69 @@
 import { StepKitFailureError, validationFailure } from "../../contracts/failures/failure.js";
-import type { Schema, ValidationDiagnostic } from "../../contracts/shapes/shape.types.js";
+import type { ValidationDiagnostic } from "../../contracts/shapes/shape.types.js";
 import { writeDocumentArtifact } from "../../runtime/artifacts/run-storage.js";
 import { currentRunContext } from "../../runtime/run-context/run-context-storage.js";
 
+/**
+ * A captured document artifact. `Document` doubles as its own
+ * `Schema<Document>`: `validate`/`diagnostics`/`assert`/`jsonSchema`/
+ * `captureMode` are static members, so passing the class itself as
+ * `.prompt(source, { output: Document })` gives both the TypeScript output
+ * type and the runtime validator from one symbol -- no separate schema
+ * constant to import or keep in sync.
+ */
 export class Document {
   // Index signature satisfies the `PlainObject` (`Record<string, unknown>`)
   // constraint required by `Schema<T extends PlainObject>` — a plain class
   // with only named properties does not structurally provide one otherwise.
   [key: string]: unknown;
+
+  static readonly captureMode = "raw-text" as const;
+
+  static readonly jsonSchema: Record<string, unknown> = {
+    type: "string",
+    description: "Document content, captured as raw text.",
+  };
+
+  static validate(value: unknown): value is Document {
+    return isDocumentLike(value);
+  }
+
+  static diagnostics(value: unknown): readonly ValidationDiagnostic[] {
+    if (isDocumentLike(value)) {
+      return [];
+    }
+
+    return [
+      { path: "/", message: "must be a document (an object with string content and path fields)" },
+    ];
+  }
+
+  /**
+   * Deliberately duck-types instead of checking `instanceof Document`: on
+   * resume, a completed step's recorded output is replayed from
+   * `events.jsonl` via `JSON.parse`, producing a plain deserialized object —
+   * never a live `Document` instance — before `assert` is called on it. An
+   * `instanceof` check would fail every such replay. `assert` reconstructs a
+   * genuine `Document` from any content/path-shaped value, so every
+   * consumer downstream — a live capture or a replayed value alike — always
+   * receives a real `Document` instance with working prototype methods.
+   */
+  static assert(value: unknown, label = "value"): Document {
+    const valueDiagnostics = Document.diagnostics(value);
+
+    if (valueDiagnostics.length > 0 || !isDocumentLike(value)) {
+      throw new StepKitFailureError(
+        validationFailure(
+          `${label} failed schema validation: ${formatDiagnostics(valueDiagnostics)}`,
+          {
+            diagnostics: valueDiagnostics,
+          },
+        ),
+      );
+    }
+
+    return new Document(value.content, value.path);
+  }
 
   constructor(
     public readonly content: string,
@@ -47,53 +103,6 @@ function isDocumentLike(value: unknown): value is { content: string; path: strin
     typeof (value as Record<string, unknown>).path === "string"
   );
 }
-
-const diagnostics = (value: unknown): readonly ValidationDiagnostic[] => {
-  if (isDocumentLike(value)) {
-    return [];
-  }
-
-  return [
-    { path: "/", message: "must be a document (an object with string content and path fields)" },
-  ];
-};
-
-/**
- * `Schema<Document>` for use as a step's `.prompt(source, { output: documentOutput })`.
- *
- * Deliberately duck-types instead of checking `instanceof Document`: on
- * resume, a completed step's recorded output is replayed from
- * `events.jsonl` via `JSON.parse`, producing a plain deserialized object —
- * never a live `Document` instance — before `assert` is called on it. An
- * `instanceof` check would fail every such replay. `assert` reconstructs a
- * genuine `Document` from any content/path-shaped value, so every
- * consumer downstream — a live capture or a replayed value alike — always
- * receives a real `Document` instance with working prototype methods.
- */
-export const documentOutput: Schema<Document> = {
-  validate(value: unknown): value is Document {
-    return isDocumentLike(value);
-  },
-  diagnostics,
-  assert(value: unknown, label = "value"): Document {
-    const valueDiagnostics = diagnostics(value);
-
-    if (valueDiagnostics.length > 0 || !isDocumentLike(value)) {
-      throw new StepKitFailureError(
-        validationFailure(
-          `${label} failed schema validation: ${formatDiagnostics(valueDiagnostics)}`,
-          {
-            diagnostics: valueDiagnostics,
-          },
-        ),
-      );
-    }
-
-    return new Document(value.content, value.path);
-  },
-  jsonSchema: { type: "string", description: "Document content, captured as raw text." },
-  captureMode: "raw-text",
-};
 
 function formatDiagnostics(diagnostics: readonly ValidationDiagnostic[]): string {
   return diagnostics.map((diagnostic) => `${diagnostic.path} ${diagnostic.message}`).join("; ");

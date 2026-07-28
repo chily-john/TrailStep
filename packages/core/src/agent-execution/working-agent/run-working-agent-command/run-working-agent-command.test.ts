@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   Document,
-  documentOutput,
   done,
   jsonSchema,
   parseStepKitConfig,
@@ -250,7 +249,7 @@ describe("raw-text capture mode", () => {
             outputFile,
             step: {
               id: "write-doc",
-              output: documentOutput,
+              output: Document,
               prompt: "unused",
               requirements: { size: "default" },
             },
@@ -308,7 +307,7 @@ describe("raw-text capture mode", () => {
         start(input) {
           return step({ id: "write" })
             .prompt(({ input }) => `Write notes about ${input.topic}.`, {
-              output: documentOutput,
+              output: Document,
               agent: "writer",
             })
             .do((doc) => done({ path: doc.path, content: doc.content }))(input);

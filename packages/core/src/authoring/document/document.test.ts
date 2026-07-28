@@ -8,7 +8,7 @@ import { createRunDirectory } from "../../runtime/artifacts/run-storage.js";
 import { createRunContext } from "../../runtime/run-context/create-run-context.js";
 import { runContextStorage } from "../../runtime/run-context/run-context-storage.js";
 import { withStepContext } from "../../runtime/run-context/with-step-context.js";
-import { Document, document, documentOutput } from "./document.js";
+import { Document, document } from "./document.js";
 
 describe("document(content)", () => {
   it("writes content under the current step's directory as document-1.md and returns a matching Document", async () => {
@@ -87,30 +87,30 @@ describe("document(content)", () => {
   });
 });
 
-describe("documentOutput", () => {
+describe("Document as a schema", () => {
   it("validates a live Document instance and any content/path-shaped plain object alike", () => {
     const doc = new Document("hello", "/tmp/report.md");
 
-    expect(documentOutput.validate(doc)).toBe(true);
-    expect(documentOutput.validate({ content: "hello", path: "/tmp/report.md" })).toBe(true);
-    expect(documentOutput.validate({ content: "hello" })).toBe(false);
-    expect(documentOutput.validate(undefined)).toBe(false);
-    expect(documentOutput.validate("not a document")).toBe(false);
+    expect(Document.validate(doc)).toBe(true);
+    expect(Document.validate({ content: "hello", path: "/tmp/report.md" })).toBe(true);
+    expect(Document.validate({ content: "hello" })).toBe(false);
+    expect(Document.validate(undefined)).toBe(false);
+    expect(Document.validate("not a document")).toBe(false);
   });
 
   it("reports diagnostics only for non-document-shaped values", () => {
     const doc = new Document("hello", "/tmp/report.md");
 
-    expect(documentOutput.diagnostics(doc)).toEqual([]);
-    expect(documentOutput.diagnostics({ content: "hello", path: "/tmp/report.md" })).toEqual([]);
-    expect(documentOutput.diagnostics("not a document")).toEqual([
+    expect(Document.diagnostics(doc)).toEqual([]);
+    expect(Document.diagnostics({ content: "hello", path: "/tmp/report.md" })).toEqual([]);
+    expect(Document.diagnostics("not a document")).toEqual([
       { path: "/", message: "must be a document (an object with string content and path fields)" },
     ]);
   });
 
   it("asserts a live Document through as a freshly reconstructed Document instance", () => {
     const doc = new Document("hello", "/tmp/report.md");
-    const asserted = documentOutput.assert(doc, "step output");
+    const asserted = Document.assert(doc, "step output");
 
     expect(asserted).toBeInstanceOf(Document);
     expect(asserted.content).toBe("hello");
@@ -127,7 +127,7 @@ describe("documentOutput", () => {
 
     expect(replayedPlainOutput).not.toBeInstanceOf(Document);
 
-    const asserted = documentOutput.assert(replayedPlainOutput, "step output");
+    const asserted = Document.assert(replayedPlainOutput, "step output");
 
     expect(asserted).toBeInstanceOf(Document);
     expect(asserted.content).toBe("hello");
@@ -135,14 +135,14 @@ describe("documentOutput", () => {
   });
 
   it("throws a validation failure for a value that is not document-shaped", () => {
-    expect(() => documentOutput.assert({ not: "a document" }, "step output")).toThrow(
+    expect(() => Document.assert({ not: "a document" }, "step output")).toThrow(
       /failed schema validation/,
     );
   });
 
   it("declares raw-text captureMode and a string jsonSchema", () => {
-    expect(documentOutput.captureMode).toBe("raw-text");
-    expect(documentOutput.jsonSchema).toEqual({
+    expect(Document.captureMode).toBe("raw-text");
+    expect(Document.jsonSchema).toEqual({
       type: "string",
       description: "Document content, captured as raw text.",
     });

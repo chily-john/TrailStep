@@ -69,11 +69,19 @@ export function jsonSchema<T extends PlainObject>(schema: JsonSchemaObject): Sch
 }
 
 function isSchema<T extends PlainObject>(value: ShapeInput<T>): value is Schema<T> {
+  // Checked structurally rather than via `isPlainObject` so that a class
+  // carrying its schema as static members (e.g. `Document`) -- a function,
+  // not a plain object -- is recognized as a `Schema<T>` too.
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
   return (
-    isPlainObject(value) &&
-    typeof value.validate === "function" &&
-    typeof value.diagnostics === "function" &&
-    typeof value.assert === "function"
+    typeof candidate.validate === "function" &&
+    typeof candidate.diagnostics === "function" &&
+    typeof candidate.assert === "function"
   );
 }
 

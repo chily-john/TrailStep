@@ -6,7 +6,7 @@ import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
-import { extractEnvelopeOutput } from "../../envelopes/envelope.js";
+import { extractEnvelopeOutput, extractEnvelopeText } from "../../envelopes/envelope.js";
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
@@ -67,18 +67,33 @@ async function runWorking(
     });
   }
 
-  let output: PlainObject;
-  try {
-    output = extractEnvelopeOutput(result.stdout, { resultField: PI_RESULT_FIELD });
-  } catch (error) {
-    throw new StepKitFailureError({
-      code: "agent_provider_output_invalid",
-      message: "pi provider stdout did not contain a usable JSON result.",
-      details: { cause: error instanceof Error ? error.message : String(error) },
-    });
-  }
+  if (request.captureMode === "raw-text") {
+    let text: string;
+    try {
+      text = extractEnvelopeText(result.stdout, { resultField: PI_RESULT_FIELD });
+    } catch (error) {
+      throw new StepKitFailureError({
+        code: "agent_provider_output_invalid",
+        message: "pi provider stdout did not contain a usable result.",
+        details: { cause: error instanceof Error ? error.message : String(error) },
+      });
+    }
 
-  await writeFile(request.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+    await writeFile(request.outputFile, text, "utf8");
+  } else {
+    let output: PlainObject;
+    try {
+      output = extractEnvelopeOutput(result.stdout, { resultField: PI_RESULT_FIELD });
+    } catch (error) {
+      throw new StepKitFailureError({
+        code: "agent_provider_output_invalid",
+        message: "pi provider stdout did not contain a usable JSON result.",
+        details: { cause: error instanceof Error ? error.message : String(error) },
+      });
+    }
+
+    await writeFile(request.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+  }
 }
 
 /**

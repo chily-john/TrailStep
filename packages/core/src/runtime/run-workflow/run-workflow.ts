@@ -179,6 +179,13 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       initialSource: isResume
         ? `resume for workflow ${options.workflow.id}`
         : `workflow.start for workflow ${options.workflow.id}`,
+      // The original run already used one step-index slot per step.started
+      // event ever recorded (successful or failed) -- newly-dispatched steps
+      // after resume must continue that sequence, not restart at 1, or their
+      // artifact directories collide with the pre-resume steps' directories.
+      initialExecutedSteps: isResume
+        ? previousEvents.filter((event) => event.type === "step.started").length
+        : undefined,
       workflowAgents: options.workflow.agents ?? {},
       runDir,
       cwd,

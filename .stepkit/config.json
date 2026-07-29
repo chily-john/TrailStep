@@ -1,13 +1,14 @@
 {
   "workflows": {
     "project": {
-      "take-it-away": "./packages/create-flows/src"
+      "take-it-away": "./packages/create-flows/src",
+      "grill-it-away": "./packages/create-flows/src#grillItAway"
     }
   },
   "agents": {
     "default": [
       {
-        "provider": "claude",
+        "provider": "claude"
       }
     ]
   }

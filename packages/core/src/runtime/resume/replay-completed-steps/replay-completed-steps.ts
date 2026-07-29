@@ -47,16 +47,6 @@ export async function replayCompletedSteps<
       };
     }
 
-    if (node.config.id === options.targetStepId) {
-      return {
-        status: "failure",
-        failure: replayFailure(
-          "resume_target_not_failed",
-          `Target step ${node.config.id} already has a completed output in the target history.`,
-        ),
-      };
-    }
-
     if (node.config.id !== completedEvent.stepId) {
       return {
         status: "failure",

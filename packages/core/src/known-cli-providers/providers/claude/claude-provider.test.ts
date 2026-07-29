@@ -1,15 +1,19 @@
+import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
 import { claudeProvider } from "./claude-provider.js";
 
+vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+
 describe("claudeProvider.runWorking", () => {
-  it("builds -p --output-format json --dangerously-skip-permissions --model <model> --effort <level> <prompt> and writes outputFile", async () => {
+  it("builds -p --output-format json --dangerously-skip-permissions --model <model> --effort <level> (no positional prompt) and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -47,9 +51,10 @@ describe("claudeProvider.runWorking", () => {
         "sonnet",
         "--effort",
         "medium",
-        "Say hello to Ada.",
       ],
+      stdin: "Say hello to Ada.",
     });
+    expect(calls[0]?.args).not.toContain("Say hello to Ada.");
 
     expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hello, Ada!" });
   });
@@ -72,8 +77,57 @@ describe("claudeProvider.runWorking", () => {
       "--output-format",
       "json",
       "--dangerously-skip-permissions",
-      "Say hi.",
     ]);
+    expect(calls[0]?.stdin).toEqual("Say hi.");
+  });
+
+  it("passes the prompt via stdin instead of argv, even for a 100KB+ prompt (Windows CreateProcess argv-length regression check)", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-large-prompt-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    const largePrompt = "x".repeat(120_000);
+    await writeFile(promptFile, largePrompt, "utf8");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await claudeProvider.runWorking({ promptFile, outputFile, cwd }, async (request) => {
+      calls.push(request);
+      return { exitCode: 0, stdout: JSON.stringify({ result: '{"ok":true}' }) };
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.stdin).toEqual(largePrompt);
+    expect(calls[0]?.args.every((arg) => arg.length < 1000)).toBe(true);
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ ok: true });
+  });
+
+  it("the default runner (spawnClaudeCapturingStdout) pipes stdin, writes the prompt, and ends the stream", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-stdin-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stdin: { on: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+    };
+    child.stdout = new EventEmitter();
+    child.stdin = { on: vi.fn(), end: vi.fn() };
+
+    vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const runPromise = claudeProvider.runWorking({ promptFile, outputFile, cwd });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    child.stdout.emit("data", Buffer.from(JSON.stringify({ result: '{"ok":true}' })));
+    child.emit("close", 0);
+    await runPromise;
+
+    expect(spawn).toHaveBeenCalledWith(
+      "claude",
+      ["-p", "--output-format", "json", "--dangerously-skip-permissions"],
+      expect.objectContaining({ stdio: ["pipe", "pipe", "inherit"] }),
+    );
+    expect(child.stdin.end).toHaveBeenCalledWith("Say hi.");
   });
 
   it("writes usage.json after successful output extraction", async () => {
@@ -187,6 +241,50 @@ describe("claudeProvider.runWorking", () => {
     });
   });
 
+  it("surfaces sessionId and rawResultText in the failure details when the envelope parses but its result field isn't usable JSON, so a repair attempt is possible", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-badjson-session-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    await expect(
+      claudeProvider.runWorking({ promptFile, outputFile, cwd }, async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({
+          session_id: "session-abc",
+          result: "Here is some prose instead of JSON.",
+        }),
+      })),
+    ).rejects.toMatchObject({
+      failure: {
+        code: "agent_provider_output_invalid",
+        details: {
+          sessionId: "session-abc",
+          rawResultText: "Here is some prose instead of JSON.",
+        },
+      },
+    });
+  });
+
+  it("omits sessionId from failure details when stdout has no parsable envelope at all (repair is not attempted)", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-badjson-nosession-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    await expect(
+      claudeProvider.runWorking({ promptFile, outputFile, cwd }, async () => ({
+        exitCode: 0,
+        stdout: "not usable",
+      })),
+    ).rejects.toSatisfy((error: unknown) => {
+      return (
+        error instanceof StepKitFailureError &&
+        !Object.hasOwn(error.failure.details as object, "sessionId")
+      );
+    });
+  });
+
   it("throws agent_provider_spawn_error when the runner rejects", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-spawn-"));
     const promptFile = join(cwd, "prompt.md");
@@ -200,6 +298,152 @@ describe("claudeProvider.runWorking", () => {
     ).rejects.toMatchObject({
       failure: { code: "agent_provider_spawn_error" },
     });
+  });
+
+  it("writes a plain-text result verbatim, with no JSON parsing, when captureMode is raw-text", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-rawtext-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.md");
+    await writeFile(promptFile, "Write a feature doc.", "utf8");
+
+    const documentText = "# Feature Doc\n\nThis is plain markdown, not JSON.";
+
+    await claudeProvider.runWorking(
+      { promptFile, outputFile, cwd, captureMode: "raw-text" },
+      async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({ type: "result", is_error: false, result: documentText }),
+      }),
+    );
+
+    expect(await readFile(outputFile, "utf8")).toEqual(documentText);
+  });
+
+  it("still JSON-extracts when captureMode is json (or omitted), regression check", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-jsonmode-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    await claudeProvider.runWorking(
+      { promptFile, outputFile, cwd, captureMode: "json" },
+      async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({ result: '{"greeting":"Hi!"}' }),
+      }),
+    );
+
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hi!" });
+  });
+});
+
+describe("claudeProvider.repairOutput", () => {
+  it("builds --resume <sessionId> -p --output-format json --dangerously-skip-permissions (plus model/effort), sends a reformat-only prompt via stdin, and accepts a well-formed reply", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-repair-"));
+    const outputFile = join(cwd, "output.json");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await claudeProvider.repairOutput?.(
+      {
+        sessionId: "session-123",
+        rawResultText: "Sorry, here's some prose instead of JSON.",
+        outputFile,
+        cwd,
+        model: "sonnet",
+        thinking: "medium",
+        outputSchema: {
+          type: "object",
+          properties: { greeting: { type: "string" } },
+          required: ["greeting"],
+        },
+      },
+      async (request) => {
+        calls.push(request);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ result: '{"greeting":"Hello, Ada!"}' }),
+        };
+      },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      command: "claude",
+      cwd,
+      args: [
+        "--resume",
+        "session-123",
+        "-p",
+        "--output-format",
+        "json",
+        "--dangerously-skip-permissions",
+        "--model",
+        "sonnet",
+        "--effort",
+        "medium",
+      ],
+    });
+    expect(calls[0]?.stdin).toContain("Sorry, here's some prose instead of JSON.");
+    expect(calls[0]?.stdin).toContain("Do not redo the task");
+    expect(calls[0]?.stdin).toContain('"greeting"');
+
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hello, Ada!" });
+  });
+
+  it("omits --model and --effort when not provided", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-repair-bare-"));
+    const outputFile = join(cwd, "output.json");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await claudeProvider.repairOutput?.(
+      {
+        sessionId: "session-bare",
+        rawResultText: "prose",
+        outputFile,
+        cwd,
+        outputSchema: { type: "object" },
+      },
+      async (request) => {
+        calls.push(request);
+        return { exitCode: 0, stdout: JSON.stringify({ result: '{"ok":true}' }) };
+      },
+    );
+
+    expect(calls[0]?.args).toEqual([
+      "--resume",
+      "session-bare",
+      "-p",
+      "--output-format",
+      "json",
+      "--dangerously-skip-permissions",
+    ]);
+  });
+
+  it("throws agent_provider_output_invalid when the repair reply is itself malformed, without retrying again", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-repair-stillbad-"));
+    const outputFile = join(cwd, "output.json");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await expect(
+      claudeProvider.repairOutput?.(
+        {
+          sessionId: "session-stillbad",
+          rawResultText: "prose",
+          outputFile,
+          cwd,
+          outputSchema: { type: "object" },
+        },
+        async (request) => {
+          calls.push(request);
+          return { exitCode: 0, stdout: "still prose, not JSON" };
+        },
+      ),
+    ).rejects.toMatchObject({ failure: { code: "agent_provider_output_invalid" } });
+
+    expect(calls).toHaveLength(1);
   });
 });
 

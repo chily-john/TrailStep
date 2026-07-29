@@ -136,6 +136,42 @@ describe("geminiProvider.runWorking", () => {
       failure: { code: "agent_provider_spawn_error" },
     });
   });
+
+  it("writes a plain-text response verbatim, with no JSON parsing, when captureMode is raw-text", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-rawtext-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.md");
+    await writeFile(promptFile, "Write a feature doc.", "utf8");
+
+    const documentText = "# Feature Doc\n\nThis is plain markdown, not JSON.";
+
+    await geminiProvider.runWorking(
+      { promptFile, outputFile, cwd, captureMode: "raw-text" },
+      async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({ response: documentText, stats: {} }),
+      }),
+    );
+
+    expect(await readFile(outputFile, "utf8")).toEqual(documentText);
+  });
+
+  it("still JSON-extracts when captureMode is json (or omitted), regression check", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-jsonmode-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    await geminiProvider.runWorking(
+      { promptFile, outputFile, cwd, captureMode: "json" },
+      async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({ response: '{"greeting":"Hi!"}' }),
+      }),
+    );
+
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hi!" });
+  });
 });
 
 describe("geminiProvider.runInteractive", () => {

@@ -14,6 +14,7 @@ import {
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../../index.js";
+import type { ProviderWorkingProcessRequest } from "../../../known-cli-providers/registry/provider-registry.types.js";
 import { createRunDirectory } from "../../../runtime/artifacts/run-storage.js";
 import { createRunContext } from "../../../runtime/run-context/create-run-context.js";
 import { runContextStorage } from "../../../runtime/run-context/run-context-storage.js";
@@ -176,6 +177,139 @@ describe("runWorkingAgentCommand", () => {
   });
 });
 
+describe("provider output repair (session-resumable providers only)", () => {
+  function buildReviewWorkflow(): Workflow<{ task: string }, { answer: string }> {
+    return {
+      id: "working-agent-repair-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+  }
+
+  it("resumes the same claude session once to repair a malformed final answer, and accepts a well-formed repair reply as the step's output", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-repair-ok-"));
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    const result = await runWorkflow({
+      workflow: buildReviewWorkflow(),
+      input: { task: "repair" },
+      runName: "working-agent-repair-ok-run",
+      cwd,
+      stepkitConfig: parseStepKitConfig({
+        version: 1,
+        customProviders: {},
+        agents: { medium: [{ provider: "claude" }] },
+      }),
+      providerWorkingRunner: async (request) => {
+        calls.push(request);
+        if (calls.length === 1) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              session_id: "session-repair-ok",
+              result: "Sure! I finished the review but forgot to format it as JSON.",
+            }),
+          };
+        }
+        return { exitCode: 0, stdout: JSON.stringify({ result: '{"answer":"looks good"}' }) };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ answer: "looks good" });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.args).not.toContain("--resume");
+    expect(calls[1]?.args).toEqual(
+      expect.arrayContaining(["--resume", "session-repair-ok", "-p", "--output-format", "json"]),
+    );
+    expect(calls[1]?.stdin).toContain("Do not redo the task");
+    expect(calls[1]?.stdin).toContain(
+      "Sure! I finished the review but forgot to format it as JSON.",
+    );
+  });
+
+  it("falls through to agent_target_exhausted when the repair attempt also returns malformed output (no second repair, no infinite loop)", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-repair-fail-"));
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    const result = await runWorkflow({
+      workflow: buildReviewWorkflow(),
+      input: { task: "repair-fail" },
+      runName: "working-agent-repair-fail-run",
+      cwd,
+      stepkitConfig: parseStepKitConfig({
+        version: 1,
+        customProviders: {},
+        agents: { medium: [{ provider: "claude" }] },
+      }),
+      providerWorkingRunner: async (request) => {
+        calls.push(request);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ session_id: "session-repair-fail", result: "Still prose." }),
+        };
+      },
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected the step to fail once the repair attempt also produced prose");
+    }
+    expect(result.failure.code).toBe("agent_target_exhausted");
+    expect(result.failure.details).toMatchObject({
+      attempts: [{ target: "claude", code: "agent_provider_output_invalid" }],
+    });
+  });
+
+  it("leaves a provider without repairOutput (e.g. gemini) failing immediately on malformed output, even when a session id is present", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-no-repair-"));
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    const result = await runWorkflow({
+      workflow: buildReviewWorkflow(),
+      input: { task: "no-repair" },
+      runName: "working-agent-no-repair-run",
+      cwd,
+      stepkitConfig: parseStepKitConfig({
+        version: 1,
+        customProviders: {},
+        agents: { medium: [{ provider: "gemini" }] },
+      }),
+      providerWorkingRunner: async (request) => {
+        calls.push(request);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ session_id: "session-gemini", response: "not json prose" }),
+        };
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected the gemini target to fail immediately without a repair attempt");
+    }
+    expect(result.failure.code).toBe("agent_target_exhausted");
+    expect(result.failure.details).toMatchObject({
+      attempts: [{ target: "gemini", code: "agent_provider_output_invalid" }],
+    });
+  });
+});
+
 describe("raw-text capture mode", () => {
   describe("buildWorkingAgentPrompt", () => {
     it("swaps in document-writing instructions when captureMode is raw-text", () => {
@@ -328,6 +462,60 @@ describe("raw-text capture mode", () => {
           await writeFile(request.outputFile, "# Notes\n\nSome free-form prose, not JSON.", "utf8");
           return { exitCode: 0 };
         },
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error(result.failure.message);
+      }
+
+      const documentPath = join(result.runDir, "steps", "0001-write", "document-1.md");
+      expect(result.output).toEqual({
+        path: documentPath,
+        content: "# Notes\n\nSome free-form prose, not JSON.",
+      });
+
+      await expect(readFile(documentPath, "utf8")).resolves.toBe(
+        "# Notes\n\nSome free-form prose, not JSON.",
+      );
+    });
+
+    it("captures a registered CLI provider's raw stdout as a Document without throwing agent_target_exhausted", async () => {
+      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-provider-doc-e2e-"));
+
+      const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
+        id: "working-agent-provider-document-workflow",
+        inputShape: { topic: "string" },
+        outputShape: { path: "string", content: "string" },
+        agents: { writer: { size: "medium" } },
+        start(input) {
+          return step({ id: "write" })
+            .prompt(({ input }) => `Write notes about ${input.topic}.`, {
+              output: Document,
+              agent: "writer",
+            })
+            .do((doc) => done({ path: doc.path, content: doc.content }))(input);
+        },
+      };
+
+      const result = await runWorkflow({
+        workflow,
+        input: { topic: "raw-text capture" },
+        runName: "working-agent-provider-document-run",
+        cwd,
+        stepkitConfig: parseStepKitConfig({
+          version: 1,
+          customProviders: {},
+          agents: { medium: [{ provider: "claude" }] },
+        }),
+        providerWorkingRunner: async () => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            type: "result",
+            is_error: false,
+            result: "# Notes\n\nSome free-form prose, not JSON.",
+          }),
+        }),
       });
 
       expect(result.status).toBe("success");

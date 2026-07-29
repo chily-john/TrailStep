@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "project-grill-it-away": {
+      "source": "C:\\Users\\cjohnson_xtivia\\Desktop\\StepKit\\.stepkit\\skills\\project-grill-it-away",
+      "sourceType": "local",
+      "computedHash": "dd7bce09680e0469e9d870cc4065bb20b7a66b867e431a5fb5513d4b9d0d11ae"
+    },
     "project-take-it-away": {
       "source": "C:\\Users\\cjohnson_xtivia\\Desktop\\StepKit\\.stepkit\\skills\\project-take-it-away",
       "sourceType": "local",

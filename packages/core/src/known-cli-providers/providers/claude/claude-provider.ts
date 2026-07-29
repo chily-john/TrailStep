@@ -7,11 +7,16 @@ import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
-import { extractEnvelopeMetadata, extractEnvelopeOutput } from "../../envelopes/envelope.js";
+import {
+  extractEnvelopeMetadata,
+  extractEnvelopeOutput,
+  extractEnvelopeText,
+} from "../../envelopes/envelope.js";
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
   ProviderWorkingProcessResult,
+  ProviderWorkingRepairRequest,
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "../../registry/provider-registry.types.js";
@@ -23,12 +28,12 @@ async function runWorking(
   runner: ProviderWorkingRunner = spawnClaudeCapturingStdout,
 ): Promise<void> {
   const prompt = await readFile(request.promptFile, "utf8");
-  const args = buildClaudeWorkingArgs(request, prompt);
+  const args = buildClaudeWorkingArgs(request);
 
   let result: ProviderWorkingProcessResult;
   const startedAt = performance.now();
   try {
-    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd });
+    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd, stdin: prompt });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -47,26 +52,202 @@ async function runWorking(
     });
   }
 
-  let output: PlainObject;
+  await writeCapturedOutput({
+    stdout: result.stdout,
+    outputFile: request.outputFile,
+    usageFile: request.usageFile,
+    captureMode: request.captureMode,
+    harnessDurationMs,
+    context: "working",
+  });
+}
+
+/**
+ * A malformed final answer after a real agentic turn still has a resumable
+ * session behind it — the model did whatever file edits/tests it did before
+ * producing an unusable answer, and that work already happened. Re-running
+ * the whole task on a fresh session would risk redoing or conflicting with
+ * those side effects, so this asks the *same* session for a reformat-only
+ * reply instead. `sessionId`/`rawResultText` are surfaced here (rather than
+ * only on the success path) specifically so the caller can attempt that
+ * repair; see `attemptProviderOutputRepair` in run-working-agent-command.ts.
+ */
+function extractFailureContext(rawStdout: string): {
+  readonly sessionId?: string;
+  readonly rawResultText?: string;
+} {
+  const metadata = extractEnvelopeMetadata(rawStdout, { harnessDurationMs: 0 });
+  let rawResultText: string | undefined;
   try {
-    output = extractEnvelopeOutput(result.stdout, { resultField: "result" });
+    rawResultText = extractEnvelopeText(rawStdout, { resultField: "result" });
+  } catch {
+    rawResultText = undefined;
+  }
+
+  return {
+    ...(metadata.sessionId === undefined ? {} : { sessionId: metadata.sessionId }),
+    ...(rawResultText === undefined ? {} : { rawResultText }),
+  };
+}
+
+async function writeCapturedOutput(options: {
+  readonly stdout: string;
+  readonly outputFile: string;
+  readonly usageFile?: string;
+  readonly captureMode?: "json" | "raw-text";
+  readonly harnessDurationMs: number;
+  readonly context: "working" | "repair";
+}): Promise<void> {
+  const label = options.context === "repair" ? "repair " : "";
+
+  if (options.captureMode === "raw-text") {
+    let text: string;
+    try {
+      text = extractEnvelopeText(options.stdout, { resultField: "result" });
+    } catch (error) {
+      throw new StepKitFailureError({
+        code: "agent_provider_output_invalid",
+        message: `claude provider ${label}stdout did not contain a usable result.`,
+        details: {
+          cause: error instanceof Error ? error.message : String(error),
+          ...extractFailureContext(options.stdout),
+        },
+      });
+    }
+
+    await writeFile(options.outputFile, text, "utf8");
+  } else {
+    let output: PlainObject;
+    try {
+      output = extractEnvelopeOutput(options.stdout, { resultField: "result" });
+    } catch (error) {
+      throw new StepKitFailureError({
+        code: "agent_provider_output_invalid",
+        message: `claude provider ${label}stdout did not contain a usable JSON result.`,
+        details: {
+          cause: error instanceof Error ? error.message : String(error),
+          ...extractFailureContext(options.stdout),
+        },
+      });
+    }
+
+    await writeFile(options.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+  }
+
+  if (options.usageFile) {
+    const metadata = extractEnvelopeMetadata(options.stdout, {
+      harnessDurationMs: options.harnessDurationMs,
+    });
+    await writeFile(options.usageFile, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  }
+}
+
+async function repairOutput(
+  request: ProviderWorkingRepairRequest,
+  runner: ProviderWorkingRunner = spawnClaudeCapturingStdout,
+): Promise<void> {
+  const prompt = buildClaudeRepairPrompt(request);
+  const args = buildClaudeRepairArgs(request);
+
+  let result: ProviderWorkingProcessResult;
+  const startedAt = performance.now();
+  try {
+    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd, stdin: prompt });
   } catch (error) {
     throw new StepKitFailureError({
-      code: "agent_provider_output_invalid",
-      message: "claude provider stdout did not contain a usable JSON result.",
+      code: "agent_provider_spawn_error",
+      message: "claude provider repair process could not be started.",
       details: { cause: error instanceof Error ? error.message : String(error) },
     });
   }
 
-  await writeFile(request.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+  const harnessDurationMs = Math.max(0, Math.round(performance.now() - startedAt));
 
-  if (request.usageFile) {
-    const metadata = extractEnvelopeMetadata(result.stdout, { harnessDurationMs });
-    await writeFile(request.usageFile, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  if (result.exitCode !== 0) {
+    throw new StepKitFailureError({
+      code: "agent_provider_failed",
+      message: `claude provider repair process exited with code ${result.exitCode}.`,
+      details: { exitCode: result.exitCode },
+    });
   }
+
+  await writeCapturedOutput({
+    stdout: result.stdout,
+    outputFile: request.outputFile,
+    usageFile: request.usageFile,
+    captureMode: request.captureMode,
+    harnessDurationMs,
+    context: "repair",
+  });
 }
 
-function buildClaudeWorkingArgs(request: ProviderWorkingRequest, prompt: string): string[] {
+// --resume reuses the failed turn's own session (full context, already-done
+// work included) rather than starting a fresh one; the prompt built by
+// buildClaudeRepairPrompt asks only for a reformatted final answer. Piped via
+// stdin for the same argv-length reason as buildClaudeWorkingArgs.
+function buildClaudeRepairArgs(request: ProviderWorkingRepairRequest): string[] {
+  const args = [
+    "--resume",
+    request.sessionId,
+    "-p",
+    "--output-format",
+    "json",
+    "--dangerously-skip-permissions",
+  ];
+
+  if (request.model) {
+    args.push("--model", request.model);
+  }
+
+  if (request.thinking) {
+    args.push("--effort", request.thinking);
+  }
+
+  return args;
+}
+
+function buildClaudeRepairPrompt(request: ProviderWorkingRepairRequest): string {
+  if (request.captureMode === "raw-text") {
+    return [
+      "# StepKit output repair",
+      "",
+      "Your previous final answer in this session could not be used as-is.",
+      "Do not redo the task or make any further changes - the work is already done.",
+      "Reply with the document content only, as your entire final answer: no JSON wrapper, no surrounding commentary, no markdown fences unless they are literally part of the document content itself.",
+      "",
+      "## Your previous final answer",
+      "",
+      request.rawResultText,
+      "",
+    ].join("\n");
+  }
+
+  return [
+    "# StepKit output repair",
+    "",
+    "Your previous final answer in this session was not valid JSON matching the required schema.",
+    "Do not redo the task, re-read files, or make any further changes - the work is already done.",
+    "Reply with exactly one JSON object as your entire final answer: no prose, no markdown fences, no multiple JSON values.",
+    "",
+    "The JSON object must match this output schema:",
+    "",
+    "```json",
+    JSON.stringify(request.outputSchema, null, 2),
+    "```",
+    "",
+    "## Your previous final answer",
+    "",
+    request.rawResultText,
+    "",
+  ].join("\n");
+}
+
+// The prompt is deliberately NOT appended here as a positional arg: Windows'
+// CreateProcess caps the whole argv command-line around 32,767 characters, so
+// a large rendered prompt would fail process creation outright. It is instead
+// written to the child's stdin by spawnClaudeCapturingStdout, which the
+// `claude` CLI reads in place of a positional prompt.
+function buildClaudeWorkingArgs(request: ProviderWorkingRequest): string[] {
   const args = ["-p", "--output-format", "json", "--dangerously-skip-permissions"];
 
   if (request.model) {
@@ -77,7 +258,6 @@ function buildClaudeWorkingArgs(request: ProviderWorkingRequest, prompt: string)
     args.push("--effort", request.thinking);
   }
 
-  args.push(prompt);
   return args;
 }
 
@@ -104,12 +284,12 @@ async function runInteractive(
   });
 }
 
-const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd }) => {
+const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd, stdin }) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["pipe", "pipe", "inherit"],
     });
 
     let stdout = "";
@@ -117,8 +297,11 @@ const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args
       stdout += chunk.toString();
     });
 
+    child.stdin?.on("error", reject);
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout }));
+
+    child.stdin?.end(stdin ?? "");
   });
 };
 
@@ -170,5 +353,6 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
 export const claudeProvider: ProviderAdapter = {
   id: "claude",
   runWorking,
+  repairOutput,
   runInteractive,
 };

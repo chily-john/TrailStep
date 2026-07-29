@@ -11,6 +11,7 @@ import {
   type Event,
   parseStepKitConfig,
   runWorkflow,
+  type StepFactory,
   step,
   type Workflow,
 } from "../../../index.js";
@@ -147,6 +148,123 @@ describe("runWorkflow resume", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as Event);
     expect(eventTypes(persistedEvents)).toEqual(eventTypes(resumed.events));
+  });
+
+  it("resumes into the second occurrence of a looping step id, not the first completed occurrence (take-it-away story-queue shape)", async () => {
+    // Mirrors take-it-away's story queue: implement-story and
+    // review-story-implementation loop, re-using the same step ids once per
+    // queued story, until review-story-implementation's .do() returns
+    // done(...) instead of looping back into implementStoryStep(...) again.
+    // Story 0's implement-story/review-story-implementation both complete;
+    // story 1's implement-story then fails. The target step id
+    // ("implement-story") therefore also matches story 0's already-completed
+    // occurrence earlier in history -- resume must not mistake that first
+    // occurrence for "the target step already completed."
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-loop-"));
+    let implementRuns = 0;
+    let reviewRuns = 0;
+    let shouldFailStoryTwo = true;
+    const storyCount = 2;
+    const implementDocPaths: string[] = [];
+    const reviewDocPaths: string[] = [];
+
+    const reviewStoryStep: StepFactory<{ storyIndex: number }, { storyIndex: number }> = step({
+      id: "review-story-implementation",
+    }).do(async ({ storyIndex }: { storyIndex: number }) => {
+      reviewRuns += 1;
+      const reviewDoc = await document(`reviewed story ${storyIndex}`);
+      reviewDocPaths.push(reviewDoc.path);
+      const nextIndex = storyIndex + 1;
+      if (nextIndex < storyCount) {
+        return implementStoryStep({ storyIndex: nextIndex });
+      }
+      return done({ implemented: nextIndex });
+    });
+
+    const implementStoryStep: StepFactory<{ storyIndex: number }, { storyIndex: number }> = step({
+      id: "implement-story",
+    }).do(async ({ storyIndex }: { storyIndex: number }) => {
+      implementRuns += 1;
+      if (storyIndex === 1 && shouldFailStoryTwo) {
+        throw new Error("story two implementation unavailable");
+      }
+      const implementDoc = await document(`implemented story ${storyIndex}`);
+      implementDocPaths.push(implementDoc.path);
+      return reviewStoryStep({ storyIndex });
+    });
+
+    const workflow: Workflow<{ storyIndex: number }, { implemented: number }> = {
+      id: "take-it-away-like-workflow",
+      inputShape: { storyIndex: "number" },
+      outputShape: { implemented: "number" },
+      start(input) {
+        return implementStoryStep(input);
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: { storyIndex: 0 },
+      runName: "loop-resume-me",
+      cwd,
+    });
+
+    expect(failed.status).toBe("failure");
+    expect(implementRuns).toBe(2);
+    expect(reviewRuns).toBe(1);
+
+    shouldFailStoryTwo = false;
+    const resumed = await runWorkflow({ workflow, resume: { runDir: failed.runDir } });
+
+    expect(resumed.status).toBe("success");
+    if (resumed.status !== "success") {
+      throw new Error(resumed.failure.message);
+    }
+
+    expect(resumed.output).toEqual({ implemented: 2 });
+    // Replay re-invokes both of story 0's completed no-prompt steps' .do()
+    // (see the "firstStepRuns goes to 2" comment above) before the live
+    // continuation dispatches story 1's implement-story/review pair fresh, so
+    // each counter gains 2 rather than 1: +1 from replaying story 0, +1 from
+    // story 1 actually running live this time.
+    expect(implementRuns).toBe(4);
+    expect(reviewRuns).toBe(3);
+    expect(eventTypes(resumed.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.started",
+      "step.completed",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+      "workflow.resumed",
+      "step.started",
+      "step.completed",
+      "step.started",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(resumed.events[8]).toMatchObject({
+      type: "workflow.resumed",
+      payload: {
+        resumedFromRunDir: failed.runDir,
+        resumedStepId: "implement-story",
+        sourceFailureEventId: failed.events[6]?.id,
+      },
+    });
+
+    // Pre-resume, steps 1-3 (0001-implement-story, 0002-review-story-implementation,
+    // 0003-implement-story) were already recorded on disk. The post-resume live
+    // continuation must number its newly-dispatched steps 4 and 5, continuing
+    // that sequence, rather than restarting the on-disk index at 1 and 2 --
+    // which would collide with (and shadow) the pre-resume steps' own directories.
+    expect(implementDocPaths.at(-1)).toBe(
+      join(failed.runDir, "steps", "0004-implement-story", "document-1.md"),
+    );
+    expect(reviewDocPaths.at(-1)).toBe(
+      join(failed.runDir, "steps", "0005-review-story-implementation", "document-1.md"),
+    );
   });
 
   it("rejects a missing target with a specific failure code", async () => {

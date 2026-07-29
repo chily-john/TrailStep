@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractEnvelopeMetadata, extractEnvelopeOutput } from "./envelope.js";
+import { extractEnvelopeMetadata, extractEnvelopeOutput, extractEnvelopeText } from "./envelope.js";
 
 describe("extractEnvelopeMetadata", () => {
   it("extracts Claude usage metadata from a JSON envelope with camelCased fields", () => {
@@ -196,5 +196,103 @@ describe("extractEnvelopeOutput", () => {
     expect(extractEnvelopeOutput(stdout, { resultField: "message" })).toEqual({
       greeting: "Hello, Ada!",
     });
+  });
+});
+
+describe("extractEnvelopeText", () => {
+  it("returns a plain-text (non-JSON) result field verbatim", () => {
+    const stdout = JSON.stringify({
+      type: "result",
+      is_error: false,
+      result: "# Feature Doc\n\nThis is a markdown document, not JSON.",
+    });
+
+    expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual(
+      "# Feature Doc\n\nThis is a markdown document, not JSON.",
+    );
+  });
+
+  it("returns a JSON-shaped result field's text verbatim without parsing it", () => {
+    const stdout = JSON.stringify({ result: '{"greeting":"Hello, Ada!"}' });
+
+    expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual(
+      '{"greeting":"Hello, Ada!"}',
+    );
+  });
+
+  it("falls back to a content field when the result field is absent", () => {
+    const stdout = JSON.stringify({ content: "plain document text" });
+
+    expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual("plain document text");
+  });
+
+  it("throws when the envelope reports is_error", () => {
+    const stdout = JSON.stringify({ is_error: true, result: "rate limited" });
+
+    expect(() => extractEnvelopeText(stdout, { resultField: "result" })).toThrow(
+      /reported an error/,
+    );
+  });
+
+  it("falls back to the last usable JSON line for stream-style stdout", () => {
+    const stdout = [
+      JSON.stringify({ type: "system", subtype: "init" }),
+      JSON.stringify({ type: "assistant", content: "thinking..." }),
+      JSON.stringify({ type: "result", result: "plain markdown document" }),
+    ].join("\n");
+
+    expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual(
+      "plain markdown document",
+    );
+  });
+
+  it("parses plain-text stdout with no envelope at all as the document itself", () => {
+    const stdout = "just a plain document, no wrapper at all";
+
+    expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual(
+      "just a plain document, no wrapper at all",
+    );
+  });
+
+  it("throws on empty stdout", () => {
+    expect(() => extractEnvelopeText("   ", { resultField: "result" })).toThrow(/empty stdout/);
+  });
+
+  it("extracts Pi's message-shaped resultField from a content text block verbatim", () => {
+    const stdout = JSON.stringify({
+      type: "turn_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "plain markdown document" }],
+      },
+    });
+
+    expect(extractEnvelopeText(stdout, { resultField: "message" })).toEqual(
+      "plain markdown document",
+    );
+  });
+
+  it("finds Pi's message field on the last matching JSON-lines transcript entry, skipping trailing agent_end/agent_settled lines", () => {
+    const stdout = [
+      JSON.stringify({ type: "session", id: "abc" }),
+      JSON.stringify({ type: "agent_start" }),
+      JSON.stringify({
+        type: "message_end",
+        message: { role: "assistant", content: [{ type: "text", text: "stale" }] },
+      }),
+      JSON.stringify({
+        type: "turn_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "final markdown document" }],
+        },
+      }),
+      JSON.stringify({ type: "agent_end", messages: [], willRetry: false }),
+      JSON.stringify({ type: "agent_settled" }),
+    ].join("\n");
+
+    expect(extractEnvelopeText(stdout, { resultField: "message" })).toEqual(
+      "final markdown document",
+    );
   });
 });

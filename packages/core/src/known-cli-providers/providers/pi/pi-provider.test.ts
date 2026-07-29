@@ -168,6 +168,43 @@ describe("piProvider.runWorking", () => {
       failure: { code: "agent_provider_spawn_error" },
     });
   });
+
+  it("writes a plain-text message verbatim, with no JSON parsing, when captureMode is raw-text", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-pi-provider-rawtext-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.md");
+    await writeFile(promptFile, "Write a feature doc.", "utf8");
+
+    const documentText = "# Feature Doc\n\nThis is plain markdown, not JSON.";
+    const stdout = JSON.stringify({
+      type: "turn_end",
+      message: { role: "assistant", content: [{ type: "text", text: documentText }] },
+    });
+
+    await piProvider.runWorking(
+      { promptFile, outputFile, cwd, captureMode: "raw-text" },
+      async () => ({ exitCode: 0, stdout }),
+    );
+
+    expect(await readFile(outputFile, "utf8")).toEqual(documentText);
+  });
+
+  it("still JSON-extracts when captureMode is json (or omitted), regression check", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-pi-provider-jsonmode-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Say hi.", "utf8");
+
+    await piProvider.runWorking({ promptFile, outputFile, cwd, captureMode: "json" }, async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        type: "turn_end",
+        message: { role: "assistant", content: [{ type: "text", text: '{"greeting":"Hi!"}' }] },
+      }),
+    }));
+
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hi!" });
+  });
 });
 
 describe("piProvider.runInteractive", () => {

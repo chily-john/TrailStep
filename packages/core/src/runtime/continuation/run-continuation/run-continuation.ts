@@ -22,6 +22,7 @@ export interface RunContinuationOptions {
   readonly emit: (event: Event) => Promise<void>;
   readonly maxSteps: number;
   readonly initialSource: string;
+  readonly initialExecutedSteps?: number;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
   readonly cwd: string;
@@ -40,7 +41,11 @@ export async function runContinuation(
 ): Promise<RunContinuationResult> {
   let node: ContinuationResult = options.node;
   let source = options.initialSource;
-  let executedSteps = 0;
+  // A resumed run's newly-dispatched steps must continue the on-disk step
+  // index sequence from where the original run left off (every step.started
+  // ever recorded, successful or failed), not restart at 1 -- otherwise their
+  // artifact directories collide with/shadow the pre-resume steps' dirs.
+  let executedSteps = options.initialExecutedSteps ?? 0;
   const stepkitConfig = options.stepkitConfig;
 
   while (true) {

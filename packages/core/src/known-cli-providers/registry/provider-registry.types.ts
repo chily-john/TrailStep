@@ -16,6 +16,7 @@ export interface ProviderWorkingRequest {
   readonly cwd: string;
   readonly model?: string;
   readonly thinking?: WorkflowAgentThinking;
+  readonly captureMode?: "json" | "raw-text";
 }
 
 /** Low-level process request for a provider's stdout-capturing runner. */
@@ -23,6 +24,15 @@ export interface ProviderWorkingProcessRequest {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
+  /**
+   * Prompt text to write to the child's stdin and close, rather than appending
+   * it to `args`. Windows' `CreateProcess` concatenates the whole argv into a
+   * single command-line string capped at roughly 32,767 characters, so a
+   * large rendered prompt passed positionally can fail process creation
+   * outright; piping it via stdin has no such ceiling. Providers whose CLI
+   * doesn't support reading the prompt from stdin in working mode omit this.
+   */
+  readonly stdin?: string;
 }
 
 export interface ProviderWorkingProcessResult {
@@ -31,8 +41,9 @@ export interface ProviderWorkingProcessResult {
 }
 
 /**
- * Spawns a provider's CLI with stdio `["ignore", "pipe", "inherit"]`, collecting
- * stdout for envelope parsing instead of inheriting it. Injectable for tests.
+ * Spawns a provider's CLI, collecting stdout for envelope parsing instead of
+ * inheriting it. Stdio is `["ignore", "pipe", "inherit"]` unless `stdin` is
+ * set, in which case stdin is piped instead of ignored. Injectable for tests.
  */
 export type ProviderWorkingRunner = (
   request: ProviderWorkingProcessRequest,
@@ -48,6 +59,24 @@ export interface ProviderInteractiveRequest {
 }
 
 /**
+ * Request shape for a one-shot repair of a working-agent turn whose final
+ * answer failed JSON extraction. `sessionId` and `rawResultText` are the
+ * malformed turn's own session id and (best-effort) raw final-answer text, as
+ * surfaced by the failed `runWorking` call.
+ */
+export interface ProviderWorkingRepairRequest {
+  readonly sessionId: string;
+  readonly rawResultText: string;
+  readonly outputFile: string;
+  readonly usageFile?: string;
+  readonly cwd: string;
+  readonly model?: string;
+  readonly thinking?: WorkflowAgentThinking;
+  readonly outputSchema: Record<string, unknown>;
+  readonly captureMode?: "json" | "raw-text";
+}
+
+/**
  * A built-in, core-owned known-CLI adapter for a single named vendor.
  * This is CLI print-mode invocation knowledge, not an in-process vendor SDK
  * adapter: adapters spawn a real CLI process and never import a vendor SDK
@@ -57,6 +86,20 @@ export interface ProviderAdapter {
   readonly id: string;
   /** Non-interactive invocation: writes `request.outputFile` itself before resolving. */
   runWorking(request: ProviderWorkingRequest, runner?: ProviderWorkingRunner): Promise<void>;
+  /**
+   * Optional one-shot repair of a malformed final answer, for providers whose
+   * CLI can resume a prior session (currently only `claude`). Malformed JSON
+   * after a real agentic turn should not trigger a full re-run of the task —
+   * the agent may have already made real file edits, and redoing the task
+   * from scratch risks duplicating or conflicting with them — so this asks
+   * the *same* session to reformat its last answer only. Providers without a
+   * resumable session omit this entirely and keep today's immediate-failure
+   * behavior.
+   */
+  repairOutput?(
+    request: ProviderWorkingRepairRequest,
+    runner?: ProviderWorkingRunner,
+  ): Promise<void>;
   /** Interactive invocation: inherited stdio, a human is present. */
   runInteractive(
     request: ProviderInteractiveRequest,

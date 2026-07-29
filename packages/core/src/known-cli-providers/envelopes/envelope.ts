@@ -100,6 +100,91 @@ export function extractEnvelopeOutput(rawStdout: string, options: EnvelopeOption
   return parseObjectFromText(text);
 }
 
+/**
+ * Text-only counterpart to `extractEnvelopeOutput`, for steps whose
+ * `captureMode` is `"raw-text"` (see `Document.captureMode` in
+ * `authoring/document/document.ts`): the agent's final answer is a plain-text
+ * document, not JSON, so the `resultField` value must be taken verbatim
+ * rather than JSON-parsed. Mirrors the same four documented stdout shapes as
+ * `extractEnvelopeOutput` — single JSON envelope, JSON-lines transcript,
+ * message-shaped `resultField` with a `content` block array, and plain text —
+ * but never throws on non-JSON text; the raw text is always the answer.
+ */
+export function extractEnvelopeText(rawStdout: string, options: EnvelopeOptions): string {
+  const text = rawStdout.trim();
+  if (!text) {
+    throw new Error("Provider process returned empty stdout.");
+  }
+
+  const parsedEnvelope = parseJson(text);
+  if (isPlainObject(parsedEnvelope)) {
+    if (parsedEnvelope.is_error === true) {
+      throw new Error(
+        `Provider reported an error: ${String(parsedEnvelope[options.resultField] ?? text)}`,
+      );
+    }
+
+    const resolved = resolveFieldText(parsedEnvelope[options.resultField]);
+    if (resolved !== undefined) {
+      return resolved;
+    }
+
+    if (typeof parsedEnvelope.content === "string") {
+      return parsedEnvelope.content;
+    }
+  }
+
+  const streamResult = parseLastJsonLineText(text, options.resultField);
+  if (streamResult !== undefined) {
+    return streamResult;
+  }
+
+  return text;
+}
+
+function parseLastJsonLineText(text: string, resultField: string): string | undefined {
+  const lines = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of [...lines].reverse()) {
+    const parsed = parseJson(line);
+    if (!isPlainObject(parsed)) {
+      continue;
+    }
+
+    const resolved = resolveFieldText(parsed[resultField]);
+    if (resolved !== undefined) {
+      return resolved;
+    }
+
+    if (typeof parsed.content === "string") {
+      return parsed.content;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Text-only counterpart to `resolveFieldValue`: resolves a raw `resultField`
+ * value into the final raw text, handling a plain string (verbatim) or a
+ * message-shaped object carrying a `content` array of text blocks (Pi),
+ * without ever attempting to JSON-parse the resolved text.
+ */
+function resolveFieldText(fieldValue: unknown): string | undefined {
+  if (typeof fieldValue === "string") {
+    return fieldValue;
+  }
+
+  if (isPlainObject(fieldValue)) {
+    return extractTextFromContentBlocks(fieldValue);
+  }
+
+  return undefined;
+}
+
 function parseLastJsonLineResult(text: string, resultField: string): PlainObject | undefined {
   const lines = text
     .split(/\r?\n/u)

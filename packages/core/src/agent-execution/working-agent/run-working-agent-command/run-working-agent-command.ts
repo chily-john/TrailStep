@@ -197,6 +197,7 @@ interface WorkingAgentAttemptFailure {
   readonly model?: string;
   readonly code: string;
   readonly message: string;
+  readonly details?: unknown;
 }
 
 async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options: {
@@ -436,6 +437,7 @@ function summarizeWorkingAgentAttemptFailure(
       ...(target.model === undefined ? {} : { model: target.model }),
       code: error.failure.code,
       message: error.failure.message,
+      ...(error.failure.details === undefined ? {} : { details: error.failure.details }),
     };
   }
 

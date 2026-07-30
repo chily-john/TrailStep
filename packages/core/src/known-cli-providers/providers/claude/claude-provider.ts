@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
@@ -20,6 +20,7 @@ import type {
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "../../registry/provider-registry.types.js";
+import { promptFileReference } from "../prompt-file-reference.js";
 
 const CLAUDE_BINARY = "claude";
 
@@ -27,13 +28,12 @@ async function runWorking(
   request: ProviderWorkingRequest,
   runner: ProviderWorkingRunner = spawnClaudeCapturingStdout,
 ): Promise<void> {
-  const prompt = await readFile(request.promptFile, "utf8");
   const args = buildClaudeWorkingArgs(request);
 
   let result: ProviderWorkingProcessResult;
   const startedAt = performance.now();
   try {
-    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd, stdin: prompt });
+    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -183,8 +183,9 @@ async function repairOutput(
 
 // --resume reuses the failed turn's own session (full context, already-done
 // work included) rather than starting a fresh one; the prompt built by
-// buildClaudeRepairPrompt asks only for a reformatted final answer. Piped via
-// stdin for the same argv-length reason as buildClaudeWorkingArgs.
+// buildClaudeRepairPrompt asks only for a reformatted final answer. The repair
+// prompt is still piped through stdin so the resume invocation receives fresh
+// reformat-only instructions without adding a second prompt file artifact.
 function buildClaudeRepairArgs(request: ProviderWorkingRepairRequest): string[] {
   const args = [
     "--resume",
@@ -242,13 +243,18 @@ function buildClaudeRepairPrompt(request: ProviderWorkingRepairRequest): string 
   ].join("\n");
 }
 
-// The prompt is deliberately NOT appended here as a positional arg: Windows'
+// The rendered prompt content is deliberately NOT appended here: Windows'
 // CreateProcess caps the whole argv command-line around 32,767 characters, so
-// a large rendered prompt would fail process creation outright. It is instead
-// written to the child's stdin by spawnClaudeCapturingStdout, which the
-// `claude` CLI reads in place of a positional prompt.
+// a large rendered prompt would fail process creation outright. The tiny @file
+// reference lets the CLI load the full prompt from disk without expanding argv.
 function buildClaudeWorkingArgs(request: ProviderWorkingRequest): string[] {
-  const args = ["-p", "--output-format", "json", "--dangerously-skip-permissions"];
+  const args = [
+    "-p",
+    promptFileReference(request.promptFile),
+    "--output-format",
+    "json",
+    "--dangerously-skip-permissions",
+  ];
 
   if (request.model) {
     args.push("--model", request.model);
@@ -297,10 +303,11 @@ async function runInteractive(
 
 const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd, stdin }) => {
   return await new Promise((resolve, reject) => {
+    const hasStdin = stdin !== undefined;
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      stdio: ["pipe", "pipe", "inherit"],
+      stdio: [hasStdin ? "pipe" : "ignore", "pipe", "inherit"],
     });
 
     let stdout = "";
@@ -312,7 +319,9 @@ const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout }));
 
-    child.stdin?.end(stdin ?? "");
+    if (hasStdin) {
+      child.stdin?.end(stdin);
+    }
   });
 };
 

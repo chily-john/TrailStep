@@ -13,7 +13,7 @@ import { claudeProvider } from "./claude-provider.js";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 describe("claudeProvider.runWorking", () => {
-  it("builds -p --output-format json --dangerously-skip-permissions --model <model> --effort <level> (no positional prompt) and writes outputFile", async () => {
+  it("builds -p @<promptFile> --output-format json --dangerously-skip-permissions --model <model> --effort <level> and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -44,6 +44,7 @@ describe("claudeProvider.runWorking", () => {
       cwd,
       args: [
         "-p",
+        `@${promptFile}`,
         "--output-format",
         "json",
         "--dangerously-skip-permissions",
@@ -52,9 +53,9 @@ describe("claudeProvider.runWorking", () => {
         "--effort",
         "medium",
       ],
-      stdin: "Say hello to Ada.",
     });
     expect(calls[0]?.args).not.toContain("Say hello to Ada.");
+    expect(calls[0]?.stdin).toBeUndefined();
 
     expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hello, Ada!" });
   });
@@ -74,14 +75,15 @@ describe("claudeProvider.runWorking", () => {
 
     expect(calls[0]?.args).toEqual([
       "-p",
+      `@${promptFile}`,
       "--output-format",
       "json",
       "--dangerously-skip-permissions",
     ]);
-    expect(calls[0]?.stdin).toEqual("Say hi.");
+    expect(calls[0]?.stdin).toBeUndefined();
   });
 
-  it("passes the prompt via stdin instead of argv, even for a 100KB+ prompt (Windows CreateProcess argv-length regression check)", async () => {
+  it("passes a prompt-file reference instead of prompt content, even for a 100KB+ prompt (Windows CreateProcess argv-length regression check)", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-large-prompt-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -96,23 +98,21 @@ describe("claudeProvider.runWorking", () => {
     });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.stdin).toEqual(largePrompt);
+    expect(calls[0]?.stdin).toBeUndefined();
+    expect(calls[0]?.args).toContain(`@${promptFile}`);
+    expect(calls[0]?.args).not.toContain(largePrompt);
     expect(calls[0]?.args.every((arg) => arg.length < 1000)).toBe(true);
     expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ ok: true });
   });
 
-  it("the default runner (spawnClaudeCapturingStdout) pipes stdin, writes the prompt, and ends the stream", async () => {
+  it("the default runner (spawnClaudeCapturingStdout) ignores stdin when the prompt is a file reference", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-stdin-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
 
-    const child = new EventEmitter() as EventEmitter & {
-      stdout: EventEmitter;
-      stdin: { on: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
-    };
+    const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter };
     child.stdout = new EventEmitter();
-    child.stdin = { on: vi.fn(), end: vi.fn() };
 
     vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);
 
@@ -124,10 +124,10 @@ describe("claudeProvider.runWorking", () => {
 
     expect(spawn).toHaveBeenCalledWith(
       "claude",
-      ["-p", "--output-format", "json", "--dangerously-skip-permissions"],
-      expect.objectContaining({ stdio: ["pipe", "pipe", "inherit"] }),
+      ["-p", `@${promptFile}`, "--output-format", "json", "--dangerously-skip-permissions"],
+      expect.objectContaining({ stdio: ["ignore", "pipe", "inherit"] }),
     );
-    expect(child.stdin.end).toHaveBeenCalledWith("Say hi.");
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it("writes usage.json after successful output extraction", async () => {

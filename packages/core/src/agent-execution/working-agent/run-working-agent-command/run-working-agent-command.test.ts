@@ -175,6 +175,55 @@ describe("runWorkingAgentCommand", () => {
       ],
     });
   });
+
+  it("preserves provider failure details in exhausted target attempts", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-details-"));
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-details-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "spawn failure" },
+      runName: "working-agent-details-run",
+      cwd,
+      stepkitConfig: parseStepKitConfig({
+        version: 1,
+        customProviders: {},
+        agents: { medium: [{ provider: "pi" }] },
+      }),
+      providerWorkingRunner: async () => {
+        throw new Error("spawn ENAMETOOLONG");
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected the provider target to fail");
+    }
+    expect(result.failure.code).toBe("agent_target_exhausted");
+    expect(result.failure.details).toMatchObject({
+      attempts: [
+        {
+          target: "pi",
+          code: "agent_provider_spawn_error",
+          details: { cause: "spawn ENAMETOOLONG" },
+        },
+      ],
+    });
+  });
 });
 
 describe("provider output repair (session-resumable providers only)", () => {

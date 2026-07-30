@@ -8,51 +8,51 @@ import { reviewOutput, reviewPasses } from "../shared/review-schema.js";
 import { type ReviewStoryImplementationInput, reviewStoryImplementationPrompt } from "./prompt.js";
 
 export const reviewStoryImplementationStep = step({ id: "review-story-implementation" })
-  .prompt<ReviewStoryImplementationInput, ReviewResult>(reviewStoryImplementationPrompt, {
-    agent: "reviewer",
-    output: reviewOutput,
-  })
-  .do(async (review, input) => {
-    if (!reviewPasses(review)) {
-      if (input.attempt >= MAX_STORY_REVIEW_ATTEMPTS) {
-        return fail({
-          code: "story_review_exhausted",
-          message: `Story failed review ${MAX_STORY_REVIEW_ATTEMPTS} times in a row (last score ${review.score}/5).`,
-          details: { review, storyPath: input.currentStory.path },
-        });
-      }
+    .prompt<ReviewStoryImplementationInput, ReviewResult>(reviewStoryImplementationPrompt, {
+        agent: "reviewer",
+        output: reviewOutput,
+    })
+    .do(async (review, input) => {
+        if (!reviewPasses(review)) {
+            if (input.attempt >= MAX_STORY_REVIEW_ATTEMPTS) {
+                return fail({
+                    code: "story_review_exhausted",
+                    message: `Story failed review ${MAX_STORY_REVIEW_ATTEMPTS} times in a row (last score ${review.score}/5).`,
+                    details: { review, storyPath: input.currentStory.path },
+                });
+            }
 
-      return implementStoryStep({
-        currentStory: input.currentStory,
-        previousStoryReview: review,
-        attempt: input.attempt + 1,
-      });
-    }
+            return implementStoryStep({
+                currentStory: input.currentStory,
+                previousStoryReview: review,
+                attempt: input.attempt + 1,
+            });
+        }
 
-    const completed = (await state.get<string[]>("completedStories")) ?? [];
-    const updatedCompleted = [
-      ...completed,
-      extractStoryTitle(input.currentStory.content, completed.length + 1),
-    ];
-    await state.set("completedStories", updatedCompleted);
+        const completed = (await state.get<string[]>("completedStories")) ?? [];
+        const updatedCompleted = [
+            ...completed,
+            extractStoryTitle(input.currentStory.content, completed.length + 1),
+        ];
+        await state.set("completedStories", updatedCompleted);
 
-    const storyQueue = (await state.get<Document[]>("storyQueue")) ?? [];
-    const [nextStory, ...remaining] = storyQueue;
+        const storyQueue = (await state.get<Document[]>("storyQueue")) ?? [];
+        const [nextStory, ...remaining] = storyQueue;
 
-    if (!nextStory) {
-      const featureDoc = await state.get<Document>("featureDoc");
-      const implementationDoc = await state.get<Document>("implementationDoc");
-      const output: TakeItAwayOutput = {
-        status: "implemented",
-        featureDocPath: featureDoc?.path ?? "",
-        implementationDocPath: implementationDoc?.path ?? "",
-        storyCount: updatedCompleted.length,
-        completedStories: updatedCompleted,
-        summary: `Implemented and reviewed ${updatedCompleted.length} ${updatedCompleted.length === 1 ? "story" : "stories"}.`,
-      };
-      return done(output);
-    }
+        if (!nextStory) {
+            const featureDoc = await state.get<Document>("featureDoc");
+            const implementationDoc = await state.get<Document>("implementationDoc");
+            const output: TakeItAwayOutput = {
+                status: "implemented",
+                featureDocPath: featureDoc?.path ?? "",
+                implementationDocPath: implementationDoc?.path ?? "",
+                storyCount: updatedCompleted.length,
+                completedStories: updatedCompleted,
+                summary: `Implemented and reviewed ${updatedCompleted.length} ${updatedCompleted.length === 1 ? "story" : "stories"}.`,
+            };
+            return done(output);
+        }
 
-    await state.set("storyQueue", remaining);
-    return implementStoryStep({ currentStory: nextStory, attempt: 1 });
-  });
+        await state.set("storyQueue", remaining);
+        return implementStoryStep({ currentStory: nextStory, attempt: 1 });
+    });

@@ -26,11 +26,11 @@ export interface ProviderWorkingProcessRequest {
   readonly cwd: string;
   /**
    * Prompt text to write to the child's stdin and close, rather than appending
-   * it to `args`. Windows' `CreateProcess` concatenates the whole argv into a
-   * single command-line string capped at roughly 32,767 characters, so a
-   * large rendered prompt passed positionally can fail process creation
-   * outright; piping it via stdin has no such ceiling. Providers whose CLI
-   * doesn't support reading the prompt from stdin in working mode omit this.
+   * it to `args`. Windows' `CreateProcess` concatenates argv into a single
+   * command-line string capped around 32,767 characters, so large rendered
+   * prompts must use either a tiny @prompt-file argv reference or stdin.
+   * Providers only set this for CLI flows that cannot use an existing prompt
+   * file artifact (for example, Claude's output-repair prompt).
    */
   readonly stdin?: string;
 }
@@ -42,8 +42,8 @@ export interface ProviderWorkingProcessResult {
 
 /**
  * Spawns a provider's CLI, collecting stdout for envelope parsing instead of
- * inheriting it. Stdio is `["ignore", "pipe", "inherit"]` unless `stdin` is
- * set, in which case stdin is piped instead of ignored. Injectable for tests.
+ * inheriting it. Runners may ignore stdin or pipe it depending on whether
+ * `stdin` is set. Injectable for tests.
  */
 export type ProviderWorkingRunner = (
   request: ProviderWorkingProcessRequest,

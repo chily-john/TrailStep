@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
@@ -14,6 +14,7 @@ import type {
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "../../registry/provider-registry.types.js";
+import { promptFileReference } from "../prompt-file-reference.js";
 
 const GEMINI_BINARY = "gemini";
 
@@ -31,8 +32,7 @@ async function runWorking(
   request: ProviderWorkingRequest,
   runner: ProviderWorkingRunner = spawnGeminiCapturingStdout,
 ): Promise<void> {
-  const prompt = await readFile(request.promptFile, "utf8");
-  const args = buildGeminiWorkingArgs(request, prompt);
+  const args = buildGeminiWorkingArgs(request);
 
   let result: ProviderWorkingProcessResult;
   try {
@@ -83,7 +83,7 @@ async function runWorking(
 }
 
 /**
- * Builds `-p <prompt> --yolo -m <model> --output-format json`, per the Gemini
+ * Builds `-p @<promptFile> --yolo -m <model> --output-format json`, per the Gemini
  * CLI's documented non-interactive flags (`-p/--prompt`, `-m/--model`,
  * `-o/--output-format`, and `-y/--yolo` to auto-accept actions the way
  * Claude's `--dangerously-skip-permissions` and Codex's
@@ -98,8 +98,8 @@ async function runWorking(
  * invocation, so this adapter intentionally does not pass one — do not add a
  * guessed flag here without first confirming it against the real CLI.
  */
-function buildGeminiWorkingArgs(request: ProviderWorkingRequest, prompt: string): string[] {
-  const args = ["-p", prompt, "--yolo"];
+function buildGeminiWorkingArgs(request: ProviderWorkingRequest): string[] {
+  const args = ["-p", promptFileReference(request.promptFile), "--yolo"];
 
   if (request.model) {
     args.push("-m", request.model);
@@ -110,9 +110,9 @@ function buildGeminiWorkingArgs(request: ProviderWorkingRequest, prompt: string)
 }
 
 /**
- * `request.permissionMode` and `request.systemPromptFile` are deliberately
- * unread here — no confirmed Gemini CLI flag exists for either yet, so this
- * is a documented no-op pending a real CLI flag, not an oversight.
+ * `request.permissionMode` is deliberately unread here — no confirmed Gemini
+ * CLI flag exists for approval behavior yet. When available, `systemPromptFile`
+ * is passed as an @file prompt reference to avoid argv-length limits.
  */
 async function runInteractive(
   request: ProviderInteractiveRequest,
@@ -124,7 +124,9 @@ async function runInteractive(
     args.push("-m", request.model);
   }
 
-  args.push(request.prompt);
+  args.push(
+    request.systemPromptFile ? promptFileReference(request.systemPromptFile) : request.prompt,
+  );
 
   return await runner({
     command: GEMINI_BINARY,

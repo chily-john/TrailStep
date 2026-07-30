@@ -15,7 +15,7 @@ import { geminiProvider } from "./gemini-provider.js";
 // end-to-end smoke test remains required before this adapter is trusted in
 // production.
 describe("geminiProvider.runWorking", () => {
-  it("builds -p <prompt> --yolo -m <model> --output-format json and writes outputFile", async () => {
+  it("builds -p @<promptFile> --yolo -m <model> --output-format json and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -50,15 +50,7 @@ describe("geminiProvider.runWorking", () => {
     expect(calls[0]).toMatchObject({
       command: "gemini",
       cwd,
-      args: [
-        "-p",
-        "Say hello to Ada.",
-        "--yolo",
-        "-m",
-        "gemini-2.5-pro",
-        "--output-format",
-        "json",
-      ],
+      args: ["-p", `@${promptFile}`, "--yolo", "-m", "gemini-2.5-pro", "--output-format", "json"],
     });
 
     expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hello, Ada!" });
@@ -80,7 +72,27 @@ describe("geminiProvider.runWorking", () => {
       },
     );
 
-    expect(calls[0]?.args).toEqual(["-p", "Say hi.", "--yolo", "--output-format", "json"]);
+    expect(calls[0]?.args).toEqual(["-p", `@${promptFile}`, "--yolo", "--output-format", "json"]);
+  });
+
+  it("keeps large prompt content out of argv by passing only a prompt-file reference", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-large-prompt-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    const largePrompt = "x".repeat(120_000);
+    await writeFile(promptFile, largePrompt, "utf8");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await geminiProvider.runWorking({ promptFile, outputFile, cwd }, async (request) => {
+      calls.push(request);
+      return { exitCode: 0, stdout: JSON.stringify({ response: '{"ok":true}' }) };
+    });
+
+    expect(calls[0]?.args).toContain(`@${promptFile}`);
+    expect(calls[0]?.args).not.toContain(largePrompt);
+    expect(calls[0]?.args.every((arg) => arg.length < 1000)).toBe(true);
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ ok: true });
   });
 
   it("throws agent_provider_failed on a non-zero exit code", async () => {
@@ -196,17 +208,8 @@ describe("geminiProvider.runInteractive", () => {
     });
   });
 
-  it("ignores permissionMode and systemPromptFile as harmless no-ops", async () => {
-    const baseCalls: unknown[] = [];
-    const extraCalls: unknown[] = [];
-
-    await geminiProvider.runInteractive(
-      { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "gemini-2.5-pro" },
-      async (request) => {
-        baseCalls.push(request);
-        return { exitCode: 0 };
-      },
-    );
+  it("uses systemPromptFile as an @file prompt reference and ignores permissionMode", async () => {
+    const calls: unknown[] = [];
 
     await geminiProvider.runInteractive(
       {
@@ -217,13 +220,15 @@ describe("geminiProvider.runInteractive", () => {
         systemPromptFile: "/tmp/whatever/prompt.txt",
       },
       async (request) => {
-        extraCalls.push(request);
+        calls.push(request);
         return { exitCode: 0 };
       },
     );
 
-    expect((extraCalls[0] as { args: string[] }).args).toEqual(
-      (baseCalls[0] as { args: string[] }).args,
-    );
+    expect((calls[0] as { args: string[] }).args).toEqual([
+      "-m",
+      "gemini-2.5-pro",
+      "@/tmp/whatever/prompt.txt",
+    ]);
   });
 });

@@ -9,7 +9,7 @@ import type { ProviderWorkingProcessRequest } from "../../registry/provider-regi
 import { codexProvider } from "./codex-provider.js";
 
 describe("codexProvider.runWorking", () => {
-  it('builds exec --dangerously-bypass-approvals-and-sandbox -m <model> -c model_reasoning_effort="<level>" -o <outputFile> <prompt> and never touches envelope parsing', async () => {
+  it('builds exec --dangerously-bypass-approvals-and-sandbox -m <model> -c model_reasoning_effort="<level>" -o <outputFile> @<promptFile> and never touches envelope parsing', async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -47,7 +47,7 @@ describe("codexProvider.runWorking", () => {
         'model_reasoning_effort="medium"',
         "-o",
         outputFile,
-        "Say hello to Ada.",
+        `@${promptFile}`,
       ],
     });
     expect(calls[0]?.args).toContain("--dangerously-bypass-approvals-and-sandbox");
@@ -86,8 +86,29 @@ describe("codexProvider.runWorking", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       "-o",
       outputFile,
-      "Say hi.",
+      `@${promptFile}`,
     ]);
+  });
+
+  it("keeps large prompt content out of argv by passing only a prompt-file reference", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-large-prompt-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    const largePrompt = "x".repeat(120_000);
+    await writeFile(promptFile, largePrompt, "utf8");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await codexProvider.runWorking({ promptFile, outputFile, cwd }, async (request) => {
+      calls.push(request);
+      await writeFile(outputFile, '{"ok":true}', "utf8");
+      return { exitCode: 0, stdout: "" };
+    });
+
+    expect(calls[0]?.args).toContain(`@${promptFile}`);
+    expect(calls[0]?.args).not.toContain(largePrompt);
+    expect(calls[0]?.args.every((arg) => arg.length < 1000)).toBe(true);
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ ok: true });
   });
 
   it("throws agent_provider_thinking_unsupported for the 'max' tier (Codex has no max reasoning level)", async () => {
@@ -164,5 +185,28 @@ describe("codexProvider.runInteractive", () => {
       shell: false,
       stdio: "inherit",
     });
+  });
+
+  it("uses systemPromptFile as an @file prompt reference when available", async () => {
+    const calls: unknown[] = [];
+
+    await codexProvider.runInteractive(
+      {
+        prompt: "Pair with me on the bug.",
+        cwd: "/tmp/example",
+        model: "gpt-5.5",
+        systemPromptFile: "/tmp/whatever/prompt.txt",
+      },
+      async (request) => {
+        calls.push(request);
+        return { exitCode: 0 };
+      },
+    );
+
+    expect((calls[0] as { args: string[] }).args).toEqual([
+      "--model",
+      "gpt-5.5",
+      "@/tmp/whatever/prompt.txt",
+    ]);
   });
 });

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
@@ -15,6 +15,7 @@ import type {
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "../../registry/provider-registry.types.js";
+import { promptFileReference } from "../prompt-file-reference.js";
 
 const PI_BINARY = "pi";
 
@@ -46,8 +47,7 @@ async function runWorking(
   request: ProviderWorkingRequest,
   runner: ProviderWorkingRunner = spawnPiCapturingStdout,
 ): Promise<void> {
-  const prompt = await readFile(request.promptFile, "utf8");
-  const args = buildPiWorkingArgs(request, prompt);
+  const args = buildPiWorkingArgs(request);
 
   let result: ProviderWorkingProcessResult;
   try {
@@ -98,8 +98,8 @@ async function runWorking(
 }
 
 /**
- * Builds `-p --model <pattern> --thinking <level> <prompt> --mode json`. Pi
- * has no dangerous/approval-bypass flag to pass — the CLI does not gate
+ * Builds `-p --model <pattern> --thinking <level> @<promptFile> --mode json`.
+ * Pi has no dangerous/approval-bypass flag to pass — the CLI does not gate
  * non-interactive `-p` runs on approval the way Claude and Codex do.
  *
  * Pi's `--thinking` vocabulary (`off|minimal|low|medium|high|xhigh|max`,
@@ -108,7 +108,7 @@ async function runWorking(
  * straight through with no mapping or validation needed (unlike Codex, which
  * has no `"max"` tier and must reject it).
  */
-function buildPiWorkingArgs(request: ProviderWorkingRequest, prompt: string): string[] {
+function buildPiWorkingArgs(request: ProviderWorkingRequest): string[] {
   const args = ["-p"];
 
   if (request.model) {
@@ -119,15 +119,15 @@ function buildPiWorkingArgs(request: ProviderWorkingRequest, prompt: string): st
     args.push("--thinking", request.thinking);
   }
 
-  args.push(prompt);
+  args.push(promptFileReference(request.promptFile));
   args.push("--mode", "json");
   return args;
 }
 
 /**
- * `request.permissionMode` and `request.systemPromptFile` are deliberately
- * unread here — no confirmed Pi CLI flag exists for either yet, so this is a
- * documented no-op pending a real CLI flag, not an oversight.
+ * `request.permissionMode` is deliberately unread here — no confirmed Pi CLI
+ * flag exists for approval behavior yet. When available, `systemPromptFile` is
+ * passed as an @file prompt reference to avoid argv-length limits.
  */
 async function runInteractive(
   request: ProviderInteractiveRequest,
@@ -139,7 +139,9 @@ async function runInteractive(
     args.push("--model", request.model);
   }
 
-  args.push(request.prompt);
+  args.push(
+    request.systemPromptFile ? promptFileReference(request.systemPromptFile) : request.prompt,
+  );
 
   return await runner({
     command: PI_BINARY,

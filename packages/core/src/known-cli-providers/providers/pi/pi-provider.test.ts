@@ -9,7 +9,7 @@ import type { ProviderWorkingProcessRequest } from "../../registry/provider-regi
 import { piProvider } from "./pi-provider.js";
 
 describe("piProvider.runWorking", () => {
-  it("builds -p --model <pattern> --thinking <level> <prompt> --mode json and writes outputFile", async () => {
+  it("builds -p --model <pattern> --thinking <level> @<promptFile> --mode json and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-pi-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -58,7 +58,7 @@ describe("piProvider.runWorking", () => {
         "openai-codex/gpt-5.5",
         "--thinking",
         "high",
-        "Say hello to Ada.",
+        `@${promptFile}`,
         "--mode",
         "json",
       ],
@@ -112,7 +112,33 @@ describe("piProvider.runWorking", () => {
       };
     });
 
-    expect(calls[0]?.args).toEqual(["-p", "Say hi.", "--mode", "json"]);
+    expect(calls[0]?.args).toEqual(["-p", `@${promptFile}`, "--mode", "json"]);
+  });
+
+  it("keeps large prompt content out of argv by passing only a prompt-file reference", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-pi-provider-large-prompt-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    const largePrompt = "x".repeat(120_000);
+    await writeFile(promptFile, largePrompt, "utf8");
+
+    const calls: ProviderWorkingProcessRequest[] = [];
+
+    await piProvider.runWorking({ promptFile, outputFile, cwd }, async (request) => {
+      calls.push(request);
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          type: "turn_end",
+          message: { role: "assistant", content: [{ type: "text", text: '{"ok":true}' }] },
+        }),
+      };
+    });
+
+    expect(calls[0]?.args).toContain(`@${promptFile}`);
+    expect(calls[0]?.args).not.toContain(largePrompt);
+    expect(calls[0]?.args.every((arg) => arg.length < 1000)).toBe(true);
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ ok: true });
   });
 
   it("throws agent_provider_failed on a non-zero exit code", async () => {
@@ -229,17 +255,8 @@ describe("piProvider.runInteractive", () => {
     });
   });
 
-  it("ignores permissionMode and systemPromptFile as harmless no-ops", async () => {
-    const baseCalls: unknown[] = [];
-    const extraCalls: unknown[] = [];
-
-    await piProvider.runInteractive(
-      { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "openai-codex/gpt-5.5" },
-      async (request) => {
-        baseCalls.push(request);
-        return { exitCode: 0 };
-      },
-    );
+  it("uses systemPromptFile as an @file prompt reference and ignores permissionMode", async () => {
+    const calls: unknown[] = [];
 
     await piProvider.runInteractive(
       {
@@ -250,13 +267,15 @@ describe("piProvider.runInteractive", () => {
         systemPromptFile: "/tmp/whatever/prompt.txt",
       },
       async (request) => {
-        extraCalls.push(request);
+        calls.push(request);
         return { exitCode: 0 };
       },
     );
 
-    expect((extraCalls[0] as { args: string[] }).args).toEqual(
-      (baseCalls[0] as { args: string[] }).args,
-    );
+    expect((calls[0] as { args: string[] }).args).toEqual([
+      "--model",
+      "openai-codex/gpt-5.5",
+      "@/tmp/whatever/prompt.txt",
+    ]);
   });
 });

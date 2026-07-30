@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type {
   InteractiveProcessResult,
@@ -12,6 +11,7 @@ import type {
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "../../registry/provider-registry.types.js";
+import { promptFileReference } from "../prompt-file-reference.js";
 
 const CODEX_BINARY = "codex";
 
@@ -38,8 +38,7 @@ async function runWorking(
   request: ProviderWorkingRequest,
   runner: ProviderWorkingRunner = spawnCodexInheritingStdio,
 ): Promise<void> {
-  const prompt = await readFile(request.promptFile, "utf8");
-  const args = buildCodexWorkingArgs(request, prompt);
+  const args = buildCodexWorkingArgs(request);
 
   let result: ProviderWorkingProcessResult;
   try {
@@ -64,7 +63,7 @@ async function runWorking(
   // `request.outputFile` itself as a side effect of the process above.
 }
 
-function buildCodexWorkingArgs(request: ProviderWorkingRequest, prompt: string): string[] {
+function buildCodexWorkingArgs(request: ProviderWorkingRequest): string[] {
   const args = ["exec", "--dangerously-bypass-approvals-and-sandbox"];
 
   if (request.model) {
@@ -84,7 +83,7 @@ function buildCodexWorkingArgs(request: ProviderWorkingRequest, prompt: string):
   }
 
   args.push("-o", request.outputFile);
-  args.push(prompt);
+  args.push(promptFileReference(request.promptFile));
   return args;
 }
 
@@ -98,7 +97,9 @@ async function runInteractive(
     args.push("--model", request.model);
   }
 
-  args.push(request.prompt);
+  args.push(
+    request.systemPromptFile ? promptFileReference(request.systemPromptFile) : request.prompt,
+  );
 
   return await runner({
     command: CODEX_BINARY,

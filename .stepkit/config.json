@@ -8,7 +8,7 @@
   "agents": {
     "default": [
       {
-        "provider": "claude"
+        "provider": "pi"
       }
     ]
   }

@@ -1,22 +1,18 @@
 import { basename } from "node:path";
-import {
-  isParsedStepKitConfig,
-  parseStepKitConfig,
-} from "../../agent-targeting/parse-stepkit-config/parse-stepkit-config.js";
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
 import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type {
   Event,
   Result,
   RunWorkflowOptions,
 } from "../../runtime/run-workflow/run-workflow.types.js";
-import { appendEvent, createRunDirectory, readRunEvents } from "../artifacts/run-storage.js";
+import { appendEvent } from "../artifacts/run-storage.js";
 import { runContinuation } from "../continuation/run-continuation/run-continuation.js";
 import { createEvent } from "../events/create-run-event.js";
+import { isFailureLikeError } from "../failures/failure-like.js";
+import { workflowFailure } from "../failures/workflow-failure.js";
 import {
   findDanglingInteractiveSessionStart,
   reattachInProgressStep,
@@ -24,6 +20,8 @@ import {
 import { replayToFailedStep } from "../resume/replay-to-failed-step/replay-to-failed-step.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
+import { initializeRun } from "./initialize-run.js";
+import { parseStepKitConfigInput } from "./stepkit-config-input.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,
@@ -31,14 +29,14 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   const maxSteps = options.maxSteps ?? 1000;
   const isResume = options.resume !== undefined;
   const initialized = await initializeRun(options).catch((error) => {
-    if (options.resume && (error instanceof StepKitFailureError || isFailureLikeError(error))) {
+    if (options.resume && isFailureLikeError(error)) {
       return {
         status: "failure" as const,
         runId: basename(options.resume.runDir),
         runName: basename(options.resume.runDir),
         runDir: options.resume.runDir,
         previousEvents: [],
-        failure: unknownWorkflowFailure(error),
+        failure: workflowFailure(error),
       };
     }
 
@@ -112,7 +110,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   try {
     return await runContextStorage.run(runContext, () => runWorkflowBody());
   } catch (error) {
-    return await failWorkflow(unknownWorkflowFailure(error));
+    return await failWorkflow(workflowFailure(error));
   }
 
   async function runWorkflowBody(): Promise<Result<TOutput>> {
@@ -227,102 +225,3 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   }
 }
 
-async function initializeRun<TInput extends PlainObject, TOutput extends PlainObject>(
-  options: RunWorkflowOptions<TInput, TOutput>,
-): Promise<{
-  readonly runId: string;
-  readonly runName: string;
-  readonly runDir: string;
-  readonly previousEvents: readonly Event[];
-}> {
-  if (options.resume) {
-    const previousEvents = await readRunEvents(options.resume.runDir);
-    const startedEvent = previousEvents.find((event) => event.type === "workflow.started");
-    return {
-      runId: startedEvent?.runId ?? basename(options.resume.runDir),
-      runName: startedEvent?.runId ?? basename(options.resume.runDir),
-      runDir: options.resume.runDir,
-      previousEvents,
-    };
-  }
-
-  const cwd = options.cwd ?? process.cwd();
-  const { runId, runDir } = await createRunDirectory({ cwd, runName: options.runName });
-  return { runId, runName: options.runName, runDir, previousEvents: [] };
-}
-
-/**
- * Failure-shaping helpers specific to workflow-execution orchestration
- * (not part of the public API — only `Failure` itself is exported from
- * `contracts/failures/failure.ts` and re-exported from the package entry point).
- */
-
-function unknownWorkflowFailure(error: unknown): Failure {
-  if (error instanceof StepKitFailureError) {
-    return error.failure;
-  }
-
-  if (isFailureLikeError(error)) {
-    return error.failure;
-  }
-
-  return {
-    code: "workflow_failed",
-    message: error instanceof Error ? error.message : "Unknown workflow failure.",
-    ...(error === undefined ? {} : { details: { cause: error } }),
-  };
-}
-
-function parseStepKitConfigInput(value: RunWorkflowOptions["stepkitConfig"]): StepKitConfig {
-  if (isParsedStepKitConfig(value) || isFlattenedStepKitConfig(value)) {
-    return value;
-  }
-
-  return parseStepKitConfig(value);
-}
-
-function isFlattenedStepKitConfig(
-  value: RunWorkflowOptions["stepkitConfig"],
-): value is StepKitConfig {
-  if (!isPlainRecord(value) || value.version !== 1) {
-    return false;
-  }
-
-  if (!isPlainRecord(value.customProviders) || !isFlattenedAgentMappings(value.agents)) {
-    return false;
-  }
-
-  if (value.workflows === undefined) {
-    return true;
-  }
-
-  if (!isPlainRecord(value.workflows)) {
-    return false;
-  }
-
-  return Object.values(value.workflows).every(
-    (workflow) =>
-      isPlainRecord(workflow) &&
-      (workflow.agents === undefined || isFlattenedAgentMappings(workflow.agents)),
-  );
-}
-
-function isFlattenedAgentMappings(value: unknown): value is StepKitConfig["agents"] {
-  return isPlainRecord(value) && Object.values(value).every(Array.isArray);
-}
-
-function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isFailureLikeError(error: unknown): error is { readonly failure: Failure } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "failure" in error &&
-    typeof error.failure === "object" &&
-    error.failure !== null &&
-    "code" in error.failure &&
-    "message" in error.failure
-  );
-}

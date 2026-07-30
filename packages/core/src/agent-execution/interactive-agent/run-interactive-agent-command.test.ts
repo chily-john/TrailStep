@@ -11,7 +11,7 @@ import {
   runWorkflow,
   step,
   type Workflow,
-} from "../../../index.js";
+} from "../../index.js";
 
 describe("continuation interactive agent roles", () => {
   it("passes custom structured interactive output into the continuation", async () => {

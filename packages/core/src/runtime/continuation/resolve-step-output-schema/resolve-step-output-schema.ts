@@ -1,4 +1,4 @@
-import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../../agent-execution/interactive-agent/protocol/default-interactive-output-shape.js";
+import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../interactive-session/default-interactive-output-shape.js";
 import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { PlainObject, Schema, ShapeInput } from "../../../contracts/shapes/shape.types.js";
 

@@ -13,18 +13,16 @@ import {
   step,
   type Workflow,
   type WorkingAgentProcessRequest,
-} from "../../../index.js";
-import type { ProviderWorkingProcessRequest } from "../../../known-cli-providers/registry/provider-registry.types.js";
-import { createRunDirectory } from "../../../runtime/artifacts/run-storage.js";
-import { createRunContext } from "../../../runtime/run-context/create-run-context.js";
-import { runContextStorage } from "../../../runtime/run-context/run-context-storage.js";
-import { withStepContext } from "../../../runtime/run-context/with-step-context.js";
-import {
-  buildProviderWorkingPrompt,
-  buildWorkingAgentPrompt,
-  readWorkingAgentOutput,
-  runWorkingAgentCommand,
-} from "./run-working-agent-command.js";
+} from "../../index.js";
+import type { ProviderWorkingProcessRequest } from "../../known-cli-providers/registry/provider-registry.types.js";
+import { createRunDirectory } from "../../runtime/artifacts/run-storage.js";
+import { createRunContext } from "../../runtime/run-context/create-run-context.js";
+import { runContextStorage } from "../../runtime/run-context/run-context-storage.js";
+import { withStepContext } from "../../runtime/run-context/with-step-context.js";
+import { readWorkingAgentOutput } from "./output/read-working-agent-output.js";
+import { buildProviderWorkingPrompt } from "./prompts/build-provider-working-prompt.js";
+import { buildWorkingAgentPrompt } from "./prompts/build-working-agent-prompt.js";
+import { runWorkingAgentCommand } from "./run-working-agent-command.js";
 
 describe("runWorkingAgentCommand", () => {
   it("writes repeated working-agent outputs to distinct ordered step directories", async () => {

@@ -17,8 +17,8 @@ import {
   renderAgentPrompt,
   runAgentStep,
 } from "../adapter-agent/run-adapter-agent-step/run-adapter-agent-step.js";
-import { runInteractiveAgentCommand } from "../interactive-agent/run-interactive-agent-command/run-interactive-agent-command.js";
-import { runWorkingAgentCommand } from "../working-agent/run-working-agent-command/run-working-agent-command.js";
+import { runInteractiveAgentCommand } from "../interactive-agent/run-interactive-agent-command.js";
+import { runWorkingAgentCommand } from "../working-agent/run-working-agent-command.js";
 
 /**
  * Runs a `.prompt(...)` step's agent dispatch: resolves the workflow agent

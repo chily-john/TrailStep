@@ -12,6 +12,7 @@ import type {
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { createEvent } from "../../events/create-run-event.js";
+import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
 import { resolveStepOutputSchema } from "../resolve-step-output-schema/resolve-step-output-schema.js";
 
@@ -185,8 +186,7 @@ export async function runContinuation(
       node = nextNode;
       source = `step ${config.id}`;
     } catch (error) {
-      const failure =
-        error instanceof StepKitFailureError ? error.failure : stepExecutionFailure(error);
+      const failure = stepExecutionFailure(error);
 
       await options.emit(
         createEvent({
@@ -246,38 +246,3 @@ function continuationFailure(source: string): Failure {
   };
 }
 
-function stepExecutionFailure(error: unknown): Failure {
-  if (error instanceof StepKitFailureError) {
-    return error.failure;
-  }
-
-  if (isFailureLikeError(error)) {
-    return error.failure;
-  }
-
-  return {
-    code: "step_execution_failed",
-    message: error instanceof Error ? error.message : "Step execution failed.",
-    ...(error instanceof Error
-      ? {
-          details: {
-            name: error.name,
-          },
-        }
-      : error === undefined
-        ? {}
-        : { details: { cause: error } }),
-  };
-}
-
-function isFailureLikeError(error: unknown): error is { readonly failure: Failure } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "failure" in error &&
-    typeof error.failure === "object" &&
-    error.failure !== null &&
-    "code" in error.failure &&
-    "message" in error.failure
-  );
-}

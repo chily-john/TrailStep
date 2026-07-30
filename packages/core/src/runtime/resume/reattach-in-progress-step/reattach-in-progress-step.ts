@@ -1,7 +1,7 @@
 import {
   readCompletedInteractiveOutput,
   waitForInteractiveCompletion,
-} from "../../../agent-execution/interactive-agent/run-interactive-agent-command/run-interactive-agent-command.js";
+} from "../../interactive-session/interactive-session-protocol.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";

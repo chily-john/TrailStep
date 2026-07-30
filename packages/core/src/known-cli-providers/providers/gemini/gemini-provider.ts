@@ -109,6 +109,11 @@ function buildGeminiWorkingArgs(request: ProviderWorkingRequest, prompt: string)
   return args;
 }
 
+/**
+ * `request.permissionMode` and `request.systemPromptFile` are deliberately
+ * unread here — no confirmed Gemini CLI flag exists for either yet, so this
+ * is a documented no-op pending a real CLI flag, not an oversight.
+ */
 async function runInteractive(
   request: ProviderInteractiveRequest,
   runner: InteractiveProcessRunner = spawnGeminiInteractive,

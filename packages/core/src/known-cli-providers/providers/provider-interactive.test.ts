@@ -11,7 +11,13 @@ describe("built-in provider interactive runners", () => {
 
     for (const [providerId, provider] of Object.entries(providerRegistry)) {
       await provider.runInteractive(
-        { prompt: `Pair with ${providerId}.`, cwd: "/tmp/run", env, signal },
+        {
+          prompt: `Pair with ${providerId}.`,
+          cwd: "/tmp/run",
+          env,
+          signal,
+          systemPromptFile: "/tmp/run/steps/0001-review/prompt.txt",
+        },
         async (request) => {
           calls[providerId] = request;
           return { exitCode: 0 };

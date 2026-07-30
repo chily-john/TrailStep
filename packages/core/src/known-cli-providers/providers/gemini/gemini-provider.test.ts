@@ -195,4 +195,35 @@ describe("geminiProvider.runInteractive", () => {
       stdio: "inherit",
     });
   });
+
+  it("ignores permissionMode and systemPromptFile as harmless no-ops", async () => {
+    const baseCalls: unknown[] = [];
+    const extraCalls: unknown[] = [];
+
+    await geminiProvider.runInteractive(
+      { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "gemini-2.5-pro" },
+      async (request) => {
+        baseCalls.push(request);
+        return { exitCode: 0 };
+      },
+    );
+
+    await geminiProvider.runInteractive(
+      {
+        prompt: "Pair with me on the bug.",
+        cwd: "/tmp/example",
+        model: "gemini-2.5-pro",
+        permissionMode: "prompt",
+        systemPromptFile: "/tmp/whatever/prompt.txt",
+      },
+      async (request) => {
+        extraCalls.push(request);
+        return { exitCode: 0 };
+      },
+    );
+
+    expect((extraCalls[0] as { args: string[] }).args).toEqual(
+      (baseCalls[0] as { args: string[] }).args,
+    );
+  });
 });

@@ -87,17 +87,23 @@ async function runInteractiveAgentTarget(options: {
       interactiveFile: files.interactiveFile,
       abortController,
       readOutput: async () => await readCompletedOutput(options),
-      runProcess: async () =>
-        await provider.runInteractive(
+      runProcess: async () => {
+        await writeFile(files.promptFile, prompt, "utf8");
+        return await provider.runInteractive(
           {
             prompt,
-            cwd: options.runDir,
+            systemPromptFile: files.promptFile,
+            cwd: files.stepDir,
             env,
             signal: abortController.signal,
             ...(options.target.model === undefined ? {} : { model: options.target.model }),
+            ...(options.target.permissionMode === undefined
+              ? {}
+              : { permissionMode: options.target.permissionMode }),
           },
           options.runner,
-        ),
+        );
+      },
     });
   }
 
@@ -145,7 +151,7 @@ async function runInteractiveAgentTarget(options: {
       await (options.runner ?? spawnInteractiveProcess)({
         command: agentConfig.binary,
         args,
-        cwd: options.runDir,
+        cwd: files.stepDir,
         shell: false,
         stdio: "inherit",
         env,
@@ -290,8 +296,7 @@ function buildInteractivePrompt(options: {
     options.outputMode === "session-file"
       ? [
           "You are running inside a StepKit interactive step.",
-          `Step directory: ${options.files.runRelativeStepDir}`,
-          "Write a dense session description to session-description.md in the step directory.",
+          "Write a dense session description to session-description.md in the current directory.",
           "preserve as much usable context as possible.",
           "describe the conversation rather than aggressively summarize it.",
           "include decisions, rejected options, tradeoffs, constraints, side comments, terminology, open questions, assumptions, file paths, commands, APIs, package names, examples, preferences, reasoning, and abandoned options.",
@@ -301,7 +306,6 @@ function buildInteractivePrompt(options: {
         ]
       : [
           "You are running inside a StepKit interactive step.",
-          `Step directory: ${options.files.runRelativeStepDir}`,
           "Submit a JSON object matching this schema:",
           JSON.stringify(options.outputSchema.jsonSchema, null, 2),
           "When complete, run one of:",

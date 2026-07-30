@@ -1,7 +1,7 @@
 {
   "workflows": {
     "project": {
-      "take-it-away": "./packages/create-flows/src",
+      "take-it-away": "./packages/create-flows/src#takeItAway",
       "grill-it-away": "./packages/create-flows/src#grillItAway"
     }
   },

@@ -271,7 +271,18 @@ async function runInteractive(
     args.push("--model", request.model);
   }
 
-  args.push(request.prompt);
+  if (request.permissionMode !== "prompt") {
+    args.push("--dangerously-skip-permissions");
+  }
+
+  if (!request.systemPromptFile) {
+    throw new StepKitFailureError({
+      code: "agent_provider_invalid_request",
+      message: "claude provider's interactive mode requires systemPromptFile.",
+    });
+  }
+
+  args.push("--append-system-prompt-file", request.systemPromptFile);
 
   return await runner({
     command: CLAUDE_BINARY,

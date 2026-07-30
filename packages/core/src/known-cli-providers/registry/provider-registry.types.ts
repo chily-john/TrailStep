@@ -52,8 +52,15 @@ export type ProviderWorkingRunner = (
 /** Request shape for a built-in provider's interactive (human-in-the-loop) invocation. */
 export interface ProviderInteractiveRequest {
   readonly prompt: string;
+  /**
+   * Path to a file containing the full interactive prompt, for adapters that
+   * support a system-prompt-file flag instead of a positional prompt argument.
+   */
+  readonly systemPromptFile?: string;
   readonly cwd: string;
   readonly model?: string;
+  /** Undefined means bypass (per-tool confirmation is skipped by default). */
+  readonly permissionMode?: "bypass" | "prompt";
   readonly env?: Readonly<Record<string, string>>;
   readonly signal?: AbortSignal;
 }

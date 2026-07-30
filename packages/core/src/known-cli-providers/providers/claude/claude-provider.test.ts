@@ -448,11 +448,16 @@ describe("claudeProvider.repairOutput", () => {
 });
 
 describe("claudeProvider.runInteractive", () => {
-  it("launches with inherited stdio and --model but no dangerous-permissions flag", async () => {
+  it("launches with --dangerously-skip-permissions by default", async () => {
     const calls: unknown[] = [];
 
     const result = await claudeProvider.runInteractive(
-      { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "opus" },
+      {
+        prompt: "Pair with me on the bug.",
+        cwd: "/tmp/example",
+        model: "opus",
+        systemPromptFile: "/tmp/example/prompt.txt",
+      },
       async (request) => {
         calls.push(request);
         return { exitCode: 0 };
@@ -462,10 +467,73 @@ describe("claudeProvider.runInteractive", () => {
     expect(result).toEqual({ exitCode: 0 });
     expect(calls[0]).toMatchObject({
       command: "claude",
-      args: ["--model", "opus", "Pair with me on the bug."],
+      args: [
+        "--model",
+        "opus",
+        "--dangerously-skip-permissions",
+        "--append-system-prompt-file",
+        "/tmp/example/prompt.txt",
+      ],
       cwd: "/tmp/example",
       shell: false,
       stdio: "inherit",
     });
+  });
+
+  it("omits --dangerously-skip-permissions when permissionMode is prompt", async () => {
+    const calls: unknown[] = [];
+
+    await claudeProvider.runInteractive(
+      {
+        prompt: "Pair with me on the bug.",
+        cwd: "/tmp/example",
+        model: "opus",
+        permissionMode: "prompt",
+        systemPromptFile: "/tmp/example/prompt.txt",
+      },
+      async (request) => {
+        calls.push(request);
+        return { exitCode: 0 };
+      },
+    );
+
+    expect((calls[0] as { args: string[] }).args.includes("--dangerously-skip-permissions")).toBe(
+      false,
+    );
+  });
+
+  it("throws agent_provider_invalid_request when systemPromptFile is missing", async () => {
+    await expect(
+      claudeProvider.runInteractive(
+        { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "opus" },
+        async () => ({ exitCode: 0 }),
+      ),
+    ).rejects.toMatchObject({ failure: { code: "agent_provider_invalid_request" } });
+  });
+
+  it("pushes --append-system-prompt-file with no positional prompt when systemPromptFile is set", async () => {
+    const calls: unknown[] = [];
+
+    await claudeProvider.runInteractive(
+      {
+        prompt: "full combined text",
+        cwd: "/tmp/example",
+        model: "opus",
+        systemPromptFile: "/tmp/example/prompt.txt",
+      },
+      async (request) => {
+        calls.push(request);
+        return { exitCode: 0 };
+      },
+    );
+
+    expect((calls[0] as { args: string[] }).args).toEqual([
+      "--model",
+      "opus",
+      "--dangerously-skip-permissions",
+      "--append-system-prompt-file",
+      "/tmp/example/prompt.txt",
+    ]);
+    expect((calls[0] as { args: string[] }).args.includes("full combined text")).toBe(false);
   });
 });

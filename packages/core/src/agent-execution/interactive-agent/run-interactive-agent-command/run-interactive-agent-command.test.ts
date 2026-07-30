@@ -446,6 +446,8 @@ describe("continuation interactive agent roles", () => {
     expect(prompt).toContain("context preservation, not polish");
     expect(prompt).toContain("Do not omit low-importance details merely because they seem minor");
     expect(prompt).toContain("## Original prompt\nDiscuss dense context.");
+    expect(prompt).not.toContain("Step directory:");
+    expect(prompt).toContain("session-description.md in the current directory.");
   });
 
   it("does not write a prompt file when the interactive command receives the prompt directly", async () => {
@@ -839,10 +841,12 @@ describe("continuation interactive agent roles", () => {
       throw new Error(result.failure.message);
     }
 
-    const promptFile = join(result.runDir, "steps", "0001-discuss", "prompt.txt");
+    const stepDir = join(result.runDir, "steps", "0001-discuss");
+    const promptFile = join(stepDir, "prompt.txt");
     expect(runnerCalls[0]).toMatchObject({
       command: "terminal-agent",
       args: ["--message-file", promptFile, "--literal", "&&"],
+      cwd: stepDir,
       shell: false,
       stdio: "inherit",
     });
@@ -897,12 +901,75 @@ describe("continuation interactive agent roles", () => {
     }
 
     expect(runnerCalls).toHaveLength(1);
+    const registryStepDir = join(result.runDir, "steps", "0001-discuss");
+    const promptFilePath = join(registryStepDir, "prompt.txt");
     expect(runnerCalls[0]).toMatchObject({
       command: "claude",
-      args: ["--model", "opus", expect.stringContaining("Discuss prompt handoff.")],
+      args: [
+        "--model",
+        "opus",
+        "--dangerously-skip-permissions",
+        "--append-system-prompt-file",
+        promptFilePath,
+      ],
+      cwd: registryStepDir,
       shell: false,
       stdio: "inherit",
     });
+
+    const promptFileContents = await readFile(promptFilePath, "utf8");
+    expect(promptFileContents).toContain("## Original prompt\nDiscuss prompt handoff.");
+  });
+
+  it("omits --dangerously-skip-permissions when the resolved target sets permissionMode to prompt", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-registry-"));
+    const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
+    const workflow: Workflow<{ task: string }, { exitCode: number }> = {
+      id: "interactive-registry-workflow",
+      inputShape: { task: "string" },
+      outputShape: { exitCode: "number" },
+      agents: {
+        implementor: { size: "small" },
+      },
+      start(input) {
+        return step({
+          id: "discuss",
+        })
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            output: { exitCode: "number" },
+            agent: "implementor",
+            mode: "interactive",
+          })
+          .do(done)(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "prompt handoff" },
+      runName: "interactive-registry-run",
+      cwd,
+      stepkitConfig: {
+        version: 1,
+        customProviders: {},
+        agents: {
+          small: [{ provider: "claude", permissionMode: "prompt" }],
+        },
+      },
+      processRunner: async (call) => {
+        runnerCalls.push(call);
+        await completeInteractive(call, { exitCode: 0 });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(runnerCalls).toHaveLength(1);
+    expect(runnerCalls[0]?.args).not.toContain("--dangerously-skip-permissions");
   });
 });
 

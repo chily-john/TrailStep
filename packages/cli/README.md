@@ -60,7 +60,8 @@ stepkit ./workflows/review.mjs run-one --resume
   },
   "agents": {
     "default": [{ "provider": "claude", "model": "sonnet" }],
-    "reviewer": [{ "provider": "local-reviewer" }]
+    "reviewer": [{ "provider": "local-reviewer" }],
+    "pairing": [{ "provider": "claude", "model": "opus", "permissionMode": "prompt" }]
   },
   "workflows": {
     "review": {
@@ -73,6 +74,8 @@ stepkit ./workflows/review.mjs run-one --resume
 ```
 
 `stepkit agents` edits the same agent/provider configuration interactively.
+
+**Security note:** interactive `claude`-provider agent targets default to `--dangerously-skip-permissions` (no per-tool confirmation) when `permissionMode` is omitted. Set `"permissionMode": "prompt"` on an agent-target entry, as shown above for `pairing`, to restore per-tool confirmation for that target.
 
 ## Registration
 

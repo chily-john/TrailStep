@@ -18,6 +18,8 @@ export interface StepKitAgentTarget {
   readonly model?: string;
   readonly thinking?: WorkflowAgentThinking;
   readonly args?: readonly string[];
+  /** Undefined means bypass (per-tool confirmation is skipped by default). */
+  readonly permissionMode?: "bypass" | "prompt";
 }
 
 export type StepKitAgentMappings = Readonly<Record<string, readonly StepKitAgentTarget[]>>;

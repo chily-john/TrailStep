@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import { StringDecoder } from "node:string_decoder";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
@@ -42,6 +43,7 @@ const PI_BINARY = "pi";
  * envelope's field-name parameterization is not hardcoded to Claude's shape.
  */
 const PI_RESULT_FIELD = "message";
+const PI_STDOUT_FALLBACK_TAIL_CHARS = 128_000;
 
 async function runWorking(
   request: ProviderWorkingRequest,
@@ -60,41 +62,30 @@ async function runWorking(
     });
   }
 
-  if (result.exitCode !== 0) {
-    throw new StepKitFailureError({
-      code: "agent_provider_failed",
-      message: `pi provider process exited with code ${result.exitCode}.`,
-      details: { exitCode: result.exitCode },
-    });
-  }
-
+  // Pi can return exit code 1 after a tool-using coding turn even when it
+  // still prints a valid final answer in the JSON transcript. Treat a usable
+  // final envelope as authoritative; if extraction fails, preserve the
+  // non-zero process failure.
   if (request.captureMode === "raw-text") {
     let text: string;
     try {
       text = extractEnvelopeText(result.stdout, { resultField: PI_RESULT_FIELD });
     } catch (error) {
-      throw new StepKitFailureError({
-        code: "agent_provider_output_invalid",
-        message: "pi provider stdout did not contain a usable result.",
-        details: { cause: error instanceof Error ? error.message : String(error) },
-      });
+      throwPiOutputFailure({ exitCode: result.exitCode, error, json: false });
     }
 
     await writeFile(request.outputFile, text, "utf8");
-  } else {
-    let output: PlainObject;
-    try {
-      output = extractEnvelopeOutput(result.stdout, { resultField: PI_RESULT_FIELD });
-    } catch (error) {
-      throw new StepKitFailureError({
-        code: "agent_provider_output_invalid",
-        message: "pi provider stdout did not contain a usable JSON result.",
-        details: { cause: error instanceof Error ? error.message : String(error) },
-      });
-    }
-
-    await writeFile(request.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+    return;
   }
+
+  let output: PlainObject;
+  try {
+    output = extractEnvelopeOutput(result.stdout, { resultField: PI_RESULT_FIELD });
+  } catch (error) {
+    throwPiOutputFailure({ exitCode: result.exitCode, error, json: true });
+  }
+
+  await writeFile(request.outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
 }
 
 /**
@@ -108,6 +99,30 @@ async function runWorking(
  * straight through with no mapping or validation needed (unlike Codex, which
  * has no `"max"` tier and must reject it).
  */
+function throwPiOutputFailure(options: {
+  readonly exitCode: number;
+  readonly error: unknown;
+  readonly json: boolean;
+}): never {
+  if (options.exitCode !== 0) {
+    throw new StepKitFailureError({
+      code: "agent_provider_failed",
+      message: `pi provider process exited with code ${options.exitCode}.`,
+      details: { exitCode: options.exitCode },
+    });
+  }
+
+  throw new StepKitFailureError({
+    code: "agent_provider_output_invalid",
+    message: options.json
+      ? "pi provider stdout did not contain a usable JSON result."
+      : "pi provider stdout did not contain a usable result.",
+    details: {
+      cause: options.error instanceof Error ? options.error.message : String(options.error),
+    },
+  });
+}
+
 function buildPiWorkingArgs(request: ProviderWorkingRequest): string[] {
   const args = ["-p"];
 
@@ -164,15 +179,81 @@ const spawnPiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cw
       stdio: ["ignore", "pipe", "inherit"],
     });
 
-    let stdout = "";
+    const stdout = createPiJsonStreamStdoutCollector();
     child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
+      stdout.append(chunk);
     });
 
     child.on("error", reject);
-    child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout }));
+    child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout: stdout.finish() }));
   });
 };
+
+interface PiJsonStreamStdoutCollector {
+  append(chunk: Buffer): void;
+  finish(): string;
+}
+
+/**
+ * Pi's JSON mode emits a newline-delimited transcript, including frequent
+ * message update events. Some updates carry cumulative assistant text, so
+ * retaining the whole transcript can grow quadratically with long answers and
+ * eventually exceed V8's maximum string length. Keep only the latest usable
+ * result-candidate line plus a small bounded tail for invalid-output diagnostics.
+ */
+export function createPiJsonStreamStdoutCollector(): PiJsonStreamStdoutCollector {
+  const decoder = new StringDecoder("utf8");
+  let pendingLine = "";
+  let latestResultLine: string | undefined;
+  let fallbackTail = "";
+
+  function appendText(text: string): void {
+    fallbackTail = trimFallbackTail(`${fallbackTail}${text}`);
+    pendingLine += text;
+
+    while (true) {
+      const newlineIndex = pendingLine.indexOf("\n");
+      if (newlineIndex === -1) {
+        return;
+      }
+
+      const line = pendingLine.slice(0, newlineIndex).replace(/\r$/u, "");
+      rememberLine(line);
+      pendingLine = pendingLine.slice(newlineIndex + 1);
+    }
+  }
+
+  return {
+    append(chunk) {
+      appendText(decoder.write(chunk));
+    },
+    finish() {
+      appendText(decoder.end());
+      rememberLine(pendingLine);
+      pendingLine = "";
+      return latestResultLine ?? fallbackTail;
+    },
+  };
+
+  function rememberLine(line: string): void {
+    const trimmed = line.trim();
+    if (trimmed && isPiResultCandidateLine(trimmed)) {
+      latestResultLine = trimmed;
+    }
+  }
+}
+
+function trimFallbackTail(value: string): string {
+  if (value.length <= PI_STDOUT_FALLBACK_TAIL_CHARS) {
+    return value;
+  }
+
+  return value.slice(-PI_STDOUT_FALLBACK_TAIL_CHARS);
+}
+
+function isPiResultCandidateLine(line: string): boolean {
+  return line.includes(`"${PI_RESULT_FIELD}"`);
+}
 
 const spawnPiInteractive: InteractiveProcessRunner = async ({
   command,

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
-import { piProvider } from "./pi-provider.js";
+import { createPiJsonStreamStdoutCollector, piProvider } from "./pi-provider.js";
 
 describe("piProvider.runWorking", () => {
   it("builds -p --model <pattern> --thinking <level> @<promptFile> --mode json and writes outputFile", async () => {
@@ -141,7 +141,7 @@ describe("piProvider.runWorking", () => {
     expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ ok: true });
   });
 
-  it("throws agent_provider_failed on a non-zero exit code", async () => {
+  it("throws agent_provider_failed on a non-zero exit code with no usable result", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-pi-provider-fail-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
@@ -154,6 +154,36 @@ describe("piProvider.runWorking", () => {
       })),
     ).rejects.toMatchObject({
       failure: { code: "agent_provider_failed" },
+    });
+  });
+
+  it("accepts a usable final JSON message even when Pi exits non-zero", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-pi-provider-nonzero-result-"));
+    const promptFile = join(cwd, "prompt.md");
+    const outputFile = join(cwd, "output.json");
+    await writeFile(promptFile, "Implement a story.", "utf8");
+
+    const stdout = JSON.stringify({
+      type: "turn_end",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ blocked: false, summary: "Ran a red test before green." }),
+          },
+        ],
+      },
+    });
+
+    await piProvider.runWorking({ promptFile, outputFile, cwd }, async () => ({
+      exitCode: 1,
+      stdout,
+    }));
+
+    expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({
+      blocked: false,
+      summary: "Ran a red test before green.",
     });
   });
 
@@ -230,6 +260,40 @@ describe("piProvider.runWorking", () => {
     }));
 
     expect(JSON.parse(await readFile(outputFile, "utf8"))).toEqual({ greeting: "Hi!" });
+  });
+});
+
+describe("createPiJsonStreamStdoutCollector", () => {
+  it("keeps only the latest usable Pi JSON result line from streaming transcripts", () => {
+    const collector = createPiJsonStreamStdoutCollector();
+    const finalLine = JSON.stringify({
+      type: "turn_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: '{"ok":true}' }],
+      },
+    });
+
+    for (let index = 0; index < 500; index += 1) {
+      collector.append(
+        Buffer.from(
+          `${JSON.stringify({
+            type: "message_update",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: JSON.stringify({ index }) }],
+            },
+            ignoredTranscriptPayload: "x".repeat(5_000),
+          })}\n`,
+        ),
+      );
+    }
+
+    collector.append(Buffer.from(`${finalLine}\n${JSON.stringify({ type: "agent_settled" })}\n`));
+
+    const compacted = collector.finish();
+    expect(compacted).toEqual(finalLine);
+    expect(compacted).not.toContain("ignoredTranscriptPayload");
   });
 });
 

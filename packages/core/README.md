@@ -11,7 +11,7 @@ Core runtime primitives for StepKit workflows.
 - Code, command-backed local agent, and interactive step execution paths are exported from the package.
 - Agent step prompts support literal markdown, functions of `{ input }`, or `promptTemplate(...)` local files rendered before command execution and structured output parsing.
 - Run artifacts are written under `.stepkit/runs/<actualRunName>/`; duplicate run names receive numeric suffixes such as `<runName>-2`.
-- Runtime events are incrementally appended to `.stepkit/runs/<actualRunName>/events.jsonl` as JSON lines and include workflow, step, agent-tool, and interactive-session events.
+- Runtime events are incrementally appended to `.stepkit/runs/<actualRunName>/events.jsonl` as JSON lines and include workflow, step, retry, agent-tool, and interactive-session events.
 - Interactive steps spawn a command without a shell, support `{{prompt}}` and `{{promptFile}}` placeholders, and complete when `stepkit continue` writes validated output artifacts.
 
 ## Minimal example
@@ -33,6 +33,14 @@ const result = await runWorkflow({
   runName: "demo",
 });
 ```
+
+## Automatic retry
+
+Automatic retry is conservative. The built-in default retry policy is `maxAttempts: 2`, and effective policy precedence is step, workflow, global, then built-in. Set `maxAttempts: 1` on the effective policy to disable automatic retry.
+
+Automatic retry is limited to safe pre-dispatch failures. The known safe direct failure code is `agent_provider_spawn_error`; `agent_target_exhausted` is safe only when every attempt detail is `agent_provider_spawn_error`. Unsafe, unknown, or ambiguous failures are not automatically retried, including provider process failures, provider output validation failures, code-step errors, prompt rendering errors, and generic execution failures.
+
+Retry-aware observability emits `step.attemptFailed` for non-terminal failed attempts and `workflow.retryStarted` with `retryKind: "automatic"` when the runtime starts an automatic retry attempt. Manual retry of persisted failures remains a CLI concern via `stepkit retry`, while provider-level CLI repair such as a provider's own `--resume` stays outside the runtime retry policy.
 
 ## Interactive step artifacts
 

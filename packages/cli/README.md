@@ -148,6 +148,12 @@ If the requested run name already exists, the runtime creates a suffixed directo
 
 ## Retry
 
-Use `stepkit retry <workflow-ref> <workflowRunName>` to rerun from the latest unresolved failure in an existing run artifact. `stepkit retry` with no arguments prompts for an eligible failed run when the terminal is interactive. Retry V1 targets the latest unresolved failure or interruption only; it does not accept `--step`.
+Use `stepkit retry <workflow-ref> <workflowRunName>` for manual retry from the latest unresolved failure in an existing run artifact. `stepkit retry` with no arguments prompts for an eligible failed run when the terminal is interactive. Retry V1 targets the latest unresolved failure or interruption only; it does not accept `--step`.
 
-Eligible retry targets include normal step failures, workflow failures that originated from a step `fail(...)`, and dangling `step.started` events left by an interrupted active step. Historical artifacts that lack a persisted workflow ref may prompt for one during interactive retry. Workflow-level `--resume` is intentionally unsupported; use `stepkit retry` instead.
+Eligible manual retry targets include normal step failures, workflow failures that originated from a step `fail(...)`, and dangling `step.started` events left by an interrupted active step. Historical artifacts that lack a persisted workflow ref may prompt for one during interactive retry.
+
+Automatic retry may already have retried conservative safe pre-dispatch failures before a terminal failure is persisted. The built-in default retry policy is `maxAttempts: 2`; effective policy precedence is step, workflow, global, then built-in, and `maxAttempts: 1` disables automatic retry for that policy. Manual `stepkit retry` remains available for eligible persisted failures after automatic retry is exhausted or skipped.
+
+Automatic retry only treats `agent_provider_spawn_error` as a known safe direct failure, and treats `agent_target_exhausted` as safe only when every attempt detail is `agent_provider_spawn_error`. Provider process failures, provider output validation failures, code-step errors, prompt rendering errors, generic execution failures, and unknown or ambiguous failures are not automatically retried. Retry observability uses `step.attemptFailed` for non-terminal failed attempts and `workflow.retryStarted` with `retryKind: "automatic"`.
+
+Workflow-level `--resume` is intentionally unsupported; use `stepkit retry` instead. Provider-level CLI `--resume` repair remains intact when a provider supports it, but it is separate from StepKit workflow resume and automatic retry.

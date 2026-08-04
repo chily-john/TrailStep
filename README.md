@@ -14,9 +14,9 @@ Command-backed local agents are the default path: workflows declare roles, steps
 
 ## Packages
 
-- `@stepkit/core` (`packages/core`) for schema validation, continuation workflow execution, run directories, event artifacts, provider-agnostic command-agent seams, prompt rendering, structured output parsing, and interactive step orchestration.
+- `@stepkit/core` (`packages/core`) for schema validation, continuation workflow execution, conservative automatic retry for safe pre-dispatch failures, run directories, event artifacts, provider-agnostic command-agent seams, prompt rendering, structured output parsing, and interactive step orchestration.
 - `@stepkit/authoring` (`packages/authoring`) for TypeScript authoring APIs such as `defineWorkflow`, workflow-level `agents`, step-level `agent`, `step`, `done`, simple shapes, and function prompts.
-- `@stepkit/cli` (`packages/cli`) for direct workflow files, registered refs, bundle refs, legacy package-qualified workflow discovery, JSON input loading, resume, skill checks, and local execution.
+- `@stepkit/cli` (`packages/cli`) for direct workflow files, registered refs, bundle refs, legacy package-qualified workflow discovery, JSON input loading, manual retry, skill checks, and local execution.
 - `@stepkit/testkit` (`packages/testkit`) for workflow and step validation helpers.
 - `@stepkit/dashboard` (`packages/dashboard`) for local observability and inspection surfaces over `.stepkit/runs` artifacts.
 
@@ -51,10 +51,10 @@ stepkit ./workflows/hello.mjs hello-run --input-file input.json
 stepkit project/hello
 stepkit user/cleanup
 stepkit @acme/workflows#hello
-stepkit <package:workflowExport> hello-run --resume
+stepkit retry <workflow-ref> hello-run
 ```
 
-Run names are optional when starting a run; StepKit generates one if omitted. Resume always needs an explicit run name so the CLI can locate the existing `.stepkit/runs/<workflowRunName>` directory. `stepkit workflows` reports registered refs grouped by scope and then legacy package export discovery.
+Run names are optional when starting a run; StepKit generates one if omitted. `stepkit retry` reruns from the latest unresolved failure in an existing `.stepkit/runs/<workflowRunName>` directory. Automatic retry is conservative and limited to safe pre-dispatch failures; use `maxAttempts: 1` on the effective retry policy to disable it. `stepkit workflows` reports registered refs grouped by scope and then legacy package export discovery.
 
 Runs create `.stepkit/runs/<actualRunName>/` in the consuming project. Events are written to `.stepkit/runs/<actualRunName>/events.jsonl`.
 

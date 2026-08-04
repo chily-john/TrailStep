@@ -39,6 +39,8 @@ export function verifyRepositoryDocs() {
   assertIncludes(readme, "customProviders", "README.md");
   assertIncludes(readme, "agents.*.items", "README.md");
   assertIncludes(readme, "Implementation guidance lives in `.pi/rules/`", "README.md");
+  assertIncludes(readme, "automatic retry", "README.md");
+  assertIncludes(readme, "safe pre-dispatch failures", "README.md");
 
   const removedDirectionTerms = [
     "do" + "cs/",
@@ -59,31 +61,36 @@ export function verifyRepositoryDocs() {
     ["packages/create-flows/README.md", assertFile("packages/create-flows/README.md")],
   ]);
 
-  assertIncludes(
-    packageReadmes.get("packages/core/README.md") ?? "",
-    "runWorkflow",
-    "packages/core/README.md",
-  );
+  const coreReadme = packageReadmes.get("packages/core/README.md") ?? "";
+  const cliReadme = packageReadmes.get("packages/cli/README.md") ?? "";
+
+  assertIncludes(coreReadme, "runWorkflow", "packages/core/README.md");
+  for (const expected of [
+    "automatic retry",
+    "agent_provider_spawn_error",
+    "agent_target_exhausted",
+    "maxAttempts: 2",
+    "step.attemptFailed",
+    "workflow.retryStarted",
+    "retryKind: \"automatic\"",
+    "provider process failures",
+    "provider output validation failures",
+    "prompt rendering errors",
+  ]) {
+    assertIncludes(coreReadme, expected, "packages/core/README.md");
+  }
   assertIncludes(
     packageReadmes.get("packages/authoring/README.md") ?? "",
     "defineWorkflow",
     "packages/authoring/README.md",
   );
-  assertIncludes(
-    packageReadmes.get("packages/cli/README.md") ?? "",
-    "stepkit init",
-    "packages/cli/README.md",
-  );
-  assertIncludes(
-    packageReadmes.get("packages/cli/README.md") ?? "",
-    "stepkit agents",
-    "packages/cli/README.md",
-  );
-  assertIncludes(
-    packageReadmes.get("packages/cli/README.md") ?? "",
-    "stepkit workflows",
-    "packages/cli/README.md",
-  );
+  assertIncludes(cliReadme, "stepkit init", "packages/cli/README.md");
+  assertIncludes(cliReadme, "stepkit agents", "packages/cli/README.md");
+  assertIncludes(cliReadme, "stepkit workflows", "packages/cli/README.md");
+  assertIncludes(cliReadme, "stepkit retry", "packages/cli/README.md");
+  assertIncludes(cliReadme, "automatic retry", "packages/cli/README.md");
+  assertIncludes(cliReadme, "manual retry", "packages/cli/README.md");
+  assertIncludes(cliReadme, "Provider-level CLI `--resume`", "packages/cli/README.md");
   assertIncludes(
     packageReadmes.get("packages/dashboard/README.md") ?? "",
     ".stepkit/runs",

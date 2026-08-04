@@ -219,6 +219,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
           ? previousEvents.filter((event) => event.type === "step.started").length
           : undefined,
       workflowAgents: options.workflow.agents ?? {},
+      workflowTimeout: options.workflow.timeout,
       runDir,
       cwd,
       stepkitConfig,

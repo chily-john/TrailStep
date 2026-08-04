@@ -42,7 +42,7 @@ async function runWorking(
 
   let result: ProviderWorkingProcessResult;
   try {
-    result = await runner({ command: CODEX_BINARY, args, cwd: request.cwd });
+    result = await runner({ command: CODEX_BINARY, args, cwd: request.cwd, signal: request.signal });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -112,14 +112,16 @@ async function runInteractive(
   });
 }
 
-const spawnCodexInheritingStdio: ProviderWorkingRunner = async ({ command, args, cwd }) => {
+const spawnCodexInheritingStdio: ProviderWorkingRunner = async ({ command, args, cwd, signal }) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       shell: false,
       stdio: "inherit",
+      detached: process.platform !== "win32",
     });
 
+    signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
     // `stdout` is unused: codex's `-o` flag writes `outputFile` directly, so
     // nothing here ever gets parsed as an envelope.

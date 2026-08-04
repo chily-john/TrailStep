@@ -25,6 +25,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly stepIndex: number;
   readonly target: StepKitAgentTarget;
   readonly files: WorkingAgentFiles;
+  readonly signal?: AbortSignal;
 }): Promise<TOutput> {
   await rm(options.files.outputFile, { force: true });
   await rm(options.files.usageFile, { force: true });
@@ -40,6 +41,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       providerWorkingRunner: options.providerWorkingRunner,
       target: options.target,
       files: options.files,
+      signal: options.signal,
     });
   }
 
@@ -50,5 +52,6 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
     runner: options.runner,
     target: options.target,
     files: options.files,
+    signal: options.signal,
   });
 }

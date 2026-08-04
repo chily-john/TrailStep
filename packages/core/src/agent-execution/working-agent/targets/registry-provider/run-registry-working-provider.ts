@@ -22,6 +22,7 @@ export async function runRegistryWorkingProvider<TOutput extends PlainObject>(op
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly target: StepKitAgentTarget;
   readonly files: WorkingAgentFiles;
+  readonly signal?: AbortSignal;
 }): Promise<TOutput> {
   await writeFile(
     options.files.promptFile,
@@ -44,6 +45,7 @@ export async function runRegistryWorkingProvider<TOutput extends PlainObject>(op
         ...(options.target.model === undefined ? {} : { model: options.target.model }),
         ...(thinking === undefined ? {} : { thinking }),
         captureMode: options.step.output.captureMode,
+        signal: options.signal,
       },
       options.providerWorkingRunner,
     );
@@ -58,6 +60,7 @@ export async function runRegistryWorkingProvider<TOutput extends PlainObject>(op
       files: options.files,
       cwd: options.cwd,
       providerWorkingRunner: options.providerWorkingRunner,
+      signal: options.signal,
     });
 
     if (!repaired) {

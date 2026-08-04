@@ -61,6 +61,14 @@ export function step(config: StepConfig): {
 
   return {
     prompt(source, options) {
+      if (hasRetryOption(options)) {
+        throw new TypeError("Retry config belongs on step(...), not .prompt(...) options.");
+      }
+
+      if (hasTimeoutOption(options)) {
+        throw new TypeError("Timeout config belongs on step(...), not .prompt(...) options.");
+      }
+
       return {
         do: (onOutput) => buildFactory(source, options, onOutput),
       };
@@ -97,6 +105,14 @@ export function isDoneNode(value: unknown): value is DoneNode {
 
 export function isFailNode(value: unknown): value is FailNode {
   return isPlainObject(value) && value.kind === "fail";
+}
+
+function hasRetryOption(value: unknown): boolean {
+  return isPlainObject(value) && "retry" in value;
+}
+
+function hasTimeoutOption(value: unknown): boolean {
+  return isPlainObject(value) && "timeout" in value;
 }
 
 function isPlainObject(value: unknown): value is PlainObject {

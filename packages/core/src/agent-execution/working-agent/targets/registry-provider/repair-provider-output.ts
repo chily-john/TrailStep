@@ -38,6 +38,7 @@ export async function attemptProviderOutputRepair(options: {
   readonly files: WorkingAgentFiles;
   readonly cwd: string;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
+  readonly signal?: AbortSignal;
 }): Promise<boolean> {
   if (!options.provider.repairOutput) {
     return false;
@@ -60,6 +61,7 @@ export async function attemptProviderOutputRepair(options: {
         ...(options.thinking === undefined ? {} : { thinking: options.thinking }),
         outputSchema: options.outputSchema,
         captureMode: options.captureMode,
+        signal: options.signal,
       },
       options.providerWorkingRunner,
     );

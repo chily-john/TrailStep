@@ -17,6 +17,7 @@ export interface ProviderWorkingRequest {
   readonly model?: string;
   readonly thinking?: WorkflowAgentThinking;
   readonly captureMode?: "json" | "raw-text";
+  readonly signal?: AbortSignal;
 }
 
 /** Low-level process request for a provider's stdout-capturing runner. */
@@ -33,6 +34,7 @@ export interface ProviderWorkingProcessRequest {
    * file artifact (for example, Claude's output-repair prompt).
    */
   readonly stdin?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface ProviderWorkingProcessResult {
@@ -81,6 +83,7 @@ export interface ProviderWorkingRepairRequest {
   readonly thinking?: WorkflowAgentThinking;
   readonly outputSchema: Record<string, unknown>;
   readonly captureMode?: "json" | "raw-text";
+  readonly signal?: AbortSignal;
 }
 
 /**

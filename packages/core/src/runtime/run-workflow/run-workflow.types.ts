@@ -33,6 +33,7 @@ export interface WorkingAgentProcessRequest {
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface WorkingAgentProcessResult {

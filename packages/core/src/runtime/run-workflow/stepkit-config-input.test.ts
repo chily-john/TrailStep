@@ -41,9 +41,11 @@ describe("parseStepKitConfigInput", () => {
       version: 1,
       customProviders: { local: { binary: "local-agent" } },
       agents: { small: [{ provider: "local", model: "fast" }] },
+      settings: { timeout: 30_000 },
       workflows: {
         review: {
           agents: { reviewer: [{ provider: "local", model: "careful" }] },
+          settings: { timeout: 10_000 },
         },
       },
     } as const;

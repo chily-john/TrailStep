@@ -36,7 +36,7 @@ async function runWorking(
 
   let result: ProviderWorkingProcessResult;
   try {
-    result = await runner({ command: GEMINI_BINARY, args, cwd: request.cwd });
+    result = await runner({ command: GEMINI_BINARY, args, cwd: request.cwd, signal: request.signal });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -139,12 +139,13 @@ async function runInteractive(
   });
 }
 
-const spawnGeminiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd }) => {
+const spawnGeminiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd, signal }) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       shell: false,
       stdio: ["ignore", "pipe", "inherit"],
+      detached: process.platform !== "win32",
     });
 
     let stdout = "";
@@ -152,6 +153,7 @@ const spawnGeminiCapturingStdout: ProviderWorkingRunner = async ({ command, args
       stdout += chunk.toString();
     });
 
+    signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout }));
   });

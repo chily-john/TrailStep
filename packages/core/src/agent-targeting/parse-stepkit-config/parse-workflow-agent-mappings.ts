@@ -1,10 +1,12 @@
+import type { StepKitSettings } from "../targeting.types.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import type { RawStepKitAgentMappings } from "./parse-agent-targets.js";
 import { isRecord } from "./parse-utils.js";
+import { parseSettings } from "./parse-settings.js";
 
 export interface RawStepKitWorkflowConfig {
   readonly agents?: RawStepKitAgentMappings;
-  readonly settings?: Readonly<Record<string, unknown>>;
+  readonly settings?: StepKitSettings;
 }
 
 export function parseWorkflows(
@@ -33,13 +35,15 @@ export function parseWorkflows(
         ? undefined
         : parseAgentMappings(`workflows.${workflowId}.agents`, workflow.agents, diagnostics);
 
-    if (workflow.settings !== undefined && !isRecord(workflow.settings)) {
-      diagnostics.push(`workflows.${workflowId}.settings must be an object when present.`);
-    }
+    const settings = parseSettings(
+      `workflows.${workflowId}.settings`,
+      workflow.settings,
+      diagnostics,
+    );
 
     workflows[workflowId] = {
       ...(agents === undefined ? {} : { agents }),
-      ...(isRecord(workflow.settings) ? { settings: workflow.settings } : {}),
+      ...(settings === undefined ? {} : { settings }),
     };
   }
 

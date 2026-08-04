@@ -45,6 +45,7 @@ export async function dispatchAgentStep(options: {
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
   readonly stepIndex: number;
+  readonly signal?: AbortSignal;
 }): Promise<PlainObject> {
   const { config, outputSchema } = options;
 
@@ -103,6 +104,7 @@ export async function dispatchAgentStep(options: {
       outputSchema,
       outputMode: options.interactiveOutputMode,
       artifactPaths,
+      signal: options.signal,
     });
     await options.emit(
       createEvent({
@@ -133,6 +135,7 @@ export async function dispatchAgentStep(options: {
         runner: options.workingAgentProcessRunner,
         providerWorkingRunner: options.providerWorkingRunner,
         stepIndex: options.stepIndex,
+        signal: options.signal,
       })
     : await runAgentStep({
         step: agentStep,

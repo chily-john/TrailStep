@@ -18,6 +18,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   readonly runner?: WorkingAgentProcessRunner;
   readonly target: StepKitAgentTarget;
   readonly files: WorkingAgentFiles;
+  readonly signal?: AbortSignal;
 }): Promise<TOutput> {
   const agentConfig = options.config.customProviders[options.target.provider];
   if (!agentConfig) {
@@ -46,6 +47,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       promptFile: options.files.promptFile,
       outputFile: options.files.outputFile,
       ...(options.target.model === undefined ? {} : { model: options.target.model }),
+      signal: options.signal,
     });
   } catch (error) {
     throw new StepKitFailureError({

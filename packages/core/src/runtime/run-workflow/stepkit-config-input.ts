@@ -24,6 +24,10 @@ function isFlattenedStepKitConfig(
     return false;
   }
 
+  if (value.settings !== undefined && !isFlattenedSettings(value.settings)) {
+    return false;
+  }
+
   if (value.workflows === undefined) {
     return true;
   }
@@ -35,7 +39,16 @@ function isFlattenedStepKitConfig(
   return Object.values(value.workflows).every(
     (workflow) =>
       isPlainRecord(workflow) &&
-      (workflow.agents === undefined || isFlattenedAgentMappings(workflow.agents)),
+      (workflow.agents === undefined || isFlattenedAgentMappings(workflow.agents)) &&
+      (workflow.settings === undefined || isFlattenedSettings(workflow.settings)),
+  );
+}
+
+function isFlattenedSettings(value: unknown): value is NonNullable<StepKitConfig["settings"]> {
+  return (
+    isPlainRecord(value) &&
+    (value.retry === undefined || isPlainRecord(value.retry)) &&
+    (value.timeout === undefined || typeof value.timeout === "number")
   );
 }
 

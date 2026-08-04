@@ -6,6 +6,7 @@ export type {
   StepKitAgentTarget,
   StepKitConfig,
   StepKitCustomProviderConfig,
+  StepKitSettings,
   StepKitWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
 export {
@@ -100,6 +101,18 @@ export {
 export type { RunSummary, RunSummaryStatus } from "./runtime/runs/run-summaries.js";
 export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
+export { resolveRetryPolicy, validateRetryPolicy } from "./runtime/retry/retry-policy.js";
+export type {
+  ResolveRetryPolicyOptions,
+  RetryPolicy,
+  RetryPolicyInput,
+} from "./runtime/retry/retry-policy.js";
+export { resolveTimeoutPolicy, validateTimeoutPolicy } from "./runtime/timeout/timeout-policy.js";
+export type {
+  ResolveTimeoutPolicyOptions,
+  TimeoutPolicy,
+  TimeoutPolicyInput,
+} from "./runtime/timeout/timeout-policy.js";
 export { runWorkflow } from "./runtime/run-workflow/run-workflow.js";
 export type {
   Event,

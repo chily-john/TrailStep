@@ -53,7 +53,7 @@ async function runWorking(
 
   let result: ProviderWorkingProcessResult;
   try {
-    result = await runner({ command: PI_BINARY, args, cwd: request.cwd });
+    result = await runner({ command: PI_BINARY, args, cwd: request.cwd, signal: request.signal });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -169,7 +169,7 @@ async function runInteractive(
   });
 }
 
-const spawnPiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd }) => {
+const spawnPiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd, signal }) => {
   const executable = await resolveCliCommandForSpawn({ command, args });
 
   return await new Promise((resolve, reject) => {
@@ -177,6 +177,7 @@ const spawnPiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cw
       cwd,
       shell: false,
       stdio: ["ignore", "pipe", "inherit"],
+      detached: process.platform !== "win32",
     });
 
     const stdout = createPiJsonStreamStdoutCollector();
@@ -184,6 +185,7 @@ const spawnPiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cw
       stdout.append(chunk);
     });
 
+    signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout: stdout.finish() }));
   });

@@ -1,4 +1,6 @@
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
+import type { RetryPolicyInput } from "../runtime/retry/retry-policy.js";
+import type { TimeoutPolicyInput } from "../runtime/timeout/timeout-policy.js";
 
 export interface StepKitCustomProviderConfig {
   readonly binary: string;
@@ -24,15 +26,22 @@ export interface StepKitAgentTarget {
 
 export type StepKitAgentMappings = Readonly<Record<string, readonly StepKitAgentTarget[]>>;
 
+export interface StepKitSettings {
+  readonly retry?: RetryPolicyInput;
+  readonly timeout?: TimeoutPolicyInput;
+  readonly [key: string]: unknown;
+}
+
 export interface StepKitWorkflowConfig {
   readonly agents?: StepKitAgentMappings;
-  readonly settings?: Readonly<Record<string, unknown>>;
+  readonly settings?: StepKitSettings;
 }
 
 export interface StepKitConfig {
   readonly version: 1;
   readonly customProviders: Readonly<Record<string, StepKitCustomProviderConfig>>;
   readonly agents: StepKitAgentMappings;
+  readonly settings?: StepKitSettings;
   readonly workflows?: Readonly<Record<string, StepKitWorkflowConfig>>;
 }
 

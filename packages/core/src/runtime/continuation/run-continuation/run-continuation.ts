@@ -14,6 +14,8 @@ import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
+import { resolveTimeoutPolicy } from "../../timeout/timeout-policy.js";
+import type { TimeoutPolicyInput } from "../../timeout/timeout-policy.js";
 import { resolveStepOutputSchema } from "../resolve-step-output-schema/resolve-step-output-schema.js";
 
 export interface RunContinuationOptions {
@@ -25,6 +27,7 @@ export interface RunContinuationOptions {
   readonly initialSource: string;
   readonly initialExecutedSteps?: number;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
+  readonly workflowTimeout?: TimeoutPolicyInput;
   readonly runDir: string;
   readonly cwd: string;
   readonly stepkitConfig?: StepKitConfig;
@@ -79,6 +82,12 @@ export async function runContinuation(
     const stepNode = node;
     const { config } = stepNode;
     const hasPrompt = config.prompt !== undefined;
+    const timeoutPolicy = resolveTimeoutPolicy({
+      global: stepkitConfig?.settings?.timeout,
+      workflow:
+        options.workflowTimeout ?? stepkitConfig?.workflows?.[options.workflowId]?.settings?.timeout,
+      step: config.timeout,
+    });
     const maxSubPrompts =
       config.maxSubPrompts ??
       stepkitConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
@@ -100,10 +109,14 @@ export async function runContinuation(
         stepIndex,
       }).stepDir;
 
-      const nextNode = await withStepContext(
-        config.id,
-        stepDir,
-        async () => {
+      const nextNode = await runWithStepTimeout({
+        stepId: config.id,
+        timeoutMs: timeoutPolicy.timeoutMs,
+        run: async (signal) =>
+          await withStepContext(
+            config.id,
+            stepDir,
+            async () => {
           let paramForNext: PlainObject;
 
           if (hasPrompt) {
@@ -130,7 +143,9 @@ export async function runContinuation(
               providerWorkingRunner: options.providerWorkingRunner,
               processRunner: options.processRunner,
               stepIndex,
+              signal,
             });
+            throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
             paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
 
             await options.emit(
@@ -147,6 +162,7 @@ export async function runContinuation(
           }
 
           const nextNode = await stepNode.onOutput(paramForNext, config.input);
+          throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
 
           if (!hasPrompt) {
             // A no-prompt step's .do(...) IS its work — only report completion once it has
@@ -164,10 +180,12 @@ export async function runContinuation(
             );
           }
 
+          throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
           return nextNode;
-        },
-        { maxSubPrompts },
-      );
+            },
+            { maxSubPrompts },
+          ),
+      });
 
       if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
         const failure = continuationFailure(`step ${config.id}`);
@@ -225,6 +243,52 @@ export async function runContinuation(
       }
     }
   }
+}
+
+async function runWithStepTimeout<T>(options: {
+  readonly stepId: string;
+  readonly timeoutMs?: number;
+  readonly run: (signal?: AbortSignal) => Promise<T>;
+}): Promise<T> {
+  if (options.timeoutMs === undefined) {
+    return await options.run();
+  }
+
+  const timeoutMs = options.timeoutMs;
+  const abortController = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      abortController.abort();
+      reject(stepTimeoutFailure(options.stepId, timeoutMs));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([options.run(abortController.signal), timeoutPromise]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function throwIfStepTimedOut(
+  signal: AbortSignal | undefined,
+  stepId: string,
+  timeoutMs: number | undefined,
+): void {
+  if (signal?.aborted && timeoutMs !== undefined) {
+    throw stepTimeoutFailure(stepId, timeoutMs);
+  }
+}
+
+function stepTimeoutFailure(stepId: string, timeoutMs: number): StepKitFailureError {
+  return new StepKitFailureError({
+    code: "step_timeout",
+    message: `Step ${stepId} timed out after ${timeoutMs}ms.`,
+    details: { stepId, timeoutMs },
+  });
 }
 
 function errorMessage(error: unknown): string {

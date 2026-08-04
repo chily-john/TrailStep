@@ -120,6 +120,45 @@ describe("parseStepKitConfig", () => {
     }
   });
 
+  it("parses numeric timeout settings", () => {
+    const parsed = parseStepKitConfig({
+      version: 1,
+      customProviders: {},
+      agents: {},
+      settings: { timeout: 30_000 },
+      workflows: {
+        review: { settings: { timeout: 10_000 } },
+      },
+    });
+
+    expect(parsed.settings?.timeout).toBe(30_000);
+    expect(parsed.workflows?.review?.settings?.timeout).toBe(10_000);
+  });
+
+  it("rejects object timeout settings", () => {
+    try {
+      parseStepKitConfig({
+        version: 1,
+        customProviders: {},
+        agents: {},
+        settings: { timeout: { timeoutMs: 30_000 } },
+        workflows: {
+          review: { settings: { timeout: { timeoutMs: 10_000 } } },
+        },
+      });
+      throw new Error("Expected parseStepKitConfig to reject object timeout settings.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(StepKitFailureError);
+      expect((error as StepKitFailureError).failure.code).toBe("validation_failed");
+      expect((error as StepKitFailureError).failure.details).toEqual({
+        diagnostics: [
+          "settings.timeout must be a number when present.",
+          "workflows.review.settings.timeout must be a number when present.",
+        ],
+      });
+    }
+  });
+
   it("requires the unified custom provider and agent mapping keys", () => {
     expect(() =>
       parseStepKitConfig({

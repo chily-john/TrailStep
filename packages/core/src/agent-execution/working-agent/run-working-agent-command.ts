@@ -34,6 +34,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
   readonly files?: WorkingAgentFiles;
+  readonly signal?: AbortSignal;
 }): Promise<TOutput> {
   const targets = resolveAgentTargets({
     config: options.config,

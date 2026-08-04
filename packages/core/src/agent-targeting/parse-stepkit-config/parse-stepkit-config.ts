@@ -3,6 +3,7 @@ import { expandAgentRefs } from "./expand-agent-refs.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import { parseCustomProviders } from "./parse-custom-providers.js";
 import { isRecord, throwValidationFailure } from "./parse-utils.js";
+import { parseSettings } from "./parse-settings.js";
 import { parseWorkflows } from "./parse-workflow-agent-mappings.js";
 import { validateProviderReferences } from "./validate-provider-references.js";
 
@@ -26,6 +27,7 @@ export function parseStepKitConfig(value: unknown): StepKitConfig {
   const customProviders = parseCustomProviders(value.customProviders, diagnostics);
   const providerNames = new Set(Object.keys(customProviders));
   const agents = parseAgentMappings("agents", value.agents, diagnostics);
+  const settings = parseSettings("settings", value.settings, diagnostics);
   const workflows = parseWorkflows(value.workflows, diagnostics);
 
   if (diagnostics.length > 0) {
@@ -39,6 +41,7 @@ export function parseStepKitConfig(value: unknown): StepKitConfig {
     version: 1,
     customProviders,
     agents: expanded.agents,
+    ...(settings === undefined ? {} : { settings }),
     ...(expanded.workflows === undefined ? {} : { workflows: expanded.workflows }),
   };
 
@@ -46,3 +49,4 @@ export function parseStepKitConfig(value: unknown): StepKitConfig {
 
   return config;
 }
+

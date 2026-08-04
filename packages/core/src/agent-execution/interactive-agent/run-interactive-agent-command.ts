@@ -33,6 +33,7 @@ export async function runInteractiveAgentCommand(options: {
   readonly artifactPaths: StepArtifactPaths;
   readonly outputMode: "session-file" | "json";
   readonly runner?: InteractiveProcessRunner;
+  readonly signal?: AbortSignal;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const [target] = resolveAgentTargets({
     config: options.config,
@@ -64,6 +65,7 @@ async function runInteractiveAgentTarget(options: {
   readonly outputMode: "session-file" | "json";
   readonly runner?: InteractiveProcessRunner;
   readonly target: StepKitAgentTarget;
+  readonly signal?: AbortSignal;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const files = options.artifactPaths;
   await prepareInteractiveArtifacts({
@@ -82,6 +84,7 @@ async function runInteractiveAgentTarget(options: {
   const env = { ...definedProcessEnv(), STEPKIT_INTERACTIVE_FILE: files.interactiveFile };
 
   const abortController = new AbortController();
+  options.signal?.addEventListener("abort", () => abortController.abort(), { once: true });
 
   const provider = providerRegistry[options.target.provider as keyof typeof providerRegistry];
   if (provider) {

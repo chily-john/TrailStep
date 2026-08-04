@@ -4,6 +4,8 @@ import type {
 } from "../../contracts/agents/agent-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject, ShapeInput } from "../../contracts/shapes/shape.types.js";
+import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
+import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
 
 /** A local text file to load a prompt's content from, resolved relative to the workflow's `cwd` at dispatch time. */
 export interface PromptTemplateSource {
@@ -14,6 +16,8 @@ export interface PromptTemplateSource {
 /** The object passed to `step(...)`. Always relevant, regardless of whether `.prompt(...)` is called. */
 export interface StepConfig {
   readonly id: string;
+  readonly retry?: RetryPolicyInput;
+  readonly timeout?: TimeoutPolicyInput;
 }
 
 /**
@@ -50,6 +54,8 @@ export interface ContinuationStepConfig<
   readonly mode?: "working" | "interactive";
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
   readonly maxSubPrompts?: number;
+  readonly retry?: RetryPolicyInput;
+  readonly timeout?: TimeoutPolicyInput;
 }
 
 export type StepContinuation<

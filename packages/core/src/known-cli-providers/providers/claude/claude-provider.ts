@@ -33,7 +33,12 @@ async function runWorking(
   let result: ProviderWorkingProcessResult;
   const startedAt = performance.now();
   try {
-    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd });
+    result = await runner({
+      command: CLAUDE_BINARY,
+      args,
+      cwd: request.cwd,
+      signal: request.signal,
+    });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -152,7 +157,13 @@ async function repairOutput(
   let result: ProviderWorkingProcessResult;
   const startedAt = performance.now();
   try {
-    result = await runner({ command: CLAUDE_BINARY, args, cwd: request.cwd, stdin: prompt });
+    result = await runner({
+      command: CLAUDE_BINARY,
+      args,
+      cwd: request.cwd,
+      stdin: prompt,
+      signal: request.signal,
+    });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -301,13 +312,20 @@ async function runInteractive(
   });
 }
 
-const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd, stdin }) => {
+const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({
+  command,
+  args,
+  cwd,
+  stdin,
+  signal,
+}) => {
   return await new Promise((resolve, reject) => {
     const hasStdin = stdin !== undefined;
     const child = spawn(command, args, {
       cwd,
       shell: false,
       stdio: [hasStdin ? "pipe" : "ignore", "pipe", "inherit"],
+      detached: process.platform !== "win32",
     });
 
     let stdout = "";
@@ -316,6 +334,7 @@ const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({ command, args
     });
 
     child.stdin?.on("error", reject);
+    signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout }));
 

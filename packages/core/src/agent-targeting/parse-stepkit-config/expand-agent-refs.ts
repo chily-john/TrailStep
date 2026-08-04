@@ -1,5 +1,9 @@
 import { StepKitFailureError } from "../../contracts/failures/failure.js";
-import type { StepKitAgentMappings, StepKitAgentTarget } from "../targeting.types.js";
+import type {
+  StepKitAgentMappings,
+  StepKitAgentTarget,
+  StepKitSettings,
+} from "../targeting.types.js";
 import type { RawStepKitAgentMappings, RawStepKitAgentTarget } from "./parse-agent-targets.js";
 
 export function expandAgentRefs(options: {
@@ -10,7 +14,7 @@ export function expandAgentRefs(options: {
           string,
           {
             readonly agents?: RawStepKitAgentMappings;
-            readonly settings?: Readonly<Record<string, unknown>>;
+            readonly settings?: StepKitSettings;
           }
         >
       >
@@ -23,7 +27,7 @@ export function expandAgentRefs(options: {
           string,
           {
             readonly agents?: StepKitAgentMappings;
-            readonly settings?: Readonly<Record<string, unknown>>;
+            readonly settings?: StepKitSettings;
           }
         >
       >

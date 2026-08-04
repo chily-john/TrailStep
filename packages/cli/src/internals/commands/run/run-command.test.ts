@@ -182,7 +182,6 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
   await writeFile(
     join(packageDir, "index.mjs"),
     `import { done, step } from '@stepkit/core';
-    let shouldFailResumeFeature = true;
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
       diagnostics: () => [],
@@ -198,28 +197,6 @@ async function writeWorkflowPackage(cwd: string): Promise<void> {
       start: (input) => step({
         id: 'prepare',
       }).do((stepInput) => done({ ...stepInput, prepared: true }))(input),
-    };
-    export const resumeFeature = {
-      id: 'resumeFeature',
-      input: schema,
-      output: schema,
-      start: (input) => {
-        const finishStep = step({
-          id: 'finish',
-        }).do((stepInput) => {
-          if (shouldFailResumeFeature) {
-            shouldFailResumeFeature = false;
-            throw new Error('finish unavailable');
-          }
-          return done({ ...stepInput, finished: true });
-        });
-
-        const prepareStep = step({
-          id: 'prepare',
-        }).do((stepInput) => finishStep({ ...stepInput, prepared: true }));
-
-        return prepareStep(input);
-      },
     };`,
     "utf8",
   );
@@ -480,38 +457,20 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
-  it("passes resume runDir to core for an existing failed run", async ({ task }) => {
+  it("rejects legacy resume syntax and points users to retry", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
-    await writeWorkflowPackage(cwd);
     const errors: string[] = [];
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:resumeFeature", "resume-run", "--input", "{}"],
+        argv: ["@acme/stepkit-workflows:reviewFeature", "resume-run", "--resume"],
         cwd,
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),
     ).resolves.toBe(1);
 
-    const runDir = join(cwd, ".stepkit", "runs", "resume-run");
-    const lines: string[] = [];
-
-    await expect(
-      main({
-        argv: ["@acme/stepkit-workflows:resumeFeature", "resume-run", "--resume"],
-        cwd,
-        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
-      }),
-    ).resolves.toBe(0);
-
-    const eventsJsonl = await readFile(join(runDir, "events.jsonl"), "utf8");
-    expect(eventsJsonl).toContain("workflow.resumed");
-    expect(eventsJsonl).toContain('"finished":true');
-    await expect(
-      readFile(join(cwd, ".stepkit", "runs", "resume-run-2", "events.jsonl"), "utf8"),
-    ).rejects.toThrow();
-    expect(lines.join("\n")).toContain(runDir);
+    expect(errors.join("\n")).toMatch(/stepkit retry <workflow-ref> <runName>/i);
   });
 
   it("fails with a list suggestion when the package-qualified workflow id is unknown", async ({

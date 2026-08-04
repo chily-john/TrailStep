@@ -12,18 +12,23 @@ export async function initializeRun<TInput extends PlainObject, TOutput extends 
   readonly runDir: string;
   readonly previousEvents: readonly Event[];
 }> {
-  if (options.resume) {
-    const previousEvents = await readRunEvents(options.resume.runDir);
+  const existingRunDir = options.resume?.runDir ?? options.retry?.runDir;
+  if (existingRunDir) {
+    const previousEvents = await readRunEvents(existingRunDir);
     const startedEvent = previousEvents.find((event) => event.type === "workflow.started");
     return {
-      runId: startedEvent?.runId ?? basename(options.resume.runDir),
-      runName: startedEvent?.runId ?? basename(options.resume.runDir),
-      runDir: options.resume.runDir,
+      runId: startedEvent?.runId ?? basename(existingRunDir),
+      runName: startedEvent?.runId ?? basename(existingRunDir),
+      runDir: existingRunDir,
       previousEvents,
     };
   }
 
   const cwd = options.cwd ?? process.cwd();
-  const { runId, runDir } = await createRunDirectory({ cwd, runName: options.runName });
-  return { runId, runName: options.runName, runDir, previousEvents: [] };
+  const runName = options.runName;
+  if (runName === undefined) {
+    throw new Error("Expected runName for a new workflow run.");
+  }
+  const { runId, runDir } = await createRunDirectory({ cwd, runName });
+  return { runId, runName, runDir, previousEvents: [] };
 }

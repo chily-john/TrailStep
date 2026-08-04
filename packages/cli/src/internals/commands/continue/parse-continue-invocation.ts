@@ -7,10 +7,16 @@ export function parseContinueInvocation(argv: readonly string[]): ContinueComman
   }
 
   const [, ...args] = argv;
-  const modes = ["--session-file", "--json-file", "--json"].filter((flag) => args.includes(flag));
+  if (args.length === 0) {
+    return { mode: "select" };
+  }
+
+  const modes = ["--interactive-file", "--session-file", "--json-file", "--json"].filter((flag) =>
+    args.includes(flag),
+  );
   if (modes.length !== 1) {
     throw new CliUsageError(
-      "Expected exactly one continue mode: --session-file <path>, --json-file <path>, or --json '<json>'.",
+      "Expected exactly one continue mode: --interactive-file <path>, --session-file <path>, --json-file <path>, or --json '<json>'.",
     );
   }
 
@@ -21,6 +27,10 @@ export function parseContinueInvocation(argv: readonly string[]): ContinueComman
   const [flag, value] = args;
   if (flag !== modes[0] || !value) {
     throw new CliUsageError(`${modes[0]} requires exactly one value.`);
+  }
+
+  if (flag === "--interactive-file") {
+    return { mode: "interactive-file", path: value };
   }
 
   if (flag === "--session-file") {

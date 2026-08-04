@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import type { Event } from "@stepkit/core";
 import { runWorkflow } from "@stepkit/core";
 
@@ -19,7 +17,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
   },
   async run(args: RunCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
-    const input = args.resume ? undefined : await loadJsonInput(args.input, cwd);
+    const input = await loadJsonInput(args.input, cwd);
     const stepkitConfig = await loadStepKitConfig(cwd);
     const resolvedWorkflow = await resolveWorkflowReference(args.workflowId, {
       cwd,
@@ -58,16 +56,11 @@ export const runCommand: CliCommand<RunCommandArgs> = {
         randomSuffix: context.runNameRandomSuffix,
       });
 
-    const result = args.resume
-      ? await runWorkflow({
-          ...sharedRunOptions,
-          resume: { runDir: join(cwd, ".stepkit", "runs", workflowRunName) },
-        })
-      : await runWorkflow({
-          ...sharedRunOptions,
-          input: input ?? {},
-          runName: workflowRunName,
-        });
+    const result = await runWorkflow({
+      ...sharedRunOptions,
+      input: input ?? {},
+      runName: workflowRunName,
+    });
 
     if (result.status === "success") {
       io.writeLine(`Workflow completed: ${resolvedWorkflow.id} at ${result.runDir}`);

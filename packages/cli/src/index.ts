@@ -64,7 +64,7 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
     cwd,
     homeDir: options.homeDir,
     io,
-    prompts: options.prompts ?? createTerminalPrompts(),
+    prompts: "prompts" in options ? options.prompts : createTerminalPrompts(),
     eventSink: options.eventSink,
     env: options.env ?? process?.env ?? {},
     processRunner: options.processRunner,

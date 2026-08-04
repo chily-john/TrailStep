@@ -23,15 +23,10 @@ export function parseRunInvocation(argv: readonly string[]): RunCommandArgs {
       : parseWorkflowId(workflowId));
   const parsedOptions = parseRunArgs(rest);
 
-  if (parsedOptions?.resume === true && workflowRunName === undefined) {
-    throw new CliUsageError("Expected an explicit workflow run name when using --resume.");
-  }
-
   return {
     workflowId,
     ...(workflowRunName === undefined ? {} : { workflowRunName }),
     ...(workflow === undefined ? {} : { workflow }),
     ...(parsedOptions?.input !== undefined ? { input: parsedOptions.input } : {}),
-    ...(parsedOptions?.resume === true ? { resume: true } : {}),
   };
 }

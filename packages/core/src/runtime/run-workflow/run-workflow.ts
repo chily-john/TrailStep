@@ -17,6 +17,7 @@ import {
   findDanglingInteractiveSessionStart,
   reattachInProgressStep,
 } from "../resume/reattach-in-progress-step/reattach-in-progress-step.js";
+import { replayToRetryFailure } from "../retry/replay-to-retry-failure.js";
 import { replayToFailedStep } from "../resume/replay-to-failed-step/replay-to-failed-step.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
@@ -28,13 +29,15 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
 ): Promise<Result<TOutput>> {
   const maxSteps = options.maxSteps ?? 1000;
   const isResume = options.resume !== undefined;
+  const isRetry = options.retry !== undefined;
   const initialized = await initializeRun(options).catch((error) => {
-    if (options.resume && isFailureLikeError(error)) {
+    const existingRunDir = options.resume?.runDir ?? options.retry?.runDir;
+    if (existingRunDir && isFailureLikeError(error)) {
       return {
         status: "failure" as const,
-        runId: basename(options.resume.runDir),
-        runName: basename(options.resume.runDir),
-        runDir: options.resume.runDir,
+        runId: basename(existingRunDir),
+        runName: basename(existingRunDir),
+        runDir: existingRunDir,
         previousEvents: [],
         failure: workflowFailure(error),
       };
@@ -154,6 +157,34 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
           },
         }),
       );
+    } else if (isRetry) {
+      const replay = await replayToRetryFailure({
+        workflow: options.workflow,
+        events: previousEvents,
+        runDir,
+      });
+      if (replay.status === "failure") {
+        return failResumeValidation(replay.failure);
+      }
+
+      workflowInput = inputSchema
+        ? (inputSchema.assert(replay.input, "workflow input") as TInput)
+        : (replay.input as TInput);
+      startNode = replay.node;
+      await emit(
+        createEvent({
+          runId,
+          workflowId: options.workflow.id,
+          type: "workflow.retryStarted",
+          payload: {
+            retryKind: options.retry.kind,
+            retriedFromRunDir: runDir,
+            retriedStepId: replay.retriedStepId,
+            sourceFailureEventId: replay.sourceFailureEventId,
+            sourceFailureReplayPosition: replay.sourceFailureReplayPosition,
+          },
+        }),
+      );
     } else {
       workflowInput = inputSchema
         ? inputSchema.assert(options.input, "workflow input")
@@ -174,16 +205,19 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       workflowId: options.workflow.id,
       emit,
       maxSteps,
-      initialSource: isResume
-        ? `resume for workflow ${options.workflow.id}`
-        : `workflow.start for workflow ${options.workflow.id}`,
+      initialSource: isRetry
+        ? `retry for workflow ${options.workflow.id}`
+        : isResume
+          ? `resume for workflow ${options.workflow.id}`
+          : `workflow.start for workflow ${options.workflow.id}`,
       // The original run already used one step-index slot per step.started
       // event ever recorded (successful or failed) -- newly-dispatched steps
       // after resume must continue that sequence, not restart at 1, or their
       // artifact directories collide with the pre-resume steps' directories.
-      initialExecutedSteps: isResume
-        ? previousEvents.filter((event) => event.type === "step.started").length
-        : undefined,
+      initialExecutedSteps:
+        isResume || isRetry
+          ? previousEvents.filter((event) => event.type === "step.started").length
+          : undefined,
       workflowAgents: options.workflow.agents ?? {},
       runDir,
       cwd,

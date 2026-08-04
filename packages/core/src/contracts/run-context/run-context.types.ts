@@ -49,6 +49,7 @@ export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
   readonly type:
     | "workflow.started"
     | "workflow.resumed"
+    | "workflow.retryStarted"
     | "workflow.failed"
     | "step.started"
     | "step.completed"

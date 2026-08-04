@@ -3,8 +3,9 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { jsonSchema, type PlainObject } from "@stepkit/core";
 
-import type { CliCommand } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliInputError } from "../run/load-run-input.js";
+import { findActiveInteractiveSessions } from "./active-interactive-sessions.js";
 import type { ContinueCommandArgs } from "./continue-command.types.js";
 import { parseContinueInvocation } from "./parse-continue-invocation.js";
 
@@ -18,33 +19,94 @@ interface InteractiveSessionProtocol {
   readonly outputMode?: string;
   readonly runDir?: string;
   readonly runRelativeStepDir?: string;
+  readonly sessionDescriptionFile?: string;
+}
+
+type SubmittedOutputArgs = Exclude<
+  ContinueCommandArgs,
+  { readonly mode: "interactive-file" } | { readonly mode: "select" }
+>;
+
+interface ContinueTarget {
+  readonly interactiveFile: string;
+  readonly outputArgs: SubmittedOutputArgs | { readonly mode: "selected" };
 }
 
 export const continueCommand: CliCommand<ContinueCommandArgs> = {
   name: "continue",
   parseArgs: parseContinueInvocation,
   async run(args, context) {
-    const interactiveFile = context.env?.STEPKIT_INTERACTIVE_FILE;
-    if (!interactiveFile) {
-      throw new CliInputError(
-        "STEPKIT_INTERACTIVE_FILE is required to continue an active interactive StepKit session.",
-      );
-    }
-
-    const interactive = await loadInteractiveSession(interactiveFile);
-    const output = await loadSubmittedOutput(args, interactive);
+    const target = await resolveContinueTarget(args, context);
+    const interactive = await loadInteractiveSession(target.interactiveFile);
+    const output = await loadSubmittedOutput(target.outputArgs, interactive, context);
     validateOutput(output, interactive.outputSchema);
 
     await safeWriteJson(interactive.outputFile, output);
-    await safeWriteJson(interactiveFile, { ...interactive.raw, status: "completed" });
+    await safeWriteJson(target.interactiveFile, { ...interactive.raw, status: "completed" });
     context.io.writeLine(
-      args.mode === "session-file"
+      interactive.outputMode === "session-file"
         ? `Interactive session completed: ${output.sessionFile as string}`
         : "Interactive session completed.",
     );
     return 0;
   },
 };
+
+async function resolveContinueTarget(
+  args: ContinueCommandArgs,
+  context: CliCommandContext,
+): Promise<ContinueTarget> {
+  if (args.mode === "select") {
+    const interactiveFile = await promptForInteractiveSession(context);
+    return { interactiveFile, outputArgs: { mode: "selected" } };
+  }
+
+  if (args.mode === "interactive-file") {
+    return { interactiveFile: args.path, outputArgs: { mode: "selected" } };
+  }
+
+  const interactiveFile = context.env?.STEPKIT_INTERACTIVE_FILE;
+  if (!interactiveFile) {
+    throw new CliInputError(
+      "STEPKIT_INTERACTIVE_FILE is required to continue an active interactive StepKit session.",
+    );
+  }
+
+  return { interactiveFile, outputArgs: args };
+}
+
+async function promptForInteractiveSession(context: CliCommandContext): Promise<string> {
+  if (!context.prompts) {
+    throw new CliInputError(
+      "No-argument continue requires prompts and cannot run non-interactively.",
+    );
+  }
+
+  const sessions = await findActiveInteractiveSessions(context.cwd);
+  if (sessions.length === 0) {
+    throw new CliInputError("No active interactive StepKit sessions found under .stepkit/runs.");
+  }
+
+  const labels = sessions.map((session) => session.label);
+  const selectedLabel = await context.prompts.select("Select an active interactive session", labels);
+  const selected = sessions.find((session) => session.label === selectedLabel);
+  if (!selected) {
+    throw new CliInputError("Selected interactive session was not found.");
+  }
+
+  if (!context.prompts.confirm) {
+    throw new CliInputError("No-argument continue requires confirmation prompts.");
+  }
+
+  const confirmed = await context.prompts.confirm(
+    `Complete selected interactive session? ${selected.label}`,
+  );
+  if (!confirmed) {
+    throw new CliInputError("Interactive session completion was not confirmed.");
+  }
+
+  return selected.interactiveFile;
+}
 
 async function loadInteractiveSession(
   interactiveFile: string,
@@ -87,6 +149,10 @@ async function loadInteractiveSession(
     runDir: typeof protocol.runDir === "string" ? protocol.runDir : undefined,
     runRelativeStepDir:
       typeof protocol.runRelativeStepDir === "string" ? protocol.runRelativeStepDir : undefined,
+    sessionDescriptionFile:
+      typeof protocol.sessionDescriptionFile === "string"
+        ? protocol.sessionDescriptionFile
+        : undefined,
   };
 }
 
@@ -111,19 +177,36 @@ function resolveAgainstStepDir(stepDir: string, userPath: string): string {
 }
 
 async function loadSubmittedOutput(
-  args: ContinueCommandArgs,
+  args: ContinueTarget["outputArgs"],
   interactive: InteractiveSessionProtocol,
+  context: CliCommandContext,
 ): Promise<PlainObject> {
-  if (args.mode === "session-file") {
-    requireOutputMode(interactive, "session-file");
-    const sessionFile = resolveAgainstStepDir(interactive.stepDir, args.path);
-    const sessionFileContents = await readSessionFile(sessionFile, args.path);
-    if (sessionFileContents.trim().length === 0) {
-      throw new CliInputError(`Session file is empty: ${args.path}`);
+  if (args.mode === "selected") {
+    if (interactive.outputMode === "session-file") {
+      if (!interactive.sessionDescriptionFile) {
+        throw new CliInputError("Active interactive session is missing sessionDescriptionFile.");
+      }
+      return loadSessionFileOutput(
+        interactive,
+        interactive.sessionDescriptionFile,
+        interactive.sessionDescriptionFile,
+      );
     }
 
-    const runDir = interactive.runDir ?? inferRunDir(interactive);
-    return { sessionFile: toRunRelativePath(runDir, sessionFile) };
+    requireOutputMode(interactive, "json");
+    if (!context.prompts) {
+      throw new CliInputError("JSON interactive continue requires prompts for JSON text.");
+    }
+    return parsePlainJsonObject("interactive JSON", await context.prompts.text("Enter JSON output"));
+  }
+
+  if (args.mode === "session-file") {
+    requireOutputMode(interactive, "session-file");
+    return loadSessionFileOutput(
+      interactive,
+      resolveAgainstStepDir(interactive.stepDir, args.path),
+      args.path,
+    );
   }
 
   requireOutputMode(interactive, "json");
@@ -139,6 +222,20 @@ async function loadSubmittedOutput(
     throw new CliInputError(`Unable to read JSON file: ${args.path}`, { cause: error });
   }
   return parsePlainJsonObject(`JSON file ${args.path}`, contents);
+}
+
+async function loadSessionFileOutput(
+  interactive: InteractiveSessionProtocol,
+  sessionFile: string,
+  displayPath: string,
+): Promise<PlainObject> {
+  const sessionFileContents = await readSessionFile(sessionFile, displayPath);
+  if (sessionFileContents.trim().length === 0) {
+    throw new CliInputError(`Session file is empty: ${displayPath}`);
+  }
+
+  const runDir = interactive.runDir ?? inferRunDir(interactive);
+  return { sessionFile: toRunRelativePath(runDir, sessionFile) };
 }
 
 function requireOutputMode(

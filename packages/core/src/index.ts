@@ -92,6 +92,14 @@ export type {
   ProviderWorkingRunner,
 } from "./known-cli-providers/registry/provider-registry.types.js";
 export { readRunEvents, readRunState, writeRunState } from "./runtime/artifacts/run-storage.js";
+export {
+  listRunSummaries,
+  newestFirst,
+  selectRecentFailedRunSummaries,
+} from "./runtime/runs/run-summaries.js";
+export type { RunSummary, RunSummaryStatus } from "./runtime/runs/run-summaries.js";
+export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
+export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export { runWorkflow } from "./runtime/run-workflow/run-workflow.js";
 export type {
   Event,

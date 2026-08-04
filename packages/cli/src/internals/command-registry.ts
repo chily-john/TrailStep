@@ -6,7 +6,9 @@ import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
+import { retryCommand } from "./commands/retry/retry-command.js";
 import { runCommand } from "./commands/run/run-command.js";
+import { runsCommand } from "./commands/runs/runs-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
 import { updateCommand } from "./commands/update/update-command.js";
 import { workflowsCommand } from "./commands/workflows/workflows-command.js";
@@ -35,6 +37,14 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "workflows") {
     return workflowsCommand;
+  }
+
+  if (argv[0] === "retry") {
+    return retryCommand;
+  }
+
+  if (argv[0] === "runs") {
+    return runsCommand;
   }
 
   if (argv.length === 1 && argv[0] === "skill-check") {

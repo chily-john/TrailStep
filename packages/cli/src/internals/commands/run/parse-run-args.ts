@@ -4,12 +4,12 @@ import type { ParsedRunOptions } from "./run-command.types.js";
 export function parseRunArgs(rest: readonly string[]): ParsedRunOptions | undefined {
   let inlineInput: string | undefined;
   let inputFile: string | undefined;
-  let resume = false;
   for (let index = 0; index < rest.length; index += 1) {
     const option = rest[index];
     if (option === "--resume") {
-      resume = true;
-      continue;
+      throw new CliUsageError(
+        "Legacy --resume is no longer supported. Use stepkit retry <workflow-ref> <runName> instead.",
+      );
     }
 
     const value = rest[index + 1];
@@ -28,12 +28,6 @@ export function parseRunArgs(rest: readonly string[]): ParsedRunOptions | undefi
   }
   if (inlineInput !== undefined && inputFile !== undefined) {
     throw new CliUsageError("Choose either --input or --input-file, not both.");
-  }
-  if (resume && (inlineInput !== undefined || inputFile !== undefined)) {
-    throw new CliUsageError("Choose either --resume or input, not both.");
-  }
-  if (resume) {
-    return { resume: true };
   }
   if (inlineInput !== undefined) {
     return { input: { kind: "inline", json: inlineInput } };

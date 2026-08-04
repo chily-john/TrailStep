@@ -51,6 +51,7 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
   readonly type:
     | "workflow.started"
     | "workflow.resumed"
+    | "workflow.retryStarted"
     | "workflow.failed"
     | "step.started"
     | "step.completed"
@@ -104,10 +105,18 @@ export type RunWorkflowOptions<
         readonly input: TInput;
         readonly runName: string;
         readonly resume?: undefined;
+        readonly retry?: undefined;
       }
     | {
         readonly resume: { readonly runDir: string };
         readonly input?: undefined;
         readonly runName?: undefined;
+        readonly retry?: undefined;
+      }
+    | {
+        readonly retry: { readonly runDir: string; readonly kind: "manual" | "automatic" };
+        readonly input?: undefined;
+        readonly runName?: undefined;
+        readonly resume?: undefined;
       }
   );

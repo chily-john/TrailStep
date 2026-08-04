@@ -43,9 +43,12 @@ describe("parseRunInvocation", () => {
     });
   });
 
-  it("requires an explicit run name for resume", () => {
+  it("rejects legacy resume syntax and points users to retry", () => {
     expect(() => parseRunInvocation(["@acme/stepkit-workflows:reviewFeature", "--resume"])).toThrow(
       CliUsageError,
+    );
+    expect(() => parseRunInvocation(["@acme/stepkit-workflows:reviewFeature", "--resume"])).toThrow(
+      /stepkit retry/i,
     );
   });
 

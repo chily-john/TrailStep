@@ -5,12 +5,17 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AgentAdapter, AgentAdapterRequest } from "./contracts/agents/agent-adapter.types.js";
-import { jsonSchema, runWorkflow, subPrompt } from "./index.js";
+import { jsonSchema, runWorkflow, selectLatestUnresolvedFailure, subPrompt } from "./index.js";
 
 describe("@stepkit/core public API", () => {
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
     expect(runWorkflow).toBeTypeOf("function");
     expect(jsonSchema).toBeTypeOf("function");
+    expect(selectLatestUnresolvedFailure).toBeTypeOf("function");
+
+    type PublicLatestUnresolvedFailure = import("./index.js").LatestUnresolvedFailure;
+    const retryTarget = null as unknown as PublicLatestUnresolvedFailure;
+    expect(retryTarget).toBeNull();
 
     type PublicAdapterRequest = import("./index.js").AgentAdapterRequest;
     type PublicAgentAdapter = import("./index.js").AgentAdapter;

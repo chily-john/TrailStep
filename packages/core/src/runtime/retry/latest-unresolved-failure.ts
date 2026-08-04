@@ -26,6 +26,8 @@ export function selectLatestUnresolvedFailure(
   );
 
   let workflowFailureFallback: LatestUnresolvedFailure | undefined;
+  let laterWorkflowTerminalSeen = false;
+  const laterTerminalStepIds = new Set<string>();
 
   for (let replayPosition = events.length - 1; replayPosition >= 0; replayPosition -= 1) {
     const event = events[replayPosition];
@@ -37,7 +39,18 @@ export function selectLatestUnresolvedFailure(
       return undefined;
     }
 
+    if (event.type === "workflow.completed") {
+      laterWorkflowTerminalSeen = true;
+      continue;
+    }
+
+    if (event.type === "step.completed") {
+      rememberTerminalStep(event, laterTerminalStepIds);
+      continue;
+    }
+
     if (event.type === "step.failed") {
+      rememberTerminalStep(event, laterTerminalStepIds);
       if (isResolvedFailure(event, replayPosition, resolvedFailures)) {
         continue;
       }
@@ -45,16 +58,39 @@ export function selectLatestUnresolvedFailure(
       return toLatestUnresolvedFailure(event, replayPosition, workflowInput);
     }
 
-    if (event.type === "workflow.failed" && !workflowFailureFallback) {
+    if (event.type === "workflow.failed") {
+      laterWorkflowTerminalSeen = true;
+      if (!workflowFailureFallback) {
+        if (isResolvedFailure(event, replayPosition, resolvedFailures)) {
+          continue;
+        }
+
+        workflowFailureFallback = toLatestUnresolvedFailure(event, replayPosition, workflowInput);
+      }
+      continue;
+    }
+
+    if (
+      event.type === "step.started" &&
+      event.stepId &&
+      !laterWorkflowTerminalSeen &&
+      !laterTerminalStepIds.has(event.stepId)
+    ) {
       if (isResolvedFailure(event, replayPosition, resolvedFailures)) {
         continue;
       }
 
-      workflowFailureFallback = toLatestUnresolvedFailure(event, replayPosition, workflowInput);
+      return toLatestUnresolvedFailure(event, replayPosition, workflowInput);
     }
   }
 
   return workflowFailureFallback;
+}
+
+function rememberTerminalStep(event: Event, stepIds: Set<string>): void {
+  if (event.stepId) {
+    stepIds.add(event.stepId);
+  }
 }
 
 function findLatestReplayPosition(

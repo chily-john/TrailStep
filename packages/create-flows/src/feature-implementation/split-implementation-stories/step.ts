@@ -2,6 +2,7 @@ import { type Document, document, fail, state, step } from "@stepkit/authoring";
 import type { ContinuationResult } from "@stepkit/core";
 import { implementStoryStep } from "../implement-story/step.js";
 import { STORY_BOUNDARY } from "../shared/constants.js";
+import { STORY_STATE_KEYS } from "../shared/story-state.js";
 
 export interface SplitImplementationStoriesInput extends Record<string, unknown> {
     readonly implementationDoc: Document;
@@ -30,8 +31,9 @@ export const splitImplementationStoriesStep = step({ id: "split-implementation-s
 
         // storyDocs.length === chunks.length, already guarded above to be > 0.
         const [firstStory, ...remaining] = storyDocs as [Document, ...Document[]];
-        await state.set("storyQueue", remaining);
-        await state.set("completedStories", []);
+        await state.set(STORY_STATE_KEYS.storyQueue, remaining);
+        await state.set(STORY_STATE_KEYS.completedStories, []);
+        await state.set(STORY_STATE_KEYS.activeStory, firstStory);
 
         return implementStoryStep({ currentStory: firstStory, attempt: 1 });
     },

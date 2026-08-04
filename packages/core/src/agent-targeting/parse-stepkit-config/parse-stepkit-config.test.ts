@@ -120,19 +120,36 @@ describe("parseStepKitConfig", () => {
     }
   });
 
-  it("parses numeric timeout settings", () => {
+  it("parses retry and numeric timeout settings", () => {
     const parsed = parseStepKitConfig({
       version: 1,
       customProviders: {},
       agents: {},
-      settings: { timeout: 30_000 },
+      settings: { retry: { maxAttempts: 3 }, timeout: 30_000 },
       workflows: {
-        review: { settings: { timeout: 10_000 } },
+        review: { settings: { retry: { maxAttempts: 4 }, timeout: 10_000 } },
       },
     });
 
+    expect(parsed.settings?.retry).toEqual({ maxAttempts: 3 });
     expect(parsed.settings?.timeout).toBe(30_000);
+    expect(parsed.workflows?.review?.settings?.retry).toEqual({ maxAttempts: 4 });
     expect(parsed.workflows?.review?.settings?.timeout).toBe(10_000);
+  });
+
+  it("normalizes empty retry settings so they do not shadow lower-precedence policies", () => {
+    const parsed = parseStepKitConfig({
+      version: 1,
+      customProviders: {},
+      agents: {},
+      settings: { retry: {} },
+      workflows: {
+        review: { settings: { retry: {} } },
+      },
+    });
+
+    expect(parsed.settings).toEqual({});
+    expect(parsed.workflows?.review?.settings).toEqual({});
   });
 
   it("rejects object timeout settings", () => {

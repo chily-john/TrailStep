@@ -16,6 +16,17 @@ function event(overrides: Partial<Event> & Pick<Event, "type">): Event {
 }
 
 describe("selectLatestUnresolvedFailure", () => {
+  it("selects a dangling step.started event as an interrupted unresolved step", () => {
+    const target = selectLatestUnresolvedFailure([
+      event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),
+      event({ id: "review-started", type: "step.started", stepId: "review" }),
+    ]);
+
+    expect(target).not.toBeUndefined();
+    expect(target?.event.id).toBe("review-started");
+    expect(target?.stepId).toBe("review");
+  });
+
   it("selects the latest unresolved failure by event id and replay position when a step id fails more than once", () => {
     const events: readonly Event[] = [
       event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),
@@ -48,6 +59,30 @@ describe("selectLatestUnresolvedFailure", () => {
     ]);
 
     expect(target).toBeUndefined();
+  });
+
+  it("does not select a step.started event closed by a later step terminal event", () => {
+    const target = selectLatestUnresolvedFailure([
+      event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),
+      event({ id: "review-started", type: "step.started", stepId: "review" }),
+      event({ id: "review-completed", type: "step.completed", stepId: "review" }),
+      event({ id: "workflow-completed", type: "workflow.completed" }),
+    ]);
+
+    expect(target).toBeUndefined();
+  });
+
+  it("does not classify a step.started event closed by workflow.failed as dangling", () => {
+    const target = selectLatestUnresolvedFailure([
+      event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),
+      event({ id: "review-started", type: "step.started", stepId: "review" }),
+      event({ id: "workflow-failed", type: "workflow.failed" }),
+    ]);
+
+    expect(target).toMatchObject({
+      event: expect.objectContaining({ id: "workflow-failed" }),
+      stepId: undefined,
+    });
   });
 
   it("ignores failures already consumed by workflow.retryStarted", () => {

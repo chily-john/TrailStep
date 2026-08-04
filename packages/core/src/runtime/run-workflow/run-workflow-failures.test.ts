@@ -437,7 +437,7 @@ describe("runWorkflow failure paths", () => {
     ]);
   });
 
-  it("a step's onOutput can end the workflow via fail(...) after the step completes", async () => {
+  it("a step's onOutput can end the workflow via fail(...) with step-scoped failure metadata", async () => {
     const cwd = await testCwd();
     const objectWithValue = valueSchema();
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -466,9 +466,14 @@ describe("runWorkflow failure paths", () => {
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
-      "step.completed",
+      "step.failed",
       "workflow.failed",
     ]);
+    expect(result.events[2]).toMatchObject({
+      type: "step.failed",
+      stepId: "check",
+      payload: { failure: { code: "negative_value", message: "value must not be negative" } },
+    });
   });
 });
 

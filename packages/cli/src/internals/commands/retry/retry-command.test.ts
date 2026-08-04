@@ -137,14 +137,94 @@ describe("retry command", () => {
     expect(selectCalls[0]?.choices.join("\n")).toContain("failed-alpha");
     expect(selectCalls[0]?.choices.join("\n")).toContain("failed-beta");
     expect(selectCalls[0]?.choices.join("\n")).not.toContain("completed-run");
-    expect(selectCalls[0]?.choices.join("\n")).toMatch(/retryFeature.*latest.*step review.*review unavailable/);
-    expect(selectCalls[1]).toMatchObject({ prompt: "Retry run failed-beta for workflow retryFeature?" });
+    expect(selectCalls[0]?.choices.join("\n")).toMatch(
+      /retryFeature.*latest.*step review.*review unavailable/,
+    );
+    expect(selectCalls[1]).toMatchObject({
+      prompt: "Retry run failed-beta for workflow retryFeature?",
+    });
 
     const events = parseEvents(
       await readFile(join(cwd, ".stepkit", "runs", "failed-beta", "events.jsonl"), "utf8"),
     );
     expect(events.map((event) => event.type)).toContain("workflow.retryStarted");
     expect(lines.join("\n")).toContain(join(cwd, ".stepkit", "runs", "failed-beta"));
+  });
+
+  it("includes a dangling step.started run in the no-argument eligible retry prompt", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await mkdir(cwd, { recursive: true });
+    await writeRetryWorkflow(cwd);
+    await writeFile(join(cwd, "fixed.txt"), "fixed\n", "utf8");
+    const runName = "dangling-run";
+    const runDir = join(cwd, ".stepkit", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    const danglingEvents = [
+      {
+        id: "workflow-started",
+        runId: runName,
+        workflowId: "retryFeature",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        schemaVersion: "v0",
+        type: "workflow.started",
+        payload: { input: {}, workflowRef: "./workflow.mjs#retryFeature" },
+      },
+      {
+        id: "review-started",
+        runId: runName,
+        workflowId: "retryFeature",
+        stepId: "review",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        schemaVersion: "v0",
+        type: "step.started",
+        payload: {},
+      },
+    ];
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${danglingEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const selectCalls: { prompt: string; choices: readonly string[] }[] = [];
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["retry"],
+        cwd,
+        prompts: {
+          text: async () => "./workflow.mjs#retryFeature",
+          select: async (prompt, choices) => {
+            selectCalls.push({ prompt, choices });
+            if (prompt.includes("confirm") || prompt.includes("Retry run")) {
+              return "yes";
+            }
+            return choices.find((choice) => choice.includes(runName)) ?? choices[0] ?? "";
+          },
+        },
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    expect(selectCalls[0]).toMatchObject({ prompt: "Select a failed run to retry" });
+    expect(selectCalls[0]?.choices.join("\n")).toMatch(
+      /retryFeature.*dangling-run.*interrupted step review/,
+    );
+    const events = parseEvents(await readFile(join(runDir, "events.jsonl"), "utf8"));
+    expect(events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "workflow.retryStarted",
+      "step.started",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(lines.join("\n")).toContain(runDir);
   });
 
   it("retries an explicitly targeted failed run and preserves failed attempt artifacts", async ({

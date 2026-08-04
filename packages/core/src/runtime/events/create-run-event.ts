@@ -1,7 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
-
-let eventCounter = 0;
 
 export function createEvent(options: {
   readonly runId: string;
@@ -10,10 +10,8 @@ export function createEvent(options: {
   readonly type: Event["type"];
   readonly payload?: PlainObject;
 }): Event {
-  eventCounter += 1;
-
   return {
-    id: `evt_${eventCounter}`,
+    id: `evt_${randomUUID()}`,
     runId: options.runId,
     workflowId: options.workflowId,
     stepId: options.stepId,

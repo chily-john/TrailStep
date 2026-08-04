@@ -1,8 +1,8 @@
+import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-
-import { readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
 import type { Event, LatestUnresolvedFailure } from "@stepkit/core";
+import { readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
 
 export interface RunSummary {
   readonly runId: string;
@@ -21,7 +21,7 @@ export interface EligibleRetryRun {
 export async function listRunSummaries(options: { readonly cwd: string }): Promise<RunSummary[]> {
   const runsRoot = join(options.cwd, ".stepkit", "runs");
 
-  let entries;
+  let entries: Dirent[];
   try {
     entries = await readdir(runsRoot, { withFileTypes: true });
   } catch (error) {
@@ -75,9 +75,13 @@ function formatEligibleRetryRunLabel(options: {
 }): string {
   const { event, stepId, workflowId } = options.latestFailure;
   const failureMessage = readFailureMessage(event);
-  const failureContext = [stepId ? `step ${stepId}` : event.type, failureMessage]
-    .filter(Boolean)
-    .join(": ");
+  const retryContext =
+    event.type === "step.started" && stepId
+      ? `interrupted step ${stepId}`
+      : stepId
+        ? `step ${stepId}`
+        : event.type;
+  const failureContext = [retryContext, failureMessage].filter(Boolean).join(": ");
 
   return `${workflowId} | run ${options.runId} | latest ${event.timestamp} | ${failureContext}`;
 }

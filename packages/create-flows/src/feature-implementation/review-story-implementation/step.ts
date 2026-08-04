@@ -4,6 +4,7 @@ import { implementStoryStep } from "../implement-story/step.js";
 import { MAX_STORY_REVIEW_ATTEMPTS } from "../shared/constants.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
 import type { ReviewResult } from "../shared/review-schema.js";
+import { STORY_STATE_KEYS } from "../shared/story-state.js";
 import { reviewOutput, reviewPasses } from "../shared/review-schema.js";
 import { type ReviewStoryImplementationInput, reviewStoryImplementationPrompt } from "./prompt.js";
 
@@ -29,17 +30,20 @@ export const reviewStoryImplementationStep = step({ id: "review-story-implementa
             });
         }
 
-        const completed = (await state.get<string[]>("completedStories")) ?? [];
+        const activeStory =
+            (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? input.currentStory;
+        const completed = (await state.get<string[]>(STORY_STATE_KEYS.completedStories)) ?? [];
         const updatedCompleted = [
             ...completed,
-            extractStoryTitle(input.currentStory.content, completed.length + 1),
+            extractStoryTitle(activeStory.content, completed.length + 1),
         ];
-        await state.set("completedStories", updatedCompleted);
+        await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
 
-        const storyQueue = (await state.get<Document[]>("storyQueue")) ?? [];
+        const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
         const [nextStory, ...remaining] = storyQueue;
 
         if (!nextStory) {
+            await state.set(STORY_STATE_KEYS.activeStory, null);
             const featureDoc = await state.get<Document>("featureDoc");
             const implementationDoc = await state.get<Document>("implementationDoc");
             const output: TakeItAwayOutput = {
@@ -53,6 +57,7 @@ export const reviewStoryImplementationStep = step({ id: "review-story-implementa
             return done(output);
         }
 
-        await state.set("storyQueue", remaining);
+        await state.set(STORY_STATE_KEYS.storyQueue, remaining);
+        await state.set(STORY_STATE_KEYS.activeStory, nextStory);
         return implementStoryStep({ currentStory: nextStory, attempt: 1 });
     });

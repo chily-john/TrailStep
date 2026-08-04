@@ -57,7 +57,12 @@ export async function replayToRetryFailure<
   if (!failure.stepId) {
     return {
       status: "failure",
-      failure: retryFailure("retry_target_not_failed", "Failed step event has no step id."),
+      failure: retryFailure(
+        "retry_target_not_failed",
+        failure.event.type === "workflow.failed"
+          ? "Workflow failure has no associated step ID. This run may use unsupported historical retry metadata."
+          : "Failed retry target event has no step ID.",
+      ),
     };
   }
 

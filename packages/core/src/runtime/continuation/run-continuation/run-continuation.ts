@@ -164,11 +164,23 @@ export async function runContinuation(
           const nextNode = await stepNode.onOutput(paramForNext, config.input);
           throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
 
+          if (isFailNode(nextNode)) {
+            await options.emit(
+              createEvent({
+                runId: options.runId,
+                workflowId: options.workflowId,
+                stepId: config.id,
+                type: "step.failed",
+                payload: { failure: nextNode.failure },
+              }),
+            );
+            return nextNode;
+          }
+
           if (!hasPrompt) {
             // A no-prompt step's .do(...) IS its work — only report completion once it has
-            // actually run without throwing, matching the with-prompt case's "step.completed
-            // means the step's own work succeeded" meaning (a thrown .do() must never be
-            // preceded by step.completed, or resume's already-completed guard sees both).
+            // actually run without throwing or returning fail(...), matching the with-prompt
+            // case's "step.completed means the step's own work succeeded" meaning.
             await options.emit(
               createEvent({
                 runId: options.runId,
@@ -199,6 +211,10 @@ export async function runContinuation(
           }),
         );
         return { status: "failure", failure };
+      }
+
+      if (isFailNode(nextNode)) {
+        return { status: "failure", failure: nextNode.failure };
       }
 
       node = nextNode;

@@ -38,8 +38,8 @@ describe("parseRetryInvocation", () => {
   });
 
   it("rejects unknown flags", () => {
-    expect(() => parseRetryInvocation(["retry", "project/review", "failed-run", "--bogus"])).toThrow(
-      /Unknown option: --bogus/,
-    );
+    expect(() =>
+      parseRetryInvocation(["retry", "project/review", "failed-run", "--bogus"]),
+    ).toThrow(/Unknown option: --bogus/);
   });
 });

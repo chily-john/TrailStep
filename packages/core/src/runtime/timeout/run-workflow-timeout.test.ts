@@ -10,10 +10,17 @@ describe("workflow step timeouts", () => {
   it("fails the workflow and aborts a working provider when the effective step timeout elapses", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-timeout-"));
     let sawAbort = false;
+    let markAbortObserved: () => void = () => undefined;
+    const abortObserved = new Promise<void>((resolve) => {
+      markAbortObserved = () => {
+        sawAbort = true;
+        resolve();
+      };
+    });
 
     const workflow: Workflow = {
       id: "timeout-workflow",
-      timeout: 50,
+      timeout: 250,
       agents: { default: { size: "default" } },
       start() {
         return step({ id: "slow-agent" })
@@ -42,7 +49,7 @@ describe("workflow step timeouts", () => {
       providerWorkingRunner: async (request) => {
         await new Promise<void>((resolve) => {
           if (request.signal?.aborted) {
-            sawAbort = true;
+            markAbortObserved();
             resolve();
             return;
           }
@@ -50,7 +57,7 @@ describe("workflow step timeouts", () => {
           request.signal?.addEventListener(
             "abort",
             () => {
-              sawAbort = true;
+              markAbortObserved();
               setTimeout(resolve, 0);
             },
             { once: true },
@@ -60,14 +67,19 @@ describe("workflow step timeouts", () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await expect(
+      Promise.race([
+        abortObserved.then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000)),
+      ]),
+    ).resolves.toBe(true);
     expect(sawAbort).toBe(true);
     expect(result.status).toBe("failure");
     if (result.status === "failure") {
       expect(result.failure).toMatchObject({
         code: "step_timeout",
-        message: "Step slow-agent timed out after 50ms.",
-        details: { stepId: "slow-agent", timeoutMs: 50 },
+        message: "Step slow-agent timed out after 250ms.",
+        details: { stepId: "slow-agent", timeoutMs: 250 },
       });
     }
     expect(result.events.map((event) => event.type)).toEqual([

@@ -78,6 +78,186 @@ describe("runWorkflow retry", () => {
     });
   });
 
+  it("manual retry targets a prompt step whose continuation returned fail", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-prompt-fail-node-"));
+    let shouldFail = true;
+    let agentAttempts = 0;
+
+    const workflow: Workflow<{ task: string }, { reviewed: boolean }> = {
+      id: "retry-prompt-fail-node-workflow",
+      inputShape: { task: "string" },
+      outputShape: { reviewed: "boolean" },
+      agents: { reviewer: { size: "small" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { approved: "boolean" },
+            agent: "reviewer",
+          })
+          .do((output: { approved: boolean }) => {
+            if (shouldFail) {
+              return fail({ code: "review_rejected", message: "review rejected" });
+            }
+
+            return done({ reviewed: output.approved });
+          })(input);
+      },
+    };
+
+    const stepkitConfig = parseStepKitConfig({
+      version: 1,
+      customProviders: { worker: { binary: "worker-agent" } },
+      agents: { small: [{ provider: "worker" }] },
+    });
+
+    const failed = await runWorkflow({
+      workflow,
+      input: { task: "prompt retry" },
+      runName: "retry-prompt-fail-node",
+      cwd,
+      stepkitConfig,
+      workingAgentProcessRunner: async (request) => {
+        agentAttempts += 1;
+        await writeFile(request.outputFile, JSON.stringify({ approved: true }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(failed.status).toBe("failure");
+    expect(eventTypes(failed.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.failed",
+      "workflow.failed",
+    ]);
+    expect(failed.events[3]).toMatchObject({
+      type: "step.failed",
+      stepId: "review",
+      payload: { failure: { code: "review_rejected", message: "review rejected" } },
+    });
+    expect(failed.events[4]).toMatchObject({ type: "workflow.failed" });
+
+    shouldFail = false;
+    const retried = await runWorkflow({
+      workflow,
+      retry: { runDir: failed.runDir, kind: "manual" },
+      stepkitConfig,
+      workingAgentProcessRunner: async (request) => {
+        agentAttempts += 1;
+        await writeFile(request.outputFile, JSON.stringify({ approved: true }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+
+    expect(retried.output).toEqual({ reviewed: true });
+    expect(agentAttempts).toBe(2);
+    expect(eventTypes(retried.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.failed",
+      "workflow.failed",
+      "workflow.retryStarted",
+      "step.started",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(retried.events[5]).toMatchObject({
+      type: "workflow.retryStarted",
+      payload: {
+        retryKind: "manual",
+        retriedStepId: "review",
+        sourceFailureEventId: failed.events[3]?.id,
+        sourceFailureReplayPosition: 3,
+      },
+    });
+  });
+
+  it("manual retry appends events with ids unique from existing events", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-event-ids-"));
+    const runName = "retry-event-ids";
+    const runDir = join(cwd, ".stepkit", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    const persistedEvents: readonly Event[] = [
+      {
+        id: "evt_1",
+        runId: runName,
+        workflowId: "retry-event-ids-workflow",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        schemaVersion: "v0",
+        type: "workflow.started",
+        payload: { input: {} },
+      },
+      {
+        id: "evt_2",
+        runId: runName,
+        workflowId: "retry-event-ids-workflow",
+        stepId: "review",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        schemaVersion: "v0",
+        type: "step.started",
+        payload: {},
+      },
+      {
+        id: "evt_3",
+        runId: runName,
+        workflowId: "retry-event-ids-workflow",
+        stepId: "review",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        schemaVersion: "v0",
+        type: "step.failed",
+        payload: { failure: { code: "review_rejected", message: "review rejected" } },
+      },
+      {
+        id: "evt_4",
+        runId: runName,
+        workflowId: "retry-event-ids-workflow",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        schemaVersion: "v0",
+        type: "workflow.failed",
+        payload: { failure: { code: "review_rejected", message: "review rejected" } },
+      },
+    ];
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${persistedEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const workflow: Workflow<Record<string, never>, { reviewed: boolean }> = {
+      id: "retry-event-ids-workflow",
+      inputShape: {},
+      outputShape: { reviewed: "boolean" },
+      start(input) {
+        return step({ id: "review" }).do(async () => done({ reviewed: true }))(input);
+      },
+    };
+
+    const retried = await runWorkflow({ workflow, retry: { runDir, kind: "manual" } });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(eventTypes(retried.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+      "workflow.retryStarted",
+      "step.started",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(new Set(retried.events.map((event) => event.id)).size).toBe(retried.events.length);
+  });
+
   it("manual retry reports historical workflow failures without step metadata clearly", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-historical-workflow-failure-"));
     const runName = "retry-historical-workflow-failure";
@@ -187,6 +367,7 @@ describe("runWorkflow retry", () => {
       throw new Error(retried.failure.message);
     }
 
+    expect(retried.runDir).toBe(runDir);
     expect(retried.output).toEqual({ reviewed: true });
     expect(documentPaths[0]).toBe(join(runDir, "steps", "0002-review", "document-1.md"));
     await expect(readFile(documentPaths[0] ?? "", "utf8")).resolves.toBe(
@@ -209,6 +390,7 @@ describe("runWorkflow retry", () => {
         sourceFailureReplayPosition: 1,
       },
     });
+    expect(retried.events[3]).toMatchObject({ type: "step.started", stepId: "review" });
   });
 
   it("manual retry resumes the latest unresolved failure and continues artifact ordinals", async () => {

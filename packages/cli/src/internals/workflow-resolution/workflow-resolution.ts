@@ -116,9 +116,7 @@ async function resolveWorkflowReferenceInternal(
   };
 }
 
-function parseDirectLookingBundleWorkflowId(
-  rawRef: string,
-): BundleWorkflowReference | undefined {
+function parseDirectLookingBundleWorkflowId(rawRef: string): BundleWorkflowReference | undefined {
   try {
     return parseBundleWorkflowId(rawRef);
   } catch {

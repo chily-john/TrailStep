@@ -610,10 +610,20 @@ async function tryWriteAndDistributeWorkflowSkill(
 
   let warnings = 0;
   if (args.projectSkill) {
-    warnings += await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "project", context);
+    warnings += await tryDistributeWorkflowSkill(
+      args,
+      writtenSkill.skillDirectory,
+      "project",
+      context,
+    );
   }
   if (args.userSkill) {
-    warnings += await tryDistributeWorkflowSkill(args, writtenSkill.skillDirectory, "user", context);
+    warnings += await tryDistributeWorkflowSkill(
+      args,
+      writtenSkill.skillDirectory,
+      "user",
+      context,
+    );
   }
   return warnings;
 }

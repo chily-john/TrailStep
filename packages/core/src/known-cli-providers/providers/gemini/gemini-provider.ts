@@ -36,7 +36,12 @@ async function runWorking(
 
   let result: ProviderWorkingProcessResult;
   try {
-    result = await runner({ command: GEMINI_BINARY, args, cwd: request.cwd, signal: request.signal });
+    result = await runner({
+      command: GEMINI_BINARY,
+      args,
+      cwd: request.cwd,
+      signal: request.signal,
+    });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",
@@ -139,7 +144,12 @@ async function runInteractive(
   });
 }
 
-const spawnGeminiCapturingStdout: ProviderWorkingRunner = async ({ command, args, cwd, signal }) => {
+const spawnGeminiCapturingStdout: ProviderWorkingRunner = async ({
+  command,
+  args,
+  cwd,
+  signal,
+}) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,

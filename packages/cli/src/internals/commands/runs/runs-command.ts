@@ -1,11 +1,10 @@
+import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-
-import { readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
 import type { Event, LatestUnresolvedFailure } from "@stepkit/core";
-
-import { CliUsageError } from "../../command.types.js";
+import { readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import { CliUsageError } from "../../command.types.js";
 
 type RunSummaryStatus = "active" | "completed" | "failed" | "unknown";
 
@@ -35,7 +34,9 @@ export const runsCommand: CliCommand<void> = {
     writeSection(context, "Recent failed runs (last 7 days):", recentFailedRuns);
     writeSection(context, "All runs:", summaries);
 
-    for (const warning of summaries.flatMap((summary) => (summary.warning ? [summary.warning] : []))) {
+    for (const warning of summaries.flatMap((summary) =>
+      summary.warning ? [summary.warning] : [],
+    )) {
       context.io.writeError(warning);
     }
 
@@ -46,7 +47,7 @@ export const runsCommand: CliCommand<void> = {
 async function listCommandRunSummaries(options: { readonly cwd: string }): Promise<RunSummary[]> {
   const runsRoot = join(options.cwd, ".stepkit", "runs");
 
-  let entries;
+  let entries: Dirent[];
   try {
     entries = await readdir(runsRoot, { withFileTypes: true });
   } catch (error) {
@@ -104,10 +105,17 @@ function summarizeReadableRun(options: {
   const latestFailure = selectLatestUnresolvedFailure(options.events);
   const terminalStatus = selectTerminalStatus(options.events);
   const lastEvent = options.events.at(-1);
-  const workflowId = lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
+  const workflowId =
+    lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
 
   if (terminalStatus === "completed") {
-    return { runId: options.runId, runDir: options.runDir, status: "completed", workflowId, lastTimestamp: lastEvent?.timestamp };
+    return {
+      runId: options.runId,
+      runDir: options.runDir,
+      status: "completed",
+      workflowId,
+      lastTimestamp: lastEvent?.timestamp,
+    };
   }
 
   if (latestFailure) {
@@ -121,7 +129,13 @@ function summarizeReadableRun(options: {
     };
   }
 
-  return { runId: options.runId, runDir: options.runDir, status: terminalStatus ?? "active", workflowId, lastTimestamp: lastEvent?.timestamp };
+  return {
+    runId: options.runId,
+    runDir: options.runDir,
+    status: terminalStatus ?? "active",
+    workflowId,
+    lastTimestamp: lastEvent?.timestamp,
+  };
 }
 
 function selectTerminalStatus(events: readonly Event[]): "completed" | "failed" | undefined {
@@ -181,7 +195,9 @@ function formatFailureContext(summary: RunSummary): string | undefined {
 
 function newestFirst(left: RunSummary, right: RunSummary): number {
   const leftTime = left.lastTimestamp ? Date.parse(left.lastTimestamp) : Number.NEGATIVE_INFINITY;
-  const rightTime = right.lastTimestamp ? Date.parse(right.lastTimestamp) : Number.NEGATIVE_INFINITY;
+  const rightTime = right.lastTimestamp
+    ? Date.parse(right.lastTimestamp)
+    : Number.NEGATIVE_INFINITY;
   return rightTime - leftTime || left.runId.localeCompare(right.runId);
 }
 

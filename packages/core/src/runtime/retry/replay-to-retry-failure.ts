@@ -1,8 +1,8 @@
 import type { StepNode } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { Event, RunWorkflowOptions } from "../run-workflow/run-workflow.types.js";
 import { replayCompletedSteps } from "../resume/replay-completed-steps/replay-completed-steps.js";
+import type { Event, RunWorkflowOptions } from "../run-workflow/run-workflow.types.js";
 import { selectLatestUnresolvedFailure } from "./latest-unresolved-failure.js";
 
 export async function replayToRetryFailure<
@@ -47,10 +47,7 @@ export async function replayToRetryFailure<
   if (!failure.workflowInput) {
     return {
       status: "failure",
-      failure: retryFailure(
-        "retry_target_not_found",
-        "workflow.started payload is missing input.",
-      ),
+      failure: retryFailure("retry_target_not_found", "workflow.started payload is missing input."),
     };
   }
 
@@ -68,7 +65,7 @@ export async function replayToRetryFailure<
 
   const replay = await replayCompletedSteps({
     workflow: options.workflow,
-    events: options.events.slice(0, failure.replayPosition),
+    events: eventsBeforeRetryTarget(options.events, failure.replayPosition, failure.stepId),
     input: failure.workflowInput,
     targetStepId: failure.stepId,
     runDir: options.runDir,
@@ -96,6 +93,34 @@ export async function replayToRetryFailure<
     sourceFailureEventId: failure.sourceFailureEventId ?? failure.event.id,
     sourceFailureReplayPosition: failure.replayPosition,
   };
+}
+
+function eventsBeforeRetryTarget(
+  events: readonly Event[],
+  replayPosition: number,
+  targetStepId: string,
+): readonly Event[] {
+  const eventsBeforeFailure = events.slice(0, replayPosition);
+  let targetAttemptStartPosition = -1;
+
+  for (let index = eventsBeforeFailure.length - 1; index >= 0; index -= 1) {
+    const event = eventsBeforeFailure[index];
+    if (event?.type === "step.started" && event.stepId === targetStepId) {
+      targetAttemptStartPosition = index;
+      break;
+    }
+  }
+
+  if (targetAttemptStartPosition === -1) {
+    return eventsBeforeFailure;
+  }
+
+  return eventsBeforeFailure.filter(
+    (event, index) =>
+      index <= targetAttemptStartPosition ||
+      event.type !== "step.completed" ||
+      event.stepId !== targetStepId,
+  );
 }
 
 function retryFailure(code: string, message: string): Failure {

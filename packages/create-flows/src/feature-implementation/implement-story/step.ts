@@ -1,5 +1,6 @@
 import { fail, step } from "@stepkit/authoring";
 import { reviewStoryImplementationStep } from "../review-story-implementation/step.js";
+import { loadStoryReviewGitContext } from "../shared/story-state.js";
 import {
   type ImplementStoryInput,
   type ImplementStoryOutput,
@@ -12,7 +13,7 @@ export const implementStoryStep = step({ id: "implement-story" })
     agent: "implementer",
     output: implementStoryOutput,
   })
-  .do((promptOutput, input) => {
+  .do(async (promptOutput, input) => {
     if (promptOutput.blocked) {
       return fail({
         code: "story_blocked",
@@ -24,5 +25,6 @@ export const implementStoryStep = step({ id: "implement-story" })
     return reviewStoryImplementationStep({
       currentStory: input.currentStory,
       attempt: input.attempt,
+      gitContext: await loadStoryReviewGitContext(),
     });
   });

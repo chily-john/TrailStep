@@ -73,17 +73,22 @@ function formatEligibleRetryRunLabel(options: {
   readonly runId: string;
   readonly latestFailure: LatestUnresolvedFailure;
 }): string {
-  const { event, stepId, workflowId } = options.latestFailure;
+  const { event, workflowId } = options.latestFailure;
   const failureMessage = readFailureMessage(event);
-  const retryContext =
-    event.type === "step.started" && stepId
-      ? `interrupted step ${stepId}`
-      : stepId
-        ? `step ${stepId}`
-        : event.type;
+  const retryContext = formatRetryContext(options.latestFailure);
   const failureContext = [retryContext, failureMessage].filter(Boolean).join(": ");
 
   return `${workflowId} | run ${options.runId} | latest ${event.timestamp} | ${failureContext}`;
+}
+
+function formatRetryContext(latestFailure: LatestUnresolvedFailure): string {
+  const { event, stepId } = latestFailure;
+
+  if (event.type === "step.started" && stepId) {
+    return `interrupted step ${stepId}`;
+  }
+
+  return stepId ? `step ${stepId}` : event.type;
 }
 
 function findPersistedWorkflowRef(events: readonly Event[]): string | undefined {

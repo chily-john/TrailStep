@@ -9,6 +9,8 @@
       "!.turbo",
       "!.pi",
       "!.workflower",
+      "!.stepkit/runs",
+      "!graphify-out",
       "!pnpm-lock.yaml"
     ]
   },

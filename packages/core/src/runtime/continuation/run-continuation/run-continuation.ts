@@ -14,8 +14,8 @@ import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
-import { resolveTimeoutPolicy } from "../../timeout/timeout-policy.js";
 import type { TimeoutPolicyInput } from "../../timeout/timeout-policy.js";
+import { resolveTimeoutPolicy } from "../../timeout/timeout-policy.js";
 import { resolveStepOutputSchema } from "../resolve-step-output-schema/resolve-step-output-schema.js";
 
 export interface RunContinuationOptions {
@@ -85,7 +85,8 @@ export async function runContinuation(
     const timeoutPolicy = resolveTimeoutPolicy({
       global: stepkitConfig?.settings?.timeout,
       workflow:
-        options.workflowTimeout ?? stepkitConfig?.workflows?.[options.workflowId]?.settings?.timeout,
+        options.workflowTimeout ??
+        stepkitConfig?.workflows?.[options.workflowId]?.settings?.timeout,
       step: config.timeout,
     });
     const maxSubPrompts =
@@ -117,83 +118,83 @@ export async function runContinuation(
             config.id,
             stepDir,
             async () => {
-          let paramForNext: PlainObject;
+              let paramForNext: PlainObject;
 
-          if (hasPrompt) {
-            const outputSchema = resolveStepOutputSchema(config);
-            if (!outputSchema) {
-              throw new Error(`step ${config.id} with a prompt requires an output shape`);
-            }
+              if (hasPrompt) {
+                const outputSchema = resolveStepOutputSchema(config);
+                if (!outputSchema) {
+                  throw new Error(`step ${config.id} with a prompt requires an output shape`);
+                }
 
-            const rawOutput = await dispatchAgentStep({
-              config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
-              outputSchema,
-              interactiveOutputMode:
-                config.mode === "interactive" && config.output !== undefined
-                  ? "json"
-                  : "session-file",
-              runId: options.runId,
-              workflowId: options.workflowId,
-              emit: options.emit,
-              workflowAgents: options.workflowAgents,
-              runDir: options.runDir,
-              cwd: options.cwd,
-              stepkitConfig,
-              workingAgentProcessRunner: options.workingAgentProcessRunner,
-              providerWorkingRunner: options.providerWorkingRunner,
-              processRunner: options.processRunner,
-              stepIndex,
-              signal,
-            });
-            throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
-            paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
+                const rawOutput = await dispatchAgentStep({
+                  config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
+                  outputSchema,
+                  interactiveOutputMode:
+                    config.mode === "interactive" && config.output !== undefined
+                      ? "json"
+                      : "session-file",
+                  runId: options.runId,
+                  workflowId: options.workflowId,
+                  emit: options.emit,
+                  workflowAgents: options.workflowAgents,
+                  runDir: options.runDir,
+                  cwd: options.cwd,
+                  stepkitConfig,
+                  workingAgentProcessRunner: options.workingAgentProcessRunner,
+                  providerWorkingRunner: options.providerWorkingRunner,
+                  processRunner: options.processRunner,
+                  stepIndex,
+                  signal,
+                });
+                throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
+                paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
 
-            await options.emit(
-              createEvent({
-                runId: options.runId,
-                workflowId: options.workflowId,
-                stepId: config.id,
-                type: "step.completed",
-                payload: { output: paramForNext },
-              }),
-            );
-          } else {
-            paramForNext = config.input;
-          }
+                await options.emit(
+                  createEvent({
+                    runId: options.runId,
+                    workflowId: options.workflowId,
+                    stepId: config.id,
+                    type: "step.completed",
+                    payload: { output: paramForNext },
+                  }),
+                );
+              } else {
+                paramForNext = config.input;
+              }
 
-          const nextNode = await stepNode.onOutput(paramForNext, config.input);
-          throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
+              const nextNode = await stepNode.onOutput(paramForNext, config.input);
+              throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
 
-          if (isFailNode(nextNode)) {
-            await options.emit(
-              createEvent({
-                runId: options.runId,
-                workflowId: options.workflowId,
-                stepId: config.id,
-                type: "step.failed",
-                payload: { failure: nextNode.failure },
-              }),
-            );
-            return nextNode;
-          }
+              if (isFailNode(nextNode)) {
+                await options.emit(
+                  createEvent({
+                    runId: options.runId,
+                    workflowId: options.workflowId,
+                    stepId: config.id,
+                    type: "step.failed",
+                    payload: { failure: nextNode.failure },
+                  }),
+                );
+                return nextNode;
+              }
 
-          if (!hasPrompt) {
-            // A no-prompt step's .do(...) IS its work — only report completion once it has
-            // actually run without throwing or returning fail(...), matching the with-prompt
-            // case's "step.completed means the step's own work succeeded" meaning.
-            await options.emit(
-              createEvent({
-                runId: options.runId,
-                workflowId: options.workflowId,
-                stepId: config.id,
-                type: "step.completed",
-                payload: {},
-              }),
-            );
-          }
+              if (!hasPrompt) {
+                // A no-prompt step's .do(...) IS its work — only report completion once it has
+                // actually run without throwing or returning fail(...), matching the with-prompt
+                // case's "step.completed means the step's own work succeeded" meaning.
+                await options.emit(
+                  createEvent({
+                    runId: options.runId,
+                    workflowId: options.workflowId,
+                    stepId: config.id,
+                    type: "step.completed",
+                    payload: {},
+                  }),
+                );
+              }
 
-          throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
-          return nextNode;
+              throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
+              return nextNode;
             },
             { maxSubPrompts },
           ),
@@ -325,4 +326,3 @@ function continuationFailure(source: string): Failure {
     message: `${source} returned an invalid continuation node.`,
   };
 }
-

@@ -23,8 +23,9 @@ describe("selectLatestUnresolvedFailure", () => {
     ]);
 
     expect(target).not.toBeUndefined();
-    expect(target?.event.id).toBe("review-started");
+    expect(target?.event).toMatchObject({ id: "review-started", type: "step.started" });
     expect(target?.stepId).toBe("review");
+    expect(target?.replayPosition).toBe(1);
   });
 
   it("selects the latest unresolved failure by event id and replay position when a step id fails more than once", () => {

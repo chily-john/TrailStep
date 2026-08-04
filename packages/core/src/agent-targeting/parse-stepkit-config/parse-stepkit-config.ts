@@ -2,8 +2,8 @@ import type { StepKitConfig } from "../targeting.types.js";
 import { expandAgentRefs } from "./expand-agent-refs.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import { parseCustomProviders } from "./parse-custom-providers.js";
-import { isRecord, throwValidationFailure } from "./parse-utils.js";
 import { parseSettings } from "./parse-settings.js";
+import { isRecord, throwValidationFailure } from "./parse-utils.js";
 import { parseWorkflows } from "./parse-workflow-agent-mappings.js";
 import { validateProviderReferences } from "./validate-provider-references.js";
 
@@ -49,4 +49,3 @@ export function parseStepKitConfig(value: unknown): StepKitConfig {
 
   return config;
 }
-

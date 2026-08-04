@@ -1,7 +1,3 @@
-import {
-  readCompletedInteractiveOutput,
-  waitForInteractiveCompletion,
-} from "../../interactive-session/interactive-session-protocol.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { StepKitFailureError } from "../../../contracts/failures/failure.js";
@@ -12,6 +8,10 @@ import type {
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { resolveStepOutputSchema } from "../../continuation/resolve-step-output-schema/resolve-step-output-schema.js";
+import {
+  readCompletedInteractiveOutput,
+  waitForInteractiveCompletion,
+} from "../../interactive-session/interactive-session-protocol.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
 import { replayCompletedSteps } from "../replay-completed-steps/replay-completed-steps.js";
 

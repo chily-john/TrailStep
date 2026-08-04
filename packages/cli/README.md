@@ -13,7 +13,7 @@ stepkit workflows
 stepkit doctor
 stepkit update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]
 stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
-stepkit <workflow-ref> <workflowRunName> --resume
+stepkit retry [<workflow-ref> <workflowRunName>]
 stepkit continue --session-file <path>
 stepkit continue --json-file <path>
 stepkit continue --json '<json>'
@@ -37,12 +37,12 @@ stepkit ./workflows/index.ts#reviewWorkflow
 - Bundle refs use `#`, for example `@acme/workflows#release`. The package must expose `stepkit.workflows` manifest metadata mapping workflow names to module exports.
 - Legacy `package:export` refs remain supported for compatibility with package export discovery.
 
-`workflowRunName` is optional when starting a run. If it is omitted, StepKit generates a readable run name from the workflow ref, timestamp, and short suffix. Resume requires an explicit run name so the CLI can locate `.stepkit/runs/<workflowRunName>`:
+`workflowRunName` is optional when starting a run. If it is omitted, StepKit generates a readable run name from the workflow ref, timestamp, and short suffix. Retry targets an existing `.stepkit/runs/<workflowRunName>` artifact:
 
 ```bash
 stepkit ./workflows/review.mjs
 stepkit ./workflows/review.mjs run-one
-stepkit ./workflows/review.mjs run-one --resume
+stepkit retry ./workflows/review.mjs run-one
 ```
 
 ## Agent configuration
@@ -144,4 +144,10 @@ Run artifacts are written to:
 .stepkit/runs/<actualRunName>/
 ```
 
-If the requested run name already exists, the runtime creates a suffixed directory such as `<workflowRunName>-2`. Event artifacts are persisted as `events.jsonl` in the run directory.
+If the requested run name already exists, the runtime creates a suffixed directory such as `<workflowRunName>-2`. Event artifacts are persisted as `events.jsonl` in the run directory. Event ids are opaque; use JSONL/replay order, not id formatting, when reasoning about event order.
+
+## Retry
+
+Use `stepkit retry <workflow-ref> <workflowRunName>` to rerun from the latest unresolved failure in an existing run artifact. `stepkit retry` with no arguments prompts for an eligible failed run when the terminal is interactive. Retry V1 targets the latest unresolved failure or interruption only; it does not accept `--step`.
+
+Eligible retry targets include normal step failures, workflow failures that originated from a step `fail(...)`, and dangling `step.started` events left by an interrupted active step. Historical artifacts that lack a persisted workflow ref may prompt for one during interactive retry. Workflow-level `--resume` is intentionally unsupported; use `stepkit retry` instead.

@@ -2307,10 +2307,12 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readFile(join(cwd, ".stepkit", "skills", "acme-alpha", "SKILL.md"), "utf8"))
-      .toContain("stepkit acme/alpha");
-    expect(await readFile(join(cwd, ".stepkit", "skills", "acme-beta", "SKILL.md"), "utf8"))
-      .toContain("stepkit acme/beta");
+    expect(
+      await readFile(join(cwd, ".stepkit", "skills", "acme-alpha", "SKILL.md"), "utf8"),
+    ).toContain("stepkit acme/alpha");
+    expect(
+      await readFile(join(cwd, ".stepkit", "skills", "acme-beta", "SKILL.md"), "utf8"),
+    ).toContain("stepkit acme/beta");
   });
 
   it("prints a bulk registration summary", async ({ task }) => {

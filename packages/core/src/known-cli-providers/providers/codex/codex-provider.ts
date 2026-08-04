@@ -42,7 +42,12 @@ async function runWorking(
 
   let result: ProviderWorkingProcessResult;
   try {
-    result = await runner({ command: CODEX_BINARY, args, cwd: request.cwd, signal: request.signal });
+    result = await runner({
+      command: CODEX_BINARY,
+      args,
+      cwd: request.cwd,
+      signal: request.signal,
+    });
   } catch (error) {
     throw new StepKitFailureError({
       code: "agent_provider_spawn_error",

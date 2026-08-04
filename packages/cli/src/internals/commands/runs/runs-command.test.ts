@@ -13,7 +13,11 @@ describe("runs command", () => {
     await writeFile(
       join(runDir, "events.jsonl"),
       [
-        eventLine({ id: "event-1", type: "workflow.started", timestamp: "2026-07-31T00:00:00.000Z" }),
+        eventLine({
+          id: "event-1",
+          type: "workflow.started",
+          timestamp: "2026-07-31T00:00:00.000Z",
+        }),
         eventLine({
           id: "failed-event",
           type: "step.failed",
@@ -27,9 +31,23 @@ describe("runs command", () => {
           timestamp: "2026-07-31T00:00:02.000Z",
           payload: { sourceFailureEventId: "failed-event" },
         }),
-        eventLine({ id: "event-4", type: "step.started", stepId: "review", timestamp: "2026-07-31T00:00:03.000Z" }),
-        eventLine({ id: "event-5", type: "step.completed", stepId: "review", timestamp: "2026-07-31T00:00:04.000Z" }),
-        eventLine({ id: "event-6", type: "workflow.completed", timestamp: "2026-07-31T00:00:05.000Z" }),
+        eventLine({
+          id: "event-4",
+          type: "step.started",
+          stepId: "review",
+          timestamp: "2026-07-31T00:00:03.000Z",
+        }),
+        eventLine({
+          id: "event-5",
+          type: "step.completed",
+          stepId: "review",
+          timestamp: "2026-07-31T00:00:04.000Z",
+        }),
+        eventLine({
+          id: "event-6",
+          type: "workflow.completed",
+          timestamp: "2026-07-31T00:00:05.000Z",
+        }),
       ].join("\n") + "\n",
       "utf8",
     );

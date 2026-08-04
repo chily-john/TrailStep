@@ -1,10 +1,10 @@
+import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-
-import type { Event } from "../run-workflow/run-workflow.types.js";
 import { readRunEvents } from "../artifacts/run-storage.js";
-import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
+import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
+import type { Event } from "../run-workflow/run-workflow.types.js";
 
 export type RunSummaryStatus = "active" | "completed" | "failed" | "unknown";
 
@@ -21,7 +21,7 @@ export interface RunSummary {
 export async function listRunSummaries(options: { readonly cwd: string }): Promise<RunSummary[]> {
   const runsRoot = join(options.cwd, ".stepkit", "runs");
 
-  let entries;
+  let entries: Dirent[];
   try {
     entries = await readdir(runsRoot, { withFileTypes: true });
   } catch (error) {
@@ -77,8 +77,10 @@ export function selectRecentFailedRunSummaries(
 }
 
 export function newestFirst(left: RunSummary, right: RunSummary): number {
-  return compareTimestampDescending(left.lastTimestamp, right.lastTimestamp) ||
-    left.runId.localeCompare(right.runId);
+  return (
+    compareTimestampDescending(left.lastTimestamp, right.lastTimestamp) ||
+    left.runId.localeCompare(right.runId)
+  );
 }
 
 function summarizeReadableRun(options: {
@@ -89,7 +91,8 @@ function summarizeReadableRun(options: {
   const latestFailure = selectLatestUnresolvedFailure(options.events);
   const terminalStatus = selectTerminalStatus(options.events);
   const lastEvent = options.events.at(-1);
-  const workflowId = lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
+  const workflowId =
+    lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
 
   if (terminalStatus === "completed") {
     return {

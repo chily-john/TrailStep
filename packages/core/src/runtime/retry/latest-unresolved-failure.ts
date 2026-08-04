@@ -18,7 +18,6 @@ interface ResolvedFailureIdentity {
 export function selectLatestUnresolvedFailure(
   events: readonly Event[],
 ): LatestUnresolvedFailure | undefined {
-  const completedReplayPosition = findLatestReplayPosition(events, "workflow.completed");
   const startedEvent = events.find((event) => event.type === "workflow.started");
   const workflowInput = startedEvent ? readPlainPayload(startedEvent, "input") : undefined;
   const resolvedFailures = events.flatMap((event) =>
@@ -35,13 +34,8 @@ export function selectLatestUnresolvedFailure(
       continue;
     }
 
-    if (completedReplayPosition !== undefined && replayPosition < completedReplayPosition) {
-      return undefined;
-    }
-
     if (event.type === "workflow.completed") {
-      laterWorkflowTerminalSeen = true;
-      continue;
+      return undefined;
     }
 
     if (event.type === "step.completed") {
@@ -91,19 +85,6 @@ function rememberTerminalStep(event: Event, stepIds: Set<string>): void {
   if (event.stepId) {
     stepIds.add(event.stepId);
   }
-}
-
-function findLatestReplayPosition(
-  events: readonly Event[],
-  type: Event["type"],
-): number | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === type) {
-      return index;
-    }
-  }
-
-  return undefined;
 }
 
 function readResolvedFailureIdentity(event: Event): readonly ResolvedFailureIdentity[] {

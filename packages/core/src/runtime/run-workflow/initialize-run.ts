@@ -1,8 +1,8 @@
 import { basename } from "node:path";
 
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 import { createRunDirectory, readRunEvents } from "../artifacts/run-storage.js";
+import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 
 export async function initializeRun<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,

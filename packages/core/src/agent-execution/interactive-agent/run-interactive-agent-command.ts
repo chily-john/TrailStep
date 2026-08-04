@@ -2,10 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolveAgentTargets } from "../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
-import type {
-  StepKitAgentTarget,
-  StepKitConfig,
-} from "../../agent-targeting/targeting.types.js";
+import type { StepKitAgentTarget, StepKitConfig } from "../../agent-targeting/targeting.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { StepKitFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";

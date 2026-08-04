@@ -88,7 +88,10 @@ async function promptForInteractiveSession(context: CliCommandContext): Promise<
   }
 
   const labels = sessions.map((session) => session.label);
-  const selectedLabel = await context.prompts.select("Select an active interactive session", labels);
+  const selectedLabel = await context.prompts.select(
+    "Select an active interactive session",
+    labels,
+  );
   const selected = sessions.find((session) => session.label === selectedLabel);
   if (!selected) {
     throw new CliInputError("Selected interactive session was not found.");
@@ -197,7 +200,10 @@ async function loadSubmittedOutput(
     if (!context.prompts) {
       throw new CliInputError("JSON interactive continue requires prompts for JSON text.");
     }
-    return parsePlainJsonObject("interactive JSON", await context.prompts.text("Enter JSON output"));
+    return parsePlainJsonObject(
+      "interactive JSON",
+      await context.prompts.text("Enter JSON output"),
+    );
   }
 
   if (args.mode === "session-file") {

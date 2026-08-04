@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 
@@ -14,7 +15,9 @@ interface InteractiveSessionRecord {
   readonly outputMode?: unknown;
 }
 
-export async function findActiveInteractiveSessions(cwd: string): Promise<readonly ActiveInteractiveSessionSummary[]> {
+export async function findActiveInteractiveSessions(
+  cwd: string,
+): Promise<readonly ActiveInteractiveSessionSummary[]> {
   const runsDir = join(cwd, ".stepkit", "runs");
   const files = await findInteractiveFiles(runsDir);
   const sessions: ActiveInteractiveSessionSummary[] = [];
@@ -35,7 +38,7 @@ export async function findActiveInteractiveSessions(cwd: string): Promise<readon
 }
 
 async function findInteractiveFiles(dir: string): Promise<readonly string[]> {
-  let entries;
+  let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
@@ -57,7 +60,9 @@ async function findInteractiveFiles(dir: string): Promise<readonly string[]> {
   return files;
 }
 
-async function readInteractiveProtocol(path: string): Promise<InteractiveSessionRecord | undefined> {
+async function readInteractiveProtocol(
+  path: string,
+): Promise<InteractiveSessionRecord | undefined> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     return isPlainObject(parsed) ? parsed : undefined;
@@ -66,10 +71,18 @@ async function readInteractiveProtocol(path: string): Promise<InteractiveSession
   }
 }
 
-function formatSessionLabel(cwd: string, interactiveFile: string, protocol: InteractiveSessionRecord): string {
-  const runId = typeof protocol.runDir === "string" ? basename(protocol.runDir) : inferRunId(cwd, interactiveFile);
+function formatSessionLabel(
+  cwd: string,
+  interactiveFile: string,
+  protocol: InteractiveSessionRecord,
+): string {
+  const runId =
+    typeof protocol.runDir === "string"
+      ? basename(protocol.runDir)
+      : inferRunId(cwd, interactiveFile);
   const stepId = typeof protocol.stepId === "string" ? protocol.stepId : "unknown";
-  const artifactStepId = typeof protocol.artifactStepId === "string" ? protocol.artifactStepId : "unknown";
+  const artifactStepId =
+    typeof protocol.artifactStepId === "string" ? protocol.artifactStepId : "unknown";
   const outputMode = typeof protocol.outputMode === "string" ? protocol.outputMode : "unknown";
   return `run ${runId} | step ${stepId} | artifact ${artifactStepId} | mode ${outputMode}`;
 }

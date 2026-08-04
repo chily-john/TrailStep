@@ -1,8 +1,8 @@
 import type { StepKitSettings } from "../targeting.types.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import type { RawStepKitAgentMappings } from "./parse-agent-targets.js";
-import { isRecord } from "./parse-utils.js";
 import { parseSettings } from "./parse-settings.js";
+import { isRecord } from "./parse-utils.js";
 
 export interface RawStepKitWorkflowConfig {
   readonly agents?: RawStepKitAgentMappings;

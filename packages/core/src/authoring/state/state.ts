@@ -21,4 +21,7 @@ export const state = {
   get path(): string {
     return currentRunContext().path;
   },
+  get cwd(): string | undefined {
+    return currentRunContext().cwd;
+  },
 };

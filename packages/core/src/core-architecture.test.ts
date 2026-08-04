@@ -10,12 +10,7 @@ describe("core architecture invariants", () => {
 
     expect(
       existsSync(
-        path.join(
-          sourceRoot,
-          "agent-execution",
-          "working-agent",
-          "run-working-agent-command",
-        ),
+        path.join(sourceRoot, "agent-execution", "working-agent", "run-working-agent-command"),
       ),
     ).toBe(false);
     expect(
@@ -31,12 +26,14 @@ describe("core architecture invariants", () => {
 
     const files = await listSourceFiles(sourceRoot);
     const runtimeFiles = files.filter((file) => file.includes(`${path.sep}runtime${path.sep}`));
-    for (const file of runtimeFiles) {
-      const contents = await readFile(file, "utf8");
-      expect(contents, path.relative(sourceRoot, file)).not.toContain(
-        "agent-execution/interactive-agent",
-      );
-    }
+    await Promise.all(
+      runtimeFiles.map(async (file) => {
+        const contents = await readFile(file, "utf8");
+        expect(contents, path.relative(sourceRoot, file)).not.toContain(
+          "agent-execution/interactive-agent",
+        );
+      }),
+    );
 
     const publicEntrypoint = await readFile(path.join(sourceRoot, "index.ts"), "utf8");
     expect(publicEntrypoint).not.toMatch(/from "\.\/runtime\/(failures|sub-prompts)\//);

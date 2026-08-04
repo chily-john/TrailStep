@@ -1,6 +1,6 @@
-import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../interactive-session/default-interactive-output-shape.js";
 import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type { PlainObject, Schema, ShapeInput } from "../../../contracts/shapes/shape.types.js";
+import { DEFAULT_INTERACTIVE_OUTPUT_SHAPE } from "../../interactive-session/default-interactive-output-shape.js";
 
 /**
  * A prompt step's effective output schema: its own `output`, or -- for an

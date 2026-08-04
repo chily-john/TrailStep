@@ -22,7 +22,8 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
     const { cwd, io } = context;
     let retryTarget: { readonly workflowId: string; readonly workflowRunName: string };
     try {
-      retryTarget = args.mode === "interactive" ? await selectInteractiveRetryTarget(context) : args;
+      retryTarget =
+        args.mode === "interactive" ? await selectInteractiveRetryTarget(context) : args;
     } catch (error) {
       if (error instanceof NoEligibleRetryRuns) {
         return 0;
@@ -77,7 +78,8 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
   readonly workflowId: string;
   readonly workflowRunName: string;
 }> {
-  const usageHint = "An explicit retry target is required in non-interactive mode. Expected stepkit retry <workflow-ref> <runName>.";
+  const usageHint =
+    "An explicit retry target is required in non-interactive mode. Expected stepkit retry <workflow-ref> <runName>.";
   if (context.prompts === undefined) {
     throw new CliUsageError(usageHint);
   }
@@ -89,7 +91,12 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
   }
 
   const choices = eligibleRuns.map((run) => run.label);
-  const selectedLabel = await promptSelect("Select a failed run to retry", choices, context.prompts, usageHint);
+  const selectedLabel = await promptSelect(
+    "Select a failed run to retry",
+    choices,
+    context.prompts,
+    usageHint,
+  );
   const selectedRun = eligibleRuns.find((run) => run.label === selectedLabel);
   if (!selectedRun) {
     throw new CliUsageError(`Invalid retry selection: ${selectedLabel}`);
@@ -105,7 +112,8 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
     return Promise.reject(new NoEligibleRetryRuns());
   }
 
-  const workflowId = selectedRun.workflowRef ??
+  const workflowId =
+    selectedRun.workflowRef ??
     (await promptText(
       `Workflow ref for run ${selectedRun.runId}`,
       undefined,

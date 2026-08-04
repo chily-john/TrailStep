@@ -13,11 +13,11 @@ import {
   type WorkingAgentFiles,
 } from "./artifacts/resolve-step-agent-files.js";
 import { buildWorkingAgentPrompt } from "./prompts/build-working-agent-prompt.js";
+import { runWorkingAgentTargetAttempt } from "./targets/run-working-agent-target-attempt.js";
 import {
   summarizeWorkingAgentAttemptFailure,
   type WorkingAgentAttemptFailure,
 } from "./targets/target-failures.js";
-import { runWorkingAgentTargetAttempt } from "./targets/run-working-agent-target-attempt.js";
 
 export type { WorkingAgentFiles } from "./artifacts/resolve-step-agent-files.js";
 

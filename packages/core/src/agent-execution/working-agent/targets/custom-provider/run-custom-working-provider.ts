@@ -1,4 +1,7 @@
-import type { StepKitAgentTarget, StepKitConfig } from "../../../../agent-targeting/targeting.types.js";
+import type {
+  StepKitAgentTarget,
+  StepKitConfig,
+} from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
 import { StepKitFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";

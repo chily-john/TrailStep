@@ -224,6 +224,12 @@ describe("retry command", () => {
       "step.completed",
       "workflow.completed",
     ]);
+    expect(events[2]?.payload).toMatchObject({
+      retryKind: "manual",
+      retriedStepId: "review",
+      sourceFailureEventId: "review-started",
+      sourceFailureReplayPosition: 1,
+    });
     expect(lines.join("\n")).toContain(runDir);
   });
 

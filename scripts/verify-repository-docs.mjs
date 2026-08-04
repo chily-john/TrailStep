@@ -101,7 +101,12 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(
     packageReadmes.get("packages/create-flows/README.md") ?? "",
-    "loadFragments(import.meta.dirname, ...)",
+    "`tsup` text loader",
+    "packages/create-flows/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/create-flows/README.md") ?? "",
+    "Do not blindly retry pre-fix corrupted take-it-away run artifacts",
     "packages/create-flows/README.md",
   );
 
@@ -118,7 +123,7 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(
     assertFile(".pi/rules/packages/create-flows/create-flows.md"),
-    "non-bundled `tsup` output",
+    "no non-bundled output and no fragment-copy step are needed",
     ".pi/rules/packages/create-flows/create-flows.md",
   );
 

@@ -1,6 +1,9 @@
 import { rm } from "node:fs/promises";
 
-import type { StepKitAgentTarget, StepKitConfig } from "../../../agent-targeting/targeting.types.js";
+import type {
+  StepKitAgentTarget,
+  StepKitConfig,
+} from "../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";

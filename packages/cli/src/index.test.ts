@@ -1,7 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { main } from "./index.js";
 
@@ -10,7 +10,12 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+const MAIN_TEST_ROOT = join("node_modules", ".tmp-stepkit-main-tests");
+
 describe("main", () => {
+  beforeAll(async () => {
+    await rm(MAIN_TEST_ROOT, { recursive: true, force: true });
+  });
   it("prints discovered workflow ids for the workflows command", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
@@ -355,11 +360,7 @@ describe("main", () => {
   it("prints the full error.cause chain when a direct workflow file fails to import", async ({
     task,
   }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-stepkit-main-tests",
-      `${task.id}-direct-import-cause`,
-    );
+    const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-direct-import-cause`);
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(
       join(cwd, "workflows", "broken.mjs"),

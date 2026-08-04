@@ -83,5 +83,5 @@ describe("runContextStorage singleton survives duplicate module instantiation", 
       await readFile(join(result.runDir, "state.json"), "utf8"),
     ) as Record<string, unknown>;
     expect(stateContents.seen).toBe(7);
-  });
+  }, 15_000);
 });

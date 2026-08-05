@@ -52,11 +52,13 @@ describe("public package positioning", () => {
       expect(publicFacingText).not.toMatch(new RegExp(forbiddenPhraseSource.join(""), "i"));
     }
 
-    const readmeWorkflowNames = Array.from(readme.matchAll(/^- `([^`]+)`:/gm), ([, name]) => name);
+    const readmeWorkflowNames = Array.from(readme.matchAll(/^- `([^`]+)`:/gm), ([, name]) =>
+      String(name),
+    );
     const exportedWorkflowNames = Array.from(
       indexSource.matchAll(/export \{ ([^ }]+) \} from/g),
-      ([, name]) => name,
+      ([, name]) => String(name),
     );
-    expect(readmeWorkflowNames.toSorted()).toEqual(exportedWorkflowNames.toSorted());
+    expect([...readmeWorkflowNames].sort()).toEqual([...exportedWorkflowNames].sort());
   });
 });

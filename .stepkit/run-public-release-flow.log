@@ -19,3 +19,5 @@
 → commit-reviewed-story (code)
 ✓ commit-reviewed-story
 → implement-story (agent)
+✓ implement-story
+→ review-story-implementation (agent)

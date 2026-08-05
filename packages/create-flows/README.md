@@ -1,43 +1,61 @@
 # @stepkit/create-flows
 
-Personal collection of StepKit workflows.
+`@stepkit/create-flows` is a public package of reusable, general-purpose StepKit workflows. Install it in any project where you run StepKit when you want ready-made workflow automation for turning feature conversations into reviewed implementation plans and story-by-story delivery.
+
+## Install
+
+```bash
+pnpm add @stepkit/create-flows @stepkit/authoring
+pnpm add -D @stepkit/cli
+```
+
+Initialize StepKit configuration if the consuming project has not already done so:
+
+```bash
+stepkit init
+```
+
+You can install the packaged StepKit usage skill during init with `--install-skill`, or skip it with `--no-install-skill`.
+
+## Register workflows
+
+Register one workflow:
+
+```bash
+stepkit add @stepkit/create-flows --workflow takeItAway
+stepkit add @stepkit/create-flows --workflow grillItAway
+```
+
+Or use bundle refs directly:
+
+```bash
+stepkit @stepkit/create-flows#takeItAway --input-file feature-request.json
+stepkit @stepkit/create-flows#grillItAway
+```
 
 ## Workflows
 
-- `dailyNote`: writes a short text file into the run directory, then completes.
-- `takeItAway`: turns a conversation/feature request into a reviewed `feature-doc.md` and `implementation-doc.md`, splits the plan into stories, then implements and reviews each story one at a time with bounded retries. When launched through the project skill, it runs in an isolated git worktree and commits each story after a passing review. Its steps and prompt fragments live under `src/feature-implementation/`, shared by any workflow that needs the same feature-doc/implementation-doc/story pipeline.
-- `grillItAway`: opens an interactive front-door conversation with no required input, grills the user until it understands the feature request, then runs the same reviewed `feature-implementation` pipeline `takeItAway` uses.
+- `takeItAway`: turns an existing conversation or feature request into a reviewed `feature-doc.md` and `implementation-doc.md`, splits the plan into stories, then implements and reviews each story one at a time with bounded retries.
+- `grillItAway`: starts with an interactive conversation, asks follow-up questions until the feature request is understood, then runs the same reviewed feature-documentation, planning, implementation, and review pipeline used by `takeItAway`.
 
-## Local source testing
+## Inputs
 
-For unpublished development in this monorepo, register or run the TypeScript source directly so prompt fragments are read from `src/` beside their callers:
+`takeItAway` expects a JSON object with a `conversation` string:
 
-```bash
-stepkit add ./packages/create-flows/src/index.ts#takeItAway
-stepkit add ./packages/create-flows/src/index.ts --workflow takeItAway
-stepkit add ./packages/create-flows/src/index.ts --workflow '*'
-stepkit project/take-it-away
+```json
+{
+  "conversation": "We need a workflow that exports widget reports..."
+}
 ```
 
-Direct refs use `path#exportName` when the file or directory exports more than one workflow.
+`grillItAway` can start with `{}`. It opens an interactive StepKit agent session and produces the conversation transcript that feeds the shared feature-implementation pipeline.
 
-## Isolated project-skill runs
+## Interactive completion and retry
 
-The generated project skills run through `scripts/run-stepkit-isolated.mjs` instead of invoking `stepkit` directly. The wrapper creates `.stepkit/worktrees/<run>/` on a fresh `stepkit/...` branch, copies the input JSON into the worktree, sets `STEPKIT_STORY_COMMIT_MODE=enabled`, and runs the workflow there. After each passing story review, the workflow commits the reviewed story diff before the next story starts. With `--pr`, the wrapper pushes the branch and opens a GitHub PR when `gh` is available.
-
-## take-it-away recovery note
-
-Do not blindly retry pre-fix corrupted take-it-away run artifacts. Historical runs may have lost active story state, missing step failure metadata, duplicate event ids, or a misleading review baseline. Event ids are opaque; inspect `events.jsonl` in replay order when evaluating an artifact.
-
-For the investigated failed run `.stepkit/runs/take-it-away-20260804-133215-41575ba3`, prefer starting a fresh `takeItAway` run instead of retrying the artifact. That run is from the pre-fix window, so a retry is safe only if inspection proves it still contains a durable active story, valid latest retry target metadata, and no misleading review baseline. Without that proof, a fresh run avoids continuing from corrupted state.
-
-After the durability fixes, `stepkit retry <workflow-ref> <runName>` can recover the latest unresolved failed or interrupted step, including dangling `step.started` events and step-originated workflow `fail(...)` failures. Keep workflow-level `--resume` out of take-it-away recovery procedures; use `stepkit retry` for StepKit runs.
-
-## Built or published package use
-
-Use bundle/package manifest refs after the package build inlines `.md` prompt fragments with the `tsup` text loader:
+Interactive steps complete with `stepkit continue` from the launched agent process. If a run fails or is interrupted, use StepKit retry support for the latest unresolved failure:
 
 ```bash
-stepkit add @stepkit/create-flows#takeItAway
-stepkit add @stepkit/create-flows --workflow takeItAway
+stepkit retry @stepkit/create-flows#takeItAway <runName>
 ```
+
+Do not edit `.stepkit/runs` artifacts to recover a workflow. Run directories are generated runtime outputs for inspection; use `stepkit retry` or start a fresh run when recovery is unclear.

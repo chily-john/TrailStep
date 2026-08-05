@@ -17,6 +17,14 @@ function assertIncludes(text, expected, message) {
   assert.ok(text.includes(expected), message);
 }
 
+function assertUsesPackageManagerPnpmVersion(workflow, workflowName) {
+  assert.doesNotMatch(
+    workflow,
+    /uses: pnpm\/action-setup@v4\s*\n\s*with:\s*\n\s*version:/u,
+    `${workflowName} workflow must let pnpm/action-setup read packageManager as the single pnpm version source`,
+  );
+}
+
 export function verifyGithubConfig() {
   const codeowners = assertFile(".github/CODEOWNERS");
   assert.match(
@@ -39,6 +47,7 @@ export function verifyGithubConfig() {
   assert.match(ci, /pull_request:/u, "CI workflow must run on pull requests");
   assert.match(ci, /push:[\s\S]*branches:[\s\S]*main/u, "CI workflow must run on pushes to main");
   assert.match(ci, /node-version:\s*24/u, "CI workflow must use Node 24");
+  assertUsesPackageManagerPnpmVersion(ci, "CI");
   for (const command of [
     "pnpm install --frozen-lockfile",
     "pnpm lint",
@@ -54,6 +63,7 @@ export function verifyGithubConfig() {
   assert.match(release, /workflow_dispatch:/u, "Release workflow must be manually triggered");
   assert.doesNotMatch(release, /push:/u, "Release workflow must not run on every push by default");
   assert.match(release, /node-version:\s*24/u, "Release workflow must use Node 24");
+  assertUsesPackageManagerPnpmVersion(release, "Release");
   for (const command of [
     "pnpm install --frozen-lockfile",
     "pnpm test",

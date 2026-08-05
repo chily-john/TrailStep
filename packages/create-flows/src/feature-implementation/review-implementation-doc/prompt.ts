@@ -24,8 +24,9 @@ export function reviewImplementationDocPrompt({
     "a clear tracer-bullet strategy",
     "hard dependency labels and topological ordering",
     "acceptance criteria and validation commands",
-    "story instructions self-contained enough for an implementer who will only see one story at a time",
-    "correct use of the `<!-- stepkit-story-boundary -->` marker between stories, and that no story-critical detail lives only in the overview section above the first marker",
+    "story instructions self-contained enough for an implementer who will only see one story plus the prepended shared context at a time",
+    "correct use of balanced `<context>` ... `</context>` blocks for shared implementer context",
+    "correct use of the `<!-- stepkit-story-boundary -->` marker between stories, and that no story-critical detail lives only in non-context overview text above the first marker",
   ]);
 
   return promptSections(

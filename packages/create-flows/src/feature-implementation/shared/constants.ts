@@ -1,5 +1,9 @@
 export const STORY_BOUNDARY = "<!-- stepkit-story-boundary -->";
 
+export const STORY_CONTEXT_START = "<context>";
+
+export const STORY_CONTEXT_END = "</context>";
+
 export const REVIEW_PASS_THRESHOLD = 4;
 
 export const MAX_IMPLEMENTATION_DOC_REVIEW_ATTEMPTS = 5;

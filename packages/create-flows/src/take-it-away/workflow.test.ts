@@ -109,6 +109,103 @@ describe("take-it-away", () => {
     expect(state.storyQueue?.[0]?.content).toContain("Story 002");
   });
 
+  it("prepends implementation context blocks to every split story", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-context-split-run",
+      cwd,
+      stepkitConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "Overview that should stay outside implementer stories.",
+              "",
+              "<context>",
+              "",
+              "Shared architecture context: use the WidgetPort seam.",
+              "",
+              "</context>",
+              "",
+              "<!-- stepkit-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- stepkit-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("implement-story")) {
+          return { exitCode: 1 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      activeStory?: { content?: string } | null;
+      storyQueue?: Array<{ content?: string }>;
+    };
+
+    expect(state.activeStory?.content).toContain("Shared architecture context");
+    expect(state.activeStory?.content).toContain("Story 001");
+    expect(state.activeStory?.content).not.toContain("Overview that should stay outside");
+    expect(state.storyQueue?.[0]?.content).toContain("Shared architecture context");
+    expect(state.storyQueue?.[0]?.content).toContain("Story 002");
+  });
+
   it("review prompt includes committed and uncommitted story changes from the story baseline", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
     await git(cwd, ["init"]);

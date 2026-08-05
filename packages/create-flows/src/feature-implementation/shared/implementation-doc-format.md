@@ -7,17 +7,19 @@ Use this structure:
 ```markdown
 # Implementation Plan: <Feature Name>
 
-## Outcome and Constraints
+## Overview for planner/reviewer
 
-## Architecture / Integration Notes
+Optional high-level planning notes that do not need to be seen by story implementers.
 
-## Tracer Bullet Strategy
+<context>
 
-Describe the thinnest end-to-end behavior that should be built first to prove the risky seams.
+## Shared Implementation Context
 
-## Story Dependency Graph
+Put every cross-story detail that an implementer may need here: outcome and constraints, architecture/integration notes, tracer-bullet strategy, repository conventions, shared validation commands, edge cases, assumptions, and hard dependency graph notes.
 
-List each story and its hard dependencies. Dependencies are hard only when a story cannot pass its own tests until another story is finished.
+Anything inside this balanced `<context>` block is prepended programmatically to every story by the split-stories step.
+
+</context>
 
 <!-- stepkit-story-boundary -->
 
@@ -56,7 +58,9 @@ Dependencies: Story 001
 
 Rules:
 
-- Everything above the first `<!-- stepkit-story-boundary -->` is overview only — it is never read by an implementer. If an implementer needs to know it (architecture notes, file paths, local conventions, validation commands, edge cases, assumptions, blocked states, acceptance details), repeat it inside every story that depends on it.
+- Text above the first `<!-- stepkit-story-boundary -->` is never read by an implementer unless it is inside a balanced `<context>` ... `</context>` block. The split-stories step prepends all context blocks to every story.
+- If a detail applies to most/all stories, put it in `<context>`; if it applies only to selected stories, repeat it inside those stories. No story-critical detail may live only in non-context overview text.
+- Every `<context>` marker must have a matching `</context>` marker, and context blocks should be outside story bodies unless there is a deliberate reason to prepend that block to every story.
 - Every story must start right after a `<!-- stepkit-story-boundary -->` line, on its own line, with nothing else on that line. Splitting is mechanical and depends on this exact marker — do not use markdown headings alone to separate stories, and do not add or omit a boundary marker except between/before stories.
 - Stories must be topologically ordered.
 - Every story must be implementation-ready and self-contained, written as instructions to an implementer who will not see this file, only their own story's content.

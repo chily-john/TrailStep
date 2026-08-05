@@ -1,6 +1,6 @@
 # Story implementation contract
 
-The story loop works one story at a time. Each story is self-contained — you will not see the overview or other stories, only this one.
+The story loop works one story at a time. Each story is self-contained. You will not see non-context overview text or other stories; you will see only the active story plus any shared `<context>` content prepended by the split-stories step.
 
 ## Protect pre-existing uncommitted work
 

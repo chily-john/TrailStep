@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest";
 import { generateWorkflowSkillContent, workflowSkillName } from "./workflow-skill-content.js";
 
 describe("workflowSkillName", () => {
-  it("sanitizes namespace and workflow name for skill frontmatter", () => {
-    expect(workflowSkillName("Project Tools", "Review_Workflow!!")).toBe(
-      "project-tools-review-workflow",
-    );
+  it("prefixes sanitized workflow names without appending the namespace", () => {
+    expect(workflowSkillName("Project Tools", "Review_Workflow!!")).toBe("sk-review-workflow");
   });
 });
 
@@ -23,7 +21,7 @@ describe("generateWorkflowSkillContent", () => {
       },
     });
 
-    expect(markdown).toContain("description: Review the current project changes.");
+    expect(markdown).toContain('description: "[project] Review the current project changes."');
   });
 
   it("uses fallback description when workflow description is missing", () => {
@@ -34,7 +32,9 @@ describe("generateWorkflowSkillContent", () => {
       workflow: { id: "review", start: () => ({ kind: "done", output: {} }) },
     });
 
-    expect(markdown).toContain('description: Run the StepKit workflow "project/review".');
+    expect(markdown).toContain(
+      'description: "[project] Run the StepKit workflow \\"project/review\\"."',
+    );
   });
 
   it("instructs no-input workflows to run without input export", () => {
@@ -63,10 +63,10 @@ describe("generateWorkflowSkillContent", () => {
       },
     });
 
-    expect(skillName).toBe("project-review");
-    expect(markdown).toContain(".stepkit/inputs/project-review-input.json");
+    expect(skillName).toBe("sk-review");
+    expect(markdown).toContain(".stepkit/inputs/sk-review-input.json");
     expect(markdown).toContain(
-      "stepkit project/review --input-file .stepkit/inputs/project-review-input.json",
+      "stepkit project/review --input-file .stepkit/inputs/sk-review-input.json",
     );
     expect(markdown).toContain('"topic": {');
     expect(markdown).toContain('"type": "string"');
@@ -99,11 +99,11 @@ describe("generateWorkflowSkillContent", () => {
     });
 
     expect(markdown).toContain(
-      "Export dense conversation/session context to `.stepkit/inputs/project-review-context.md`",
+      "Export dense conversation/session context to `.stepkit/inputs/sk-review-context.md`",
     );
-    expect(markdown).toContain('{ "sessionFile": ".stepkit/inputs/project-review-context.md" }');
+    expect(markdown).toContain('{ "sessionFile": ".stepkit/inputs/sk-review-context.md" }');
     expect(markdown).toContain(
-      "stepkit project/review --input-file .stepkit/inputs/project-review-input.json",
+      "stepkit project/review --input-file .stepkit/inputs/sk-review-input.json",
     );
     expect(markdown).toContain('"sessionFile": {');
   });

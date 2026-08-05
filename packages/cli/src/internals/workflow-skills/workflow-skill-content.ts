@@ -26,10 +26,11 @@ export function generateWorkflowSkillContent(
 ): WorkflowSkillContent {
   const skillName = workflowSkillName(input.namespace, input.name);
   const registeredRef = `${input.namespace}/${input.name}`;
-  const description =
+  const baseDescription =
     input.workflow?.description ??
     input.description ??
     `Run the StepKit workflow "${registeredRef}".`;
+  const description = workflowSkillDescription(input.namespace, baseDescription);
   const inputMode = classifyWorkflowInput(input.workflow);
 
   return {
@@ -37,7 +38,7 @@ export function generateWorkflowSkillContent(
     markdown: [
       "---",
       `name: ${skillName}`,
-      `description: ${description}`,
+      `description: ${frontmatterString(description)}`,
       "---",
       "",
       `Run the registered StepKit workflow \`${registeredRef}\`.`,
@@ -49,10 +50,8 @@ export function generateWorkflowSkillContent(
   };
 }
 
-export function workflowSkillName(namespace: string, name: string): string {
-  return [sanitizeSkillNamePart(namespace), sanitizeSkillNamePart(name)]
-    .filter((part) => part.length > 0)
-    .join("-");
+export function workflowSkillName(_namespace: string, name: string): string {
+  return `sk-${sanitizeSkillNamePart(name) || "workflow"}`;
 }
 
 type WorkflowInputMode =
@@ -152,6 +151,15 @@ function inputInstructions(input: {
 
 function schemaJsonSchema(schema: Schema<PlainObject>): Record<string, unknown> | undefined {
   return schema.jsonSchema;
+}
+
+function workflowSkillDescription(namespace: string, description: string): string {
+  const origin = namespace.trim();
+  return origin.length > 0 ? `[${origin}] ${description}` : description;
+}
+
+function frontmatterString(value: string): string {
+  return JSON.stringify(value);
 }
 
 function sanitizeSkillNamePart(value: string): string {

@@ -97,11 +97,11 @@ stepkit add @acme/workflows --workflow '*'
 
 A workflow `id` containing `/`, `#`, `:`, or that looks like a file path can't be used as a default registration name (each of those breaks or ambiguates how registered refs are resolved) — pass `--name` explicitly for those.
 
-Add `--project-skill` or `--user-skill` to also generate a StepKit workflow skill source at `.stepkit/skills/<sanitized-namespace>-<sanitized-name>/SKILL.md` and ask the upstream `skills` CLI to install it into the selected agent skill scope. Distribution is best-effort: registration still succeeds if the `skills` CLI cannot be resolved or exits with an error.
+Add `--project-skill` or `--user-skill` to also generate a StepKit workflow skill source at `.stepkit/skills/sk-<sanitized-name>/SKILL.md` and ask the upstream `skills` CLI to install it into the selected agent skill scope. Generated skill descriptions are prefixed with `[<namespace>]` to show the registration origin without appending the namespace to the skill name. Distribution is best-effort: registration still succeeds if the `skills` CLI cannot be resolved or exits with an error.
 
 Prefer matching the registration scope and skill scope. A project skill that points at a global- or local-scoped registration may not resolve for teammates, and a user skill that points at a project- or local-scoped registration only works from that project; StepKit prints warnings for these scope mismatches.
 
-Generated skills pass workflow input through `stepkit <workflow-ref> --input-file <path>`. Workflow input must be a JSON object. For dense conversation context, write the context to a markdown file and pass an object wrapper such as `{ "sessionFile": ".stepkit/inputs/project-review-context.md" }`.
+Generated skills pass workflow input through `stepkit <workflow-ref> --input-file <path>`. Workflow input must be a JSON object. For dense conversation context, write the context to a markdown file and pass an object wrapper such as `{ "sessionFile": ".stepkit/inputs/sk-review-context.md" }`.
 
 Remove a registration with `stepkit remove <namespace>/<name>` or the Remove action in `stepkit workflows`. Since `project` and `local` scope both default to the same `"project"` namespace, the same ref can exist in either (or both) config files; `remove` searches local, then project, then global unless `--scope` is passed, and asks you to disambiguate with `--scope` if the ref matches more than one:
 

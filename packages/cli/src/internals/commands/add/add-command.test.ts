@@ -385,10 +385,10 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "project-review", "SKILL.md"),
+      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
       "utf8",
     );
-    expect(skillSource).toContain("description: Review the active change set.");
+    expect(skillSource).toContain('description: "[project] Review the active change set."');
     expect(skillSource).toContain("stepkit project/review");
     expect(skillSource).not.toContain("--input-file");
     expect(skillSource).not.toContain("sessionFile");
@@ -439,10 +439,10 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "project-review", "SKILL.md"),
+      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
       "utf8",
     );
-    expect(skillSource).toContain("name: project-review");
+    expect(skillSource).toContain("name: sk-review");
     expect(skillSource).toContain("description:");
     expect(skillSource).toContain("stepkit project/review");
   });
@@ -494,7 +494,7 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill project-review: Could not resolve skills CLI.",
+      "Warning: registered project/review but could not distribute project workflow skill sk-review: Could not resolve skills CLI.",
     );
   });
 
@@ -544,7 +544,7 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill project-review: skills CLI exited with code 3.",
+      "Warning: registered project/review but could not distribute project workflow skill sk-review: skills CLI exited with code 3.",
     );
   });
 
@@ -644,7 +644,7 @@ describe("addCommand", () => {
       [
         "/repo/node_modules/skills/dist/index.js",
         "add",
-        join(cwd, ".stepkit", "skills", "project-review"),
+        join(cwd, ".stepkit", "skills", "sk-review"),
         "--agent",
         "*",
         "-y",
@@ -652,7 +652,7 @@ describe("addCommand", () => {
       [
         "/repo/node_modules/skills/dist/index.js",
         "add",
-        join(cwd, ".stepkit", "skills", "project-review"),
+        join(cwd, ".stepkit", "skills", "sk-review"),
         "--agent",
         "*",
         "-y",
@@ -670,7 +670,7 @@ describe("addCommand", () => {
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await mkdir(join(cwd, ".stepkit", "skills", "project-review", "SKILL.md"), {
+    await mkdir(join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"), {
       recursive: true,
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
@@ -710,7 +710,7 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toEqual([
-      "Warning: registered project/review but could not write project workflow skill project-review.",
+      "Warning: registered project/review but could not write project workflow skill sk-review.",
     ]);
   });
 
@@ -1574,7 +1574,7 @@ describe("addCommand", () => {
       workflows: { acme: { review: "./local-workflow-package#review" } },
     });
     expect(errors).toEqual([
-      "Warning: registered acme/review but could not write project workflow skill acme-review.",
+      "Warning: registered acme/review but could not write project workflow skill sk-review.",
     ]);
   });
 
@@ -1635,14 +1635,14 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "acme-review", "SKILL.md"),
+      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
       "utf8",
     );
-    expect(skillSource).toContain("description: Review a local bundle change set.");
+    expect(skillSource).toContain('description: "[acme] Review a local bundle change set."');
     expect(skillSource).toContain('"changeId"');
     expect(skillSource).toContain('"risk"');
     expect(skillSource).toContain(
-      "stepkit acme/review --input-file .stepkit/inputs/acme-review-input.json",
+      "stepkit acme/review --input-file .stepkit/inputs/sk-review-input.json",
     );
     expect(skillSource).toContain("Registered workflow source: `./local-workflow-package#review`");
     expect(skillSource).not.toContain('Run the StepKit workflow "acme/review".');
@@ -1701,13 +1701,13 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "acme-review", "SKILL.md"),
+      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
       "utf8",
     );
-    expect(skillSource).toContain("description: Review an installed bundle package.");
+    expect(skillSource).toContain('description: "[acme] Review an installed bundle package."');
     expect(skillSource).toContain('"ticket"');
     expect(skillSource).toContain(
-      "stepkit acme/review --input-file .stepkit/inputs/acme-review-input.json",
+      "stepkit acme/review --input-file .stepkit/inputs/sk-review-input.json",
     );
     expect(skillSource).toContain("Registered workflow source: `@acme/workflows#review`");
     expect(skillSource).not.toContain('Run the StepKit workflow "acme/review".');
@@ -2308,10 +2308,10 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(
-      await readFile(join(cwd, ".stepkit", "skills", "acme-alpha", "SKILL.md"), "utf8"),
+      await readFile(join(cwd, ".stepkit", "skills", "sk-alpha", "SKILL.md"), "utf8"),
     ).toContain("stepkit acme/alpha");
     expect(
-      await readFile(join(cwd, ".stepkit", "skills", "acme-beta", "SKILL.md"), "utf8"),
+      await readFile(join(cwd, ".stepkit", "skills", "sk-beta", "SKILL.md"), "utf8"),
     ).toContain("stepkit acme/beta");
   });
 

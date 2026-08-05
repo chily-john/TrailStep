@@ -6,11 +6,10 @@ import { join } from "node:path";
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
-const packageManager = {
-  command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-  args: [],
-  shell: process.platform === "win32",
-};
+const packCommand =
+  process.platform === "win32"
+    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "pnpm pack --dry-run --json"] }
+    : { command: "pnpm", args: ["pack", "--dry-run", "--json"] };
 
 const publicPackages = [
   { name: "@stepkit/core", directory: "packages/core" },
@@ -91,16 +90,11 @@ function assertBuiltEntry(pkg, manifestPath, label) {
 }
 
 function packDryRun(pkg) {
-  const stdout = execFileSync(
-    packageManager.command,
-    [...packageManager.args, "pack", "--dry-run", "--json"],
-    {
-      cwd: join(root, pkg.directory),
-      encoding: "utf8",
-      shell: packageManager.shell,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const stdout = execFileSync(packCommand.command, packCommand.args, {
+    cwd: join(root, pkg.directory),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   const parsed = JSON.parse(stdout);
   const [packResult] = Array.isArray(parsed) ? parsed : [parsed];
   assert.ok(packResult, `${pkg.name} npm pack --dry-run returned no package data`);

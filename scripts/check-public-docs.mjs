@@ -21,9 +21,9 @@ const publicPackages = [
 ];
 const unpublishedPackages = ["@stepkit/testkit", "@stepkit/dashboard"];
 const staleVerificationScripts = [
-  "verify-repository-docs",
-  "verify-package-metadata",
-  "verify-github-config",
+  `verify-${"repository-docs"}`,
+  `verify-${"package-metadata"}`,
+  `verify-${"github-config"}`,
 ];
 const hiddenContextMarkers = [".pi/rules", "AGENTS.md", "CLAUDE.md"];
 

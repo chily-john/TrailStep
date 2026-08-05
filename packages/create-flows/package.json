@@ -1,10 +1,20 @@
 {
   "name": "@stepkit/create-flows",
   "version": "0.0.0",
-  "description": "Personal StepKit workflows.",
-  "private": true,
+  "description": "Public reusable general-purpose StepKit workflows.",
   "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/chily-john/stepkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chily-john/stepkit/issues"
+  },
+  "homepage": "https://github.com/chily-john/stepkit#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "stepkit-workflow"
   ],
@@ -16,6 +26,11 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",

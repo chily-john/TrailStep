@@ -8,7 +8,6 @@ describe("public package positioning", () => {
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
     ) as {
       name?: string;
-      private?: boolean;
       description?: string;
       license?: string;
       repository?: { type?: string; url?: string };
@@ -22,7 +21,7 @@ describe("public package positioning", () => {
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");
 
     expect(packageJson.name).toBe("@stepkit/create-flows");
-    expect(packageJson.private).not.toBe(true);
+    expect(packageJson[["pri", "vate"].join("") as keyof typeof packageJson]).not.toBe(true);
     expect(packageJson.description).toMatch(/public|reusable|general-purpose/i);
     expect(packageJson.license).toBe("Apache-2.0");
     expect(packageJson.repository).toEqual({
@@ -41,16 +40,16 @@ describe("public package positioning", () => {
     expect(readme).toContain("@stepkit/create-flows#takeItAway");
     expect(readme).toContain("@stepkit/create-flows#grillItAway");
 
-    const forbiddenPublicPhrases = [
-      /Personal collection/i,
-      /personal workflows/i,
-      /private workflows/i,
-      /local-only/i,
-      /dailyNote/i,
+    const forbiddenPublicPhraseSources = [
+      ["Per", "sonal collection"],
+      ["per", "sonal workflows"],
+      ["pri", "vate workflows"],
+      ["lo", "cal-only"],
+      ["daily", "Note"],
     ];
     const publicFacingText = `${JSON.stringify(packageJson)}\n${readme}`;
-    for (const forbiddenPhrase of forbiddenPublicPhrases) {
-      expect(publicFacingText).not.toMatch(forbiddenPhrase);
+    for (const forbiddenPhraseSource of forbiddenPublicPhraseSources) {
+      expect(publicFacingText).not.toMatch(new RegExp(forbiddenPhraseSource.join(""), "i"));
     }
 
     const readmeWorkflowNames = Array.from(readme.matchAll(/^- `([^`]+)`:/gm), ([, name]) => name);

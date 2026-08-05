@@ -42,6 +42,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Public package pack dry-run
+        run: pnpm run pack:public:dry-run
+
       - name: Prepare or publish Changesets release
         uses: changesets/action@v1
         with:

@@ -128,6 +128,7 @@ Useful local checks before a public release or documentation change:
 
 ```bash
 pnpm check:public-packages
+pnpm run pack:public:dry-run
 node scripts/check-public-docs.mjs
 node scripts/check-local-artifact-ignore.mjs
 pnpm check:verification-cleanup
@@ -136,4 +137,4 @@ pnpm lint
 pnpm test
 ```
 
-These checks verify public package metadata, npm-facing documentation, local artifact ignore rules, stale verification-script cleanup, and normal TypeScript/lint/test health.
+These checks verify public package metadata, npm pack dry-run contents for the intended public package set, npm-facing documentation, local artifact ignore rules, stale verification-script cleanup, and normal TypeScript/lint/test health.

@@ -88,6 +88,7 @@ const requiredRootTopics = [
   "should not be manually mutated",
   "ignored by default",
   "pnpm check:public-packages",
+  "pnpm run pack:public:dry-run",
   "node scripts/check-local-artifact-ignore.mjs",
   "pnpm check:verification-cleanup",
 ];

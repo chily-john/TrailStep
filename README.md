@@ -72,12 +72,13 @@ pnpm build
 
 Use Node 24 or newer. The intended remote is `git@github-personal:chily-john/stepkit.git`.
 
-## Documentation
+## Documentation and release readiness
 
 Implementation guidance lives in `.pi/rules/` and package `README.md` files. GitHub branch-protection guidance lives in `.github/branch-protection.md`.
 
-Local documentation verification:
+Public release readiness checks focus on package metadata and generated local artifact exclusions:
 
 ```bash
-node scripts/verify-repository-docs.mjs
+pnpm check:public-packages
+node scripts/check-local-artifact-ignore.mjs
 ```

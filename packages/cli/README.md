@@ -144,6 +144,8 @@ Run artifacts are written to:
 .stepkit/runs/<actualRunName>/
 ```
 
+Set `STEPKIT_RUNS_ROOT` to write and list run artifacts in a different centralized directory while keeping the workflow `cwd` unchanged. This is useful for isolated worktrees where agent work should happen inside the worktree but observability artifacts should remain under the source repository.
+
 If the requested run name already exists, the runtime creates a suffixed directory such as `<workflowRunName>-2`. Event artifacts are persisted as `events.jsonl` in the run directory. Event ids are opaque; use JSONL/replay order, not id formatting, when reasoning about event order.
 
 ## Retry

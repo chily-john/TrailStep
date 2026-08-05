@@ -23,7 +23,7 @@ Direct refs use `path#exportName` when the file or directory exports more than o
 
 ## Isolated project-skill runs
 
-The generated project skills run through `scripts/run-stepkit-isolated.mjs` instead of invoking `stepkit` directly. The wrapper creates `.stepkit/worktrees/<run>/` on a fresh `stepkit/...` branch, copies the input JSON into the worktree, sets `STEPKIT_STORY_COMMIT_MODE=enabled`, and runs the workflow there. After each passing story review, the workflow commits the reviewed story diff before the next story starts. With `--pr`, the wrapper pushes the branch and opens a GitHub PR when `gh` is available.
+The generated project skills run through `scripts/run-stepkit-isolated.mjs` instead of invoking `stepkit` directly. The wrapper creates `.stepkit/worktrees/<run>/` on a fresh `stepkit/...` branch, copies the input JSON into the worktree, sets `STEPKIT_RUNS_ROOT` to the source repo's `.stepkit/runs`, sets `STEPKIT_STORY_COMMIT_MODE=enabled`, and runs the workflow there. After each passing story review, the workflow commits the reviewed story diff before the next story starts. With `--pr`, the wrapper pushes the branch and opens a GitHub PR when `gh` is available.
 
 ## take-it-away recovery note
 

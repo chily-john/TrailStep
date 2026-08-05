@@ -232,6 +232,31 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
+  it("runs a directly referenced workflow file into STEPKIT_RUNS_ROOT", async ({ task }) => {
+    const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join(root, "worktree");
+    const runsRoot = resolve(root, "source", ".stepkit", "runs");
+    await rm(root, { recursive: true, force: true });
+    await writeDirectWorkflowFile(cwd);
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["./workflows/review.mjs", "central-run", "--input", '{"ok":true}'],
+        cwd,
+        env: { STEPKIT_RUNS_ROOT: runsRoot },
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    const runDir = join(runsRoot, "central-run");
+    await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
+      "workflow.completed",
+    );
+    await expect(stat(join(cwd, ".stepkit", "runs"))).rejects.toThrow();
+    expect(lines.join("\n")).toContain(runDir);
+  });
+
   it("runs a directly referenced workflow file with an explicit run name", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });

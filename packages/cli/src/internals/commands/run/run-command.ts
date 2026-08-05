@@ -3,6 +3,7 @@ import { runWorkflow } from "@stepkit/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { loadStepKitConfig } from "../../config/config.js";
+import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { generateRunName } from "./generate-run-name.js";
 import { loadJsonInput } from "./load-run-input.js";
@@ -40,6 +41,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
     const sharedRunOptions = {
       workflow: resolvedWorkflow.workflow,
       cwd,
+      runsRoot: resolveRunsRoot(context),
       eventSink,
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
       ...(context.workingAgentProcessRunner === undefined

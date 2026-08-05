@@ -88,6 +88,7 @@ export type Result<TOutput extends PlainObject = PlainObject> =
 interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends PlainObject> {
   readonly workflow: Workflow<TInput, TOutput>;
   readonly cwd?: string;
+  readonly runsRoot?: string;
   readonly eventSink?: (event: Event) => void | Promise<void>;
   readonly processRunner?: InteractiveProcessRunner;
   readonly stepkitConfig?: StepKitConfigInput;

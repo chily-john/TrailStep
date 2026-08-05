@@ -28,9 +28,11 @@ const timestamp = new Date()
 const slug = slugify(workflowId);
 const branch = `stepkit/${slug}-${timestamp}`;
 const worktree = resolve(repoRoot, ".stepkit", "worktrees", `${slug}-${timestamp}`);
+const runsRoot = resolve(repoRoot, ".stepkit", "runs");
 
 console.log(`Creating isolated StepKit worktree: ${worktree}`);
 console.log(`Branch: ${branch}`);
+console.log(`Central StepKit runs root: ${runsRoot}`);
 await mkdir(dirname(worktree), { recursive: true });
 await run("git", ["worktree", "add", "-b", branch, worktree, "HEAD"], repoRoot);
 
@@ -42,6 +44,7 @@ const stepkitEnv = {
   ...process.env,
   STEPKIT_BRANCH: branch,
   STEPKIT_GIT_ISOLATED: "worktree",
+  STEPKIT_RUNS_ROOT: runsRoot,
   STEPKIT_SOURCE_REPO: repoRoot,
   STEPKIT_STORY_COMMIT_MODE: "enabled",
   STEPKIT_WORKTREE: worktree,

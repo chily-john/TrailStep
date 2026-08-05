@@ -92,7 +92,12 @@ export type {
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "./known-cli-providers/registry/provider-registry.types.js";
-export { readRunEvents, readRunState, writeRunState } from "./runtime/artifacts/run-storage.js";
+export {
+  defaultRunsRoot,
+  readRunEvents,
+  readRunState,
+  writeRunState,
+} from "./runtime/artifacts/run-storage.js";
 export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export type {

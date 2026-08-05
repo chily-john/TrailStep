@@ -1,18 +1,22 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { StepKitFailureError } from "../../contracts/failures/failure.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 
 export type RunState = Record<string, unknown>;
 
+export function defaultRunsRoot(cwd: string): string {
+  return join(cwd, ".stepkit", "runs");
+}
+
 export async function createRunDirectory(options: {
   readonly cwd: string;
   readonly runName: string;
+  readonly runsRoot?: string;
 }): Promise<{ runId: string; runDir: string }> {
-  const stepkitRoot = join(options.cwd, ".stepkit");
-  const runsRoot = join(stepkitRoot, "runs");
+  const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
   await mkdir(runsRoot, { recursive: true });
-  await ensureStepkitGitignore(stepkitRoot);
+  await ensureStepkitGitignoreForRunsRoot(runsRoot);
 
   for (let suffix = 1; ; suffix += 1) {
     const runId = suffix === 1 ? options.runName : `${options.runName}-${suffix}`;
@@ -128,6 +132,15 @@ function isRunState(value: unknown): value is RunState {
     !Array.isArray(value) &&
     Object.getPrototypeOf(value) === Object.prototype
   );
+}
+
+async function ensureStepkitGitignoreForRunsRoot(runsRoot: string): Promise<void> {
+  const stepkitRoot = dirname(runsRoot);
+  if (basename(stepkitRoot) !== ".stepkit") {
+    return;
+  }
+
+  await ensureStepkitGitignore(stepkitRoot);
 }
 
 async function ensureStepkitGitignore(stepkitRoot: string): Promise<void> {

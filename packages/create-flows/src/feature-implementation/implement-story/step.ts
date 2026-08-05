@@ -25,6 +25,7 @@ export const implementStoryStep = step({ id: "implement-story" })
     return reviewStoryImplementationStep({
       currentStory: input.currentStory,
       attempt: input.attempt,
+      implementationSummary: promptOutput.summary,
       gitContext: await loadStoryReviewGitContext(),
     });
   });

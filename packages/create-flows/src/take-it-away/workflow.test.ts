@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -221,6 +221,116 @@ describe("take-it-away", () => {
     expect(reviewerPrompts[0]).toContain(`git diff ${baseline}..HEAD`);
     expect(reviewerPrompts[0]).toContain("committed story change");
     expect(reviewerPrompts[0]).toContain("uncommitted story change");
+  });
+
+  it("commits each passing reviewed story when story commit mode is enabled", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "stepkit@example.test"]);
+    await git(cwd, ["config", "user.name", "StepKit Test"]);
+    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await writeFile(join(cwd, ".stepkit", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".stepkit/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const previousCommitMode = process.env.STEPKIT_STORY_COMMIT_MODE;
+    process.env.STEPKIT_STORY_COMMIT_MODE = "enabled";
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+
+    try {
+      const result = await runWorkflow({
+        workflow: takeItAway,
+        input: { conversation: "We want a widget exporter." },
+        runName: "take-it-away-autocommit-run",
+        cwd,
+        stepkitConfig: {
+          version: 1,
+          customProviders: { worker: { binary: "worker-agent" } },
+          agents: {
+            medium: [{ provider: "worker" }],
+            large: [{ provider: "worker" }],
+          },
+        },
+        workingAgentProcessRunner: async (request) => {
+          if (request.outputFile.includes("create-feature-doc")) {
+            await writeFile(
+              request.outputFile,
+              "# Feature Doc\n\nA widget exporter feature.",
+              "utf8",
+            );
+            return { exitCode: 0 };
+          }
+
+          if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+            await writeFile(
+              request.outputFile,
+              [
+                "# Implementation Doc",
+                "",
+                "Overview of the widget exporter plan.",
+                "",
+                "<!-- stepkit-story-boundary -->",
+                "",
+                "## Story 001: Build the widget exporter core",
+                "",
+                "Implement the core widget exporter behavior.",
+              ].join("\n"),
+              "utf8",
+            );
+            return { exitCode: 0 };
+          }
+
+          if (request.outputFile.includes("review-implementation-doc")) {
+            await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+            return { exitCode: 0 };
+          }
+
+          if (request.outputFile.includes("implement-story")) {
+            await writeFile(join(cwd, "widget.txt"), "exported widget\n", "utf8");
+            await writeFile(
+              request.outputFile,
+              JSON.stringify({
+                blocked: false,
+                summary: "Implemented widget exporter core in widget.txt.",
+              }),
+              "utf8",
+            );
+            return { exitCode: 0 };
+          }
+
+          if (request.outputFile.includes("review-story-implementation")) {
+            await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+            return { exitCode: 0 };
+          }
+
+          throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+        },
+      });
+
+      expect(result.status).toBe("success");
+      const log = await git(cwd, ["log", "--oneline", "--max-count=2"]);
+      expect(log).toContain("stepkit: Story 001: Build the widget exporter core");
+      expect(await git(cwd, ["status", "--short"])).toBe("");
+    } finally {
+      if (previousCommitMode === undefined) {
+        delete process.env.STEPKIT_STORY_COMMIT_MODE;
+      } else {
+        process.env.STEPKIT_STORY_COMMIT_MODE = previousCommitMode;
+      }
+    }
   });
 
   it("retry of an interrupted story implements the active story before advancing", async () => {

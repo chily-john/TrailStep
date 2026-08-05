@@ -5,7 +5,7 @@ Personal collection of StepKit workflows.
 ## Workflows
 
 - `dailyNote`: writes a short text file into the run directory, then completes.
-- `takeItAway`: turns a conversation/feature request into a reviewed `feature-doc.md` and `implementation-doc.md`, splits the plan into stories, then implements and reviews each story one at a time with bounded retries. Its steps and prompt fragments live under `src/feature-implementation/`, shared by any workflow that needs the same feature-doc/implementation-doc/story pipeline.
+- `takeItAway`: turns a conversation/feature request into a reviewed `feature-doc.md` and `implementation-doc.md`, splits the plan into stories, then implements and reviews each story one at a time with bounded retries. When launched through the project skill, it runs in an isolated git worktree and commits each story after a passing review. Its steps and prompt fragments live under `src/feature-implementation/`, shared by any workflow that needs the same feature-doc/implementation-doc/story pipeline.
 - `grillItAway`: opens an interactive front-door conversation with no required input, grills the user until it understands the feature request, then runs the same reviewed `feature-implementation` pipeline `takeItAway` uses.
 
 ## Local source testing
@@ -20,6 +20,10 @@ stepkit project/take-it-away
 ```
 
 Direct refs use `path#exportName` when the file or directory exports more than one workflow.
+
+## Isolated project-skill runs
+
+The generated project skills run through `scripts/run-stepkit-isolated.mjs` instead of invoking `stepkit` directly. The wrapper creates `.stepkit/worktrees/<run>/` on a fresh `stepkit/...` branch, copies the input JSON into the worktree, sets `STEPKIT_STORY_COMMIT_MODE=enabled`, and runs the workflow there. After each passing story review, the workflow commits the reviewed story diff before the next story starts. With `--pr`, the wrapper pushes the branch and opens a GitHub PR when `gh` is available.
 
 ## take-it-away recovery note
 

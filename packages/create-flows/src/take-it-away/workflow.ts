@@ -24,9 +24,9 @@ export const takeItAway = defineWorkflow({
         "Creates or improves the implementation doc: architecture-aware, TDD/vertical-slice/tracer-bullet story design.",
     },
     reviewer: {
-      size: "medium",
-      thinking: "medium",
-      description: "Reviews implementation docs and story implementations against methodology.",
+      size: "large",
+      thinking: "high",
+      description: "Reviews isolated implementation docs and story diffs against methodology.",
     },
     implementer: {
       size: "medium",

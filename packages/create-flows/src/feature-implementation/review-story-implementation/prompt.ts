@@ -10,6 +10,7 @@ const fragments = loadFragments(import.meta.dirname, {
 export interface ReviewStoryImplementationInput extends Record<string, unknown> {
   readonly currentStory: Document;
   readonly attempt: number;
+  readonly implementationSummary?: string;
   readonly gitContext: StoryReviewGitContext;
 }
 
@@ -26,6 +27,7 @@ export function reviewStoryImplementationPrompt({
     fragments.methodology,
     fragments.storyContract,
     section("Story", input.currentStory.content),
+    section("Implementer summary", input.implementationSummary ?? "Not provided."),
     section(
       "Story review git baseline",
       [
@@ -58,7 +60,7 @@ export function reviewStoryImplementationPrompt({
     ),
     section(
       "Task",
-      "Review the full story slice from the recorded story start commit through HEAD, plus the current uncommitted working tree changes, against the story above. Use read-only commands only (`git status --short`, the listed `git diff <storyStartCommit>..HEAD`, and `git diff`) — do not run tests or edit code. If the baseline is missing, invalid, or unreachable, explicitly account for that blocked context instead of silently reviewing only the current working tree diff. Respond only with the structured review.",
+      "Review only the active story slice represented by the recorded story start commit through HEAD, plus the current uncommitted working tree changes, against the story above and the implementer summary. Prefer the supplied diff/status sections; if you need to inspect locally, use read-only commands only (`git status --short`, the listed `git diff <storyStartCommit>..HEAD`, and `git diff`) — do not run tests, edit code, revert files, clean files, or try to isolate the diff by changing the repository. If unrelated dirty files, a missing/invalid baseline, or ambiguous context prevents a trustworthy review, say so in the structured review and require the implementer/workflow to fix the isolation; never remove changes yourself. Respond only with the structured review.",
     ),
   );
 }

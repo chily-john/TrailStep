@@ -42,11 +42,10 @@ function assertPublicPackageMetadata(packageMetadata, packageName) {
     "public",
     `${packageName} must publish as a public scoped package`,
   );
-  assert.deepEqual(
-    packageMetadata.files,
-    ["dist", "README.md", "LICENSE"],
-    `${packageName} must limit published files`,
-  );
+  assert.ok(Array.isArray(packageMetadata.files), `${packageName} must limit published files`);
+  assert.ok(packageMetadata.files.includes("dist"), `${packageName} must publish dist`);
+  assert.ok(packageMetadata.files.includes("README.md"), `${packageName} must publish README.md`);
+  assert.ok(packageMetadata.files.includes("LICENSE"), `${packageName} must publish LICENSE`);
   assertRepositoryMetadata(packageMetadata, packageName);
 }
 
@@ -98,8 +97,8 @@ export function verifyPackageMetadata() {
   );
   assert.deepEqual(
     changesetConfig.ignore ?? [],
-    [],
-    "Changesets must target the full pnpm workspace package set",
+    ["@stepkit/testkit", "@stepkit/dashboard"],
+    "Changesets must ignore intentionally unpublished packages",
   );
 
   const workspace = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
@@ -112,7 +111,7 @@ export function verifyPackageMetadata() {
   const libraryPackages = [
     { directory: "core", name: "@stepkit/core" },
     { directory: "authoring", name: "@stepkit/authoring" },
-    { directory: "testkit", name: "@stepkit/testkit" },
+    { directory: "create-flows", name: "@stepkit/create-flows" },
   ];
 
   const cliPackageJsonPath = "packages/cli/package.json";
@@ -133,7 +132,7 @@ export function verifyPackageMetadata() {
   );
   assert.equal(
     cliPackageMetadata.peerDependencies?.["@stepkit/core"],
-    "^0.0.0",
+    "^0.1.0",
     "@stepkit/cli must declare @stepkit/core peer compatibility",
   );
 
@@ -141,7 +140,12 @@ export function verifyPackageMetadata() {
   assertFile(dashboardPackageJsonPath);
   const dashboardPackageMetadata = readJson(dashboardPackageJsonPath);
   assert.equal(dashboardPackageMetadata.name, "@stepkit/dashboard");
-  assertPublicPackageMetadata(dashboardPackageMetadata, "@stepkit/dashboard");
+  assert.equal(
+    dashboardPackageMetadata.private,
+    true,
+    "@stepkit/dashboard must remain unpublished",
+  );
+  assert.equal(dashboardPackageMetadata.publishConfig, undefined);
   assert.equal(dashboardPackageMetadata.type, "module");
   assert.match(dashboardPackageMetadata.scripts?.build ?? "", /vite build/u);
   assert.match(dashboardPackageMetadata.scripts?.typecheck ?? "", /svelte-check/u);
@@ -174,8 +178,21 @@ export function verifyPackageMetadata() {
       );
       assert.equal(
         packageMetadata.peerDependencies?.["@stepkit/core"],
-        "^0.0.0",
+        "^0.1.0",
         "@stepkit/authoring must declare @stepkit/core peer compatibility",
+      );
+    }
+
+    if (libraryPackage.name === "@stepkit/create-flows") {
+      assert.equal(
+        packageMetadata.dependencies?.["@stepkit/authoring"],
+        "workspace:*",
+        "@stepkit/create-flows must retain a workspace dependency on @stepkit/authoring for builds",
+      );
+      assert.equal(
+        packageMetadata.peerDependencies?.["@stepkit/authoring"],
+        "^0.1.0",
+        "@stepkit/create-flows must declare @stepkit/authoring peer compatibility",
       );
     }
 

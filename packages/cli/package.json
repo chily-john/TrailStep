@@ -1,6 +1,6 @@
 {
   "name": "@stepkit/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Command-line discovery and execution for StepKit workflows.",
   "license": "Apache-2.0",
   "type": "module",
@@ -46,7 +46,7 @@
     "tsx": "^4.23.1"
   },
   "peerDependencies": {
-    "@stepkit/core": "^0.0.0"
+    "@stepkit/core": "^0.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

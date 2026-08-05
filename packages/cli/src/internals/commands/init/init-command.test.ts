@@ -232,9 +232,9 @@ describe("initCommand", () => {
   it("rejects conflicting --install-skill and --no-install-skill flags", () => {
     const command = resolveCommand(["init", "--install-skill", "--no-install-skill"]);
 
-    expect(() =>
-      command.parseArgs(["init", "--install-skill", "--no-install-skill"]),
-    ).toThrow(CliUsageError);
+    expect(() => command.parseArgs(["init", "--install-skill", "--no-install-skill"])).toThrow(
+      CliUsageError,
+    );
   });
 
   it("does not ask a skill prompt when prompts are unavailable", async () => {

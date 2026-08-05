@@ -1,17 +1,27 @@
 # @stepkit/authoring
 
-TypeScript authoring helpers for StepKit workflows.
+`@stepkit/authoring` provides TypeScript helpers for writing StepKit workflows that can be run by `@stepkit/cli` or embedded with `@stepkit/core`.
 
-## What is implemented
+## Install
 
-- `defineWorkflow({ id, agents, inputShape, outputShape, start })` declares a workflow as the public command/discovery unit and names provider-neutral agent roles.
-- `step(...)` is the user-facing step primitive for new workflows.
-- `done(...)` marks successful workflow completion from a continuation.
-- `jsonSchema`, `shape`, `promptTemplate`, and shape types are re-exported from `@stepkit/core`.
-- Agent steps reference roles with step-level `agent`; users map those roles and size tiers to command-backed local agents in `.stepkit/config.json`.
-- Agent step prompts support markdown strings or functions of `{ input }` rendered from live step input.
+```bash
+pnpm add @stepkit/authoring @stepkit/core
+```
 
-## Minimal workflow package export
+## Public role
+
+Use this package to author workflows with:
+
+- `defineWorkflow({ start })` as the workflow definition boundary.
+- `step(...)` for continuation steps.
+- `done(...)` for successful completion.
+- Workflow-level `agents` declarations for provider-neutral roles.
+- Step-level `agent` selection for agent-backed steps.
+- `shape`, `jsonSchema`, and `promptTemplate` helpers re-exported from `@stepkit/core`.
+
+Workflow inputs and outputs should be JSON objects validated by a shape or JSON Schema.
+
+## Example
 
 ```ts
 import { defineWorkflow, done, shape, step } from "@stepkit/authoring";
@@ -24,9 +34,7 @@ export const sampleWorkflow = defineWorkflow({
   inputShape: shape({ name: "string" }),
   outputShape: shape({ greeting: "string" }),
   start(input) {
-    return step({
-      id: "prepare",
-    })
+    return step({ id: "prepare" })
       .prompt(({ input }) => `Write a concise greeting for ${input.name}.`, {
         output: shape({ greeting: "string" }),
         agent: "writer",
@@ -36,4 +44,4 @@ export const sampleWorkflow = defineWorkflow({
 });
 ```
 
-Published workflow packages should include the `stepkit-workflow` keyword so `stepkit workflows` can discover exported workflows from a consuming project.
+Export workflows from a Node-readable module. Consumers can run direct refs such as `./workflows/sample.ts#sampleWorkflow`, register refs with `stepkit add`, or use bundle refs when a package exposes a StepKit workflow manifest.

@@ -1,84 +1,139 @@
 # StepKit
 
-StepKit is a durable, typed, observable workflow harness for coding agents.
+StepKit is a durable, typed, observable workflow harness for coding agents. It lets teams author workflows in TypeScript, run them locally through a continuation runtime, and inspect persisted run artifacts after each execution.
 
-StepKit is a clean-slate project and is separate from Workflower. It defines a workflow harness direction without depending on Workflower internals.
+## Package status
 
-## Current status
+Initial public publish set:
 
-StepKit supports local TypeScript-authored workflows: packages define workflows with the authoring package, expose them from npm-style workflow packages or direct Node-loadable workflow files, discover compatible package exports with the CLI, register convenient refs, and run workflows through the core continuation runtime with persisted run events.
+- `@stepkit/core` — framework-neutral runtime, schema helpers, continuation execution, run artifacts, retry events, and agent/interactive step primitives.
+- `@stepkit/authoring` — TypeScript authoring helpers built on core: `defineWorkflow`, `step`, `done`, shapes, prompts, and agent role declarations.
+- `@stepkit/cli` — `stepkit` command for initialization, agent configuration, workflow registration/discovery, local runs, interactive continuation, retry, doctor, and update flows.
+- `@stepkit/create-flows` — reusable general-purpose StepKit workflows for planning, implementing, and reviewing feature work.
 
-New workflow work should use the continuation model. Workflows are registered as package exports, start from `defineWorkflow({ ... start })`, invoke work through `step(...)`, return the next node from each continuation, and finish with `done(...)`.
+Not-yet-published workspace packages:
 
-Command-backed local agents are the default path: workflows declare roles, steps reference those roles, and users map roles and size tiers in `.stepkit/config.json`.
+- `@stepkit/testkit` — not part of the initial public publish set; currently internal workflow testing utilities.
+- `@stepkit/dashboard` — not part of the initial public publish set; currently internal local observability UI work.
 
-## Packages
+## Install
 
-- `@stepkit/core` (`packages/core`) for schema validation, continuation workflow execution, conservative automatic retry for safe pre-dispatch failures, run directories, event artifacts, provider-agnostic command-agent seams, prompt rendering, structured output parsing, and interactive step orchestration.
-- `@stepkit/authoring` (`packages/authoring`) for TypeScript authoring APIs such as `defineWorkflow`, workflow-level `agents`, step-level `agent`, `step`, `done`, simple shapes, and function prompts.
-- `@stepkit/cli` (`packages/cli`) for direct workflow files, registered refs, bundle refs, legacy package-qualified workflow discovery, JSON input loading, manual retry, skill checks, and local execution.
-- `@stepkit/testkit` (`packages/testkit`) for workflow and step validation helpers.
-- `@stepkit/dashboard` (`packages/dashboard`) for local observability and inspection surfaces over `.stepkit/runs` artifacts.
+Install the packages you need in the project that will run workflows:
 
-## CLI quick start
+```bash
+pnpm add @stepkit/core
+pnpm add @stepkit/authoring
+pnpm add -D @stepkit/cli
+pnpm add @stepkit/create-flows
+```
 
-In a consuming project with a dependency whose `package.json` includes the `stepkit-workflow` keyword, export a workflow from that package. Agent steps should use workflow-level `agents` and step-level `agent`.
+Equivalent `npm`, `yarn`, or `bun` commands work as long as the packages are installed in the consuming project. StepKit does not use an npm postinstall prompt; setup is explicit through `stepkit init`.
+
+## Initialize StepKit and the agent skill
+
+Create configuration interactively:
+
+```bash
+stepkit init
+```
+
+The CLI prompts for scope and agent settings when they are omitted. You can also be explicit:
+
+```bash
+stepkit init --scope project --install-skill
+stepkit init --scope project --no-install-skill
+```
+
+`--install-skill` installs the packaged StepKit usage skill during init. `--no-install-skill` skips that step without prompting. There is no npm postinstall prompt.
+
+Use `stepkit agents` later to update provider and model mappings. Workflows declare provider-neutral roles; local config maps those roles to command-backed agent targets.
+
+## Author a workflow
+
+New workflows should use the continuation authoring model: `defineWorkflow({ start })`, `step(...)`, and `done(...)`. Workflow inputs should be JSON object inputs.
 
 ```ts
 import { defineWorkflow, done, shape, step } from "@stepkit/authoring";
 
 export const helloWorkflow = defineWorkflow({
   id: "hello",
+  agents: {
+    writer: { size: "small" },
+  },
   inputShape: shape({ name: "string" }),
   outputShape: shape({ greeting: "string" }),
   start(input) {
-    return step({
-      id: "greet",
-    }).do(({ name }) => done({ greeting: `Hello, ${name}!` }))(input);
+    return step({ id: "write-greeting" })
+      .prompt(({ input }) => `Write a friendly greeting for ${input.name}.`, {
+        output: shape({ greeting: "string" }),
+        agent: "writer",
+      })
+      .do((output) => done(output))(input);
   },
 });
 ```
 
-A conceptual `.stepkit/config.json` maps reusable `customProviders`, `agents.*.items`, and workflow role bindings.
+Use workflow-level `agents` to name roles and defaults, then use step-level `agent` to choose the role for a specific agent step. Code steps can return another `step(...)` continuation or `done(...)`.
 
-Then run it from the consuming project using a direct local file, a registered ref, a bundle ref, or the legacy package-export form:
+## Run workflows
 
-```bash
-stepkit init
-stepkit agents
-stepkit ./workflows/hello.mjs --input-file input.json
-stepkit ./workflows/hello.mjs hello-run --input-file input.json
-stepkit project/hello
-stepkit user/cleanup
-stepkit @acme/workflows#hello
-stepkit retry <workflow-ref> hello-run
-```
-
-Run names are optional when starting a run; StepKit generates one if omitted. `stepkit retry` reruns from the latest unresolved failure in an existing `.stepkit/runs/<workflowRunName>` directory. Automatic retry is conservative and limited to safe pre-dispatch failures; use `maxAttempts: 1` on the effective retry policy to disable it. `stepkit workflows` reports registered refs grouped by scope and then legacy package export discovery.
-
-Runs create `.stepkit/runs/<actualRunName>/` in the consuming project. Events are written to `.stepkit/runs/<actualRunName>/events.jsonl`.
-
-Interactive steps use a file-based completion protocol. StepKit writes `interactive.json` and waits for the launched agent to run `stepkit continue`. Default interactive steps ask the agent to write a dense `session-description.md` and continue with `stepkit continue --session-file session-description.md`; structured interactive steps continue with `stepkit continue --json-file output.json` or `stepkit continue --json '{...}'`. When an agent receives the prompt directly, no `prompt.txt` artifact is created; `prompt.txt` exists only for commands configured with `{{promptFile}}`. Interactive steps now complete through `stepkit continue` and no longer return an opaque `{ exitCode }` object by default.
-
-## Setup
+The CLI accepts direct refs, registered refs, and bundle refs:
 
 ```bash
-pnpm install
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
+# Direct refs
+stepkit ./workflows/hello.ts --input '{"name":"Ada"}'
+stepkit ./workflows/index.ts#helloWorkflow hello-run --input-file input.json
+
+# Registered refs
+stepkit add ./workflows/hello.ts --scope project
+stepkit project/hello --input-file input.json
+
+# Bundle refs
+stepkit add @stepkit/create-flows --workflow takeItAway
+stepkit @stepkit/create-flows#takeItAway --input-file feature-request.json
 ```
 
-Use Node 24 or newer. The intended remote is `git@github-personal:chily-john/stepkit.git`.
+A run name is optional when starting a run; StepKit generates one if omitted. Inputs loaded from `--input` or `--input-file` must be JSON objects.
 
-## Documentation and release readiness
+Interactive steps complete with `stepkit continue`. Default interactive steps use:
 
-Implementation guidance lives in `.pi/rules/` and package `README.md` files. GitHub branch-protection guidance lives in `.github/branch-protection.md`.
+```bash
+stepkit continue --session-file session-description.md
+```
 
-Public release readiness checks focus on package metadata and generated local artifact exclusions:
+Structured interactive steps can use:
+
+```bash
+stepkit continue --json-file output.json
+stepkit continue --json '{"ok":true}'
+```
+
+If a run fails or is interrupted, use StepKit retry support:
+
+```bash
+stepkit retry <workflow-ref> <runName>
+```
+
+Use `stepkit retry`; do not invent separate workflow resume mechanisms. Provider-specific resume flags, when a provider supports them, are separate from StepKit workflow retry.
+
+## Run artifacts and local files
+
+Runs write runtime outputs under `.stepkit/runs/<runName>/`, including event streams and per-step artifacts. `.stepkit/runs` artifacts are runtime outputs and should not be manually mutated. Inspect them for observability, but recover failed work with `stepkit retry` or by starting a new run.
+
+Local artifacts are ignored by default. Project config can be committed from `.stepkit/config.json`, while personal overrides such as `.stepkit/config-local.json`, run directories, and other generated local outputs stay out of source control.
+
+## Public release validation
+
+Useful local checks before a public release or documentation change:
 
 ```bash
 pnpm check:public-packages
+node scripts/check-public-docs.mjs
 node scripts/check-local-artifact-ignore.mjs
+pnpm check:verification-cleanup
+pnpm typecheck
+pnpm lint
+pnpm test
 ```
+
+These checks verify public package metadata, npm-facing documentation, local artifact ignore rules, stale verification-script cleanup, and normal TypeScript/lint/test health.

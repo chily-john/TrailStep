@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
@@ -56,7 +56,11 @@ function assertNoTrackedLocalArtifacts() {
     .split(/\r?\n/u)
     .filter(Boolean);
 
-  assert.deepEqual(tracked, [], `Local agent/runtime artifacts must not be tracked: ${tracked.join(", ")}`);
+  assert.deepEqual(
+    tracked,
+    [],
+    `Local agent/runtime artifacts must not be tracked: ${tracked.join(", ")}`,
+  );
 }
 
 function assertPackageFilesExcludeLocalArtifacts() {
@@ -70,7 +74,12 @@ function assertPackageFilesExcludeLocalArtifacts() {
     }
   }
 
-  const localArtifactPatterns = [/^\.stepkit(?:\/|$)/u, /^\.claude(?:\/|$)/u, /^agent\/skills(?:\/|$)/u, /^skills-lock(?:\.json)?$/u];
+  const localArtifactPatterns = [
+    /^\.stepkit(?:\/|$)/u,
+    /^\.claude(?:\/|$)/u,
+    /^agent\/skills(?:\/|$)/u,
+    /^skills-lock(?:\.json)?$/u,
+  ];
 
   for (const packageJsonPath of packageJsonPaths) {
     const manifest = readJson(packageJsonPath);
@@ -87,7 +96,13 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-for (const pattern of [".stepkit/", ".claude/", "agent/skills/", "skills-lock", "skills-lock.json"]) {
+for (const pattern of [
+  ".stepkit/",
+  ".claude/",
+  "agent/skills/",
+  "skills-lock",
+  "skills-lock.json",
+]) {
   assertGitignorePattern(pattern);
 }
 

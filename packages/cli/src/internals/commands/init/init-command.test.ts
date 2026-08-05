@@ -115,6 +115,72 @@ describe("initCommand", () => {
     });
   });
 
+  it("installs the packaged StepKit usage skill when --install-skill is passed", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project", "--install-skill"]);
+    const lines: string[] = [];
+    const skillsCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    expect(() =>
+      command.parseArgs(["init", "--scope", "project", "--install-skill"]),
+    ).not.toThrow();
+
+    const exitCode = await command.run(
+      command.parseArgs(["init", "--scope", "project", "--install-skill"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+        prompts: {
+          async text(prompt) {
+            if (prompt === "Model") {
+              return "sonnet";
+            }
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+          async select(prompt, choices) {
+            if (prompt === "Provider") {
+              expect(choices).toContain("claude");
+              return "claude";
+            }
+            if (prompt === "Thinking") {
+              expect(choices).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+              return "none";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          async confirm(prompt) {
+            if (prompt === "Configure another agent?") {
+              return false;
+            }
+            throw new Error(`Unexpected confirm prompt: ${prompt}`);
+          },
+        },
+        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+        skillsCliProcessRunner: async (commandName, args) => {
+          skillsCalls.push({ command: commandName, args });
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(skillsCalls).toHaveLength(1);
+    expect(skillsCalls[0]?.command).toBe(process.execPath);
+    expect(skillsCalls[0]?.args.slice(0, 3)).toEqual([
+      "/repo/node_modules/skills/dist/index.js",
+      "add",
+      expect.stringContaining("stepkit-skill"),
+    ]);
+    expect(skillsCalls[0]?.args.slice(3)).toEqual(["--agent", "*", "-y"]);
+    expect(lines).toContain("Installed StepKit usage skill.");
+  });
+
   it("rejects omitted scope when prompts are unavailable", async () => {
     const command = resolveCommand(["init"]);
 

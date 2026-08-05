@@ -8,6 +8,7 @@ import { configureLiteralAgentTarget } from "../../agent-config/configure-target
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
+import { installPackagedStepKitSkill } from "../../stepkit-skill/stepkit-skill.js";
 import {
   configPathForScope,
   readRawStepKitConfigFile,
@@ -17,6 +18,7 @@ import {
 
 interface InitCommandArgs {
   readonly scope?: WorkflowRegistryScope;
+  readonly installSkill: boolean;
 }
 
 const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
@@ -37,7 +39,10 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       );
     }
 
-    return scope === undefined ? {} : { scope };
+    return {
+      ...(scope === undefined ? {} : { scope }),
+      installSkill: flags.installSkill === "true",
+    };
   },
   async run(args: InitCommandArgs, context: CliCommandContext): Promise<number> {
     const scope =
@@ -69,6 +74,18 @@ export const initCommand: CliCommand<InitCommandArgs> = {
 
     await writeRawStepKitConfigFile(configPath, nextConfig);
     context.io.writeLine(`Wrote StepKit agent config to ${configPath}.`);
+
+    if (args.installSkill) {
+      try {
+        await installPackagedStepKitSkill(scope, context);
+      } catch (error) {
+        throw new CliUsageError(
+          `Failed to install StepKit usage skill: ${error instanceof Error ? error.message : "unknown error"}`,
+        );
+      }
+      context.io.writeLine("Installed StepKit usage skill.");
+    }
+
     return 0;
   },
 };
@@ -78,6 +95,11 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
 
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
+    if (option === "--install-skill") {
+      flags.installSkill = "true";
+      continue;
+    }
+
     if (option !== "--scope") {
       throw new CliUsageError(`Unknown option for stepkit init: ${option ?? ""}`);
     }

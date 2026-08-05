@@ -28,6 +28,7 @@
   },
   "files": [
     "dist",
+    "stepkit-skill",
     "README.md",
     "LICENSE"
   ],

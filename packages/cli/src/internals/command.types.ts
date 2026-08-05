@@ -6,7 +6,7 @@ export const usageText = [
   "Usage:",
   "  stepkit add <workflow-file-or-bundle> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
   "  stepkit remove <namespace>/<name> [--scope <local|project|global>]",
-  "  stepkit init [--scope <local|project|global>]",
+  "  stepkit init [--scope <local|project|global>] [--install-skill]",
   "  stepkit agents",
   "  stepkit agents set <name> --provider <provider> --model <model> [--thinking <none|low|medium|high|xhigh|max>] --scope <local|project|global>",
   "  stepkit agents delete <name> --scope <local|project|global>",

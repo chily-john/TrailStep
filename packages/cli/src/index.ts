@@ -12,6 +12,10 @@ import { resolveCommand } from "./internals/command-registry.js";
 import { CliInputError } from "./internals/commands/run/load-run-input.js";
 import { CliConfigError } from "./internals/config/config.js";
 import type { StepKitDeprecationEntry } from "./internals/deprecation-scan/deprecation-scanner.js";
+import type {
+  SkillsCliProcessRunner,
+  SkillsCliResolver,
+} from "./internals/workflow-skills/skills-cli.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
 import { WorkflowResolutionError } from "./internals/workflow-resolution/workflow-resolution-error.js";
 
@@ -45,6 +49,8 @@ export interface StepkitMainOptions {
   env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
+  skillsCliResolver?: SkillsCliResolver;
+  skillsCliProcessRunner?: SkillsCliProcessRunner;
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
   prompts?: StepkitCliPrompts;
@@ -69,6 +75,8 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
     env: options.env ?? process?.env ?? {},
     processRunner: options.processRunner,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
+    skillsCliResolver: options.skillsCliResolver,
+    skillsCliProcessRunner: options.skillsCliProcessRunner,
     runNameClock: options.runNameClock,
     runNameRandomSuffix: options.runNameRandomSuffix,
     packageCommandRunner: options.packageCommandRunner,

@@ -47,6 +47,9 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
+          if (prompt === "Install the StepKit usage/authoring skill?") {
+            return false;
+          }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
         },
       },
@@ -100,6 +103,9 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return confirmAnswers.shift() ?? false;
           }
+          if (prompt === "Install the StepKit usage/authoring skill?") {
+            return false;
+          }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
         },
       },
@@ -113,6 +119,140 @@ describe("initCommand", () => {
         reviewer: [{ provider: "local-agent" }],
       },
     });
+  });
+
+  it("prompts interactively to install the StepKit usage skill when no skill flag is passed", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project"]);
+    const confirmPrompts: string[] = [];
+    const skillsCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const exitCode = await command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        async text(prompt) {
+          if (prompt === "Model") {
+            return "sonnet";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+        async select(prompt) {
+          if (prompt === "Provider") {
+            return "claude";
+          }
+          if (prompt === "Thinking") {
+            return "none";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        async confirm(prompt) {
+          confirmPrompts.push(prompt);
+          if (prompt === "Configure another agent?") {
+            return false;
+          }
+          if (prompt === "Install the StepKit usage/authoring skill?") {
+            return true;
+          }
+          throw new Error(`Unexpected confirm prompt: ${prompt}`);
+        },
+      },
+      skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+      skillsCliProcessRunner: async (commandName, args) => {
+        skillsCalls.push({ command: commandName, args });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(confirmPrompts).toContain("Install the StepKit usage/authoring skill?");
+    expect(skillsCalls).toHaveLength(1);
+  });
+
+  it("skips skill installation without prompting when --no-install-skill is passed", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project", "--no-install-skill"]);
+    const confirmPrompts: string[] = [];
+    const skillsCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const exitCode = await command.run(
+      command.parseArgs(["init", "--scope", "project", "--no-install-skill"]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          async text(prompt) {
+            if (prompt === "Model") {
+              return "sonnet";
+            }
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+          async select(prompt) {
+            if (prompt === "Provider") {
+              return "claude";
+            }
+            if (prompt === "Thinking") {
+              return "none";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          async confirm(prompt) {
+            confirmPrompts.push(prompt);
+            if (prompt === "Configure another agent?") {
+              return false;
+            }
+            throw new Error(`Unexpected confirm prompt: ${prompt}`);
+          },
+        },
+        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+        skillsCliProcessRunner: async (commandName, args) => {
+          skillsCalls.push({ command: commandName, args });
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(confirmPrompts).not.toContain("Install the StepKit usage/authoring skill?");
+    expect(skillsCalls).toHaveLength(0);
+  });
+
+  it("rejects conflicting --install-skill and --no-install-skill flags", () => {
+    const command = resolveCommand(["init", "--install-skill", "--no-install-skill"]);
+
+    expect(() =>
+      command.parseArgs(["init", "--install-skill", "--no-install-skill"]),
+    ).toThrow(CliUsageError);
+  });
+
+  it("does not ask a skill prompt when prompts are unavailable", async () => {
+    const command = resolveCommand(["init", "--scope", "project"]);
+    const skillsCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    await expect(
+      command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+        cwd: ".",
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+        skillsCliProcessRunner: async (commandName, args) => {
+          skillsCalls.push({ command: commandName, args });
+          return { exitCode: 0 };
+        },
+      }),
+    ).rejects.toBeInstanceOf(CliUsageError);
+    expect(skillsCalls).toHaveLength(0);
   });
 
   it("installs the packaged StepKit usage skill when --install-skill is passed", async ({

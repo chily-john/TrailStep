@@ -321,6 +321,113 @@ describe("initCommand", () => {
     expect(lines).toContain("Installed StepKit usage skill.");
   });
 
+  it("installs the packaged StepKit usage skill globally for --scope global", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-stepkit-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+      "home",
+    );
+    const command = resolveCommand(["init", "--scope", "global", "--install-skill"]);
+    const skillsCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const exitCode = await command.run(
+      command.parseArgs(["init", "--scope", "global", "--install-skill"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          async text(prompt) {
+            if (prompt === "Model") {
+              return "sonnet";
+            }
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+          async select(prompt) {
+            if (prompt === "Provider") {
+              return "claude";
+            }
+            if (prompt === "Thinking") {
+              return "none";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          async confirm(prompt) {
+            if (prompt === "Configure another agent?") {
+              return false;
+            }
+            throw new Error(`Unexpected confirm prompt: ${prompt}`);
+          },
+        },
+        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+        skillsCliProcessRunner: async (commandName, args) => {
+          skillsCalls.push({ command: commandName, args });
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(skillsCalls[0]?.args.slice(-1)).toEqual(["-g"]);
+    expect(await readJson(resolve(homeDir, ".stepkit", "config.json"))).toEqual({
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
+    });
+  });
+
+  it("reports skill installation failures after writing agent config", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-stepkit-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project", "--install-skill"]);
+
+    await expect(
+      command.run(command.parseArgs(["init", "--scope", "project", "--install-skill"]) as never, {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          async text(prompt) {
+            if (prompt === "Model") {
+              return "sonnet";
+            }
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+          async select(prompt) {
+            if (prompt === "Provider") {
+              return "claude";
+            }
+            if (prompt === "Thinking") {
+              return "none";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          async confirm(prompt) {
+            if (prompt === "Configure another agent?") {
+              return false;
+            }
+            throw new Error(`Unexpected confirm prompt: ${prompt}`);
+          },
+        },
+        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+        skillsCliProcessRunner: async () => ({ exitCode: 2 }),
+      }),
+    ).rejects.toThrow(
+      "Failed to install StepKit usage skill after writing StepKit agent config: skills CLI exited with code 2.",
+    );
+
+    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
+    });
+  });
+
   it("rejects omitted scope when prompts are unavailable", async () => {
     const command = resolveCommand(["init"]);
 

@@ -13,7 +13,7 @@ describe("listRunSummaries", () => {
 
     await writeFile(
       join(runDir, "events.jsonl"),
-      [
+      `${[
         eventLine({
           id: "event-1",
           type: "workflow.started",
@@ -51,7 +51,7 @@ describe("listRunSummaries", () => {
           timestamp: "2026-07-31T00:00:05.000Z",
           payload: { output: {} },
         }),
-      ].join("\n") + "\n",
+      ].join("\n")}\n`,
       "utf8",
     );
 

@@ -14,6 +14,10 @@ import { CliConfigError } from "./internals/config/config.js";
 import type { TrailStepDeprecationEntry } from "./internals/deprecation-scan/deprecation-scanner.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
 import { WorkflowResolutionError } from "./internals/workflow-resolution/workflow-resolution-error.js";
+import type {
+  SkillsCliProcessRunner,
+  SkillsCliResolver,
+} from "./internals/workflow-skills/skills-cli.js";
 
 export { CliInputError, loadJsonInput } from "./internals/commands/run/load-run-input.js";
 export type { InputSource } from "./internals/commands/run/run-command.types.js";
@@ -53,6 +57,8 @@ export interface TrailStepMainOptions {
   env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
+  skillsCliResolver?: SkillsCliResolver;
+  skillsCliProcessRunner?: SkillsCliProcessRunner;
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
   prompts?: TrailStepCliPrompts;
@@ -77,6 +83,8 @@ export async function main(options: TrailStepMainOptions = {}): Promise<number> 
     env: options.env ?? process?.env ?? {},
     processRunner: options.processRunner,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
+    skillsCliResolver: options.skillsCliResolver,
+    skillsCliProcessRunner: options.skillsCliProcessRunner,
     runNameClock: options.runNameClock,
     runNameRandomSuffix: options.runNameRandomSuffix,
     packageCommandRunner: options.packageCommandRunner,

@@ -17,7 +17,7 @@ This root context file contains a map of the codebase. Path-scoped context files
 │   ├── cli/              # `trailstep` workflow discovery, skill checks, config loading, and local execution command
 │   ├── testkit/          # Workflow testing utilities package surface
 │   └── dashboard/        # Svelte/Vite local workflow run observability UI
-├── scripts/              # Repository invariant checks used locally and by CI
+├── scripts/              # Local release-readiness and artifact hygiene checks
 ├── .github/              # CI, release, dependency review, CODEOWNERS, PR/branch-protection guidance
 └── .changeset/           # Changesets release/versioning configuration
 ```
@@ -30,9 +30,9 @@ This root context file contains a map of the codebase. Path-scoped context files
 - Test: `pnpm test`
 - Build: `pnpm build`
 - Format: `pnpm format`
-- Verify repository docs: `node scripts/verify-repository-docs.mjs`
-- Verify package metadata: `node scripts/verify-package-metadata.mjs`
-- Verify GitHub config: `node scripts/verify-github-config.mjs`
+- Public package metadata readiness: `pnpm check:public-packages`
+- Local artifact ignore readiness: `node scripts/check-local-artifact-ignore.mjs`
+- Verify stale verification-script cleanup: `pnpm check:verification-cleanup`
 
 ## Environment
 

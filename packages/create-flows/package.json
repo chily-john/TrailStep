@@ -1,8 +1,7 @@
 {
   "name": "@trailstep/create-flows",
-  "version": "0.0.0",
-  "description": "Personal TrailStep workflows.",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Public reusable general-purpose TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -40,5 +39,16 @@
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@trailstep/authoring": "^0.1.0"
   }
 }

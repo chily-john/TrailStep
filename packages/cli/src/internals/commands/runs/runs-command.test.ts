@@ -12,7 +12,7 @@ describe("runs command", () => {
     await mkdir(runDir, { recursive: true });
     await writeFile(
       join(runDir, "events.jsonl"),
-      [
+      `${[
         eventLine({
           id: "event-1",
           type: "workflow.started",
@@ -48,7 +48,7 @@ describe("runs command", () => {
           type: "workflow.completed",
           timestamp: "2026-07-31T00:00:05.000Z",
         }),
-      ].join("\n") + "\n",
+      ].join("\n")}\n`,
       "utf8",
     );
 

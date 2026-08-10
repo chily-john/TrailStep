@@ -1,5 +1,5 @@
 # @trailstep/testkit
 
-Reusable testing utilities package for TrailStep workflows.
+`@trailstep/testkit` is not part of the initial public publish set.
 
-Use this package for helpers that validate observable workflow behavior, prompt rendering, runtime events, and failure paths across TrailStep packages.
+This workspace package contains testing utilities for TrailStep workflows and packages while the public testing surface is still being finalized.

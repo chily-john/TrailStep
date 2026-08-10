@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Command-line discovery and execution for TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
@@ -29,7 +29,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "trailstep-skill"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
@@ -45,7 +46,7 @@
     "tsx": "^4.23.1"
   },
   "peerDependencies": {
-    "@trailstep/core": "^0.0.0"
+    "@trailstep/core": "^0.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

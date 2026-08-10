@@ -2,11 +2,18 @@ node_modules/
 dist/
 coverage/
 .turbo/
+graphify-out/
+
+# Local agent/runtime artifacts
+.trailstep/
+.claude/
 .pi/*
 !.pi/rules/
 !.pi/rules/**
 .workflower/
-graphify-out/
+agent/skills/
+skills-lock
+skills-lock.json
 .vite/
 mock-local-test/
 .env

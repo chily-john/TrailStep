@@ -6,7 +6,7 @@ export const usageText = [
   "Usage:",
   "  trailstep add <workflow-file-or-bundle> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
   "  trailstep remove <namespace>/<name> [--scope <local|project|global>]",
-  "  trailstep init [--scope <local|project|global>]",
+  "  trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
   "  trailstep agents",
   "  trailstep agents set <name> --provider <provider> --model <model> [--thinking <none|low|medium|high|xhigh|max>] --scope <local|project|global>",
   "  trailstep agents delete <name> --scope <local|project|global>",

@@ -8,6 +8,7 @@ import { configureLiteralAgentTarget } from "../../agent-config/configure-target
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
+import { installPackagedTrailStepSkill } from "../../trailstep-skill/trailstep-skill.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
@@ -15,11 +16,15 @@ import {
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 
+type SkillInstallMode = "prompt" | "install" | "skip";
+
 interface InitCommandArgs {
   readonly scope?: WorkflowRegistryScope;
+  readonly skillInstallMode: SkillInstallMode;
 }
 
 const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
+const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage/authoring skill?";
 const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
 
 export const initCommand: CliCommand<InitCommandArgs> = {
@@ -37,7 +42,10 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       );
     }
 
-    return scope === undefined ? {} : { scope };
+    return {
+      ...(scope === undefined ? {} : { scope }),
+      skillInstallMode: resolveSkillInstallMode(flags),
+    };
   },
   async run(args: InitCommandArgs, context: CliCommandContext): Promise<number> {
     const scope =
@@ -69,6 +77,12 @@ export const initCommand: CliCommand<InitCommandArgs> = {
 
     await writeRawTrailStepConfigFile(configPath, nextConfig);
     context.io.writeLine(`Wrote TrailStep agent config to ${configPath}.`);
+
+    if (await shouldInstallSkill(args.skillInstallMode, context)) {
+      await installTrailStepSkillOrThrow(scope, context);
+      context.io.writeLine("Installed TrailStep usage skill.");
+    }
+
     return 0;
   },
 };
@@ -78,6 +92,16 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
 
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
+    if (option === "--install-skill") {
+      flags.installSkill = "true";
+      continue;
+    }
+
+    if (option === "--no-install-skill") {
+      flags.noInstallSkill = "true";
+      continue;
+    }
+
     if (option !== "--scope") {
       throw new CliUsageError(`Unknown option for trailstep init: ${option ?? ""}`);
     }
@@ -92,6 +116,55 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
   }
 
   return flags;
+}
+
+function resolveSkillInstallMode(flags: Record<string, string | undefined>): SkillInstallMode {
+  if (flags.installSkill === "true" && flags.noInstallSkill === "true") {
+    throw new CliUsageError("Use only one of --install-skill or --no-install-skill.");
+  }
+  if (flags.installSkill === "true") {
+    return "install";
+  }
+  if (flags.noInstallSkill === "true") {
+    return "skip";
+  }
+  return "prompt";
+}
+
+async function shouldInstallSkill(
+  mode: SkillInstallMode,
+  context: CliCommandContext,
+): Promise<boolean> {
+  if (mode === "install") {
+    return true;
+  }
+  if (mode === "skip" || context.prompts === undefined) {
+    return false;
+  }
+  if (context.prompts.confirm !== undefined) {
+    return context.prompts.confirm(SKILL_INSTALL_PROMPT_LABEL);
+  }
+  return (
+    (await promptSelect(
+      SKILL_INSTALL_PROMPT_LABEL,
+      ["no", "yes"] as const,
+      context.prompts,
+      "trailstep init requires a yes/no answer.",
+    )) === "yes"
+  );
+}
+
+async function installTrailStepSkillOrThrow(
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<void> {
+  try {
+    await installPackagedTrailStepSkill(scope, context);
+  } catch (error) {
+    throw new CliUsageError(
+      `Failed to install TrailStep usage skill after writing TrailStep agent config: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 }
 
 async function addConfiguredAgentEntry(

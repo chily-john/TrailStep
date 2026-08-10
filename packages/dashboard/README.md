@@ -1,5 +1,5 @@
 # @trailstep/dashboard
 
-Svelte/Vite local observability UI for TrailStep workflow runs.
+`@trailstep/dashboard` is not part of the initial public publish set.
 
-The dashboard lists local run directories under `.trailstep/runs`, summarizes run status from persisted events, and streams run events over a read-only Vite dev-server API.
+This workspace package contains a Svelte/Vite observability UI for local TrailStep run artifacts under `.trailstep/runs`.

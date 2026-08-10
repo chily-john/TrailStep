@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/testkit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Testing utilities for TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,9 +12,6 @@
     "url": "https://github.com/chily-john/trailstep/issues"
   },
   "homepage": "https://github.com/chily-john/trailstep#readme",
-  "publishConfig": {
-    "access": "public"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -39,5 +36,6 @@
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
-  }
+  },
+  "private": true
 }

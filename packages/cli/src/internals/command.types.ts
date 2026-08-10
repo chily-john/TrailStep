@@ -1,5 +1,5 @@
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
-import type { StepKitDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
+import type { TrailStepDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
 import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skills/skills-cli.js";
 
 export const usageText = [
@@ -91,7 +91,7 @@ export interface CliCommandContext {
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
   packageCommandRunner?: PackageCommandRunner;
-  deprecationManifest?: readonly StepKitDeprecationEntry[];
+  deprecationManifest?: readonly TrailStepDeprecationEntry[];
 }
 
 export interface CliCommand<TArgs> {

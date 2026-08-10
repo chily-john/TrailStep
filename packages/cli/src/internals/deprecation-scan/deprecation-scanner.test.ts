@@ -13,7 +13,7 @@ async function writeSource(cwd: string, contents: string): Promise<string> {
 }
 
 function tmpDir(task: { readonly id: string }, variant: string): string {
-  return join("node_modules", ".tmp-stepkit-deprecation-scanner-tests", `${task.id}-${variant}`);
+  return join("node_modules", ".tmp-trailstep-deprecation-scanner-tests", `${task.id}-${variant}`);
 }
 
 describe("scanWorkflowSourceForDeprecations", () => {

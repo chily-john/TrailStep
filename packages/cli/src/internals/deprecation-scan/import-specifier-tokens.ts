@@ -19,7 +19,7 @@ const IMPORT_CLAUSE_PATTERN =
 const ALIASED_IMPORT_CLAUSE = /^(?:type\s+)?[A-Za-z_$][\w$]*\s+as\s+[A-Za-z_$][\w$]*$/u;
 const SYMBOL_IMPORT_CLAUSE = /^(?:type\s+)?([A-Za-z_$][\w$]*)$/u;
 
-export function extractStepKitImportTokens(sourceText: string): readonly ImportSpecifierToken[] {
+export function extractTrailStepImportTokens(sourceText: string): readonly ImportSpecifierToken[] {
   const tokens: ImportSpecifierToken[] = [];
 
   for (const importMatch of sourceText.matchAll(IMPORT_CLAUSE_PATTERN)) {

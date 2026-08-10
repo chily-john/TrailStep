@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import type { PackageCommandRequest } from "../../command.types.js";
-import { resolveStepKitSelfUpdateTargets, UpdateTargetResolutionError } from "./update-targets.js";
+import { resolveTrailStepSelfUpdateTargets, UpdateTargetResolutionError } from "./update-targets.js";
 
 async function writeRootPackageJson(cwd: string) {
   await mkdir(cwd, { recursive: true });
@@ -29,14 +29,14 @@ function registryRunner(metadata: Record<string, unknown>, requests: PackageComm
   };
 }
 
-describe("resolveStepKitSelfUpdateTargets", () => {
+describe("resolveTrailStepSelfUpdateTargets", () => {
   it("selects the latest stable core and matching stable authoring and CLI peers", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
-    const plan = await resolveStepKitSelfUpdateTargets({
+    const plan = await resolveTrailStepSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
         "@trailstep/core": [{ version: "1.0.0" }, { version: "1.1.0-beta.1" }, { version: "1.1.0" }],
@@ -78,10 +78,10 @@ describe("resolveStepKitSelfUpdateTargets", () => {
   it("selects authoring and CLI versions using npm semver range compatibility", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
-    const plan = await resolveStepKitSelfUpdateTargets({
+    const plan = await resolveTrailStepSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
         "@trailstep/core": [{ version: "1.5.0" }],
@@ -123,10 +123,10 @@ describe("resolveStepKitSelfUpdateTargets", () => {
   it("ignores prerelease authoring and CLI candidates when compatible stable versions exist", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
-    const plan = await resolveStepKitSelfUpdateTargets({
+    const plan = await resolveTrailStepSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
         "@trailstep/core": [{ version: "1.5.0" }],
@@ -149,11 +149,11 @@ describe("resolveStepKitSelfUpdateTargets", () => {
   });
 
   it("blocks when no authoring version peer range satisfies the target core", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
     await expect(
-      resolveStepKitSelfUpdateTargets({
+      resolveTrailStepSelfUpdateTargets({
         cwd,
         packageCommandRunner: registryRunner({
           "@trailstep/core": [{ version: "2.0.0" }],
@@ -167,11 +167,11 @@ describe("resolveStepKitSelfUpdateTargets", () => {
   });
 
   it("blocks when no CLI version peer range satisfies the target core", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
     await writeRootPackageJson(cwd);
 
     await expect(
-      resolveStepKitSelfUpdateTargets({
+      resolveTrailStepSelfUpdateTargets({
         cwd,
         packageCommandRunner: registryRunner({
           "@trailstep/core": [{ version: "2.0.0" }],

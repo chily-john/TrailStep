@@ -1,17 +1,17 @@
 import { resolveInstalledPackageManifest } from "../discovery/discovery.js";
 
-export interface ResolveInstalledStepKitVersionsOptions {
+export interface ResolveInstalledTrailStepVersionsOptions {
   readonly cwd: string;
 }
 
-export type InstalledStepKitVersions = ReadonlyMap<
+export type InstalledTrailStepVersions = ReadonlyMap<
   string,
   { readonly installedVersion?: string; readonly targetVersion: string }
 >;
 
-export async function resolveInstalledStepKitVersions({
+export async function resolveInstalledTrailStepVersions({
   cwd,
-}: ResolveInstalledStepKitVersionsOptions): Promise<InstalledStepKitVersions> {
+}: ResolveInstalledTrailStepVersionsOptions): Promise<InstalledTrailStepVersions> {
   const versions = new Map<
     string,
     { readonly installedVersion?: string; readonly targetVersion: string }

@@ -7,7 +7,7 @@ import { rewritePackageJsonDependencies } from "./package-json-rewrite.js";
 
 describe("rewritePackageJsonDependencies", () => {
   it("preserves caret, tilde, and exact dependency range styles", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-json-rewrite-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-json-rewrite-tests", task.id);
     await mkdir(cwd, { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -57,7 +57,7 @@ describe("rewritePackageJsonDependencies", () => {
   it("writes dependencies and devDependencies in the same sections they came from", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-json-rewrite-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-json-rewrite-tests", task.id);
     await mkdir(cwd, { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(

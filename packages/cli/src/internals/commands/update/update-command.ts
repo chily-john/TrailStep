@@ -4,7 +4,7 @@ import {
   type DeprecationFinding,
   scanWorkflowSourceForDeprecations,
 } from "../../deprecation-scan/deprecation-scanner.js";
-import { resolveInstalledStepKitVersions } from "../../deprecation-scan/resolve-installed-stepkit-versions.js";
+import { resolveInstalledTrailStepVersions } from "../../deprecation-scan/resolve-installed-trailstep-versions.js";
 import { resolveDeprecationScanTargets } from "../../deprecation-scan/scan-targets.js";
 import { NpmRegistryError } from "../../package-manager/npm-registry.js";
 import { rewritePackageJsonDependencies } from "../../package-manager/package-json-rewrite.js";
@@ -15,8 +15,8 @@ import {
 import { parseUpdateInvocation } from "./parse-update-invocation.js";
 import type { UpdateCommandArgs } from "./update-command.types.js";
 import {
-  resolveStepKitSelfUpdateTargets,
-  type StepKitSelfUpdatePlan,
+  resolveTrailStepSelfUpdateTargets,
+  type TrailStepSelfUpdatePlan,
   UpdateTargetResolutionError,
 } from "./update-targets.js";
 import {
@@ -31,7 +31,7 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
     try {
       const selfPlan =
         args.scope.kind === "self" || args.scope.kind === "all"
-          ? await resolveStepKitSelfUpdateTargets({
+          ? await resolveTrailStepSelfUpdateTargets({
               cwd: context.cwd,
               packageCommandRunner: context.packageCommandRunner,
             })
@@ -138,7 +138,7 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
 interface CollectPreflightFindingsOptions {
   readonly args: UpdateCommandArgs;
   readonly context: CliCommandContext;
-  readonly selfPlan?: StepKitSelfUpdatePlan;
+  readonly selfPlan?: TrailStepSelfUpdatePlan;
   readonly workflowPlan?: WorkflowPackageUpdatePlan;
 }
 
@@ -149,13 +149,13 @@ async function collectPreflightFindings({
   workflowPlan,
 }: CollectPreflightFindingsOptions): Promise<readonly DeprecationFinding[]> {
   const findings: DeprecationFinding[] = [];
-  const installedVersions = await resolveInstalledStepKitVersions({ cwd: context.cwd });
-  const targetStepKitVersions = selfPlan
+  const installedVersions = await resolveInstalledTrailStepVersions({ cwd: context.cwd });
+  const targetTrailStepVersions = selfPlan
     ? versionsForPreflight(installedVersions, selfPlan)
     : installedVersions;
 
   if (selfPlan) {
-    const versionsByPackageName = targetStepKitVersions;
+    const versionsByPackageName = targetTrailStepVersions;
 
     const targets = await resolveDeprecationScanTargets({
       cwd: context.cwd,
@@ -170,7 +170,7 @@ async function collectPreflightFindings({
       target.sourceFiles.map((sourceFile) => ({ sourceFile })),
     );
     const versionsByPackageName =
-      args.scope.kind === "all" ? targetStepKitVersions : installedVersions;
+      args.scope.kind === "all" ? targetTrailStepVersions : installedVersions;
     findings.push(...(await scanTargets(targets, versionsByPackageName, context)));
   }
 
@@ -207,7 +207,7 @@ function versionsForPreflight(
     string,
     { readonly installedVersion?: string; readonly targetVersion: string }
   >,
-  selfPlan: StepKitSelfUpdatePlan,
+  selfPlan: TrailStepSelfUpdatePlan,
 ): Map<string, { readonly installedVersion?: string; readonly targetVersion: string }> {
   const versionsByPackageName = new Map(installedVersions);
   for (const target of selfPlan.targets) {

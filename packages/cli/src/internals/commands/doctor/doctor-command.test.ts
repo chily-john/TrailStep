@@ -11,7 +11,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 function tmpDir(task: { readonly id: string }, variant: string): string {
-  return join("node_modules", ".tmp-stepkit-doctor-command-tests", `${task.id}-${variant}`);
+  return join("node_modules", ".tmp-trailstep-doctor-command-tests", `${task.id}-${variant}`);
 }
 
 async function createBundleWorkflow(cwd: string, source: string): Promise<void> {

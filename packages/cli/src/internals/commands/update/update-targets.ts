@@ -22,11 +22,11 @@ export interface UpdateTarget {
   dependencySection: DependencySection;
 }
 
-export interface StepKitSelfUpdatePlan {
+export interface TrailStepSelfUpdatePlan {
   targets: UpdateTarget[];
 }
 
-export interface ResolveStepKitSelfUpdateTargetsOptions {
+export interface ResolveTrailStepSelfUpdateTargetsOptions {
   cwd: string;
   packageCommandRunner?: PackageCommandRunner;
 }
@@ -38,12 +38,12 @@ export class UpdateTargetResolutionError extends Error {
   }
 }
 
-export async function resolveStepKitSelfUpdateTargets({
+export async function resolveTrailStepSelfUpdateTargets({
   cwd,
   packageCommandRunner,
-}: ResolveStepKitSelfUpdateTargetsOptions): Promise<StepKitSelfUpdatePlan> {
+}: ResolveTrailStepSelfUpdateTargetsOptions): Promise<TrailStepSelfUpdatePlan> {
   const packageJson = await readRootPackageJson(cwd);
-  const current = readCurrentStepKitRanges(packageJson);
+  const current = readCurrentTrailStepRanges(packageJson);
   if (current.size === 0) {
     return { targets: [] };
   }
@@ -143,7 +143,7 @@ export function readPackageDependencyEntry(
   return undefined;
 }
 
-function readCurrentStepKitRanges(packageJson: Record<string, unknown>) {
+function readCurrentTrailStepRanges(packageJson: Record<string, unknown>) {
   const entries = new Map<TrailStepPackageName, { range: string; section: DependencySection }>();
   for (const packageName of trailstepPackageNames) {
     const entry = readPackageDependencyEntry(packageJson, packageName);

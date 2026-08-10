@@ -9,7 +9,7 @@ describe("updateCommand", () => {
   it("blocks TrailStep self-updates on removed-symbol findings before package.json mutation", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -55,7 +55,7 @@ describe("updateCommand", () => {
   it("allows a blocked TrailStep self-update preflight with --force and prints a warning", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -95,7 +95,7 @@ describe("updateCommand", () => {
   });
 
   it("allows warning-only findings and still prints them", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -137,7 +137,7 @@ describe("updateCommand", () => {
   it("includes directly registered workflow files in TrailStep self-update preflight scanning", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
@@ -175,7 +175,7 @@ describe("updateCommand", () => {
   });
 
   it("prints all findings before the blocking error line", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -223,7 +223,7 @@ describe("updateCommand", () => {
   });
 
   it("returns a no-op result without running workflow fallback", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(join(cwd, "package.json"), JSON.stringify({ name: "consumer" }), "utf8");
     const lines: string[] = [];
@@ -243,7 +243,7 @@ describe("updateCommand", () => {
   it("prints planned TrailStep self-update package changes without writing files", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -286,7 +286,7 @@ describe("updateCommand", () => {
   it("prints workflow package update targets and local-file skips without writing files", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -332,7 +332,7 @@ describe("updateCommand", () => {
   it("blocks updating a registered bundle workflow when another workflow in the bundle has a blocking finding", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
@@ -414,8 +414,8 @@ describe("updateCommand", () => {
     expect(forceLines.join("\n")).toContain("Planned workflow package updates:");
   });
 
-  it("uses target StepKit versions during self-update preflight", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+  it("uses target TrailStep versions during self-update preflight", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
@@ -466,10 +466,10 @@ describe("updateCommand", () => {
     expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
   });
 
-  it("uses target StepKit versions for workflow package preflight during --all", async ({
+  it("uses target TrailStep versions for workflow package preflight during --all", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
@@ -548,7 +548,7 @@ describe("updateCommand", () => {
   it("applies self and workflow package updates together for --all --assume-yes", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
     const packageJsonPath = join(cwd, "package.json");
@@ -603,7 +603,7 @@ describe("updateCommand", () => {
   it("applies workflow package updates with --workflows even when there are no self updates", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -639,7 +639,7 @@ describe("updateCommand", () => {
   it("prints default npm warning before running install when no package manager is detected", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -671,7 +671,7 @@ describe("updateCommand", () => {
   it("applies self update with --assume-yes, prints version changes, and runs detected install", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
     await writeFile(
@@ -710,7 +710,7 @@ describe("updateCommand", () => {
   });
 
   it("prints direct-file skip lines before prompting for confirmation", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -753,7 +753,7 @@ describe("updateCommand", () => {
   it("fails before writing when confirmation is required but no confirm prompt seam exists", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -780,7 +780,7 @@ describe("updateCommand", () => {
   it("exits cleanly without writing or installing when confirmation is declined", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -811,7 +811,7 @@ describe("updateCommand", () => {
   });
 
   it("reports failed installs without claiming success", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -840,7 +840,7 @@ describe("updateCommand", () => {
   });
 
   it("reports registry resolution failures as CLI errors", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(
       join(cwd, "package.json"),

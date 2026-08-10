@@ -26,7 +26,7 @@ describe("grill-it-away", () => {
         },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         await writeFile(protocol.outputFile, `${JSON.stringify({}, null, 2)}\n`, "utf8");
         await writeFile(
@@ -84,7 +84,7 @@ describe("grill-it-away", () => {
         },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         await writeFile(
           protocol.outputFile,

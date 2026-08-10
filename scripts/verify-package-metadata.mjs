@@ -14,8 +14,51 @@ function assertFile(path) {
 
 const npmRepository = {
   type: "git",
-  url: "git+ssh://git@github.com/chily-john/stepkit.git",
+  url: "git+ssh://git@github.com/chily-john/trailstep.git",
 };
+
+const workspacePackageDirectories = [
+  "authoring",
+  "cli",
+  "core",
+  "create-flows",
+  "dashboard",
+  "testkit",
+];
+const expectedWorkspacePackageNames = new Set(
+  workspacePackageDirectories.map((directory) => `@trailstep/${directory}`),
+);
+
+function assertTrailStepManifest(packageMetadata, packageJsonPath) {
+  assert.doesNotMatch(
+    JSON.stringify(packageMetadata),
+    /@stepkit\//u,
+    `${packageJsonPath} must not contain legacy @stepkit/* package references`,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(packageMetadata),
+    /\bstepkit\b|StepKit|STEPKIT/u,
+    `${packageJsonPath} must use TrailStep naming in package metadata`,
+  );
+}
+
+function assertInternalDependencyClosure(packageMetadata, packageJsonPath) {
+  for (const dependencySection of ["dependencies", "devDependencies", "peerDependencies"]) {
+    for (const dependencyName of Object.keys(packageMetadata[dependencySection] ?? {})) {
+      assert.doesNotMatch(
+        dependencyName,
+        /^@stepkit\//u,
+        `${packageJsonPath} ${dependencySection} must not depend on legacy ${dependencyName}`,
+      );
+      if (dependencyName.startsWith("@trailstep/")) {
+        assert.ok(
+          expectedWorkspacePackageNames.has(dependencyName),
+          `${packageJsonPath} ${dependencySection} references unknown TrailStep workspace package ${dependencyName}`,
+        );
+      }
+    }
+  }
+}
 
 function assertRepositoryMetadata(packageMetadata, packageName) {
   assert.deepEqual(
@@ -25,12 +68,12 @@ function assertRepositoryMetadata(packageMetadata, packageName) {
   );
   assert.equal(
     packageMetadata.bugs?.url,
-    "https://github.com/chily-john/stepkit/issues",
+    "https://github.com/chily-john/trailstep/issues",
     `${packageName} must declare npm bugs metadata`,
   );
   assert.equal(
     packageMetadata.homepage,
-    "https://github.com/chily-john/stepkit#readme",
+    "https://github.com/chily-john/trailstep#readme",
     `${packageName} must declare npm homepage metadata`,
   );
 }
@@ -52,6 +95,8 @@ function assertPublicPackageMetadata(packageMetadata, packageName) {
 
 export function verifyPackageMetadata() {
   const rootPackage = readJson("package.json");
+  assertTrailStepManifest(rootPackage, "package.json");
+  assertInternalDependencyClosure(rootPackage, "package.json");
   assert.equal(rootPackage.name, "trailstep", "root package name must be trailstep");
   assert.equal(rootPackage.private, true, "root package must be private");
   assert.match(rootPackage.packageManager ?? "", /^pnpm@/, "packageManager must use pnpm");
@@ -119,6 +164,8 @@ export function verifyPackageMetadata() {
   const cliPackageJsonPath = "packages/cli/package.json";
   assertFile(cliPackageJsonPath);
   const cliPackageMetadata = readJson(cliPackageJsonPath);
+  assertTrailStepManifest(cliPackageMetadata, cliPackageJsonPath);
+  assertInternalDependencyClosure(cliPackageMetadata, cliPackageJsonPath);
   assert.equal(cliPackageMetadata.name, "@trailstep/cli");
   assertPublicPackageMetadata(cliPackageMetadata, "@trailstep/cli");
   assert.equal(cliPackageMetadata.bin?.trailstep, "./dist/index.js");
@@ -142,6 +189,8 @@ export function verifyPackageMetadata() {
   const dashboardPackageJsonPath = "packages/dashboard/package.json";
   assertFile(dashboardPackageJsonPath);
   const dashboardPackageMetadata = readJson(dashboardPackageJsonPath);
+  assertTrailStepManifest(dashboardPackageMetadata, dashboardPackageJsonPath);
+  assertInternalDependencyClosure(dashboardPackageMetadata, dashboardPackageJsonPath);
   assert.equal(dashboardPackageMetadata.name, "@trailstep/dashboard");
   assertPublicPackageMetadata(dashboardPackageMetadata, "@trailstep/dashboard");
   assert.equal(dashboardPackageMetadata.type, "module");
@@ -158,6 +207,8 @@ export function verifyPackageMetadata() {
   const createFlowsPackageJsonPath = "packages/create-flows/package.json";
   assertFile(createFlowsPackageJsonPath);
   const createFlowsPackageMetadata = readJson(createFlowsPackageJsonPath);
+  assertTrailStepManifest(createFlowsPackageMetadata, createFlowsPackageJsonPath);
+  assertInternalDependencyClosure(createFlowsPackageMetadata, createFlowsPackageJsonPath);
   assert.equal(createFlowsPackageMetadata.name, "@trailstep/create-flows");
   assert.deepEqual(createFlowsPackageMetadata.keywords, ["trailstep-workflow"]);
   assert.equal(createFlowsPackageMetadata.dependencies?.["@trailstep/authoring"], "workspace:*");
@@ -168,6 +219,8 @@ export function verifyPackageMetadata() {
     assertFile(packageJsonPath);
 
     const packageMetadata = readJson(packageJsonPath);
+    assertTrailStepManifest(packageMetadata, packageJsonPath);
+    assertInternalDependencyClosure(packageMetadata, packageJsonPath);
     assert.equal(packageMetadata.name, libraryPackage.name);
     assertPublicPackageMetadata(packageMetadata, libraryPackage.name);
     assert.equal(packageMetadata.type, "module", `${libraryPackage.name} must be ESM-only`);

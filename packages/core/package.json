@@ -6,12 +6,12 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/chily-john/stepkit.git"
+    "url": "git+ssh://git@github.com/chily-john/trailstep.git"
   },
   "bugs": {
-    "url": "https://github.com/chily-john/stepkit/issues"
+    "url": "https://github.com/chily-john/trailstep/issues"
   },
-  "homepage": "https://github.com/chily-john/stepkit#readme",
+  "homepage": "https://github.com/chily-john/trailstep#readme",
   "publishConfig": {
     "access": "public"
   },

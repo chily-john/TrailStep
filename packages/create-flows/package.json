@@ -1,7 +1,7 @@
 {
   "name": "@trailstep/create-flows",
   "version": "0.0.0",
-  "description": "Personal StepKit workflows.",
+  "description": "Personal TrailStep workflows.",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",

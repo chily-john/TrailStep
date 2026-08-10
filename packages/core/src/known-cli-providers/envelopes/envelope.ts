@@ -1,7 +1,7 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 
 /**
- * Extraction logic ported from the retired `claude-rpc-stepkit-agent.mjs` mock
+ * Extraction logic ported from the retired `claude-rpc-trailstep-agent.mjs` mock
  * wrapper's `extractStepkitOutput`, parameterized by which envelope field holds
  * the provider's final text (e.g. `"result"` for `claude --output-format json`).
  *

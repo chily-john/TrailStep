@@ -1,4 +1,4 @@
-import type { StepKitConfig } from "../targeting.types.js";
+import type { TrailStepConfig } from "../targeting.types.js";
 import { expandAgentRefs } from "./expand-agent-refs.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import { parseCustomProviders } from "./parse-custom-providers.js";
@@ -7,13 +7,13 @@ import { isRecord, throwValidationFailure } from "./parse-utils.js";
 import { parseWorkflows } from "./parse-workflow-agent-mappings.js";
 import { validateProviderReferences } from "./validate-provider-references.js";
 
-const parsedConfigs = new WeakSet<StepKitConfig>();
+const parsedConfigs = new WeakSet<TrailStepConfig>();
 
-export function isParsedStepKitConfig(value: unknown): value is StepKitConfig {
-  return isRecord(value) && parsedConfigs.has(value as unknown as StepKitConfig);
+export function isParsedTrailStepConfig(value: unknown): value is TrailStepConfig {
+  return isRecord(value) && parsedConfigs.has(value as unknown as TrailStepConfig);
 }
 
-export function parseStepKitConfig(value: unknown): StepKitConfig {
+export function parseTrailStepConfig(value: unknown): TrailStepConfig {
   const diagnostics: string[] = [];
 
   if (!isRecord(value)) {
@@ -37,7 +37,7 @@ export function parseStepKitConfig(value: unknown): StepKitConfig {
   validateProviderReferences({ agents, workflows, providerNames });
   const expanded = expandAgentRefs({ agents, workflows });
 
-  const config: StepKitConfig = {
+  const config: TrailStepConfig = {
     version: 1,
     customProviders,
     agents: expanded.agents,

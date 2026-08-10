@@ -1,4 +1,4 @@
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import type {
   RunContext,
@@ -15,7 +15,7 @@ export function createRunContext(options: {
   readonly workflowId?: string;
   readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
   readonly cwd?: string;
-  readonly stepkitConfig?: StepKitConfig;
+  readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunContextWorkingAgentProcessRunner;
   readonly providerWorkingRunner?: RunContextProviderWorkingRunner;
   readonly emit?: (event: RunContextEvent) => Promise<void>;
@@ -57,7 +57,7 @@ export function createRunContext(options: {
     workflowId: options.workflowId,
     workflowAgents: options.workflowAgents,
     cwd: options.cwd,
-    stepkitConfig: options.stepkitConfig,
+    trailstepConfig: options.trailstepConfig,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     providerWorkingRunner: options.providerWorkingRunner,
     emit: options.emit,

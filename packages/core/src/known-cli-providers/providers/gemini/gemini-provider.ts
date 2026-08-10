@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
   InteractiveProcessResult,
@@ -43,7 +43,7 @@ async function runWorking(
       signal: request.signal,
     });
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: "gemini provider process could not be started.",
       details: { cause: error instanceof Error ? error.message : String(error) },
@@ -51,7 +51,7 @@ async function runWorking(
   }
 
   if (result.exitCode !== 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `gemini provider process exited with code ${result.exitCode}.`,
       details: { exitCode: result.exitCode },
@@ -63,7 +63,7 @@ async function runWorking(
     try {
       text = extractEnvelopeText(result.stdout, { resultField: GEMINI_RESULT_FIELD });
     } catch (error) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "agent_provider_output_invalid",
         message: "gemini provider stdout did not contain a usable result.",
         details: { cause: error instanceof Error ? error.message : String(error) },
@@ -76,7 +76,7 @@ async function runWorking(
     try {
       output = extractEnvelopeOutput(result.stdout, { resultField: GEMINI_RESULT_FIELD });
     } catch (error) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "agent_provider_output_invalid",
         message: "gemini provider stdout did not contain a usable JSON result.",
         details: { cause: error instanceof Error ? error.message : String(error) },

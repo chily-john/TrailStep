@@ -1,4 +1,4 @@
-import { StepKitFailureError, validationFailure } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError, validationFailure } from "../../contracts/failures/failure.js";
 import type { ValidationDiagnostic } from "../../contracts/shapes/shape.types.js";
 import { writeDocumentArtifact } from "../../runtime/artifacts/run-storage.js";
 import { currentRunContext } from "../../runtime/run-context/run-context-storage.js";
@@ -52,7 +52,7 @@ export class Document {
     const valueDiagnostics = Document.diagnostics(value);
 
     if (valueDiagnostics.length > 0 || !isDocumentLike(value)) {
-      throw new StepKitFailureError(
+      throw new TrailStepFailureError(
         validationFailure(
           `${label} failed schema validation: ${formatDiagnostics(valueDiagnostics)}`,
           {

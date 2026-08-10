@@ -1,8 +1,8 @@
-import { StepKitFailureError, validationFailure } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError, validationFailure } from "../../contracts/failures/failure.js";
 
 export function throwValidationFailure(diagnostics: readonly string[]): never {
-  throw new StepKitFailureError(
-    validationFailure("Invalid .stepkit/config.json.", { diagnostics }),
+  throw new TrailStepFailureError(
+    validationFailure("Invalid .trailstep/config.json.", { diagnostics }),
   );
 }
 

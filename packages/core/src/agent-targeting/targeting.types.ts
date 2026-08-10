@@ -2,7 +2,7 @@ import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types
 import type { RetryPolicyInput } from "../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../runtime/timeout/timeout-policy.js";
 
-export interface StepKitCustomProviderConfig {
+export interface TrailStepCustomProviderConfig {
   readonly binary: string;
   readonly args?: readonly string[];
   readonly interactiveArgs?: readonly string[];
@@ -10,7 +10,7 @@ export interface StepKitCustomProviderConfig {
   readonly env?: Readonly<Record<string, string>>;
 }
 
-export interface StepKitAgentTarget {
+export interface TrailStepAgentTarget {
   /**
    * Either a key declared in the top-level `customProviders` object, or a
    * built-in provider registry id (e.g. `"claude"`). The registry is checked
@@ -24,29 +24,29 @@ export interface StepKitAgentTarget {
   readonly permissionMode?: "bypass" | "prompt";
 }
 
-export type StepKitAgentMappings = Readonly<Record<string, readonly StepKitAgentTarget[]>>;
+export type TrailStepAgentMappings = Readonly<Record<string, readonly TrailStepAgentTarget[]>>;
 
-export interface StepKitSettings {
+export interface TrailStepSettings {
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
   readonly [key: string]: unknown;
 }
 
-export interface StepKitWorkflowConfig {
-  readonly agents?: StepKitAgentMappings;
-  readonly settings?: StepKitSettings;
+export interface TrailStepWorkflowConfig {
+  readonly agents?: TrailStepAgentMappings;
+  readonly settings?: TrailStepSettings;
 }
 
-export interface StepKitConfig {
+export interface TrailStepConfig {
   readonly version: 1;
-  readonly customProviders: Readonly<Record<string, StepKitCustomProviderConfig>>;
-  readonly agents: StepKitAgentMappings;
-  readonly settings?: StepKitSettings;
-  readonly workflows?: Readonly<Record<string, StepKitWorkflowConfig>>;
+  readonly customProviders: Readonly<Record<string, TrailStepCustomProviderConfig>>;
+  readonly agents: TrailStepAgentMappings;
+  readonly settings?: TrailStepSettings;
+  readonly workflows?: Readonly<Record<string, TrailStepWorkflowConfig>>;
 }
 
 export interface ResolveAgentTargetsOptions {
-  readonly config: StepKitConfig;
+  readonly config: TrailStepConfig;
   readonly workflowId: string;
   readonly roleName: string;
   readonly roleSize: string;

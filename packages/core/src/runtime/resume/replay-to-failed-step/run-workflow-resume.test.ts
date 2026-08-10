@@ -9,7 +9,7 @@ import {
   document,
   done,
   type Event,
-  parseStepKitConfig,
+  parseTrailStepConfig,
   runWorkflow,
   type StepFactory,
   step,
@@ -34,7 +34,7 @@ function event(overrides: Partial<Event> & Pick<Event, "id" | "type">): Event {
 }
 
 async function createRunWithEvents(events: readonly Event[]): Promise<string> {
-  const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+  const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
   const { runDir } = await createRunDirectory({ cwd, runName: "history-run" });
 
   for (const nextEvent of events) {
@@ -65,7 +65,7 @@ function replayWorkflow(): Workflow<{ value: number }, { value: number }> {
 
 describe("runWorkflow resume", () => {
   it("resumes a failed two-step run by replaying the completed first step from its recorded position", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
     let firstStepRuns = 0;
     let shouldFailSecondStep = true;
 
@@ -160,7 +160,7 @@ describe("runWorkflow resume", () => {
     // ("implement-story") therefore also matches story 0's already-completed
     // occurrence earlier in history -- resume must not mistake that first
     // occurrence for "the target step already completed."
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-loop-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-loop-"));
     let implementRuns = 0;
     let reviewRuns = 0;
     let shouldFailStoryTwo = true;
@@ -268,7 +268,7 @@ describe("runWorkflow resume", () => {
   });
 
   it("rejects a missing target with a specific failure code", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
     const missingRunDir = join(cwd, ".trailstep", "runs", "missing-run");
 
     const result = await runWorkflow({
@@ -400,7 +400,7 @@ describe("runWorkflow resume", () => {
   });
 
   it("rejects completed runs and workflow mismatch with specific failure codes", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "completed-workflow",
       inputShape: { value: "number" },
@@ -443,7 +443,7 @@ describe("runWorkflow resume", () => {
   });
 
   it("reattaches a run killed mid-interactive-session without spawning a new agent process", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-killed-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-killed-"));
     const workflow: Workflow<{ task: string }, { notes: string }> = {
       id: "killed-mid-session-workflow",
       inputShape: { task: "string" },
@@ -526,7 +526,7 @@ describe("runWorkflow resume", () => {
     const resumed = await runWorkflow({
       workflow,
       resume: { runDir },
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -576,7 +576,7 @@ describe("runWorkflow resume", () => {
     // reject that plain object with a validation failure because of an
     // `instanceof Document` check. It must now succeed and hand the "draft"
     // step's `.do()` continuation a genuine, working `Document`.
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-document-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-document-"));
     let shouldFailReview = true;
     const receivedDocs: Document[] = [];
 
@@ -612,7 +612,7 @@ describe("runWorkflow resume", () => {
       input: { topic: "resume correctness" },
       runName: "resume-through-document-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: { medium: [{ provider: "worker" }] },
@@ -650,7 +650,7 @@ describe("runWorkflow resume", () => {
   });
 
   it("overwrites a document(...) file on disk with the second run's content when its step is retried after resume", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-document-retry-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-document-retry-"));
     let attempt = 1;
     let shouldFailReview = true;
 

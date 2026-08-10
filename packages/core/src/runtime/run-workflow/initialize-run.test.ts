@@ -17,7 +17,7 @@ const workflow = {
 
 describe("initializeRun", () => {
   it("creates a run directory for a new run and returns no previous events", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-initialize-run-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-initialize-run-"));
 
     const initialized = await initializeRun({
       workflow,
@@ -32,7 +32,7 @@ describe("initializeRun", () => {
   });
 
   it("returns the existing run directory and previous events for resume", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-initialize-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-initialize-resume-"));
     const created = await initializeRun({ workflow, input: {}, runName: "resume-run", cwd });
     const started = createEvent({
       runId: created.runId,

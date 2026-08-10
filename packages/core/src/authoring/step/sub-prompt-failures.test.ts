@@ -32,11 +32,11 @@ describe("subPrompt failure semantics", () => {
   it("fails clearly outside an active step context", async () => {
     const ask = subPrompt("Choose", { output: answerShape });
 
-    await expect(ask({})).rejects.toThrow(/subPrompt.*active StepKit step run context/i);
+    await expect(ask({})).rejects.toThrow(/subPrompt.*active TrailStep step run context/i);
   });
 
   it("fails with a prompt-style output requirement when output is missing inside a step", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-failures-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-failures-"));
 
     const orchestrate = step({ id: "orchestrate" }).do(async () => {
       const ask = subPrompt("Choose", {} as Parameters<typeof subPrompt>[1]);
@@ -71,7 +71,7 @@ describe("subPrompt failure semantics", () => {
   });
 
   it("emits subPrompt.failed before a caught validation failure", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-failures-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-failures-"));
     const adapter: AgentAdapter<Record<string, never>, { answer: string }> = async (request) => {
       await request.tools
         .find((tool) => tool.name === "submit_output")
@@ -134,7 +134,7 @@ describe("subPrompt failure semantics", () => {
   });
 
   it("uncaught subPrompt failure fails the parent step", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-failures-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-failures-"));
     const adapter: AgentAdapter<Record<string, never>, { answer: string }> = async (request) => {
       await request.tools
         .find((tool) => tool.name === "submit_output")

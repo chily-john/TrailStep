@@ -8,7 +8,7 @@ import { done, jsonSchema, runWorkflow, step, type Workflow } from "../../index.
 
 describe("step input mapping", () => {
   it("passes mapped input from workflow input and previous step output to a later step", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-input-mapping-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-input-mapping-"));
     const workflowInput = jsonSchema<{ starting: number; factor: number }>({
       type: "object",
       properties: {

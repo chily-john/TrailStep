@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import type { StepKitAgentTarget } from "../../../../agent-targeting/targeting.types.js";
+import type { TrailStepAgentTarget } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
@@ -20,7 +20,7 @@ export async function runRegistryWorkingProvider<TOutput extends PlainObject>(op
   readonly renderedPrompt: string;
   readonly cwd: string;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
-  readonly target: StepKitAgentTarget;
+  readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
 }): Promise<TOutput> {
@@ -76,7 +76,7 @@ export async function runRegistryWorkingProvider<TOutput extends PlainObject>(op
 }
 
 function resolveWorkingThinking(
-  target: StepKitAgentTarget,
+  target: TrailStepAgentTarget,
   role: WorkflowAgentRole,
 ): WorkflowAgentRole["thinking"] {
   return target.thinking ?? role.thinking;

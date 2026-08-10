@@ -14,7 +14,7 @@ import {
 
 describe("run storage", () => {
   it("appendEvent appends newline-delimited events without rewriting previous lines", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
     const { runDir } = await createRunDirectory({ cwd, runName: "event-run" });
 
     await appendEvent(runDir, {
@@ -44,7 +44,7 @@ describe("run storage", () => {
   });
 
   it("readRunEvents ignores one unparseable trailing line", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
     const { runDir } = await createRunDirectory({ cwd, runName: "partial-run" });
 
     await appendEvent(runDir, {
@@ -67,21 +67,21 @@ describe("run storage", () => {
     ]);
   });
 
-  it("creates a .stepkit/.gitignore file that ignores everything except itself", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+  it("creates a .trailstep/.gitignore file that ignores everything except itself", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
 
     await createRunDirectory({ cwd, runName: "first-run" });
 
-    const gitignorePath = join(cwd, ".stepkit", ".gitignore");
+    const gitignorePath = join(cwd, ".trailstep", ".gitignore");
     const contents = await readFile(gitignorePath, "utf8");
     expect(contents).toBe("*\n!.gitignore\n");
   });
 
   it("does not throw or corrupt the .gitignore file on a second run in the same cwd", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
 
     await createRunDirectory({ cwd, runName: "first-run" });
-    const gitignorePath = join(cwd, ".stepkit", ".gitignore");
+    const gitignorePath = join(cwd, ".trailstep", ".gitignore");
     const firstContents = await readFile(gitignorePath, "utf8");
 
     await expect(createRunDirectory({ cwd, runName: "second-run" })).resolves.toMatchObject({
@@ -94,7 +94,7 @@ describe("run storage", () => {
   });
 
   it("persists run state as state.json and reads it from a second helper call", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-storage-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
     const { runDir } = await createRunDirectory({ cwd, runName: "state-run" });
 
     await expect(readRunState(runDir)).resolves.toEqual({});

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
-import { parseStepKitConfig } from "./parse-stepkit-config.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
+import { parseTrailStepConfig } from "./parse-trailstep-config.js";
 
-describe("parseStepKitConfig", () => {
+describe("parseTrailStepConfig", () => {
   it("parses literal unified agent entries and custom providers", () => {
-    const parsed = parseStepKitConfig({
+    const parsed = parseTrailStepConfig({
       version: 1,
       customProviders: {
         local: {
@@ -52,7 +52,7 @@ describe("parseStepKitConfig", () => {
   });
 
   it("expands agent refs from the top-level reusable agents map", () => {
-    const parsed = parseStepKitConfig({
+    const parsed = parseTrailStepConfig({
       version: 1,
       customProviders: {},
       agents: {
@@ -81,18 +81,18 @@ describe("parseStepKitConfig", () => {
 
   it("fails with diagnostics for unknown agent refs", () => {
     try {
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: {
           medium: [{ ref: "missing" }],
         },
       });
-      throw new Error("Expected parseStepKitConfig to reject unknown refs.");
+      throw new Error("Expected parseTrailStepConfig to reject unknown refs.");
     } catch (error) {
-      expect(error).toBeInstanceOf(StepKitFailureError);
-      expect((error as StepKitFailureError).failure.code).toBe("agent_ref_unknown");
-      expect((error as StepKitFailureError).failure.details).toEqual({
+      expect(error).toBeInstanceOf(TrailStepFailureError);
+      expect((error as TrailStepFailureError).failure.code).toBe("agent_ref_unknown");
+      expect((error as TrailStepFailureError).failure.details).toEqual({
         diagnostics: ["agents.medium[0].ref references unknown agent 'missing'."],
       });
     }
@@ -100,7 +100,7 @@ describe("parseStepKitConfig", () => {
 
   it("fails with diagnostics for cyclic agent refs", () => {
     try {
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: {
@@ -108,11 +108,11 @@ describe("parseStepKitConfig", () => {
           workerB: [{ ref: "workerA" }],
         },
       });
-      throw new Error("Expected parseStepKitConfig to reject cyclic refs.");
+      throw new Error("Expected parseTrailStepConfig to reject cyclic refs.");
     } catch (error) {
-      expect(error).toBeInstanceOf(StepKitFailureError);
-      expect((error as StepKitFailureError).failure.code).toBe("agent_ref_cycle");
-      expect((error as StepKitFailureError).failure.details).toEqual({
+      expect(error).toBeInstanceOf(TrailStepFailureError);
+      expect((error as TrailStepFailureError).failure.code).toBe("agent_ref_cycle");
+      expect((error as TrailStepFailureError).failure.details).toEqual({
         diagnostics: [
           "agents.workerA[0].ref creates an agent ref cycle: workerA -> workerB -> workerA.",
         ],
@@ -121,7 +121,7 @@ describe("parseStepKitConfig", () => {
   });
 
   it("parses retry and numeric timeout settings", () => {
-    const parsed = parseStepKitConfig({
+    const parsed = parseTrailStepConfig({
       version: 1,
       customProviders: {},
       agents: {},
@@ -138,7 +138,7 @@ describe("parseStepKitConfig", () => {
   });
 
   it("normalizes empty retry settings so they do not shadow lower-precedence policies", () => {
-    const parsed = parseStepKitConfig({
+    const parsed = parseTrailStepConfig({
       version: 1,
       customProviders: {},
       agents: {},
@@ -154,7 +154,7 @@ describe("parseStepKitConfig", () => {
 
   it("rejects object timeout settings", () => {
     try {
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: {},
@@ -163,11 +163,11 @@ describe("parseStepKitConfig", () => {
           review: { settings: { timeout: { timeoutMs: 10_000 } } },
         },
       });
-      throw new Error("Expected parseStepKitConfig to reject object timeout settings.");
+      throw new Error("Expected parseTrailStepConfig to reject object timeout settings.");
     } catch (error) {
-      expect(error).toBeInstanceOf(StepKitFailureError);
-      expect((error as StepKitFailureError).failure.code).toBe("validation_failed");
-      expect((error as StepKitFailureError).failure.details).toEqual({
+      expect(error).toBeInstanceOf(TrailStepFailureError);
+      expect((error as TrailStepFailureError).failure.code).toBe("validation_failed");
+      expect((error as TrailStepFailureError).failure.details).toEqual({
         diagnostics: [
           "settings.timeout must be a number when present.",
           "workflows.review.settings.timeout must be a number when present.",
@@ -178,15 +178,15 @@ describe("parseStepKitConfig", () => {
 
   it("requires the unified custom provider and agent mapping keys", () => {
     expect(() =>
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
       }),
-    ).toThrow(StepKitFailureError);
+    ).toThrow(TrailStepFailureError);
   });
 
   it("requires top-level and workflow agent mappings to use plain arrays", () => {
     try {
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: {
@@ -200,11 +200,11 @@ describe("parseStepKitConfig", () => {
           },
         },
       });
-      throw new Error("Expected parseStepKitConfig to reject items-wrapped agent entries.");
+      throw new Error("Expected parseTrailStepConfig to reject items-wrapped agent entries.");
     } catch (error) {
-      expect(error).toBeInstanceOf(StepKitFailureError);
-      expect((error as StepKitFailureError).failure.code).toBe("validation_failed");
-      expect((error as StepKitFailureError).failure.details).toEqual({
+      expect(error).toBeInstanceOf(TrailStepFailureError);
+      expect((error as TrailStepFailureError).failure.code).toBe("validation_failed");
+      expect((error as TrailStepFailureError).failure.details).toEqual({
         diagnostics: [
           "agents.default must be an array.",
           "workflows.review.agents.reviewer must be an array.",

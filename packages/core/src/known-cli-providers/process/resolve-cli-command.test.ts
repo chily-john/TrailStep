@@ -17,7 +17,7 @@ describe("resolveCliCommandForSpawn", () => {
   });
 
   it("resolves npm .cmd shims to their Node entrypoint on Windows", async () => {
-    const binDir = await mkdtemp(join(tmpdir(), "stepkit-core-provider-shim-"));
+    const binDir = await mkdtemp(join(tmpdir(), "trailstep-core-provider-shim-"));
     await writeFile(
       join(binDir, "pi.cmd"),
       [
@@ -41,7 +41,7 @@ describe("resolveCliCommandForSpawn", () => {
   });
 
   it("falls back to cmd.exe for non-npm command shims", async () => {
-    const binDir = await mkdtemp(join(tmpdir(), "stepkit-core-provider-cmd-"));
+    const binDir = await mkdtemp(join(tmpdir(), "trailstep-core-provider-cmd-"));
     const commandPath = join(binDir, "agent.cmd");
     await writeFile(commandPath, "@echo off\necho custom\n", "utf8");
 

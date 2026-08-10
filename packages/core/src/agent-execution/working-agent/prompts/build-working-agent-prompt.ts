@@ -6,7 +6,7 @@ export function buildWorkingAgentPrompt(options: {
 }): string {
   if (options.captureMode === "raw-text") {
     return [
-      "# StepKit working-agent task",
+      "# TrailStep working-agent task",
       "",
       "Run the task described below and write the document content to the output file.",
       "Print the document content directly as your entire response — no JSON wrapper, no surrounding commentary, no markdown fences unless they are literally part of the document content itself.",
@@ -21,7 +21,7 @@ export function buildWorkingAgentPrompt(options: {
   }
 
   return [
-    "# StepKit working-agent task",
+    "# TrailStep working-agent task",
     "",
     "Run the task described below and write exactly one JSON object to the output file.",
     "Do not write prose, markdown fences, or multiple JSON values to the output file.",

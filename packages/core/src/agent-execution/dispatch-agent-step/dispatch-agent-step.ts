@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type {
   ContinuationStepConfig,
   PromptTemplateSource,
 } from "../../authoring/step/continuation.types.js";
 import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
@@ -40,7 +40,7 @@ export async function dispatchAgentStep(options: {
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
   readonly cwd: string;
-  readonly stepkitConfig: StepKitConfig | undefined;
+  readonly trailstepConfig: TrailStepConfig | undefined;
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
@@ -68,7 +68,7 @@ export async function dispatchAgentStep(options: {
     adapter: config.adapter,
   };
 
-  if (!options.stepkitConfig && config.adapter === undefined) {
+  if (!options.trailstepConfig && config.adapter === undefined) {
     throwMissingAgentConfig({
       workflowId: options.workflowId,
       stepId: config.id,
@@ -77,7 +77,7 @@ export async function dispatchAgentStep(options: {
     });
   }
 
-  if (options.stepkitConfig && agentMode === "interactive") {
+  if (options.trailstepConfig && agentMode === "interactive") {
     await options.emit(
       createEvent({
         runId: options.runId,
@@ -93,7 +93,7 @@ export async function dispatchAgentStep(options: {
       stepIndex: options.stepIndex,
     });
     const interactiveResult = await runInteractiveAgentCommand({
-      config: options.stepkitConfig,
+      config: options.trailstepConfig,
       workflowId: options.workflowId,
       roleName: resolvedRole.roleName,
       role: resolvedRole.role,
@@ -122,9 +122,9 @@ export async function dispatchAgentStep(options: {
     return interactiveResult.output;
   }
 
-  return options.stepkitConfig && agentMode === "working"
+  return options.trailstepConfig && agentMode === "working"
     ? await runWorkingAgentCommand({
-        config: options.stepkitConfig,
+        config: options.trailstepConfig,
         workflowId: options.workflowId,
         roleName: resolvedRole.roleName,
         role: resolvedRole.role,
@@ -185,9 +185,9 @@ function throwMissingAgentConfig(options: {
   readonly agent: string;
   readonly mode: "working" | "interactive";
 }): never {
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "missing_agent_config",
-    message: `Missing .stepkit/config.json: workflow ${options.workflowId} step ${options.stepId} needs configured ${options.mode} agent '${options.agent}'.`,
+    message: `Missing .trailstep/config.json: workflow ${options.workflowId} step ${options.stepId} needs configured ${options.mode} agent '${options.agent}'.`,
     details: {
       workflowId: options.workflowId,
       stepId: options.stepId,
@@ -205,7 +205,7 @@ const BUILTIN_DEFAULT_AGENT_ROLE: WorkflowAgentRole = { size: "default" };
  * A step's `.agent` is optional. With none given, falls back to
  * `workflow.agents.default` if the workflow declares one, else a builtin
  * `{ size: "default" }` role — which `resolveAgentTargets` in turn resolves
- * against `.stepkit/config.json`'s unified `agents.default` mapping. An explicit `.agent(...)` naming an undeclared
+ * against `.trailstep/config.json`'s unified `agents.default` mapping. An explicit `.agent(...)` naming an undeclared
  * role is still a hard error (typo protection).
  */
 export function resolveWorkflowAgentRole(options: {
@@ -225,7 +225,7 @@ export function resolveWorkflowAgentRole(options: {
     return { role: BUILTIN_DEFAULT_AGENT_ROLE, roleName: DEFAULT_AGENT_ROLE_NAME };
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "agent_role_unknown",
     message: `Step ${options.stepId} references unknown agent role '${options.agent}' in workflow ${options.workflowId}. Declare workflow.agents.${options.agent} before referencing it with step agent.`,
     details: {

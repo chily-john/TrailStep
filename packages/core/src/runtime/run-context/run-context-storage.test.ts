@@ -25,12 +25,12 @@ const stateModuleUrl = pathToFileURL(
  * singleton in `run-context-storage.ts`, a step's `.do()` callback authored in
  * such a dynamically loaded module would call `state.*` against an
  * `AsyncLocalStorage` that was never `.run(...)`'d, throwing "state.* called
- * outside an active StepKit run." even though the run is very much active --
+ * outside an active TrailStep run." even though the run is very much active --
  * exactly the failure this test would reproduce on a revert of that fix.
  */
 describe("runContextStorage singleton survives duplicate module instantiation", () => {
   it("lets a tsImport-loaded step's .do() call state.* successfully", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-run-context-storage-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-run-context-storage-"));
 
     const dynamicStepFile = join(cwd, "dynamic-step.ts");
     await writeFile(

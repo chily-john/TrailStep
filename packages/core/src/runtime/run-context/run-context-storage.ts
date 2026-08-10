@@ -15,7 +15,7 @@ import type { RunContext } from "../../contracts/run-context/run-context.types.j
  * by every module instantiation within the same process/realm -- keeps them
  * talking to the same storage regardless of which loader touched this file.
  */
-const RUN_CONTEXT_STORAGE_KEY = Symbol.for("stepkit.core.runContextStorage");
+const RUN_CONTEXT_STORAGE_KEY = Symbol.for("trailstep.core.runContextStorage");
 
 interface GlobalWithRunContextStorage {
   [RUN_CONTEXT_STORAGE_KEY]?: AsyncLocalStorage<RunContext>;
@@ -39,7 +39,7 @@ export const runContextStorage: AsyncLocalStorage<RunContext> = getOrCreateRunCo
 export function currentRunContext(): RunContext {
   const runContext = runContextStorage.getStore();
   if (!runContext) {
-    throw new Error("state.* called outside an active StepKit run.");
+    throw new Error("state.* called outside an active TrailStep run.");
   }
 
   return runContext;

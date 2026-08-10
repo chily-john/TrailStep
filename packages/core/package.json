@@ -1,7 +1,7 @@
 {
   "name": "@trailstep/core",
   "version": "0.0.0",
-  "description": "Core StepKit runtime primitives.",
+  "description": "Core TrailStep runtime primitives.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {

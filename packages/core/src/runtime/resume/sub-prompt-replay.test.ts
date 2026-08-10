@@ -30,7 +30,7 @@ const workflowOutputShape = jsonSchema<{ final: string }>({
 
 describe("subPrompt resume replay", () => {
   it("reuses completed subPrompt output from events while replaying a completed step", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-replay-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-replay-"));
     let adapterInvocations = 0;
     let shouldFailSecondStep = true;
 
@@ -85,7 +85,7 @@ describe("subPrompt resume replay", () => {
   });
 
   it("redispatches when a completed subPrompt ordinal has a fingerprint mismatch", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-replay-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-replay-"));
     let adapterInvocations = 0;
     let shouldFailSecondStep = true;
     let promptVersion = "first";

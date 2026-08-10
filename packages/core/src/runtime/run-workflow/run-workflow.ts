@@ -22,7 +22,7 @@ import { replayToRetryFailure } from "../retry/replay-to-retry-failure.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
 import { initializeRun } from "./initialize-run.js";
-import { parseStepKitConfigInput } from "./stepkit-config-input.js";
+import { parseTrailStepConfigInput } from "./trailstep-config-input.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,
@@ -57,10 +57,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   }
 
   const { runId, runName, runDir, previousEvents } = initialized;
-  const stepkitConfig =
-    options.stepkitConfig === undefined
+  const trailstepConfig =
+    options.trailstepConfig === undefined
       ? undefined
-      : parseStepKitConfigInput(options.stepkitConfig);
+      : parseTrailStepConfigInput(options.trailstepConfig);
   const cwd = options.cwd ?? process.cwd();
   const events: Event[] = [...previousEvents];
 
@@ -77,7 +77,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     workflowId: options.workflow.id,
     workflowAgents: options.workflow.agents ?? {},
     cwd,
-    stepkitConfig,
+    trailstepConfig,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     providerWorkingRunner: options.providerWorkingRunner,
     emit,
@@ -222,7 +222,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       workflowTimeout: options.workflow.timeout,
       runDir,
       cwd,
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: options.workingAgentProcessRunner,
       providerWorkingRunner: options.providerWorkingRunner,
       processRunner: options.processRunner,

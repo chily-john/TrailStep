@@ -1,11 +1,11 @@
-import type { StepKitCustomProviderConfig } from "../targeting.types.js";
+import type { TrailStepCustomProviderConfig } from "../targeting.types.js";
 import { isRecord, parseOptionalStringArray, parseOptionalStringRecord } from "./parse-utils.js";
 
 export function parseCustomProviders(
   value: unknown,
   diagnostics: string[],
-): Record<string, StepKitCustomProviderConfig> {
-  const customProviders: Record<string, StepKitCustomProviderConfig> = {};
+): Record<string, TrailStepCustomProviderConfig> {
+  const customProviders: Record<string, TrailStepCustomProviderConfig> = {};
 
   if (!isRecord(value)) {
     diagnostics.push("customProviders must be an object.");

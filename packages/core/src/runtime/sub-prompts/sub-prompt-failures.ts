@@ -1,5 +1,5 @@
 import type { Failure } from "../../contracts/failures/failure.js";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { RunContext } from "../../contracts/run-context/run-context.types.js";
 import { createEvent } from "../events/create-run-event.js";
 import { isFailureLikeError } from "../failures/failure-like.js";
@@ -33,8 +33,8 @@ export async function emitSubPromptFailed(options: {
   );
 }
 
-export function maxSubPromptsGuardError(maxSubPrompts: number): StepKitFailureError {
-  return new StepKitFailureError({
+export function maxSubPromptsGuardError(maxSubPrompts: number): TrailStepFailureError {
+  return new TrailStepFailureError({
     code: "max_sub_prompts_exceeded",
     message: `workflow exceeded maxSubPrompts guard (${maxSubPrompts})`,
   });
@@ -46,9 +46,9 @@ export function throwMissingSubPromptAgentConfig(options: {
   readonly subPromptId: string;
   readonly agent: string;
 }): never {
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "missing_agent_config",
-    message: `Missing .stepkit/config.json: workflow ${options.workflowId} parent step ${options.parentStepId} subPrompt ${options.subPromptId} needs configured working agent '${options.agent}'.`,
+    message: `Missing .trailstep/config.json: workflow ${options.workflowId} parent step ${options.parentStepId} subPrompt ${options.subPromptId} needs configured working agent '${options.agent}'.`,
     details: {
       workflowId: options.workflowId,
       parentStepId: options.parentStepId,
@@ -59,10 +59,10 @@ export function throwMissingSubPromptAgentConfig(options: {
   });
 }
 
-export function subPromptFailureError(error: unknown): StepKitFailureError {
-  if (error instanceof StepKitFailureError) {
+export function subPromptFailureError(error: unknown): TrailStepFailureError {
+  if (error instanceof TrailStepFailureError) {
     if (error.failure.code === "validation_failed") {
-      return new StepKitFailureError({
+      return new TrailStepFailureError({
         ...error.failure,
         message: normalizeSubPromptValidationMessage(error.failure.message),
       });
@@ -72,10 +72,10 @@ export function subPromptFailureError(error: unknown): StepKitFailureError {
   }
 
   if (isFailureLikeError(error)) {
-    return new StepKitFailureError(error.failure);
+    return new TrailStepFailureError(error.failure);
   }
 
-  return new StepKitFailureError({
+  return new TrailStepFailureError({
     code: "sub_prompt_failed",
     message: error instanceof Error ? error.message : "subPrompt failed.",
     ...(error instanceof Error

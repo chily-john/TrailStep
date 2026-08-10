@@ -8,7 +8,7 @@ import { done, jsonSchema, runWorkflow, step, type Workflow } from "../../index.
 
 describe("workflow step timeouts", () => {
   it("fails the workflow and aborts a working provider when the effective step timeout elapses", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-timeout-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-timeout-"));
     let sawAbort = false;
     let markAbortObserved: () => void = () => undefined;
     const abortObserved = new Promise<void>((resolve) => {
@@ -41,7 +41,7 @@ describe("workflow step timeouts", () => {
       input: {},
       runName: "timeout-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {},
         agents: { default: [{ provider: "pi" }] },

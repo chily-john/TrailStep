@@ -44,7 +44,7 @@ function reattachWorkflow(): Workflow<{ task: string }, { notes: string }> {
 }
 
 async function createDanglingRun(): Promise<{ readonly runDir: string; readonly events: Event[] }> {
-  const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-reattach-"));
+  const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-reattach-"));
   const { runDir } = await createRunDirectory({ cwd, runName: "reattach-run" });
 
   const events: Event[] = [

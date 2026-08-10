@@ -8,7 +8,7 @@ import { list, loadFragments, promptSections, section } from "./prompt-compositi
 
 describe("loadFragments", () => {
   it("reads each named file relative to dir and trims trailing whitespace", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "stepkit-core-prompt-fragments-"));
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-core-prompt-fragments-"));
     await writeFile(join(dir, "a.md"), "Fragment A\n", "utf8");
     await writeFile(join(dir, "b.md"), "Fragment B\n\n", "utf8");
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
@@ -21,7 +21,7 @@ const CODEX_BINARY = "codex";
  * `~/.codex/models_cache.json`, which lists exactly `low`/`medium`/`high`/`xhigh`
  * for every current model). Codex has no `"max"` tier — unlike Claude's
  * `WorkflowAgentThinking`, which does. There is no faithful mapping from
- * StepKit's `"max"` to a Codex reasoning level, so an unsupported tier is a
+ * TrailStep's `"max"` to a Codex reasoning level, so an unsupported tier is a
  * hard configuration error rather than a silent clamp/guess.
  */
 const SUPPORTED_CODEX_THINKING = new Set(["low", "medium", "high", "xhigh"]);
@@ -49,7 +49,7 @@ async function runWorking(
       signal: request.signal,
     });
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: "codex provider process could not be started.",
       details: { cause: error instanceof Error ? error.message : String(error) },
@@ -57,7 +57,7 @@ async function runWorking(
   }
 
   if (result.exitCode !== 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `codex provider process exited with code ${result.exitCode}.`,
       details: { exitCode: result.exitCode },
@@ -77,7 +77,7 @@ function buildCodexWorkingArgs(request: ProviderWorkingRequest): string[] {
 
   if (request.thinking) {
     if (!SUPPORTED_CODEX_THINKING.has(request.thinking)) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "agent_provider_thinking_unsupported",
         message: `codex provider does not support thinking level '${request.thinking}'. Codex only supports low|medium|high|xhigh (no "max" tier).`,
         details: { thinking: request.thinking },

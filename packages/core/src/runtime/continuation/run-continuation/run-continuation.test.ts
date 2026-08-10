@@ -17,7 +17,7 @@ describe("runContinuation", () => {
       workflowAgents: { writer: { size: "small" } },
       runDir: ".",
       cwd: process.cwd(),
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {},
         agents: {},

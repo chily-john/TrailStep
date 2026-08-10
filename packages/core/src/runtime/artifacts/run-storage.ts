@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 
 export type RunState = Record<string, unknown>;
@@ -16,7 +16,7 @@ export async function createRunDirectory(options: {
 }): Promise<{ runId: string; runDir: string }> {
   const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
   await mkdir(runsRoot, { recursive: true });
-  await ensureStepkitGitignoreForRunsRoot(runsRoot);
+  await ensureTrailStepGitignoreForRunsRoot(runsRoot);
 
   for (let suffix = 1; ; suffix += 1) {
     const runId = suffix === 1 ? options.runName : `${options.runName}-${suffix}`;
@@ -45,7 +45,7 @@ export async function readRunEvents(runDir: string): Promise<Event[]> {
     contents = await readFile(join(runDir, "events.jsonl"), "utf8");
   } catch (error) {
     if (isNodeError(error)) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "resume_target_not_found",
         message: `Resume target not found or unreadable: ${join(runDir, "events.jsonl")}.`,
         details: { runDir, causeCode: error.code },
@@ -134,18 +134,18 @@ function isRunState(value: unknown): value is RunState {
   );
 }
 
-async function ensureStepkitGitignoreForRunsRoot(runsRoot: string): Promise<void> {
-  const stepkitRoot = dirname(runsRoot);
-  if (basename(stepkitRoot) !== ".trailstep") {
+async function ensureTrailStepGitignoreForRunsRoot(runsRoot: string): Promise<void> {
+  const trailstepRoot = dirname(runsRoot);
+  if (basename(trailstepRoot) !== ".trailstep") {
     return;
   }
 
-  await ensureStepkitGitignore(stepkitRoot);
+  await ensureTrailStepGitignore(trailstepRoot);
 }
 
-async function ensureStepkitGitignore(stepkitRoot: string): Promise<void> {
+async function ensureTrailStepGitignore(trailstepRoot: string): Promise<void> {
   try {
-    await writeFile(join(stepkitRoot, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" });
+    await writeFile(join(trailstepRoot, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" });
   } catch (error) {
     if (isNodeError(error) && error.code === "EEXIST") {
       return;

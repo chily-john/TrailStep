@@ -1,8 +1,8 @@
 import { rm } from "node:fs/promises";
 
 import type {
-  StepKitAgentTarget,
-  StepKitConfig,
+  TrailStepAgentTarget,
+  TrailStepConfig,
 } from "../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
@@ -15,7 +15,7 @@ import { runCustomWorkingProvider } from "./custom-provider/run-custom-working-p
 import { runRegistryWorkingProvider } from "./registry-provider/run-registry-working-provider.js";
 
 export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options: {
-  readonly config: StepKitConfig;
+  readonly config: TrailStepConfig;
   readonly workflowId: string;
   readonly roleName: string;
   readonly role: WorkflowAgentRole;
@@ -26,7 +26,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
-  readonly target: StepKitAgentTarget;
+  readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
 }): Promise<TOutput> {

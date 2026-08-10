@@ -1,4 +1,4 @@
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { WorkflowAgentRole } from "../agents/agent-role.types.js";
 import type { PlainObject } from "../shapes/shape.types.js";
 
@@ -73,7 +73,7 @@ export interface RunContext {
   readonly workflowId?: string;
   readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
   readonly cwd?: string;
-  readonly stepkitConfig?: StepKitConfig;
+  readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunContextWorkingAgentProcessRunner;
   readonly providerWorkingRunner?: RunContextProviderWorkingRunner;
   readonly emit?: (event: RunContextEvent) => Promise<void>;

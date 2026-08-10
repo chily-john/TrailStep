@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import { workflowFailure } from "./workflow-failure.js";
 
 describe("workflowFailure", () => {
-  it("preserves failures thrown as StepKitFailureError", () => {
+  it("preserves failures thrown as TrailStepFailureError", () => {
     const failure = { code: "already_structured", message: "Already structured." };
 
-    expect(workflowFailure(new StepKitFailureError(failure))).toBe(failure);
+    expect(workflowFailure(new TrailStepFailureError(failure))).toBe(failure);
   });
 
   it("preserves failure-like objects", () => {

@@ -27,7 +27,7 @@ function event(overrides: Partial<Event> & Pick<Event, "id" | "type">): Event {
 }
 
 async function createRunWithEvents(events: readonly Event[]): Promise<string> {
-  const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+  const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
   const { runDir } = await createRunDirectory({ cwd, runName: "history-run" });
 
   for (const nextEvent of events) {
@@ -59,7 +59,7 @@ function replayWorkflow(): Workflow<{ value: number }, { value: number }> {
 describe("replayToFailedStep", () => {
   it("resumes a failed two-step run by replaying the completed first step from its recorded position", async () => {
     expect(typeof replayToFailedStep).toBe("function");
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
     let firstStepRuns = 0;
     let shouldFailSecondStep = true;
 
@@ -145,7 +145,7 @@ describe("replayToFailedStep", () => {
   });
 
   it("rejects a missing target with a specific failure code", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
     const missingRunDir = join(cwd, ".trailstep", "runs", "missing-run");
 
     const result = await runWorkflow({
@@ -382,7 +382,7 @@ describe("replayToFailedStep", () => {
   });
 
   it("rejects completed runs and workflow mismatch with specific failure codes", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-resume-"));
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "completed-workflow",
       inputShape: { value: "number" },

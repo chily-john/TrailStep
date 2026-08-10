@@ -2,15 +2,15 @@ import type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "../../contracts/agents/agent-role.types.js";
-import type { StepKitAgentTarget } from "../targeting.types.js";
+import type { TrailStepAgentTarget } from "../targeting.types.js";
 import { isRecord, parseOptionalStringArray } from "./parse-utils.js";
 
-export interface RawStepKitAgentRef {
+export interface RawTrailStepAgentRef {
   readonly ref: string;
 }
 
-export type RawStepKitAgentTarget = StepKitAgentTarget | RawStepKitAgentRef;
-export type RawStepKitAgentMappings = Readonly<Record<string, readonly RawStepKitAgentTarget[]>>;
+export type RawTrailStepAgentTarget = TrailStepAgentTarget | RawTrailStepAgentRef;
+export type RawTrailStepAgentMappings = Readonly<Record<string, readonly RawTrailStepAgentTarget[]>>;
 
 export const AGENT_SIZES = new Set<WorkflowAgentSize>([
   "default",
@@ -27,13 +27,13 @@ export function parseTargetArray(
   path: string,
   value: unknown,
   diagnostics: string[],
-): readonly RawStepKitAgentTarget[] {
+): readonly RawTrailStepAgentTarget[] {
   if (!Array.isArray(value)) {
     diagnostics.push(`${path} must be an array.`);
     return [];
   }
 
-  return value.flatMap((target, index): readonly RawStepKitAgentTarget[] => {
+  return value.flatMap((target, index): readonly RawTrailStepAgentTarget[] => {
     const targetPath = `${path}[${index}]`;
 
     if (!isRecord(target)) {

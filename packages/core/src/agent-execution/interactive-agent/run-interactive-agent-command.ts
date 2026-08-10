@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolveAgentTargets } from "../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
-import type { StepKitAgentTarget, StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { TrailStepAgentTarget, TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 import { providerRegistry } from "../../known-cli-providers/registry/provider-registry.js";
 import type { StepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
@@ -19,7 +19,7 @@ import type {
 } from "../../runtime/run-workflow/run-workflow.types.js";
 
 export async function runInteractiveAgentCommand(options: {
-  readonly config: StepKitConfig;
+  readonly config: TrailStepConfig;
   readonly workflowId: string;
   readonly roleName: string;
   readonly role: WorkflowAgentRole;
@@ -40,7 +40,7 @@ export async function runInteractiveAgentCommand(options: {
   });
 
   if (!target) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_targets_unavailable",
       message: `No interactive agent targets found for role ${options.roleName} with size ${options.role.size} in workflow ${options.workflowId}.`,
     });
@@ -50,7 +50,7 @@ export async function runInteractiveAgentCommand(options: {
 }
 
 async function runInteractiveAgentTarget(options: {
-  readonly config: StepKitConfig;
+  readonly config: TrailStepConfig;
   readonly workflowId: string;
   readonly roleName: string;
   readonly role: WorkflowAgentRole;
@@ -61,7 +61,7 @@ async function runInteractiveAgentTarget(options: {
   readonly artifactPaths: StepArtifactPaths;
   readonly outputMode: "session-file" | "json";
   readonly runner?: InteractiveProcessRunner;
-  readonly target: StepKitAgentTarget;
+  readonly target: TrailStepAgentTarget;
   readonly signal?: AbortSignal;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const files = options.artifactPaths;
@@ -78,7 +78,7 @@ async function runInteractiveAgentTarget(options: {
     outputSchema: options.outputSchema,
     outputMode: options.outputMode,
   });
-  const env = { ...definedProcessEnv(), STEPKIT_INTERACTIVE_FILE: files.interactiveFile };
+  const env = { ...definedProcessEnv(), TRAILSTEP_INTERACTIVE_FILE: files.interactiveFile };
 
   const abortController = new AbortController();
   options.signal?.addEventListener("abort", () => abortController.abort(), { once: true });
@@ -113,7 +113,7 @@ async function runInteractiveAgentTarget(options: {
 
   const agentConfig = options.config.customProviders[options.target.provider];
   if (!agentConfig) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_unavailable",
       message: `Interactive agent target '${options.target.provider}' does not reference a configured custom agent.`,
       details: { provider: options.target.provider },
@@ -121,7 +121,7 @@ async function runInteractiveAgentTarget(options: {
   }
 
   if (!agentConfig.interactiveArgs) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_interactive_unsupported",
       message: `Custom provider '${options.target.provider}' cannot run interactive agent steps because customProviders.${options.target.provider}.interactiveArgs is not declared.`,
       details: { provider: options.target.provider },
@@ -142,7 +142,7 @@ async function runInteractiveAgentTarget(options: {
     abortController,
     readOutput: async () => await readCompletedOutput(options),
     mapSpawnError: (error) =>
-      new StepKitFailureError({
+      new TrailStepFailureError({
         code: "interactive_command_spawn_error",
         message: `Interactive agent step ${options.stepId} could not start target '${options.target.provider}'.`,
         details: {
@@ -179,7 +179,7 @@ async function runProcessUntilExitOrCompletion(options: {
   readonly abortController: AbortController;
   readonly runProcess: () => Promise<InteractiveProcessResult>;
   readonly readOutput: () => Promise<PlainObject>;
-  readonly mapSpawnError?: (error: unknown) => StepKitFailureError;
+  readonly mapSpawnError?: (error: unknown) => TrailStepFailureError;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const processPromise = options.runProcess();
   void processPromise.catch(() => undefined);
@@ -211,7 +211,7 @@ async function runProcessUntilExitOrCompletion(options: {
     }
 
     if (winner.result.exitCode !== 0) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "interactive_session_failed",
         message: `Interactive agent step ${options.stepId} exited with code ${winner.result.exitCode}.`,
         details: { exitCode: winner.result.exitCode, target: options.target },
@@ -271,23 +271,23 @@ function buildInteractivePrompt(options: {
   const preamble =
     options.outputMode === "session-file"
       ? [
-          "You are running inside a StepKit interactive step.",
+          "You are running inside a TrailStep interactive step.",
           "Write a dense session description to session-description.md in the current directory.",
           "preserve as much usable context as possible.",
           "describe the conversation rather than aggressively summarize it.",
           "include decisions, rejected options, tradeoffs, constraints, side comments, terminology, open questions, assumptions, file paths, commands, APIs, package names, examples, preferences, reasoning, and abandoned options.",
           "The goal is context preservation, not polish.",
           "Do not omit low-importance details merely because they seem minor.",
-          "When complete, run: stepkit continue --session-file session-description.md",
+          "When complete, run: trailstep continue --session-file session-description.md",
         ]
       : [
-          "You are running inside a StepKit interactive step.",
+          "You are running inside a TrailStep interactive step.",
           "Submit a JSON object matching this schema:",
           JSON.stringify(options.outputSchema.jsonSchema, null, 2),
           "When complete, run one of:",
-          "  stepkit continue --json-file output.json",
-          `  stepkit continue --json '${JSON.stringify(exampleJsonObject(options.outputSchema.jsonSchema))}'`,
-          "If validation fails, update the JSON so it matches the schema and run stepkit continue again.",
+          "  trailstep continue --json-file output.json",
+          `  trailstep continue --json '${JSON.stringify(exampleJsonObject(options.outputSchema.jsonSchema))}'`,
+          "If validation fails, update the JSON so it matches the schema and run trailstep continue again.",
         ];
 
   return [...preamble, "", "## Original prompt", options.renderedPrompt].join("\n");
@@ -352,7 +352,7 @@ async function substitutePromptPlaceholders(options: {
     }
 
     if (arg.includes("{{prompt}}") || arg.includes("{{promptFile}}") || arg.includes("{{model}}")) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "interactive_command_invalid",
         message: "Interactive prompt placeholders must be whole argv values.",
       });

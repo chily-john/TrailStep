@@ -10,8 +10,8 @@ import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 import { runWorkflow } from "./run-workflow.js";
 
 describe("runWorkflow runtime front-door", () => {
-  it("accepts an already-flattened non-empty StepKitConfig without reparsing it as raw entries", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-flattened-config-"));
+  it("accepts an already-flattened non-empty TrailStepConfig without reparsing it as raw entries", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-flattened-config-"));
     const workflow: Workflow<{ task: string }, { answer: string }> = {
       id: "flattened-config-workflow",
       inputShape: { task: "string" },
@@ -32,7 +32,7 @@ describe("runWorkflow runtime front-door", () => {
       input: { task: "flattened config" },
       runName: "flattened-config-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { local: { binary: "local-agent" } },
         agents: { small: [{ provider: "local", model: "fast" }] },
@@ -51,7 +51,7 @@ describe("runWorkflow runtime front-door", () => {
   });
 
   it("persists step events before the event sink observes a later event", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];
 
     const firstStep = step({ id: "first" }).do((input: { value: number }) =>

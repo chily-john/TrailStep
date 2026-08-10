@@ -1,13 +1,13 @@
-export { parseStepKitConfig } from "./agent-targeting/parse-stepkit-config/parse-stepkit-config.js";
+export { parseTrailStepConfig } from "./agent-targeting/parse-trailstep-config/parse-trailstep-config.js";
 export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 export type {
   ResolveAgentTargetsOptions,
-  StepKitAgentMappings,
-  StepKitAgentTarget,
-  StepKitConfig,
-  StepKitCustomProviderConfig,
-  StepKitSettings,
-  StepKitWorkflowConfig,
+  TrailStepAgentMappings,
+  TrailStepAgentTarget,
+  TrailStepConfig,
+  TrailStepCustomProviderConfig,
+  TrailStepSettings,
+  TrailStepWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
 export {
   Document,
@@ -61,6 +61,7 @@ export type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
+export { TrailStepFailureError } from "./contracts/failures/failure.js";
 export type { Failure } from "./contracts/failures/failure.js";
 export type {
   PlainObject,

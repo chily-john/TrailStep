@@ -9,7 +9,7 @@
       "!.turbo",
       "!.pi",
       "!.workflower",
-      "!.stepkit/runs",
+      "!.trailstep/runs",
       "!graphify-out",
       "!pnpm-lock.yaml"
     ]

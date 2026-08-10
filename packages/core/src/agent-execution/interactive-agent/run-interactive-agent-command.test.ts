@@ -17,7 +17,7 @@ import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts
 import { runInteractiveAgentCommand } from "./run-interactive-agent-command.js";
 
 describe("continuation interactive agent roles", () => {
-  it("sets TRAILSTEP_INTERACTIVE_FILE without forwarding legacy STEPKIT interactive env", async () => {
+  it("sets TRAILSTEP_INTERACTIVE_FILE without forwarding the migrated interactive env", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-env-"));
     const runDir = join(cwd, ".trailstep", "runs", "interactive-env-run");
     const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });

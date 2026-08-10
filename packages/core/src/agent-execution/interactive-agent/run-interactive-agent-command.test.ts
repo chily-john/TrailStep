@@ -8,12 +8,73 @@ import { describe, expect, it } from "vitest";
 import {
   done,
   type InteractiveProcessRunner,
+  jsonSchema,
   runWorkflow,
   step,
   type Workflow,
 } from "../../index.js";
+import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
+import { runInteractiveAgentCommand } from "./run-interactive-agent-command.js";
 
 describe("continuation interactive agent roles", () => {
+  it("sets TRAILSTEP_INTERACTIVE_FILE without forwarding legacy STEPKIT interactive env", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-env-"));
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-env-run");
+    const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });
+    const previousLegacyInteractiveFile = process.env.STEPKIT_INTERACTIVE_FILE;
+    process.env.STEPKIT_INTERACTIVE_FILE = "legacy-interactive.json";
+
+    try {
+      const result = await runInteractiveAgentCommand({
+        config: {
+          version: 1,
+          customProviders: {
+            terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+          },
+          agents: { small: [{ provider: "terminalAgent" }] },
+        },
+        workflowId: "interactive-env-workflow",
+        roleName: "reviewer",
+        role: { size: "small" },
+        stepId: "review",
+        renderedPrompt: "Review environment handling.",
+        runDir,
+        outputSchema: jsonSchema({
+          type: "object",
+          properties: { notes: { type: "string" } },
+          required: ["notes"],
+          additionalProperties: false,
+        }),
+        artifactPaths,
+        outputMode: "json",
+        runner: async (call) => {
+          expect(call.env?.TRAILSTEP_INTERACTIVE_FILE).toBe(artifactPaths.interactiveFile);
+          expect(call.env?.STEPKIT_INTERACTIVE_FILE).toBeUndefined();
+          const protocol = JSON.parse(await readFile(artifactPaths.interactiveFile, "utf8"));
+          await writeFile(
+            protocol.outputFile,
+            `${JSON.stringify({ notes: "TrailStep env only." }, null, 2)}\n`,
+            "utf8",
+          );
+          await writeFile(
+            artifactPaths.interactiveFile,
+            `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      });
+
+      expect(result.output).toEqual({ notes: "TrailStep env only." });
+    } finally {
+      if (previousLegacyInteractiveFile === undefined) {
+        delete process.env.STEPKIT_INTERACTIVE_FILE;
+      } else {
+        process.env.STEPKIT_INTERACTIVE_FILE = previousLegacyInteractiveFile;
+      }
+    }
+  });
+
   it("passes custom structured interactive output into the continuation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-json-"));
     const workflow: Workflow<{ task: string }, { notes: string }> = {
@@ -630,7 +691,14 @@ describe("continuation interactive agent roles", () => {
         );
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         expect(protocol.stepDir).toBe(
-          join(cwd, ".trailstep", "runs", "interactive-default-run", "steps", "0001-discuss-feature"),
+          join(
+            cwd,
+            ".trailstep",
+            "runs",
+            "interactive-default-run",
+            "steps",
+            "0001-discuss-feature",
+          ),
         );
         expect(protocol.runRelativeStepDir).toBe("steps/0001-discuss-feature");
         await writeFile(

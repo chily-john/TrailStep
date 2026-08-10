@@ -1,2 +1,5 @@
-delete process.env.TRAILSTEP_RUNS_ROOT;
-delete process.env.STEPKIT_RUNS_ROOT;
+for (const key of Object.keys(process.env)) {
+  if (key.startsWith("TRAILSTEP_") || key.startsWith("STEPKIT_")) {
+    delete process.env[key];
+  }
+}

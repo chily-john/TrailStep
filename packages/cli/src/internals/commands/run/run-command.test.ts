@@ -228,6 +228,7 @@ describe("run command", () => {
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       '"prepared":true',
     );
+    await expect(stat(join(cwd, ".stepkit", "runs"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(resolve(cwd, "workflows", "review.mjs"));
     expect(lines.join("\n")).toContain(runDir);
   });
@@ -257,7 +258,7 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
-  it("ignores the legacy STEPKIT_RUNS_ROOT override", async ({ task }) => {
+  it("intentionally ignores the legacy STEPKIT_RUNS_ROOT override", async ({ task }) => {
     const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     const cwd = join(root, "worktree");
     const legacyRunsRoot = resolve(root, "legacy", ".stepkit", "runs");

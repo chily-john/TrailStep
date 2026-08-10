@@ -212,6 +212,23 @@ describe("continue command", () => {
     expect(errors).toEqual([]);
   });
 
+  it("intentionally rejects legacy STEPKIT_INTERACTIVE_FILE for explicit output modes", async () => {
+    const errors: string[] = [];
+
+    await expect(
+      continueCommand.run(
+        { mode: "session-file", path: "session-description.md" },
+        {
+          cwd: ".",
+          env: { STEPKIT_INTERACTIVE_FILE: "legacy-interactive.json" },
+          io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+        },
+      ),
+    ).rejects.toThrow(/TRAILSTEP_INTERACTIVE_FILE/i);
+
+    expect(errors).toEqual([]);
+  });
+
   it("prompts to select an active session when continue has no arguments", async ({ task }) => {
     const cwd = join(nodeTmpContinueTestsDir(task.id), "select-active");
     const runDirA = join(cwd, ".trailstep", "runs", "alpha-run");

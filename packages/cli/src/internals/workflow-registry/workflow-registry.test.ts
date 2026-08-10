@@ -49,6 +49,14 @@ describe("readRawTrailStepConfigFile / writeRawTrailStepConfigFile", () => {
     await expect(readRawTrailStepConfigFile(path)).resolves.toEqual({});
   });
 
+  it("reports invalid project config as TrailStep config", async ({ task }) => {
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await writeJson(path, []);
+
+    await expect(readRawTrailStepConfigFile(path)).rejects.toThrow(/Invalid TrailStep config/);
+    await expect(readRawTrailStepConfigFile(path)).rejects.not.toThrow(/Invalid StepKit config/);
+  });
+
   it("round-trips a written config through mkdir -p and pretty-printed JSON", async ({ task }) => {
     const path = join(tmpDir(task), ".trailstep", "config.json");
     await writeRawTrailStepConfigFile(path, { workflows: { project: { review: "./review.mjs" } } });

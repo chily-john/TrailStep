@@ -27,7 +27,7 @@ export async function readRawTrailStepConfigFile(path: string): Promise<Record<s
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
     if (!isRecord(parsed)) {
-      throw new CliUsageError(`Invalid StepKit config at ${path}: expected a JSON object.`);
+      throw new CliUsageError(`Invalid TrailStep config at ${path}: expected a JSON object.`);
     }
     return parsed;
   } catch (error) {

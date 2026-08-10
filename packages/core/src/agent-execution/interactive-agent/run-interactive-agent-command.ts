@@ -2,7 +2,10 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolveAgentTargets } from "../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
-import type { TrailStepAgentTarget, TrailStepConfig } from "../../agent-targeting/targeting.types.js";
+import type {
+  TrailStepAgentTarget,
+  TrailStepConfig,
+} from "../../agent-targeting/targeting.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
@@ -167,7 +170,8 @@ async function runInteractiveAgentTarget(options: {
 function definedProcessEnv(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && !entry[0].startsWith("STEPKIT_"),
     ),
   );
 }

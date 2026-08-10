@@ -4,7 +4,7 @@ import { generateWorkflowSkillContent, workflowSkillName } from "./workflow-skil
 
 describe("workflowSkillName", () => {
   it("prefixes sanitized workflow names without appending the namespace", () => {
-    expect(workflowSkillName("Project Tools", "Review_Workflow!!")).toBe("sk-review-workflow");
+    expect(workflowSkillName("Project Tools", "Review_Workflow!!")).toBe("trst-review-workflow");
   });
 });
 
@@ -63,10 +63,10 @@ describe("generateWorkflowSkillContent", () => {
       },
     });
 
-    expect(skillName).toBe("sk-review");
-    expect(markdown).toContain(".trailstep/inputs/sk-review-input.json");
+    expect(skillName).toBe("trst-review");
+    expect(markdown).toContain(".trailstep/inputs/trst-review-input.json");
     expect(markdown).toContain(
-      "trailstep project/review --input-file .trailstep/inputs/sk-review-input.json",
+      "trailstep project/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(markdown).toContain('"topic": {');
     expect(markdown).toContain('"type": "string"');
@@ -99,11 +99,11 @@ describe("generateWorkflowSkillContent", () => {
     });
 
     expect(markdown).toContain(
-      "Export dense conversation/session context to `.trailstep/inputs/sk-review-context.md`",
+      "Export dense conversation/session context to `.trailstep/inputs/trst-review-context.md`",
     );
-    expect(markdown).toContain('{ "sessionFile": ".trailstep/inputs/sk-review-context.md" }');
+    expect(markdown).toContain('{ "sessionFile": ".trailstep/inputs/trst-review-context.md" }');
     expect(markdown).toContain(
-      "trailstep project/review --input-file .trailstep/inputs/sk-review-input.json",
+      "trailstep project/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(markdown).toContain('"sessionFile": {');
   });

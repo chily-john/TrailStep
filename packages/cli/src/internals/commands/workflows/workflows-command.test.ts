@@ -308,7 +308,7 @@ describe("workflowsCommand", () => {
 
   it("warns that an existing generated skill directory was not removed", async ({ task }) => {
     const cwd = tmpDir(task);
-    const skillDirectory = join(cwd, ".trailstep", "skills", "sk-review");
+    const skillDirectory = join(cwd, ".trailstep", "skills", "trst-review");
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });

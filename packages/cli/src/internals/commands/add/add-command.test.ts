@@ -385,7 +385,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
     expect(skillSource).toContain('description: "[project] Review the active change set."');
@@ -439,10 +439,10 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
-    expect(skillSource).toContain("name: sk-review");
+    expect(skillSource).toContain("name: trst-review");
     expect(skillSource).toContain("description:");
     expect(skillSource).toContain("trailstep project/review");
   });
@@ -494,7 +494,7 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill sk-review: Could not resolve skills CLI.",
+      "Warning: registered project/review but could not distribute project workflow skill trst-review: Could not resolve skills CLI.",
     );
   });
 
@@ -544,7 +544,7 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill sk-review: skills CLI exited with code 3.",
+      "Warning: registered project/review but could not distribute project workflow skill trst-review: skills CLI exited with code 3.",
     );
   });
 
@@ -644,7 +644,7 @@ describe("addCommand", () => {
       [
         "/repo/node_modules/skills/dist/index.js",
         "add",
-        join(cwd, ".trailstep", "skills", "sk-review"),
+        join(cwd, ".trailstep", "skills", "trst-review"),
         "--agent",
         "*",
         "-y",
@@ -652,7 +652,7 @@ describe("addCommand", () => {
       [
         "/repo/node_modules/skills/dist/index.js",
         "add",
-        join(cwd, ".trailstep", "skills", "sk-review"),
+        join(cwd, ".trailstep", "skills", "trst-review"),
         "--agent",
         "*",
         "-y",
@@ -670,7 +670,7 @@ describe("addCommand", () => {
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await mkdir(join(cwd, ".trailstep", "skills", "sk-review", "SKILL.md"), {
+    await mkdir(join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"), {
       recursive: true,
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
@@ -710,7 +710,7 @@ describe("addCommand", () => {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toEqual([
-      "Warning: registered project/review but could not write project workflow skill sk-review.",
+      "Warning: registered project/review but could not write project workflow skill trst-review.",
     ]);
   });
 
@@ -1574,7 +1574,7 @@ describe("addCommand", () => {
       workflows: { acme: { review: "./local-workflow-package#review" } },
     });
     expect(errors).toEqual([
-      "Warning: registered acme/review but could not write project workflow skill sk-review.",
+      "Warning: registered acme/review but could not write project workflow skill trst-review.",
     ]);
   });
 
@@ -1635,14 +1635,14 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
     expect(skillSource).toContain('description: "[acme] Review a local bundle change set."');
     expect(skillSource).toContain('"changeId"');
     expect(skillSource).toContain('"risk"');
     expect(skillSource).toContain(
-      "trailstep acme/review --input-file .trailstep/inputs/sk-review-input.json",
+      "trailstep acme/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(skillSource).toContain("Registered workflow source: `./local-workflow-package#review`");
     expect(skillSource).not.toContain('Run the TrailStep workflow "acme/review".');
@@ -1701,13 +1701,13 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
     expect(skillSource).toContain('description: "[acme] Review an installed bundle package."');
     expect(skillSource).toContain('"ticket"');
     expect(skillSource).toContain(
-      "trailstep acme/review --input-file .trailstep/inputs/sk-review-input.json",
+      "trailstep acme/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(skillSource).toContain("Registered workflow source: `@acme/workflows#review`");
     expect(skillSource).not.toContain('Run the TrailStep workflow "acme/review".');
@@ -2308,10 +2308,10 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(
-      await readFile(join(cwd, ".trailstep", "skills", "sk-alpha", "SKILL.md"), "utf8"),
+      await readFile(join(cwd, ".trailstep", "skills", "trst-alpha", "SKILL.md"), "utf8"),
     ).toContain("trailstep acme/alpha");
     expect(
-      await readFile(join(cwd, ".trailstep", "skills", "sk-beta", "SKILL.md"), "utf8"),
+      await readFile(join(cwd, ".trailstep", "skills", "trst-beta", "SKILL.md"), "utf8"),
     ).toContain("trailstep acme/beta");
   });
 

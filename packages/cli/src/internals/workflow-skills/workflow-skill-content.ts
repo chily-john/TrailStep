@@ -51,7 +51,7 @@ export function generateWorkflowSkillContent(
 }
 
 export function workflowSkillName(_namespace: string, name: string): string {
-  return `sk-${sanitizeSkillNamePart(name) || "workflow"}`;
+  return `trst-${sanitizeSkillNamePart(name) || "workflow"}`;
 }
 
 type WorkflowInputMode =

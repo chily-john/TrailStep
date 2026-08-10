@@ -134,7 +134,7 @@ describe("removeCommand", () => {
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
-    await mkdir(join(cwd, ".trailstep", "skills", "sk-review"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep", "skills", "trst-review"), { recursive: true });
 
     const command = resolveCommand(["remove", "project/review"]);
     const errors: string[] = [];
@@ -146,6 +146,6 @@ describe("removeCommand", () => {
     expect(
       errors.some((line) => line.includes("skill directory") && line.includes("not removed")),
     ).toBe(true);
-    await expect(stat(join(cwd, ".trailstep", "skills", "sk-review"))).resolves.toBeTruthy();
+    await expect(stat(join(cwd, ".trailstep", "skills", "trst-review"))).resolves.toBeTruthy();
   });
 });

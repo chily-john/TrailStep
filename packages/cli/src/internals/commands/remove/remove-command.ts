@@ -3,10 +3,10 @@ import { CliUsageError } from "../../command.types.js";
 import {
   configPathForScope,
   deleteWorkflowRegistryEntry,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
   type WorkflowRegistryScope,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 
@@ -26,14 +26,14 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
 
     const ref = argv[1];
     if (!ref) {
-      throw new CliUsageError("stepkit remove requires <namespace>/<name>.");
+      throw new CliUsageError("trailstep remove requires <namespace>/<name>.");
     }
 
     const flags = parseFlags(argv.slice(2));
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
-        "stepkit remove requires --scope local, --scope project, or --scope global.",
+        "trailstep remove requires --scope local, --scope project, or --scope global.",
       );
     }
 
@@ -43,7 +43,7 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
     const parsed = parseNamespaceNameRef(args.ref);
     if (parsed === undefined) {
       throw new CliUsageError(
-        `Invalid workflow ref for stepkit remove: ${args.ref}. Expected <namespace>/<name>.`,
+        `Invalid workflow ref for trailstep remove: ${args.ref}. Expected <namespace>/<name>.`,
       );
     }
 
@@ -53,7 +53,7 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
     const matches: WorkflowRegistryScope[] = [];
     for (const scope of candidateScopes) {
       const path = configPathForScope(scope, context);
-      const config = await readRawStepKitConfigFile(path);
+      const config = await readRawTrailStepConfigFile(path);
       const bucket = toMutableWorkflowRegistry(config.workflows)[parsed.namespace];
       if (bucket?.[parsed.name] !== undefined) {
         matches.push(scope);
@@ -74,13 +74,13 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
 
     const [scope] = matches as [WorkflowRegistryScope];
     const path = configPathForScope(scope, context);
-    const config = await readRawStepKitConfigFile(path);
+    const config = await readRawTrailStepConfigFile(path);
     const workflows = deleteWorkflowRegistryEntry(
       toMutableWorkflowRegistry(config.workflows),
       parsed.namespace,
       parsed.name,
     );
-    await writeRawStepKitConfigFile(path, { ...config, workflows });
+    await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
     context.io.writeLine(`Removed ${args.ref} from ${scope} config.`);
 
@@ -96,7 +96,7 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option !== "--scope") {
-      throw new CliUsageError(`Unknown option for stepkit remove: ${option ?? ""}`);
+      throw new CliUsageError(`Unknown option for trailstep remove: ${option ?? ""}`);
     }
 
     const value = argv[index + 1];

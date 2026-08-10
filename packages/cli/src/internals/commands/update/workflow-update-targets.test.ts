@@ -55,7 +55,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     await writeJson(join(cwd, "package.json"), {
       devDependencies: { "@acme/review-workflow": "^1.2.0" },
     });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "@acme/review-workflow" } },
     });
     await writeJson(join(cwd, "node_modules", "@acme", "review-workflow", "package.json"), {
@@ -90,7 +90,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@acme/workflows": "^1.0.0" },
     });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: {
         project: {
           review: "@acme/workflows#review",
@@ -127,7 +127,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
 
   it("reports direct-file registrations as skips without npm view calls", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     const { runner, viewedPackages } = createPackageCommandRunner({});
@@ -151,7 +151,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
 
   it("errors on ambiguous bare workflow names", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: {
         project: { review: "@acme/project-review" },
         other: { review: "@acme/other-review" },
@@ -200,7 +200,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   it("errors clearly when target package is not in root dependencies", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, "package.json"), { dependencies: {} });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "@acme/review-workflow" } },
     });
     await writeJson(join(cwd, "node_modules", "@acme", "review-workflow", "package.json"), {

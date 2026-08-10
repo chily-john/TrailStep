@@ -1,4 +1,4 @@
-import type { StepkitCliPrompts } from "../command.types.js";
+import type { TrailStepCliPrompts } from "../command.types.js";
 
 export type AgentConfigSaveContext =
   | { readonly kind: "named-agent-create"; readonly name: string }
@@ -26,7 +26,7 @@ export type SaveConfirmOutcome =
 
 export interface SaveConfirmRequest {
   readonly context: AgentConfigSaveContext;
-  readonly prompts: StepkitCliPrompts;
+  readonly prompts: TrailStepCliPrompts;
 }
 
 export async function confirmAgentConfigSave(

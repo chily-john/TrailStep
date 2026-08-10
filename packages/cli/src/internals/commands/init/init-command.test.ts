@@ -53,7 +53,7 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
   });
@@ -106,7 +106,7 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config-local.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config-local.json"))).toEqual({
       customProviders: { "local-agent": { binary: "agent-bin" } },
       agents: {
         default: [{ provider: "claude", model: "opus" }],

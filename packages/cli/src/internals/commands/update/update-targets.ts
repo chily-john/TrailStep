@@ -9,14 +9,14 @@ import {
   type NpmPackageMetadata,
 } from "../../package-manager/npm-registry.js";
 
-const stepkitPackageNames = ["@trailstep/core", "@trailstep/authoring", "@trailstep/cli"] as const;
+const trailstepPackageNames = ["@trailstep/core", "@trailstep/authoring", "@trailstep/cli"] as const;
 
-type StepkitPackageName = (typeof stepkitPackageNames)[number];
+type TrailStepPackageName = (typeof trailstepPackageNames)[number];
 
 export type DependencySection = "dependencies" | "devDependencies" | "peerDependencies";
 
 export interface UpdateTarget {
-  packageName: StepkitPackageName;
+  packageName: TrailStepPackageName;
   currentRange: string;
   targetVersion: string;
   dependencySection: DependencySection;
@@ -83,8 +83,8 @@ export async function resolveStepKitSelfUpdateTargets({
 }
 
 function createTarget(
-  packageName: StepkitPackageName,
-  current: Map<StepkitPackageName, { range: string; section: DependencySection }>,
+  packageName: TrailStepPackageName,
+  current: Map<TrailStepPackageName, { range: string; section: DependencySection }>,
   targetVersion: string,
 ): UpdateTarget {
   const currentEntry = current.get(packageName);
@@ -144,8 +144,8 @@ export function readPackageDependencyEntry(
 }
 
 function readCurrentStepKitRanges(packageJson: Record<string, unknown>) {
-  const entries = new Map<StepkitPackageName, { range: string; section: DependencySection }>();
-  for (const packageName of stepkitPackageNames) {
+  const entries = new Map<TrailStepPackageName, { range: string; section: DependencySection }>();
+  for (const packageName of trailstepPackageNames) {
     const entry = readPackageDependencyEntry(packageJson, packageName);
     if (entry) {
       entries.set(packageName, entry);

@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main } from "../../../index.js";
-import type { StepkitCliPrompts } from "../../command.types.js";
+import type { TrailStepCliPrompts } from "../../command.types.js";
 import { continueCommand } from "./continue-command.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -63,7 +63,7 @@ describe("continue command", () => {
 
     const exitCode = await main({
       argv: ["continue", "--json", '{"approved":true,"notes":"Approved."}'],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -88,7 +88,7 @@ describe("continue command", () => {
     const exitCode = await main({
       argv: ["continue", "--json-file", "answer.json"],
       cwd: join(cwd, "not-the-step-dir"),
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -115,7 +115,7 @@ describe("continue command", () => {
 
     const exitCode = await main({
       argv: ["continue", "--json", '{"approved":true,"notes":"Replacement."}'],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -136,7 +136,7 @@ describe("continue command", () => {
 
     const exitCode = await main({
       argv: ["continue", "--json", '{"approved":true,"notes":"Approved.","extra":true}'],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -158,7 +158,7 @@ describe("continue command", () => {
 
     const exitCode = await main({
       argv: ["continue", "--json", '{"approved":true,"notes":"Replacement.","extra":true}'],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -182,7 +182,7 @@ describe("continue command", () => {
     const exitCode = await main({
       argv: ["continue", "--session-file", "session-description.md"],
       cwd: join(cwd, "not-the-step-dir"),
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
     });
 
@@ -195,7 +195,7 @@ describe("continue command", () => {
     expect(errors).toEqual([]);
   });
 
-  it("requires STEPKIT_INTERACTIVE_FILE for explicit output modes", async () => {
+  it("requires TRAILSTEP_INTERACTIVE_FILE for explicit output modes", async () => {
     const errors: string[] = [];
 
     await expect(
@@ -207,7 +207,7 @@ describe("continue command", () => {
           io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
         },
       ),
-    ).rejects.toThrow(/STEPKIT_INTERACTIVE_FILE/i);
+    ).rejects.toThrow(/TRAILSTEP_INTERACTIVE_FILE/i);
 
     expect(errors).toEqual([]);
   });
@@ -234,7 +234,7 @@ describe("continue command", () => {
     await writeFile(join(stepDirA, "session-description.md"), "Alpha notes\n", "utf8");
     await writeFile(join(stepDirB, "session-description.md"), "Beta notes\n", "utf8");
     const selectCalls: Array<{ prompt: string; choices: readonly string[] }> = [];
-    const prompts: StepkitCliPrompts = {
+    const prompts: TrailStepCliPrompts = {
       text: async () => "",
       select: async (prompt, choices) => {
         selectCalls.push({ prompt, choices });
@@ -297,7 +297,7 @@ describe("continue command", () => {
       join(stepDir, "interactive.json"),
       interactiveProtocol({ runDir, stepDir, outputMode: "json" }),
     );
-    const prompts: StepkitCliPrompts = {
+    const prompts: TrailStepCliPrompts = {
       text: async () => '{"approved":true,"notes":"Approved interactively."}',
       select: async (_prompt, choices) => choices[0] ?? "",
       confirm: async () => true,
@@ -343,7 +343,7 @@ describe("continue command", () => {
     });
     await writeFile(join(activeStepDir, "session-description.md"), "Active notes\n", "utf8");
     const selectedChoices: string[] = [];
-    const prompts: StepkitCliPrompts = {
+    const prompts: TrailStepCliPrompts = {
       text: async () => "",
       select: async (_prompt, choices) => {
         selectedChoices.push(...choices);
@@ -381,7 +381,7 @@ describe("continue command", () => {
     await expect(
       main({
         argv: ["continue", "--session-file", "session-description.md"],
-        env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+        env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),
     ).resolves.toBe(1);

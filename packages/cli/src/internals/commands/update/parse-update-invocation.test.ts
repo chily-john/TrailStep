@@ -5,7 +5,7 @@ import { resolveCommand } from "../../command-registry.js";
 import { parseUpdateInvocation } from "./parse-update-invocation.js";
 
 describe("parseUpdateInvocation", () => {
-  it("parses bare update as StepKit self-update scope", () => {
+  it("parses bare update as TrailStep self-update scope", () => {
     expect(parseUpdateInvocation(["update"])).toEqual({
       scope: { kind: "self" },
       force: false,
@@ -45,7 +45,7 @@ describe("parseUpdateInvocation", () => {
 
   it("rejects unknown options with usage text", () => {
     expect(() => parseUpdateInvocation(["update", "--bogus"])).toThrow(/Unknown option: --bogus/);
-    expect(() => parseUpdateInvocation(["update", "--bogus"])).toThrow(/stepkit update/);
+    expect(() => parseUpdateInvocation(["update", "--bogus"])).toThrow(/trailstep update/);
   });
 
   it("registers update before workflow fallback", () => {

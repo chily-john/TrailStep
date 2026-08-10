@@ -57,9 +57,9 @@ async function writeAmbiguousDirectWorkflowFile(cwd: string): Promise<void> {
 }
 
 async function writeRegisteredProjectWorkflow(cwd: string): Promise<void> {
-  const workflowDir = join(cwd, ".stepkit", "workflows");
+  const workflowDir = join(cwd, ".trailstep", "workflows");
   await mkdir(workflowDir, { recursive: true });
-  await writeJson(join(cwd, ".stepkit", "config.json"), {
+  await writeJson(join(cwd, ".trailstep", "config.json"), {
     version: 1,
     customProviders: {
       local: { binary: "pi" },
@@ -67,7 +67,7 @@ async function writeRegisteredProjectWorkflow(cwd: string): Promise<void> {
     agents: {},
     workflows: {
       project: {
-        release: "./.stepkit/workflows/release.mjs",
+        release: "./.trailstep/workflows/release.mjs",
       },
       review: {
         agents: {
@@ -108,24 +108,24 @@ async function writeRegisteredWorkflowFile(
 }
 
 async function writeConflictingRegisteredWorkflows(cwd: string, homeDir: string): Promise<void> {
-  await writeJson(join(cwd, ".stepkit", "config.json"), {
+  await writeJson(join(cwd, ".trailstep", "config.json"), {
     workflows: {
       project: {
-        review: "./.stepkit/workflows/review.mjs",
+        review: "./.trailstep/workflows/review.mjs",
       },
     },
   });
-  await writeJson(join(homeDir, ".stepkit", "config.json"), {
+  await writeJson(join(homeDir, ".trailstep", "config.json"), {
     workflows: {
       global: {
-        review: "~/.stepkit/workflows/review.mjs",
+        review: "~/.trailstep/workflows/review.mjs",
       },
     },
   });
-  await writeRegisteredWorkflowFile(join(cwd, ".stepkit", "workflows"), "review", {
+  await writeRegisteredWorkflowFile(join(cwd, ".trailstep", "workflows"), "review", {
     projectSelected: true,
   });
-  await writeRegisteredWorkflowFile(join(homeDir, ".stepkit", "workflows"), "review", {
+  await writeRegisteredWorkflowFile(join(homeDir, ".trailstep", "workflows"), "review", {
     userSelected: true,
   });
 }
@@ -141,7 +141,7 @@ async function writeBundleWorkflowPackage(cwd: string): Promise<void> {
     name: "@acme/workflows",
     version: "1.0.0",
     type: "module",
-    stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+    trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
   });
   await writeFile(
     join(packageDir, "index.mjs"),
@@ -232,7 +232,7 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
-  it("runs a directly referenced workflow file into STEPKIT_RUNS_ROOT", async ({ task }) => {
+  it("runs a directly referenced workflow file into TRAILSTEP_RUNS_ROOT", async ({ task }) => {
     const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     const cwd = join(root, "worktree");
     const runsRoot = resolve(root, "source", ".trailstep", "runs");
@@ -244,7 +244,7 @@ describe("run command", () => {
       main({
         argv: ["./workflows/review.mjs", "central-run", "--input", '{"ok":true}'],
         cwd,
-        env: { STEPKIT_RUNS_ROOT: runsRoot },
+        env: { TRAILSTEP_RUNS_ROOT: runsRoot },
         io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       }),
     ).resolves.toBe(0);
@@ -255,6 +255,28 @@ describe("run command", () => {
     );
     await expect(stat(join(cwd, ".trailstep", "runs"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(runDir);
+  });
+
+  it("ignores the legacy STEPKIT_RUNS_ROOT override", async ({ task }) => {
+    const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join(root, "worktree");
+    const legacyRunsRoot = resolve(root, "legacy", ".stepkit", "runs");
+    await rm(root, { recursive: true, force: true });
+    await writeDirectWorkflowFile(cwd);
+
+    await expect(
+      main({
+        argv: ["./workflows/review.mjs", "default-run", "--input", '{"ok":true}'],
+        cwd,
+        env: { STEPKIT_RUNS_ROOT: legacyRunsRoot },
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    await expect(
+      readFile(join(cwd, ".trailstep", "runs", "default-run", "events.jsonl"), "utf8"),
+    ).resolves.toContain("workflow.completed");
+    await expect(stat(legacyRunsRoot)).rejects.toThrow();
   });
 
   it("runs a directly referenced workflow file with an explicit run name", async ({ task }) => {
@@ -315,7 +337,7 @@ describe("run command", () => {
     await expect(stat(join(cwd, ".trailstep", "runs", "ambiguous-run"))).rejects.toThrow();
   });
 
-  it("runs a project-registered workflow from .stepkit/config.json", async ({ task }) => {
+  it("runs a project-registered workflow from .trailstep/config.json", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeRegisteredProjectWorkflow(cwd);
@@ -342,7 +364,7 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
-  it("runs an unqualified project-registered workflow from .stepkit/config.json", async ({
+  it("runs an unqualified project-registered workflow from .trailstep/config.json", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
@@ -365,8 +387,8 @@ describe("run command", () => {
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
-    await mkdir(join(homeDir, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
     await writeConflictingRegisteredWorkflows(cwd, homeDir);
     const projectLines: string[] = [];
     const userLines: string[] = [];
@@ -495,7 +517,7 @@ describe("run command", () => {
       }),
     ).resolves.toBe(1);
 
-    expect(errors.join("\n")).toMatch(/stepkit retry <workflow-ref> <runName>/i);
+    expect(errors.join("\n")).toMatch(/trailstep retry <workflow-ref> <runName>/i);
   });
 
   it("fails with a list suggestion when the package-qualified workflow id is unknown", async ({
@@ -515,6 +537,6 @@ describe("run command", () => {
     ).resolves.toBe(1);
 
     expect(errors.join("\n")).toMatch(/workflow.*not found/i);
-    expect(errors.join("\n")).toContain("stepkit workflows");
+    expect(errors.join("\n")).toContain("trailstep workflows");
   });
 });

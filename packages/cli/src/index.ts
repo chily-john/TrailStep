@@ -5,7 +5,7 @@ import {
   type CliCommandContext,
   CliUsageError,
   type PackageCommandRunner,
-  type StepkitCliPrompts,
+  type TrailStepCliPrompts,
   usageText,
 } from "./internals/command.types.js";
 import { resolveCommand } from "./internals/command-registry.js";
@@ -17,7 +17,15 @@ import { WorkflowResolutionError } from "./internals/workflow-resolution/workflo
 
 export { CliInputError, loadJsonInput } from "./internals/commands/run/load-run-input.js";
 export type { InputSource } from "./internals/commands/run/run-command.types.js";
-export { CliConfigError, loadStepKitConfig } from "./internals/config/config.js";
+export {
+  CliConfigError,
+  loadTrailStepConfig,
+  loadTrailStepProjectConfig,
+} from "./internals/config/config.js";
+export type {
+  LoadTrailStepProjectConfigOptions,
+  TrailStepProjectConfig,
+} from "./internals/config/config.js";
 export { type DiscoveredWorkflow, discoverWorkflows } from "./internals/discovery/discovery.js";
 export type { WorkflowReference } from "./internals/workflow-reference/workflow-reference.types.js";
 export { CliUsageError, parseWorkflowId, usageText, WorkflowResolutionError };
@@ -31,30 +39,30 @@ declare const process:
     }
   | undefined;
 
-export interface StepkitCliIo {
+export interface TrailStepCliIo {
   writeLine: (line: string) => void;
   writeError: (line: string) => void;
 }
 
-export interface StepkitMainOptions {
+export interface TrailStepMainOptions {
   argv?: readonly string[];
   cwd?: string;
   homeDir?: string;
-  io?: Partial<StepkitCliIo>;
+  io?: Partial<TrailStepCliIo>;
   eventSink?: (event: Event) => void | Promise<void>;
   env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
-  prompts?: StepkitCliPrompts;
+  prompts?: TrailStepCliPrompts;
   packageCommandRunner?: PackageCommandRunner;
   deprecationManifest?: readonly StepKitDeprecationEntry[];
 }
 
-export async function main(options: StepkitMainOptions = {}): Promise<number> {
+export async function main(options: TrailStepMainOptions = {}): Promise<number> {
   const argv = options.argv ?? process?.argv.slice(2) ?? [];
-  const io: StepkitCliIo = {
+  const io: TrailStepCliIo = {
     writeLine: options.io?.writeLine ?? console.log,
     writeError: options.io?.writeError ?? console.error,
   };
@@ -99,11 +107,11 @@ export async function main(options: StepkitMainOptions = {}): Promise<number> {
   }
 }
 
-export function runStepkitCli(writeLine: (line: string) => void = console.log): Promise<number> {
+export function runTrailStepCli(writeLine: (line: string) => void = console.log): Promise<number> {
   return main({ io: { writeLine } });
 }
 
-function createTerminalPrompts(): StepkitCliPrompts {
+function createTerminalPrompts(): TrailStepCliPrompts {
   return {
     async text(prompt) {
       const { isCancel, text } = await import("@clack/prompts");

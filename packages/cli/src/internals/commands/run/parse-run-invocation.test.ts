@@ -48,7 +48,7 @@ describe("parseRunInvocation", () => {
       CliUsageError,
     );
     expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"])).toThrow(
-      /stepkit retry/i,
+      /trailstep retry/i,
     );
   });
 

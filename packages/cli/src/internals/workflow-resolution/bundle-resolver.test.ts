@@ -21,7 +21,7 @@ const workflowModuleSource = [
 describe("loadBundleWorkflow", () => {
   it("exports a bundle manifest reader used by loadBundleWorkflow", () => {
     const manifest = readBundleWorkflowManifest(
-      { stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } } },
+      { trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } } },
       "@acme/workflows",
     );
 
@@ -57,7 +57,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "@acme/workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(join(packageDir, "index.mjs"), workflowModuleSource, "utf8");
 
@@ -82,7 +82,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(join(packageDir, "index.mjs"), workflowModuleSource, "utf8");
 
@@ -116,7 +116,7 @@ describe("loadBundleWorkflow", () => {
 
     await expect(
       loadBundleWorkflow({ packageName: "./local-workflows", workflowName: "review" }, { cwd }),
-    ).rejects.toThrow(/missing stepkit\.workflows/i);
+    ).rejects.toThrow(/missing trailstep\.workflows/i);
   });
 
   it("fails clearly when the manifest module is missing", async ({ task }) => {
@@ -126,7 +126,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./missing.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./missing.mjs#reviewWorkflow" } },
     });
 
     await expect(
@@ -142,7 +142,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "@acme/workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
 
     await expect(
@@ -157,7 +157,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#notWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#notWorkflow" } },
     });
     await writeFile(join(packageDir, "index.mjs"), "export const notWorkflow = {};", "utf8");
 
@@ -173,7 +173,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs" } },
+      trailstep: { workflows: { review: "./index.mjs" } },
     });
 
     await expect(

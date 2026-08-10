@@ -65,10 +65,10 @@ async function resolveContinueTarget(
     return { interactiveFile: args.path, outputArgs: { mode: "selected" } };
   }
 
-  const interactiveFile = context.env?.STEPKIT_INTERACTIVE_FILE;
+  const interactiveFile = context.env?.TRAILSTEP_INTERACTIVE_FILE;
   if (!interactiveFile) {
     throw new CliInputError(
-      "STEPKIT_INTERACTIVE_FILE is required to continue an active interactive StepKit session.",
+      "TRAILSTEP_INTERACTIVE_FILE is required to continue an active interactive TrailStep session.",
     );
   }
 
@@ -84,7 +84,7 @@ async function promptForInteractiveSession(context: CliCommandContext): Promise<
 
   const sessions = await findActiveInteractiveSessions(context.cwd);
   if (sessions.length === 0) {
-    throw new CliInputError("No active interactive StepKit sessions found under .trailstep/runs.");
+    throw new CliInputError("No active interactive TrailStep sessions found under .trailstep/runs.");
   }
 
   const labels = sessions.map((session) => session.label);

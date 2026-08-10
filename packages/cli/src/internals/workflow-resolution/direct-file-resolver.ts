@@ -206,7 +206,7 @@ function isTypeScriptSourcePath(path: string): boolean {
 
 function throwUnsupportedTsx(path: string): never {
   throw new CliUsageError(
-    `Unsupported direct workflow source extension .tsx for ${path}. JSX workflow source files are not supported by stepkit add/run yet; use .ts, .mts, .js, or .mjs.`,
+    `Unsupported direct workflow source extension .tsx for ${path}. JSX workflow source files are not supported by trailstep add/run yet; use .ts, .mts, .js, or .mjs.`,
   );
 }
 

@@ -44,7 +44,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel"],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
     });
 
@@ -65,7 +65,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel", "--reason", "Requirements changed."],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -89,7 +89,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel"],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -112,7 +112,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel"],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -121,7 +121,7 @@ describe("cancel command", () => {
     expect(errors.join("\n")).toMatch(/not active/i);
   });
 
-  it("requires STEPKIT_INTERACTIVE_FILE", async () => {
+  it("requires TRAILSTEP_INTERACTIVE_FILE", async () => {
     const errors: string[] = [];
 
     await expect(
@@ -133,7 +133,7 @@ describe("cancel command", () => {
           io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
         },
       ),
-    ).rejects.toThrow(/STEPKIT_INTERACTIVE_FILE/i);
+    ).rejects.toThrow(/TRAILSTEP_INTERACTIVE_FILE/i);
 
     expect(errors).toEqual([]);
   });

@@ -1,10 +1,10 @@
 import { CliUsageError } from "../command.types.js";
 import {
   configPathForScope,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   type WorkflowRegistryContext,
   type WorkflowRegistryScope,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "../workflow-registry/workflow-registry.js";
 
 const SCOPES: readonly WorkflowRegistryScope[] = ["local", "project", "global"];
@@ -21,7 +21,7 @@ export async function findAgentReferrers(
   const referrers: AgentReferrer[] = [];
 
   for (const scope of SCOPES) {
-    const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+    const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
     collectAgentReferrers(config.agents, `agents`, ref, scope, referrers);
     collectWorkflowRoleReferrers(config.workflows, `workflows`, ref, scope, referrers);
   }
@@ -52,10 +52,10 @@ export async function renameAgentRefs(
 ): Promise<void> {
   for (const scope of SCOPES) {
     const configPath = configPathForScope(scope, context);
-    const config = await readRawStepKitConfigFile(configPath);
+    const config = await readRawTrailStepConfigFile(configPath);
     const renamed = renameRefsInValue(config, oldRef, newRef);
     if (renamed.changed) {
-      await writeRawStepKitConfigFile(configPath, renamed.value as Record<string, unknown>);
+      await writeRawTrailStepConfigFile(configPath, renamed.value as Record<string, unknown>);
     }
   }
 }

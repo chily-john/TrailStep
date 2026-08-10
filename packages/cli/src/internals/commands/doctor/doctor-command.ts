@@ -50,7 +50,7 @@ export const doctorCommand: CliCommand<DoctorCommandArgs> = {
     }
 
     if (findings.length === 0) {
-      context.io.writeLine("No StepKit deprecation findings.");
+      context.io.writeLine("No TrailStep deprecation findings.");
       return 0;
     }
 

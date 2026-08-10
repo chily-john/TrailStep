@@ -17,13 +17,13 @@ export function configPathForScope(
   context: WorkflowRegistryContext,
 ): string {
   if (scope === "local") {
-    return join(context.cwd, ".stepkit", "config-local.json");
+    return join(context.cwd, ".trailstep", "config-local.json");
   }
   const baseDir = scope === "project" ? context.cwd : (context.homeDir ?? homedir());
-  return join(baseDir, ".stepkit", "config.json");
+  return join(baseDir, ".trailstep", "config.json");
 }
 
-export async function readRawStepKitConfigFile(path: string): Promise<Record<string, unknown>> {
+export async function readRawTrailStepConfigFile(path: string): Promise<Record<string, unknown>> {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
     if (!isRecord(parsed)) {
@@ -38,7 +38,7 @@ export async function readRawStepKitConfigFile(path: string): Promise<Record<str
   }
 }
 
-export async function writeRawStepKitConfigFile(
+export async function writeRawTrailStepConfigFile(
   path: string,
   value: Record<string, unknown>,
 ): Promise<void> {
@@ -104,7 +104,7 @@ export interface RegisteredWorkflowEntry {
 
 /**
  * Reads all three scope config files raw and independently (never through config.ts's
- * merged loadStepKitProjectConfig), so callers can tell which file an entry actually
+ * merged loadTrailStepProjectConfig), so callers can tell which file an entry actually
  * came from and so a malformed agent-config block elsewhere in a file can't prevent
  * registrations from being enumerated.
  */
@@ -116,7 +116,7 @@ export async function listRegisteredWorkflowEntries(
 
   for (const scope of scopes) {
     const path = configPathForScope(scope, context);
-    const config = await readRawStepKitConfigFile(path);
+    const config = await readRawTrailStepConfigFile(path);
     const workflows = toMutableWorkflowRegistry(config.workflows);
 
     for (const [namespace, bucket] of Object.entries(workflows)) {
@@ -149,7 +149,7 @@ export async function findExistingRegistrationScope(
 
   for (const candidateScope of candidateScopes) {
     const path = configPathForScope(candidateScope, context);
-    const config = await readRawStepKitConfigFile(path);
+    const config = await readRawTrailStepConfigFile(path);
     const bucket = toMutableWorkflowRegistry(config.workflows)[namespace];
     if (bucket?.[name] !== undefined) {
       return candidateScope;

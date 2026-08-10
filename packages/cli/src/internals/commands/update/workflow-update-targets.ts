@@ -56,9 +56,9 @@ interface MutableWorkflowPackageUpdateTarget {
 }
 
 // This module deliberately never calls discoverWorkflows(). Plain npm trailstep-workflow-keyword
-// dependencies are out of scope for `stepkit update` — they are ordinary entries in the consumer's
+// dependencies are out of scope for `trailstep update` — they are ordinary entries in the consumer's
 // own package.json and ride the consumer's normal package-manager update on their whole project.
-// `update` only ever acts on entries that went through `stepkit add` (the config registry).
+// `update` only ever acts on entries that went through `trailstep add` (the config registry).
 export async function resolveWorkflowPackageUpdateTargets({
   cwd,
   homeDir,

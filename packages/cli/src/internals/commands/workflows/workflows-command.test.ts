@@ -21,14 +21,14 @@ async function readJson(path: string): Promise<unknown> {
 }
 
 describe("workflowsCommand", () => {
-  it("routes stepkit workflows through command-registry", () => {
+  it("routes trailstep workflows through command-registry", () => {
     const command = resolveCommand(["workflows"]);
     expect(command.parseArgs(["workflows"])).toEqual({});
   });
 
   it("rejects unknown options", () => {
     expect(() => workflowsCommand.parseArgs(["workflows", "--edit"])).toThrow(
-      /Unknown option for stepkit workflows/,
+      /Unknown option for trailstep workflows/,
     );
   });
 
@@ -71,7 +71,7 @@ describe("workflowsCommand", () => {
 
   it("requires an interactive session when workflows are registered", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -90,13 +90,13 @@ describe("workflowsCommand", () => {
   }) => {
     const cwd = tmpDir(task);
     const homeDir = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
-    await writeJson(join(cwd, ".stepkit", "config-local.json"), {
+    await writeJson(join(cwd, ".trailstep", "config-local.json"), {
       workflows: { project: { scratch: "./scratch.mjs" } },
     });
-    await writeJson(join(homeDir, ".stepkit", "config.json"), {
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
       workflows: { deploy: { prod: "./deploy.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -138,7 +138,7 @@ describe("workflowsCommand", () => {
 
   it("drills into a workflow, edits its namespace, then returns to page B", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -176,14 +176,14 @@ describe("workflowsCommand", () => {
     expect(lines).toContain("./review.mjs");
     expect(lines).toContain("Renamed project: project/review -> acme/review");
     const config = JSON.parse(
-      await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+      await readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
     ) as unknown;
     expect(config).toEqual({ workflows: { acme: { review: "./review.mjs" } } });
   });
 
   it("edits the name via a free-text prompt and writes immediately", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -217,14 +217,14 @@ describe("workflowsCommand", () => {
     expect(exitCode).toBe(0);
     expect(lines).toContain("Renamed project: project/review -> project/reviewed");
     const config = JSON.parse(
-      await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+      await readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
     ) as unknown;
     expect(config).toEqual({ workflows: { project: { reviewed: "./review.mjs" } } });
   });
 
   it("removes a selected workflow after confirmation and returns to the list", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs", scratch: "./scratch.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -262,14 +262,14 @@ describe("workflowsCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(workflowListVisits).toBe(2);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { scratch: "./scratch.mjs" } },
     });
   });
 
   it("keeps config unchanged when remove confirmation is declined", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -301,15 +301,15 @@ describe("workflowsCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(actionMenuVisits).toBe(2);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./review.mjs" } },
     });
   });
 
   it("warns that an existing generated skill directory was not removed", async ({ task }) => {
     const cwd = tmpDir(task);
-    const skillDirectory = join(cwd, ".stepkit", "skills", "sk-review");
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    const skillDirectory = join(cwd, ".trailstep", "skills", "sk-review");
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -352,7 +352,7 @@ describe("workflowsCommand", () => {
     task,
   }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -389,7 +389,7 @@ describe("workflowsCommand", () => {
     task,
   }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: {
         project: { review: "./review.mjs", scratch: "./scratch.mjs" },
       },
@@ -428,7 +428,7 @@ describe("workflowsCommand", () => {
     expect(exitCode).toBe(0);
     expect(lines).toContain("Cancelled.");
     const config = JSON.parse(
-      await readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+      await readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
     ) as unknown;
     expect(config).toEqual({
       workflows: {
@@ -447,7 +447,7 @@ describe("workflowsCommand", () => {
       "export const reviewFeature = { id: 'reviewFeature', description: 'Reviews things.', inputShape: {}, start: (input) => ({ kind: 'done', output: input }) };",
       "utf8",
     );
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -486,7 +486,7 @@ describe("workflowsCommand", () => {
       "export const reviewFeature = { id: 'reviewFeature', inputShape: {}, start: (input) => ({ kind: 'done', output: input }) };",
       "utf8",
     );
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });

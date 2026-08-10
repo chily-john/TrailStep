@@ -19,7 +19,7 @@ export async function writeProjectWorkflowSkill(
   input: WriteProjectWorkflowSkillInput,
 ): Promise<WrittenWorkflowSkill> {
   const { skillName, markdown } = generateWorkflowSkillContent(input);
-  const skillDirectory = join(input.cwd, ".stepkit", "skills", skillName);
+  const skillDirectory = join(input.cwd, ".trailstep", "skills", skillName);
 
   await mkdir(skillDirectory, { recursive: true });
   await writeFile(join(skillDirectory, "SKILL.md"), markdown, "utf8");

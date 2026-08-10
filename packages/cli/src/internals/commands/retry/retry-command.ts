@@ -5,7 +5,7 @@ import { runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
-import { loadStepKitConfig } from "../../config/config.js";
+import { loadTrailStepConfig } from "../../config/config.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
@@ -33,7 +33,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
       throw error;
     }
-    const stepkitConfig = await loadStepKitConfig(cwd);
+    const trailstepConfig = await loadTrailStepConfig(cwd);
     const resolvedWorkflow = await resolveWorkflowReference(retryTarget.workflowId, {
       cwd,
       homeDir: context.homeDir,
@@ -41,7 +41,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
     if (!resolvedWorkflow) {
       io.writeError(
-        `Workflow not found: ${retryTarget.workflowId}. Run stepkit workflows to see available workflows.`,
+        `Workflow not found: ${retryTarget.workflowId}. Run trailstep workflows to see available workflows.`,
       );
       return 1;
     }
@@ -62,7 +62,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
       ...(context.workingAgentProcessRunner === undefined
         ? {}
         : { workingAgentProcessRunner: context.workingAgentProcessRunner }),
-      ...(stepkitConfig === undefined ? {} : { stepkitConfig }),
+      ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
     });
 
     if (result.status === "success") {
@@ -82,7 +82,7 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
   readonly workflowRunName: string;
 }> {
   const usageHint =
-    "An explicit retry target is required in non-interactive mode. Expected stepkit retry <workflow-ref> <runName>.";
+    "An explicit retry target is required in non-interactive mode. Expected trailstep retry <workflow-ref> <runName>.";
   if (context.prompts === undefined) {
     throw new CliUsageError(usageHint);
   }

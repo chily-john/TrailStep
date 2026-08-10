@@ -79,7 +79,7 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       }
 
       if (hasSelfChanges && selfPlan) {
-        context.io.writeLine("Planned StepKit package updates:");
+        context.io.writeLine("Planned TrailStep package updates:");
         for (const target of selfPlan.targets) {
           context.io.writeLine(
             `${target.packageName}: ${target.currentRange} -> ${target.targetVersion}`,

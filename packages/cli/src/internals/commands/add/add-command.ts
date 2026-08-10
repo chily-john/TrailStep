@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import {
   providerRegistry,
   resolveAgentTargets,
-  type StepKitConfig,
+  type TrailStepConfig,
   type WorkflowAgentRole,
 } from "@trailstep/core";
 
@@ -14,7 +14,7 @@ import {
 } from "../../agent-config/configure-target-flow.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
-import { loadStepKitProjectConfig } from "../../config/config.js";
+import { loadTrailStepProjectConfig } from "../../config/config.js";
 import {
   promptMultiSelect,
   promptSelect,
@@ -25,10 +25,10 @@ import {
   assertNamespaceMatchesScope,
   configPathForScope,
   findExistingRegistrationScope,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
   type WorkflowRegistryScope,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 import {
   type BundleWorkflowSpecifier,
@@ -94,7 +94,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     const source = argv[1];
     if (!source) {
       throw new CliUsageError(
-        "stepkit add requires a workflow file, bundle path, or bundle package.",
+        "trailstep add requires a workflow file, bundle path, or bundle package.",
       );
     }
 
@@ -102,7 +102,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
-        "stepkit add requires --scope local, --scope project, or --scope global.",
+        "trailstep add requires --scope local, --scope project, or --scope global.",
       );
     }
 
@@ -126,7 +126,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
         SCOPE_PROMPT_LABEL,
         ["local", "project", "global"] as const,
         context.prompts,
-        "stepkit add requires --scope <local|project|global>.",
+        "trailstep add requires --scope <local|project|global>.",
       ));
 
     const registryTargets = await validateAndBuildRegistryTargets(
@@ -136,7 +136,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     );
 
     if (args.name !== undefined && registryTargets.length > 1) {
-      throw new CliUsageError("stepkit add --name can only be used when registering one workflow.");
+      throw new CliUsageError("trailstep add --name can only be used when registering one workflow.");
     }
 
     const namespace = await resolveNamespace(args.namespace, scope, context.prompts);
@@ -171,7 +171,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     }
 
     const configPath = configPathForScope(scope, context);
-    const config = await readRawStepKitConfigFile(configPath);
+    const config = await readRawTrailStepConfigFile(configPath);
     const workflows = toMutableWorkflowRegistry(config.workflows);
     const namespaceBucket = workflows[namespace] ?? {};
 
@@ -185,7 +185,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
           ]),
         ),
       };
-      await writeRawStepKitConfigFile(configPath, { ...config, workflows });
+      await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
     }
 
     for (const registration of successfulRegistrations) {
@@ -252,7 +252,7 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
       option !== "--name" &&
       option !== "--workflow"
     ) {
-      throw new CliUsageError(`Unknown option for stepkit add: ${option ?? ""}`);
+      throw new CliUsageError(`Unknown option for trailstep add: ${option ?? ""}`);
     }
 
     const value = argv[index + 1];
@@ -285,7 +285,7 @@ async function resolveNamespace(
   const wantsNamespace = await promptYesNo(
     "Add a namespace to avoid collisions?",
     prompts,
-    "stepkit add requires --namespace <namespace> when scope is global and not run interactively.",
+    "trailstep add requires --namespace <namespace> when scope is global and not run interactively.",
   );
   if (!wantsNamespace) {
     return "global";
@@ -294,14 +294,14 @@ async function resolveNamespace(
     "Namespace",
     undefined,
     prompts,
-    "stepkit add requires --namespace <namespace>.",
+    "trailstep add requires --namespace <namespace>.",
   );
 }
 
 function deriveDefaultWorkflowName(workflow: WorkflowSkillMetadata | undefined): string {
   const id = workflow?.id;
   if (id === undefined) {
-    throw new CliUsageError("stepkit add requires --name <name> for this source.");
+    throw new CliUsageError("trailstep add requires --name <name> for this source.");
   }
   if (/[/#:]/u.test(id)) {
     throw new CliUsageError(
@@ -338,12 +338,12 @@ async function resolveSkillArgs(
     projectSkill: await promptYesNo(
       "Add to project skills?",
       prompts,
-      "stepkit add requires --project-skill.",
+      "trailstep add requires --project-skill.",
     ),
     userSkill: await promptYesNo(
       "Add to user skills?",
       prompts,
-      "stepkit add requires --user-skill.",
+      "trailstep add requires --user-skill.",
     ),
   };
 }
@@ -367,8 +367,8 @@ async function promptForUncoveredWorkflowRolesForRegistrations(
     return;
   }
 
-  const loadedConfig = await loadStepKitProjectConfig(context.cwd, { homeDir: context.homeDir });
-  const effectiveConfig = loadedConfig.stepkitConfig;
+  const loadedConfig = await loadTrailStepProjectConfig(context.cwd, { homeDir: context.homeDir });
+  const effectiveConfig = loadedConfig.trailstepConfig;
   if (effectiveConfig === undefined) {
     return;
   }
@@ -400,7 +400,7 @@ async function promptForUncoveredWorkflowRolesForRegistrations(
 
 function collectUncoveredWorkflowRoleGroups(
   registrations: readonly AddRegistration[],
-  effectiveConfig: StepKitConfig,
+  effectiveConfig: TrailStepConfig,
 ): Record<string, UncoveredWorkflowRoleGroup> {
   const groups: Record<string, UncoveredWorkflowRoleGroup> = {};
 
@@ -437,7 +437,7 @@ function collectUncoveredWorkflowRoleGroups(
 }
 
 function isRoleCoveredByEffectiveConfig(
-  config: StepKitConfig,
+  config: TrailStepConfig,
   workflowId: string,
   roleName: string,
   role: WorkflowAgentRole,
@@ -524,7 +524,7 @@ function workflowRolePrompt(options: PromptForWorkflowRoleMappingOptions): strin
 async function listNamedAgentChoices(context: CliCommandContext): Promise<readonly string[]> {
   const names = new Set<string>();
   for (const scope of ["local", "project", "global"] as const) {
-    const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+    const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
     for (const name of Object.keys(toMutableRecord(config.agents))) {
       names.add(name);
     }
@@ -540,16 +540,16 @@ async function writeNamedAgent(
   customProvider?: ConfiguredCustomProvider,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
   agents[name] = entry;
   if (customProvider === undefined) {
-    await writeRawStepKitConfigFile(configPath, { ...config, agents });
+    await writeRawTrailStepConfigFile(configPath, { ...config, agents });
     return;
   }
   const customProviders = toMutableRecord(config.customProviders);
   customProviders[customProvider.name] = { ...customProvider.config };
-  await writeRawStepKitConfigFile(configPath, { ...config, customProviders, agents });
+  await writeRawTrailStepConfigFile(configPath, { ...config, customProviders, agents });
 }
 
 async function writeWorkflowRoleMapping(
@@ -560,13 +560,13 @@ async function writeWorkflowRoleMapping(
   context: CliCommandContext,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const workflows = toMutableRecord(config.workflows);
   const workflowConfig = toMutableRecord(workflows[workflowId]);
   const workflowAgents = toMutableRecord(workflowConfig.agents);
   workflowAgents[roleName] = entry;
   workflows[workflowId] = { ...workflowConfig, agents: workflowAgents };
-  await writeRawStepKitConfigFile(configPath, { ...config, workflows });
+  await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
 }
 
 function isWorkflowAgentRole(value: unknown): value is WorkflowAgentRole {
@@ -790,11 +790,11 @@ function selectCandidatesFromWorkflowFlag(
 
   const selectedNames = workflowFlag.split(",").map((part) => part.trim());
   if (selectedNames.some((name) => name.length === 0)) {
-    throw new CliUsageError("stepkit add --workflow entries must be non-empty workflow names.");
+    throw new CliUsageError("trailstep add --workflow entries must be non-empty workflow names.");
   }
   const selectedNameSet = new Set(selectedNames);
   if (selectedNameSet.size !== selectedNames.length) {
-    throw new CliUsageError("stepkit add --workflow entries must not contain duplicates.");
+    throw new CliUsageError("trailstep add --workflow entries must not contain duplicates.");
   }
 
   for (const selectedName of selectedNames) {
@@ -852,8 +852,8 @@ async function isBundleSource(source: string, cwd: string): Promise<boolean> {
     const parsed = JSON.parse(
       await readFile(resolve(sourcePath, "package.json"), "utf8"),
     ) as unknown;
-    const stepkit = isRecord(parsed) ? parsed.stepkit : undefined;
-    return isRecord(stepkit) && isRecord(stepkit.workflows);
+    const trailstep = isRecord(parsed) ? parsed.trailstep : undefined;
+    return isRecord(trailstep) && isRecord(trailstep.workflows);
   } catch {
     return false;
   }

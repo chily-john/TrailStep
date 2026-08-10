@@ -1,7 +1,7 @@
 import { CliUsageError } from "../../command.types.js";
 import type { RetryCommandArgs } from "./retry-command.types.js";
 
-const retryUsage = "Expected stepkit retry <workflow-ref> <runName>.";
+const retryUsage = "Expected trailstep retry <workflow-ref> <runName>.";
 
 export function parseRetryInvocation(argv: readonly string[]): RetryCommandArgs {
   const [, workflowId, workflowRunName, ...rest] = argv;

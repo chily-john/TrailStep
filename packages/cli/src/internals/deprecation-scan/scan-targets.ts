@@ -295,8 +295,8 @@ function resolveBundleManifestSourceFile(
 }
 
 function hasBundleWorkflowManifest(packageJson: Record<string, unknown>): boolean {
-  const stepkit = packageJson.stepkit;
-  return isRecord(stepkit) && "workflows" in stepkit;
+  const trailstep = packageJson.trailstep;
+  return isRecord(trailstep) && "workflows" in trailstep;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

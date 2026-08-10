@@ -140,17 +140,17 @@ export function readBundleWorkflowManifest(
     );
   }
 
-  const stepkit = packageJson.stepkit;
-  if (!isPlainObject(stepkit) || !isPlainObject(stepkit.workflows)) {
+  const trailstep = packageJson.trailstep;
+  if (!isPlainObject(trailstep) || !isPlainObject(trailstep.workflows)) {
     throw new WorkflowResolutionError(
-      `Missing stepkit.workflows manifest metadata in bundle package: ${packageName}`,
+      `Missing trailstep.workflows manifest metadata in bundle package: ${packageName}`,
     );
   }
 
-  const workflows = stepkit.workflows;
+  const workflows = trailstep.workflows;
   if (!Object.values(workflows).every((target) => typeof target === "string")) {
     throw new WorkflowResolutionError(
-      `Invalid stepkit.workflows manifest metadata in bundle package: ${packageName}`,
+      `Invalid trailstep.workflows manifest metadata in bundle package: ${packageName}`,
     );
   }
 

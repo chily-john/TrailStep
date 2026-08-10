@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 
 import type { Workflow } from "@trailstep/core";
 
-import { loadStepKitProjectConfig, loadStepKitUserWorkflowRegistry } from "../config/config.js";
+import { loadTrailStepProjectConfig, loadTrailStepUserWorkflowRegistry } from "../config/config.js";
 import { discoverWorkflows } from "../discovery/discovery.js";
 import {
   parseBundleWorkflowId,
@@ -133,9 +133,9 @@ async function resolveRegisteredWorkflowReference(
     return undefined;
   }
 
-  const { workflowRegistry: projectRegistry } = await loadStepKitProjectConfig(options.cwd);
+  const { workflowRegistry: projectRegistry } = await loadTrailStepProjectConfig(options.cwd);
   const homeDir = options.homeDir ?? homedir();
-  const userRegistry = await loadStepKitUserWorkflowRegistry(homeDir);
+  const userRegistry = await loadTrailStepUserWorkflowRegistry(homeDir);
   const registeredRef = parseRegisteredWorkflowRef(rawRef);
 
   if (registeredRef) {

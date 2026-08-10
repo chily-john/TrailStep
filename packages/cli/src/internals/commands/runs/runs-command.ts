@@ -23,7 +23,7 @@ export const runsCommand: CliCommand<void> = {
   name: "runs",
   parseArgs(argv) {
     if (argv.length !== 1 || argv[0] !== "runs") {
-      throw new CliUsageError("Usage: stepkit runs");
+      throw new CliUsageError("Usage: trailstep runs");
     }
   },
   async run(_args, context) {

@@ -10,9 +10,9 @@ import { CliUsageError } from "../../command.types.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
 import {
   configPathForScope,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   type WorkflowRegistryScope,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 
 interface InitCommandArgs {
@@ -33,7 +33,7 @@ export const initCommand: CliCommand<InitCommandArgs> = {
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
-        "stepkit init requires --scope local, --scope project, or --scope global.",
+        "trailstep init requires --scope local, --scope project, or --scope global.",
       );
     }
 
@@ -46,15 +46,15 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         SCOPE_PROMPT_LABEL,
         ["local", "project", "global"] as const,
         context.prompts,
-        "stepkit init requires --scope <local|project|global> when prompts are unavailable.",
+        "trailstep init requires --scope <local|project|global> when prompts are unavailable.",
       ));
 
     if (context.prompts === undefined) {
-      throw new CliUsageError("stepkit init requires prompts to configure an agent target.");
+      throw new CliUsageError("trailstep init requires prompts to configure an agent target.");
     }
 
     const configPath = configPathForScope(scope, context);
-    const config = await readRawStepKitConfigFile(configPath);
+    const config = await readRawTrailStepConfigFile(configPath);
     let nextConfig = await addConfiguredAgentEntry(config, "default", context);
 
     while (await shouldConfigureAnotherAgent(context)) {
@@ -62,13 +62,13 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         "Agent name",
         undefined,
         context.prompts,
-        "stepkit init requires an agent name.",
+        "trailstep init requires an agent name.",
       );
       nextConfig = await addConfiguredAgentEntry(nextConfig, name, context);
     }
 
-    await writeRawStepKitConfigFile(configPath, nextConfig);
-    context.io.writeLine(`Wrote StepKit agent config to ${configPath}.`);
+    await writeRawTrailStepConfigFile(configPath, nextConfig);
+    context.io.writeLine(`Wrote TrailStep agent config to ${configPath}.`);
     return 0;
   },
 };
@@ -79,7 +79,7 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option !== "--scope") {
-      throw new CliUsageError(`Unknown option for stepkit init: ${option ?? ""}`);
+      throw new CliUsageError(`Unknown option for trailstep init: ${option ?? ""}`);
     }
 
     const value = argv[index + 1];
@@ -100,7 +100,7 @@ async function addConfiguredAgentEntry(
   context: CliCommandContext,
 ): Promise<Record<string, unknown>> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit init requires prompts to configure an agent target.");
+    throw new CliUsageError("trailstep init requires prompts to configure an agent target.");
   }
 
   const configured = await configureLiteralAgentTarget({
@@ -133,7 +133,7 @@ async function shouldConfigureAnotherAgent(context: CliCommandContext): Promise<
       "Configure another agent?",
       ["no", "yes"] as const,
       context.prompts,
-      "stepkit init requires a yes/no answer.",
+      "trailstep init requires a yes/no answer.",
     )) === "yes"
   );
 }

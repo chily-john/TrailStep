@@ -6,13 +6,13 @@ import { describe, expect, it } from "vitest";
 import { main } from "../../../index.js";
 
 describe("updateCommand", () => {
-  it("blocks StepKit self-updates on removed-symbol findings before package.json mutation", async ({
+  it("blocks TrailStep self-updates on removed-symbol findings before package.json mutation", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
       packageJsonPath,
@@ -20,7 +20,7 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "@acme/trailstep-workflows" } } }),
       "utf8",
     );
@@ -42,7 +42,7 @@ describe("updateCommand", () => {
       argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
-      packageCommandRunner: latestStepkitOne,
+      packageCommandRunner: latestTrailStepOne,
       deprecationManifest: [removedAuthoringSymbol],
     });
 
@@ -52,20 +52,20 @@ describe("updateCommand", () => {
     expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
   });
 
-  it("allows a blocked StepKit self-update preflight with --force and prints a warning", async ({
+  it("allows a blocked TrailStep self-update preflight with --force and prints a warning", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "@acme/trailstep-workflows" } } }),
       "utf8",
     );
@@ -85,27 +85,27 @@ describe("updateCommand", () => {
       argv: ["update", "--assume-yes", "--force"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
-      packageCommandRunner: latestStepkitOne,
+      packageCommandRunner: latestTrailStepOne,
       deprecationManifest: [removedAuthoringSymbol],
     });
 
     expect(exitCode).toBe(0);
     expect(lines.join("\n")).toMatch(/Warning: --force/);
-    expect(lines.join("\n")).toContain("Planned StepKit package updates:");
+    expect(lines.join("\n")).toContain("Planned TrailStep package updates:");
   });
 
   it("allows warning-only findings and still prints them", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "@acme/trailstep-workflows" } } }),
       "utf8",
     );
@@ -125,28 +125,28 @@ describe("updateCommand", () => {
       argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
-      packageCommandRunner: latestStepkitOne,
+      packageCommandRunner: latestTrailStepOne,
       deprecationManifest: [{ ...removedAuthoringSymbol, symbol: "oldStep", removedIn: undefined }],
     });
 
     expect(exitCode).toBe(0);
     expect(lines.join("\n")).toContain("warning @trailstep/authoring/oldStep");
-    expect(lines.join("\n")).toContain("Planned StepKit package updates:");
+    expect(lines.join("\n")).toContain("Planned TrailStep package updates:");
   });
 
-  it("includes directly registered workflow files in StepKit self-update preflight scanning", async ({
+  it("includes directly registered workflow files in TrailStep self-update preflight scanning", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "./workflows/review.mjs" } } }),
       "utf8",
     );
@@ -162,7 +162,7 @@ describe("updateCommand", () => {
       argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
-      packageCommandRunner: latestStepkitOne,
+      packageCommandRunner: latestTrailStepOne,
       deprecationManifest: [removedAuthoringSymbol],
     });
 
@@ -178,14 +178,14 @@ describe("updateCommand", () => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "@acme/trailstep-workflows" } } }),
       "utf8",
     );
@@ -208,7 +208,7 @@ describe("updateCommand", () => {
         writeLine: (line) => output.push(`line:${line}`),
         writeError: (line) => output.push(`error:${line}`),
       },
-      packageCommandRunner: latestStepkitOne,
+      packageCommandRunner: latestTrailStepOne,
       deprecationManifest: [
         removedAuthoringSymbol,
         { ...removedAuthoringSymbol, symbol: "removedWorkflow" },
@@ -240,7 +240,7 @@ describe("updateCommand", () => {
     expect(errors).toEqual([]);
   });
 
-  it("prints planned StepKit self-update package changes without writing files", async ({
+  it("prints planned TrailStep self-update package changes without writing files", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
@@ -287,14 +287,14 @@ describe("updateCommand", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({
         workflows: {
           project: {
@@ -324,7 +324,7 @@ describe("updateCommand", () => {
     expect(lines.join("\n")).toContain("@acme/workflows");
     expect(
       await import("node:fs/promises").then((fs) =>
-        fs.readFile(join(cwd, ".stepkit", "config.json"), "utf8"),
+        fs.readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
       ),
     ).toContain("@acme/workflows#release");
   });
@@ -334,7 +334,7 @@ describe("updateCommand", () => {
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
     await mkdir(join(packageDir, "dist"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
@@ -349,7 +349,7 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
       "utf8",
     );
@@ -363,7 +363,7 @@ describe("updateCommand", () => {
       JSON.stringify({
         name: "@acme/workflows",
         version: "1.0.0",
-        stepkit: {
+        trailstep: {
           workflows: {
             release: "./dist/release.mjs#releaseWorkflow",
             cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
@@ -419,7 +419,7 @@ describe("updateCommand", () => {
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
@@ -431,7 +431,7 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "@acme/trailstep-workflows" } } }),
       "utf8",
     );
@@ -451,7 +451,7 @@ describe("updateCommand", () => {
       argv: ["update", "--assume-yes"],
       cwd,
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-      packageCommandRunner: latestStepkitTwo,
+      packageCommandRunner: latestTrailStepTwo,
       deprecationManifest: [
         {
           ...removedAuthoringSymbol,
@@ -471,7 +471,7 @@ describe("updateCommand", () => {
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
     await mkdir(join(packageDir, "dist"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
@@ -492,7 +492,7 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
       "utf8",
     );
@@ -501,7 +501,7 @@ describe("updateCommand", () => {
       JSON.stringify({
         name: "@acme/workflows",
         version: "1.0.0",
-        stepkit: {
+        trailstep: {
           workflows: {
             release: "./dist/release.mjs#releaseWorkflow",
             cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
@@ -528,7 +528,7 @@ describe("updateCommand", () => {
       argv: ["update", "--all", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
-      packageCommandRunner: latestStepkitTwoAndWorkflowPackage,
+      packageCommandRunner: latestTrailStepTwoAndWorkflowPackage,
       deprecationManifest: [
         {
           ...removedAuthoringSymbol,
@@ -549,7 +549,7 @@ describe("updateCommand", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -568,7 +568,7 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
       "utf8",
     );
@@ -584,7 +584,7 @@ describe("updateCommand", () => {
           installRequests.push(request);
           return { exitCode: 0 };
         }
-        return latestStepkitTwoAndWorkflowPackage(request);
+        return latestTrailStepTwoAndWorkflowPackage(request);
       },
     });
 
@@ -592,7 +592,7 @@ describe("updateCommand", () => {
       dependencies: Record<string, string>;
     };
     expect(exitCode).toBe(0);
-    expect(lines.join("\n")).toContain("Planned StepKit package updates:");
+    expect(lines.join("\n")).toContain("Planned TrailStep package updates:");
     expect(lines.join("\n")).toContain("Planned workflow package updates:");
     expect(packageJson.dependencies["@trailstep/core"]).toBe("^2.0.0");
     expect(packageJson.dependencies["@trailstep/authoring"]).toBe("~2.0.0");
@@ -604,7 +604,7 @@ describe("updateCommand", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
       packageJsonPath,
@@ -612,7 +612,7 @@ describe("updateCommand", () => {
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
       "utf8",
     );
@@ -657,7 +657,7 @@ describe("updateCommand", () => {
           events.push("install");
           return { exitCode: 0 };
         }
-        return latestStepkitTwo(request);
+        return latestTrailStepTwo(request);
       },
     });
 
@@ -695,7 +695,7 @@ describe("updateCommand", () => {
           installRequests.push(request);
           return { exitCode: 0, stdout: "installed" };
         }
-        return latestStepkitTwo(request);
+        return latestTrailStepTwo(request);
       },
     });
 
@@ -711,14 +711,14 @@ describe("updateCommand", () => {
 
   it("prints direct-file skip lines before prompting for confirmation", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-update-command-tests", task.id);
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
       `${JSON.stringify({ dependencies: { "@trailstep/core": "^1.0.0" } }, null, 2)}\n`,
       "utf8",
     );
     await writeFile(
-      join(cwd, ".stepkit", "config.json"),
+      join(cwd, ".trailstep", "config.json"),
       JSON.stringify({ workflows: { project: { review: "./workflows/review.mjs" } } }),
       "utf8",
     );
@@ -740,7 +740,7 @@ describe("updateCommand", () => {
         if (request.args[0] === "install") {
           return { exitCode: 0 };
         }
-        return latestStepkitTwo(request);
+        return latestTrailStepTwo(request);
       },
     });
 
@@ -769,7 +769,7 @@ describe("updateCommand", () => {
       cwd,
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       prompts: { text: async () => "", select: async () => "" },
-      packageCommandRunner: latestStepkitTwo,
+      packageCommandRunner: latestTrailStepTwo,
     });
 
     expect(exitCode).toBe(1);
@@ -801,7 +801,7 @@ describe("updateCommand", () => {
           installRequests.push(request);
           return { exitCode: 0 };
         }
-        return latestStepkitTwo(request);
+        return latestTrailStepTwo(request);
       },
     });
 
@@ -829,7 +829,7 @@ describe("updateCommand", () => {
         if (request.args[0] === "install") {
           return { exitCode: 7, stderr: "lockfile conflict" };
         }
-        return latestStepkitTwo(request);
+        return latestTrailStepTwo(request);
       },
     });
 
@@ -875,10 +875,10 @@ async function latestWorkflowPackage(request: { readonly args: readonly string[]
   if (packageName === "@acme/workflows") {
     return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]) };
   }
-  return latestStepkitOne(request);
+  return latestTrailStepOne(request);
 }
 
-async function latestStepkitTwo(request: { readonly args: readonly string[] }) {
+async function latestTrailStepTwo(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@trailstep/core": [{ version: "2.0.0" }],
     "@trailstep/authoring": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
@@ -888,15 +888,15 @@ async function latestStepkitTwo(request: { readonly args: readonly string[] }) {
   return { exitCode: 0, stdout: JSON.stringify(metadata[packageName]) };
 }
 
-async function latestStepkitTwoAndWorkflowPackage(request: { readonly args: readonly string[] }) {
+async function latestTrailStepTwoAndWorkflowPackage(request: { readonly args: readonly string[] }) {
   const packageName = String(request.args[1]).replace(/@\*$/u, "");
   if (packageName === "@acme/workflows") {
     return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]) };
   }
-  return latestStepkitTwo(request);
+  return latestTrailStepTwo(request);
 }
 
-async function latestStepkitOne(request: { readonly args: readonly string[] }) {
+async function latestTrailStepOne(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@trailstep/core": [{ version: "1.0.0" }],
     "@trailstep/authoring": [{ version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],

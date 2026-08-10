@@ -21,10 +21,10 @@ async function createBundleWorkflow(cwd: string, source: string): Promise<void> 
     version: "1.0.0",
     main: "./index.mjs",
     keywords: ["trailstep-workflow"],
-    stepkit: { workflows: { release: "./index.mjs#release" } },
+    trailstep: { workflows: { release: "./index.mjs#release" } },
   });
   await writeFile(join(packageDir, "index.mjs"), source, "utf8");
-  await writeJson(join(cwd, ".stepkit", "config.json"), {
+  await writeJson(join(cwd, ".trailstep", "config.json"), {
     workflows: { project: { release: "@acme/bundle#release" } },
   });
 }
@@ -45,7 +45,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(lines).toEqual(["No StepKit deprecation findings."]);
+    expect(lines).toEqual(["No TrailStep deprecation findings."]);
     expect(errors).toEqual([]);
   });
 
@@ -132,7 +132,7 @@ describe("doctor command", () => {
       name: "@trailstep/core",
       version: "1.0.0",
     });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     await writeFile(
@@ -190,7 +190,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(lines).toEqual(["No StepKit deprecation findings."]);
+    expect(lines).toEqual(["No TrailStep deprecation findings."]);
     expect(errors).toEqual([]);
   });
 
@@ -199,7 +199,7 @@ describe("doctor command", () => {
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@trailstep/core": "1.0.0" },
     });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { missing: "./workflows/missing.mjs" } },
     });
     const lines: string[] = [];
@@ -220,7 +220,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(lines).toEqual(["No StepKit deprecation findings."]);
+    expect(lines).toEqual(["No TrailStep deprecation findings."]);
     expect(errors).toEqual([]);
   });
 
@@ -253,7 +253,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(lines).toEqual(["No StepKit deprecation findings."]);
+    expect(lines).toEqual(["No TrailStep deprecation findings."]);
     expect(errors).toEqual([]);
   });
 });

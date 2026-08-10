@@ -1,8 +1,8 @@
 import type { Event } from "@trailstep/core";
 
-import type { StepkitCliIo } from "../../command.types.js";
+import type { TrailStepCliIo } from "../../command.types.js";
 
-export function createTerminalEventLogger(io: StepkitCliIo): (event: Event) => void {
+export function createTerminalEventLogger(io: TrailStepCliIo): (event: Event) => void {
   return (event) => {
     const line = formatEvent(event);
     if (line !== undefined) {

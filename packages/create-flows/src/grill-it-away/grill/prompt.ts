@@ -4,7 +4,7 @@ export function grillPrompt(): string {
   return promptSections(
     section(
       "Role",
-      "You are the interactive front door for starting a new StepKit feature. Open by asking the user what they want to build.",
+      "You are the interactive front door for starting a new TrailStep feature. Open by asking the user what they want to build.",
     ),
     section(
       "Task",

@@ -76,7 +76,7 @@ export function verifyRepositoryDocs() {
     "maxAttempts: 2",
     "step.attemptFailed",
     "workflow.retryStarted",
-    "retryKind: \"automatic\"",
+    'retryKind: "automatic"',
     "provider process failures",
     "provider output validation failures",
     "prompt rendering errors",
@@ -95,7 +95,11 @@ export function verifyRepositoryDocs() {
   assertIncludes(cliReadme, ".trailstep/config.json", "packages/cli/README.md");
   assertIncludes(cliReadme, ".trailstep/runs", "packages/cli/README.md");
   assertIncludes(cliReadme, "TRAILSTEP_RUNS_ROOT", "packages/cli/README.md");
-  assertIncludes(cliReadme, ".trailstep/skills/trst-<sanitized-name>/SKILL.md", "packages/cli/README.md");
+  assertIncludes(
+    cliReadme,
+    ".trailstep/skills/trst-<sanitized-name>/SKILL.md",
+    "packages/cli/README.md",
+  );
   assertIncludes(cliReadme, "@trailstep/core", "packages/cli/README.md");
   assertIncludes(cliReadme, "@trailstep/authoring", "packages/cli/README.md");
   assertIncludes(cliReadme, "trailstep-workflow", "packages/cli/README.md");
@@ -138,12 +142,25 @@ export function verifyRepositoryDocs() {
     ["AGENTS.md", assertFile("AGENTS.md")],
     [".github/branch-protection.md", assertFile(".github/branch-protection.md")],
     ...packageReadmes,
-    ["agent/skills/project-grill-it-away/SKILL.md", assertFile("agent/skills/project-grill-it-away/SKILL.md")],
-    ["agent/skills/project-take-it-away/SKILL.md", assertFile("agent/skills/project-take-it-away/SKILL.md")],
+    [
+      "agent/skills/project-grill-it-away/SKILL.md",
+      assertFile("agent/skills/project-grill-it-away/SKILL.md"),
+    ],
+    [
+      "agent/skills/project-take-it-away/SKILL.md",
+      assertFile("agent/skills/project-take-it-away/SKILL.md"),
+    ],
   ]);
 
   for (const [path, text] of activeDocs) {
-    for (const forbidden of ["StepKit", "stepkit", "STEPKIT", "@stepkit", ".stepkit", "stepkit-workflow"]) {
+    for (const forbidden of [
+      "Step" + "Kit",
+      "step" + "kit",
+      "STEP" + "KIT",
+      "@step" + "kit",
+      ".step" + "kit",
+      "step" + "kit-workflow",
+    ]) {
       assertNotIncludes(text, forbidden, path);
     }
   }
@@ -164,7 +181,6 @@ export function verifyRepositoryDocs() {
     "no non-bundled output and no fragment-copy step are needed",
     ".pi/rules/packages/create-flows/create-flows.md",
   );
-
 }
 
 verifyRepositoryDocs();

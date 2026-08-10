@@ -51,7 +51,7 @@ export async function loadBundleWorkflow(
     const moduleUrl = pathToFileURL(modulePath);
     if (options.freshImport === true) {
       freshImportCounter += 1;
-      moduleUrl.searchParams.set("stepkitImport", `${freshImportCounter}`);
+      moduleUrl.searchParams.set("trailstepImport", `${freshImportCounter}`);
     }
     workflowModule = (await import(moduleUrl.href)) as Record<string, unknown>;
   } catch (error) {

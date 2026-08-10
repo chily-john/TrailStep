@@ -11,7 +11,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 function tmpDir(task: { readonly id: string }, variant: string): string {
-  return join("node_modules", ".tmp-stepkit-scan-targets-tests", `${task.id}-${variant}`);
+  return join("node_modules", ".tmp-trailstep-scan-targets-tests", `${task.id}-${variant}`);
 }
 
 describe("resolveDeprecationScanTargets", () => {

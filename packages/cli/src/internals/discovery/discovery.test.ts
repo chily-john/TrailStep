@@ -33,7 +33,7 @@ async function createWorkflowPackage(cwd: string): Promise<void> {
 
 describe("discoverWorkflows", () => {
   it("resolves package entry files with exports/module/main/default precedence", () => {
-    const packageDir = resolve("node_modules", ".tmp-stepkit-entry-tests", "package");
+    const packageDir = resolve("node_modules", ".tmp-trailstep-entry-tests", "package");
 
     expect(
       resolvePackageEntryFilePath(
@@ -60,7 +60,7 @@ describe("discoverWorkflows", () => {
   it("discovers named continuation workflow exports from trailstep-workflow packages", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-discovery-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
@@ -83,7 +83,7 @@ describe("discoverWorkflows", () => {
   });
 
   it("returns packageDir for discovered workflow packages", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-tests", `${task.id}-package-dir`);
+    const cwd = join("node_modules", ".tmp-trailstep-discovery-tests", `${task.id}-package-dir`);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
@@ -103,7 +103,7 @@ describe("discoverWorkflows", () => {
   it("ignores default exports and skips invalid named exports without crashing", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-tests", `${task.id}-invalid`);
+    const cwd = join("node_modules", ".tmp-trailstep-discovery-tests", `${task.id}-invalid`);
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",

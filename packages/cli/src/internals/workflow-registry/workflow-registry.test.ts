@@ -54,7 +54,6 @@ describe("readRawTrailStepConfigFile / writeRawTrailStepConfigFile", () => {
     await writeJson(path, []);
 
     await expect(readRawTrailStepConfigFile(path)).rejects.toThrow(/Invalid TrailStep config/);
-    await expect(readRawTrailStepConfigFile(path)).rejects.not.toThrow(/Invalid StepKit config/);
   });
 
   it("round-trips a written config through mkdir -p and pretty-printed JSON", async ({ task }) => {

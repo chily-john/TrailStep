@@ -47,7 +47,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("resolves a scoped package manifest workflow to the named export", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
@@ -76,7 +76,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("resolves a local package manifest workflow to the named export", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
@@ -96,7 +96,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the package is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
 
@@ -106,7 +106,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest metadata is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
@@ -120,7 +120,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest module is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
@@ -135,7 +135,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest workflow key is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
@@ -151,7 +151,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest export is not a workflow", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
@@ -167,7 +167,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest target is malformed", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = resolve(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import type { Event } from "@stepkit/core";
-import { runWorkflow } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
+import { runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";

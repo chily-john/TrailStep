@@ -4,7 +4,7 @@ import {
   type DeprecationManifest,
   type DeprecationTargetPackage,
   findDeprecationsAsOf,
-} from "@stepkit/core";
+} from "@trailstep/core";
 
 import { extractStepKitImportTokens } from "./import-specifier-tokens.js";
 
@@ -20,7 +20,7 @@ export interface StepKitDeprecationEntry {
   readonly replacement?: string;
 }
 
-// Adapts @stepkit/core's manifest (field name "package") to this module's local shape (field name
+// Adapts @trailstep/core's manifest (field name "package") to this module's local shape (field name
 // "packageName"). This is the real default used in production; tests override it via
 // ScanWorkflowSourceOptions.manifest / CliCommandContext.deprecationManifest.
 const defaultManifest: readonly StepKitDeprecationEntry[] = coreDeprecationManifest.map(

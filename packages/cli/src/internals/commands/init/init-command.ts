@@ -1,4 +1,4 @@
-import { providerRegistry } from "@stepkit/core";
+import { providerRegistry } from "@trailstep/core";
 
 import {
   addAgentEntryItem,

@@ -1,4 +1,4 @@
-export type DeprecationTargetPackage = "@stepkit/core" | "@stepkit/authoring";
+export type DeprecationTargetPackage = "@trailstep/core" | "@trailstep/authoring";
 
 export interface DeprecationEntry {
   /** Which published package exports this symbol. A symbol re-exported by both (like `step`,

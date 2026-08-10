@@ -1,4 +1,4 @@
-import { shape } from "@stepkit/authoring";
+import { shape } from "@trailstep/authoring";
 
 export interface TakeItAwayInput extends Record<string, unknown> {
   readonly conversation: string;

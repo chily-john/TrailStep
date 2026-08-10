@@ -17,7 +17,7 @@ export async function resolveInstalledStepKitVersions({
     { readonly installedVersion?: string; readonly targetVersion: string }
   >();
 
-  for (const packageName of ["@stepkit/core", "@stepkit/authoring"] as const) {
+  for (const packageName of ["@trailstep/core", "@trailstep/authoring"] as const) {
     const manifest = await resolveInstalledPackageManifest(packageName, cwd);
     const installedVersion = manifest?.packageJson.version;
     if (typeof installedVersion !== "string") {

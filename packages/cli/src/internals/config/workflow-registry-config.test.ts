@@ -34,7 +34,7 @@ describe("workflow registry project config", () => {
   it("parses string-valued project workflow registrations without losing agent config", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       version: 1,
@@ -77,7 +77,7 @@ describe("workflow registry project config", () => {
   it("merges global, project, and local run config with agents replaced by entry name", async ({
     task,
   }) => {
-    const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true });
@@ -129,7 +129,7 @@ describe("workflow registry project config", () => {
   it("replaces top-level workflows for run config while keeping registry scopes merged", async ({
     task,
   }) => {
-    const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true });
@@ -193,7 +193,7 @@ describe("workflow registry project config", () => {
   it("merges config-local.json over config.json, with local winning per top-level key", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       version: 1,
@@ -227,7 +227,7 @@ describe("workflow registry project config", () => {
   it("merges workflows per-namespace instead of replacing the shared registry wholesale", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       workflows: {
@@ -257,7 +257,7 @@ describe("workflow registry project config", () => {
   it("lets config-local.json win on a same-name workflow registration conflict", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       workflows: {
@@ -284,7 +284,7 @@ describe("workflow registry project config", () => {
   });
 
   it("loads config-local.json alone when config.json is absent", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeLocalConfig(cwd, {
       customProviders: {

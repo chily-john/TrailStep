@@ -34,7 +34,7 @@ function interactiveProtocol(options: { runDir: string; stepDir: string }) {
 describe("cancel command", () => {
   it("cancels an active interactive session", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-active`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -56,7 +56,7 @@ describe("cancel command", () => {
 
   it("records an optional cancellation reason", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-reason`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -77,7 +77,7 @@ describe("cancel command", () => {
 
   it("rejects an already completed session", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-completed`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -100,7 +100,7 @@ describe("cancel command", () => {
 
   it("rejects an already cancelled session", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-cancelled`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });

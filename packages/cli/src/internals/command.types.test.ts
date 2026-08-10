@@ -54,10 +54,10 @@ describe("usageText", () => {
     await expect(
       context.packageCommandRunner?.({
         command: "npm",
-        args: ["view", "@stepkit/core"],
+        args: ["view", "@trailstep/core"],
         cwd: context.cwd,
       }),
     ).resolves.toEqual({ exitCode: 0, stdout: "ok" });
-    expect(requests).toEqual([{ command: "npm", args: ["view", "@stepkit/core"], cwd: "/repo" }]);
+    expect(requests).toEqual([{ command: "npm", args: ["view", "@trailstep/core"], cwd: "/repo" }]);
   });
 });

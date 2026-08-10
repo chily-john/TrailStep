@@ -1,4 +1,4 @@
-import { Document, state, step } from "@stepkit/authoring";
+import { Document, state, step } from "@trailstep/authoring";
 import { reviewImplementationDocStep } from "../review-implementation-doc/step.js";
 import { createOrImproveImplementationDocPrompt } from "./prompt.js";
 

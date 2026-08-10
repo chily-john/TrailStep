@@ -148,7 +148,7 @@ describe("resolveDeprecationScanTargets", () => {
       version: "1.0.0",
       type: "module",
       exports: { ".": { import: "./dist/workflows.mjs" } },
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await mkdir(join(discoveredDir, "dist"), { recursive: true });
     await writeFile(
@@ -162,7 +162,7 @@ describe("resolveDeprecationScanTargets", () => {
     await writeJson(join(unlistedDir, "package.json"), {
       name: "@acme/unlisted",
       version: "1.0.0",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
       main: "./wrongly-scanned.mjs",
     });
 

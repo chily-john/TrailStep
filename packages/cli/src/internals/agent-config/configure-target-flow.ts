@@ -1,4 +1,4 @@
-import type { StepKitAgentTarget, StepKitCustomProviderConfig } from "@stepkit/core";
+import type { StepKitAgentTarget, StepKitCustomProviderConfig } from "@trailstep/core";
 
 import { CliUsageError, type StepkitCliPrompts } from "../command.types.js";
 

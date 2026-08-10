@@ -28,7 +28,7 @@ const workflowStartedEvent = {
 describe("dashboard run listing", () => {
   it("lists local runs with latest status from core readRunEvents", async ({ task }) => {
     const cwd = join(process.cwd(), ".tmp", task.id);
-    const runDir = join(cwd, ".stepkit", "runs", "run-a");
+    const runDir = join(cwd, ".trailstep", "runs", "run-a");
     await mkdir(runDir, { recursive: true });
     await writeFile(
       join(runDir, "events.jsonl"),

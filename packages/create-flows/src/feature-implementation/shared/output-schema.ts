@@ -1,4 +1,4 @@
-import { jsonSchema } from "@stepkit/authoring";
+import { jsonSchema } from "@trailstep/authoring";
 
 export interface TakeItAwayOutput extends Record<string, unknown> {
   readonly status: "implemented";

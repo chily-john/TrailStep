@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
-import { jsonSchema, type PlainObject } from "@stepkit/core";
+import { jsonSchema, type PlainObject } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliInputError } from "../run/load-run-input.js";
@@ -84,7 +84,7 @@ async function promptForInteractiveSession(context: CliCommandContext): Promise<
 
   const sessions = await findActiveInteractiveSessions(context.cwd);
   if (sessions.length === 0) {
-    throw new CliInputError("No active interactive StepKit sessions found under .stepkit/runs.");
+    throw new CliInputError("No active interactive StepKit sessions found under .trailstep/runs.");
   }
 
   const labels = sessions.map((session) => session.label);

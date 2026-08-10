@@ -11,8 +11,8 @@ async function writeRootPackageJson(cwd: string) {
     join(cwd, "package.json"),
     JSON.stringify(
       {
-        dependencies: { "@stepkit/core": "^0.0.1" },
-        devDependencies: { "@stepkit/authoring": "~0.0.1", "@stepkit/cli": "0.0.1" },
+        dependencies: { "@trailstep/core": "^0.0.1" },
+        devDependencies: { "@trailstep/authoring": "~0.0.1", "@trailstep/cli": "0.0.1" },
       },
       null,
       2,
@@ -39,35 +39,35 @@ describe("resolveStepKitSelfUpdateTargets", () => {
     const plan = await resolveStepKitSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
-        "@stepkit/core": [{ version: "1.0.0" }, { version: "1.1.0-beta.1" }, { version: "1.1.0" }],
-        "@stepkit/authoring": [
-          { version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } },
-          { version: "1.1.0", peerDependencies: { "@stepkit/core": "^1.1.0" } },
-          { version: "1.2.0", peerDependencies: { "@stepkit/core": "^2.0.0" } },
+        "@trailstep/core": [{ version: "1.0.0" }, { version: "1.1.0-beta.1" }, { version: "1.1.0" }],
+        "@trailstep/authoring": [
+          { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+          { version: "1.1.0", peerDependencies: { "@trailstep/core": "^1.1.0" } },
+          { version: "1.2.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
         ],
-        "@stepkit/cli": [
-          { version: "1.0.0", peerDependencies: { "@stepkit/core": "^1.0.0" } },
-          { version: "1.1.0", peerDependencies: { "@stepkit/core": "^1.1.0" } },
-          { version: "1.2.0", peerDependencies: { "@stepkit/core": "^2.0.0" } },
+        "@trailstep/cli": [
+          { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+          { version: "1.1.0", peerDependencies: { "@trailstep/core": "^1.1.0" } },
+          { version: "1.2.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
         ],
       }),
     });
 
     expect(plan.targets).toEqual([
       {
-        packageName: "@stepkit/core",
+        packageName: "@trailstep/core",
         currentRange: "^0.0.1",
         targetVersion: "1.1.0",
         dependencySection: "dependencies",
       },
       {
-        packageName: "@stepkit/authoring",
+        packageName: "@trailstep/authoring",
         currentRange: "~0.0.1",
         targetVersion: "1.1.0",
         dependencySection: "devDependencies",
       },
       {
-        packageName: "@stepkit/cli",
+        packageName: "@trailstep/cli",
         currentRange: "0.0.1",
         targetVersion: "1.1.0",
         dependencySection: "devDependencies",
@@ -84,35 +84,35 @@ describe("resolveStepKitSelfUpdateTargets", () => {
     const plan = await resolveStepKitSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
-        "@stepkit/core": [{ version: "1.5.0" }],
-        "@stepkit/authoring": [
-          { version: "1.4.0", peerDependencies: { "@stepkit/core": "1.4.x" } },
-          { version: "1.5.0", peerDependencies: { "@stepkit/core": ">=1.0.0 <2.0.0" } },
-          { version: "1.6.0", peerDependencies: { "@stepkit/core": "~1.6.0" } },
+        "@trailstep/core": [{ version: "1.5.0" }],
+        "@trailstep/authoring": [
+          { version: "1.4.0", peerDependencies: { "@trailstep/core": "1.4.x" } },
+          { version: "1.5.0", peerDependencies: { "@trailstep/core": ">=1.0.0 <2.0.0" } },
+          { version: "1.6.0", peerDependencies: { "@trailstep/core": "~1.6.0" } },
         ],
-        "@stepkit/cli": [
-          { version: "1.4.0", peerDependencies: { "@stepkit/core": "1.4.x" } },
-          { version: "1.5.0", peerDependencies: { "@stepkit/core": "1.5.x || >=2.0.0" } },
-          { version: "1.6.0", peerDependencies: { "@stepkit/core": "~1.6.0" } },
+        "@trailstep/cli": [
+          { version: "1.4.0", peerDependencies: { "@trailstep/core": "1.4.x" } },
+          { version: "1.5.0", peerDependencies: { "@trailstep/core": "1.5.x || >=2.0.0" } },
+          { version: "1.6.0", peerDependencies: { "@trailstep/core": "~1.6.0" } },
         ],
       }),
     });
 
     expect(plan.targets).toEqual([
       {
-        packageName: "@stepkit/core",
+        packageName: "@trailstep/core",
         currentRange: "^0.0.1",
         targetVersion: "1.5.0",
         dependencySection: "dependencies",
       },
       {
-        packageName: "@stepkit/authoring",
+        packageName: "@trailstep/authoring",
         currentRange: "~0.0.1",
         targetVersion: "1.5.0",
         dependencySection: "devDependencies",
       },
       {
-        packageName: "@stepkit/cli",
+        packageName: "@trailstep/cli",
         currentRange: "0.0.1",
         targetVersion: "1.5.0",
         dependencySection: "devDependencies",
@@ -129,22 +129,22 @@ describe("resolveStepKitSelfUpdateTargets", () => {
     const plan = await resolveStepKitSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
-        "@stepkit/core": [{ version: "1.5.0" }],
-        "@stepkit/authoring": [
-          { version: "1.5.0", peerDependencies: { "@stepkit/core": "^1.5.0" } },
-          { version: "1.6.0-beta.1", peerDependencies: { "@stepkit/core": "^1.5.0" } },
+        "@trailstep/core": [{ version: "1.5.0" }],
+        "@trailstep/authoring": [
+          { version: "1.5.0", peerDependencies: { "@trailstep/core": "^1.5.0" } },
+          { version: "1.6.0-beta.1", peerDependencies: { "@trailstep/core": "^1.5.0" } },
         ],
-        "@stepkit/cli": [
-          { version: "1.5.0", peerDependencies: { "@stepkit/core": "^1.5.0" } },
-          { version: "1.6.0-beta.1", peerDependencies: { "@stepkit/core": "^1.5.0" } },
+        "@trailstep/cli": [
+          { version: "1.5.0", peerDependencies: { "@trailstep/core": "^1.5.0" } },
+          { version: "1.6.0-beta.1", peerDependencies: { "@trailstep/core": "^1.5.0" } },
         ],
       }),
     });
 
     expect(plan.targets.map((target) => [target.packageName, target.targetVersion])).toEqual([
-      ["@stepkit/core", "1.5.0"],
-      ["@stepkit/authoring", "1.5.0"],
-      ["@stepkit/cli", "1.5.0"],
+      ["@trailstep/core", "1.5.0"],
+      ["@trailstep/authoring", "1.5.0"],
+      ["@trailstep/cli", "1.5.0"],
     ]);
   });
 
@@ -156,11 +156,11 @@ describe("resolveStepKitSelfUpdateTargets", () => {
       resolveStepKitSelfUpdateTargets({
         cwd,
         packageCommandRunner: registryRunner({
-          "@stepkit/core": [{ version: "2.0.0" }],
-          "@stepkit/authoring": [
-            { version: "1.9.0", peerDependencies: { "@stepkit/core": "^1.0.0" } },
+          "@trailstep/core": [{ version: "2.0.0" }],
+          "@trailstep/authoring": [
+            { version: "1.9.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
           ],
-          "@stepkit/cli": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
+          "@trailstep/cli": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
         }),
       }),
     ).rejects.toThrow(UpdateTargetResolutionError);
@@ -174,11 +174,11 @@ describe("resolveStepKitSelfUpdateTargets", () => {
       resolveStepKitSelfUpdateTargets({
         cwd,
         packageCommandRunner: registryRunner({
-          "@stepkit/core": [{ version: "2.0.0" }],
-          "@stepkit/authoring": [
-            { version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } },
+          "@trailstep/core": [{ version: "2.0.0" }],
+          "@trailstep/authoring": [
+            { version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
           ],
-          "@stepkit/cli": [{ version: "1.9.0", peerDependencies: { "@stepkit/core": "^1.0.0" } }],
+          "@trailstep/cli": [{ version: "1.9.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],
         }),
       }),
     ).rejects.toThrow(UpdateTargetResolutionError);

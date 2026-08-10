@@ -1,12 +1,12 @@
 {
-  "name": "@stepkit/create-flows",
+  "name": "@trailstep/create-flows",
   "version": "0.0.0",
   "description": "Personal StepKit workflows.",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "keywords": [
-    "stepkit-workflow"
+    "trailstep-workflow"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,11 +23,11 @@
     "lint": "biome check src"
   },
   "dependencies": {
-    "@stepkit/authoring": "workspace:*"
+    "@trailstep/authoring": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
-    "@stepkit/core": "workspace:*",
+    "@trailstep/core": "workspace:*",
     "@types/node": "^26.1.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",

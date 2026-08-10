@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@stepkit/core";
+import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
 import {
   type CliCommandContext,
   CliUsageError,

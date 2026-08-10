@@ -1,4 +1,4 @@
-import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@stepkit/core";
+import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
 import type { StepKitDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
 import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skills/skills-cli.js";
 

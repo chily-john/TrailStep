@@ -1,4 +1,4 @@
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 
 export function isWorkflow(value: unknown): value is Workflow {
   if (!isPlainObject(value)) {

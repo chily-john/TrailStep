@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { runWorkflow } from "@stepkit/core";
+import { runWorkflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { grillItAway } from "./workflow.js";

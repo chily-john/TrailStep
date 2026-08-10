@@ -1,5 +1,5 @@
 {
-  "name": "@stepkit/authoring",
+  "name": "@trailstep/authoring",
   "version": "0.0.0",
   "description": "TypeScript authoring helpers for StepKit workflows.",
   "license": "Apache-2.0",
@@ -35,10 +35,10 @@
     "lint": "biome check src"
   },
   "dependencies": {
-    "@stepkit/core": "workspace:*"
+    "@trailstep/core": "workspace:*"
   },
   "peerDependencies": {
-    "@stepkit/core": "^0.0.0"
+    "@trailstep/core": "^0.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

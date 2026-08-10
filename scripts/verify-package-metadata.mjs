@@ -52,6 +52,7 @@ function assertPublicPackageMetadata(packageMetadata, packageName) {
 
 export function verifyPackageMetadata() {
   const rootPackage = readJson("package.json");
+  assert.equal(rootPackage.name, "trailstep", "root package name must be trailstep");
   assert.equal(rootPackage.private, true, "root package must be private");
   assert.match(rootPackage.packageManager ?? "", /^pnpm@/, "packageManager must use pnpm");
   assert.equal(rootPackage.engines?.node, ">=24.0.0", "root package must declare Node 24");
@@ -110,38 +111,39 @@ export function verifyPackageMetadata() {
   assert.match(gitignore, /(^|\n)\.turbo\/(\n|$)/u, "Turbo cache output must be ignored");
 
   const libraryPackages = [
-    { directory: "core", name: "@stepkit/core" },
-    { directory: "authoring", name: "@stepkit/authoring" },
-    { directory: "testkit", name: "@stepkit/testkit" },
+    { directory: "core", name: "@trailstep/core" },
+    { directory: "authoring", name: "@trailstep/authoring" },
+    { directory: "testkit", name: "@trailstep/testkit" },
   ];
 
   const cliPackageJsonPath = "packages/cli/package.json";
   assertFile(cliPackageJsonPath);
   const cliPackageMetadata = readJson(cliPackageJsonPath);
-  assert.equal(cliPackageMetadata.name, "@stepkit/cli");
-  assertPublicPackageMetadata(cliPackageMetadata, "@stepkit/cli");
-  assert.equal(cliPackageMetadata.bin?.stepkit, "./dist/index.js");
+  assert.equal(cliPackageMetadata.name, "@trailstep/cli");
+  assertPublicPackageMetadata(cliPackageMetadata, "@trailstep/cli");
+  assert.equal(cliPackageMetadata.bin?.trailstep, "./dist/index.js");
+  assert.equal(cliPackageMetadata.bin?.stepkit, undefined);
   assert.match(
     cliPackageMetadata.dependencies?.["@clack/prompts"] ?? "",
     /^\^/u,
-    "@stepkit/cli must depend on @clack/prompts for interactive commands",
+    "@trailstep/cli must depend on @clack/prompts for interactive commands",
   );
   assert.equal(
-    cliPackageMetadata.dependencies?.["@stepkit/core"],
+    cliPackageMetadata.dependencies?.["@trailstep/core"],
     "workspace:*",
-    "@stepkit/cli must retain a workspace dependency on @stepkit/core for builds",
+    "@trailstep/cli must retain a workspace dependency on @trailstep/core for builds",
   );
   assert.equal(
-    cliPackageMetadata.peerDependencies?.["@stepkit/core"],
+    cliPackageMetadata.peerDependencies?.["@trailstep/core"],
     "^0.0.0",
-    "@stepkit/cli must declare @stepkit/core peer compatibility",
+    "@trailstep/cli must declare @trailstep/core peer compatibility",
   );
 
   const dashboardPackageJsonPath = "packages/dashboard/package.json";
   assertFile(dashboardPackageJsonPath);
   const dashboardPackageMetadata = readJson(dashboardPackageJsonPath);
-  assert.equal(dashboardPackageMetadata.name, "@stepkit/dashboard");
-  assertPublicPackageMetadata(dashboardPackageMetadata, "@stepkit/dashboard");
+  assert.equal(dashboardPackageMetadata.name, "@trailstep/dashboard");
+  assertPublicPackageMetadata(dashboardPackageMetadata, "@trailstep/dashboard");
   assert.equal(dashboardPackageMetadata.type, "module");
   assert.match(dashboardPackageMetadata.scripts?.build ?? "", /vite build/u);
   assert.match(dashboardPackageMetadata.scripts?.typecheck ?? "", /svelte-check/u);
@@ -152,6 +154,14 @@ export function verifyPackageMetadata() {
   );
   assert.match(dashboardPackageMetadata.devDependencies?.svelte ?? "", /\^/u);
   assert.match(dashboardPackageMetadata.devDependencies?.vite ?? "", /\^/u);
+
+  const createFlowsPackageJsonPath = "packages/create-flows/package.json";
+  assertFile(createFlowsPackageJsonPath);
+  const createFlowsPackageMetadata = readJson(createFlowsPackageJsonPath);
+  assert.equal(createFlowsPackageMetadata.name, "@trailstep/create-flows");
+  assert.deepEqual(createFlowsPackageMetadata.keywords, ["trailstep-workflow"]);
+  assert.equal(createFlowsPackageMetadata.dependencies?.["@trailstep/authoring"], "workspace:*");
+  assert.equal(createFlowsPackageMetadata.devDependencies?.["@trailstep/core"], "workspace:*");
 
   for (const libraryPackage of libraryPackages) {
     const packageJsonPath = `packages/${libraryPackage.directory}/package.json`;
@@ -166,16 +176,16 @@ export function verifyPackageMetadata() {
     assert.equal(packageMetadata.exports?.["."].import, "./dist/index.js");
     assert.equal(packageMetadata.exports?.["."].types, "./dist/index.d.ts");
 
-    if (libraryPackage.name === "@stepkit/authoring") {
+    if (libraryPackage.name === "@trailstep/authoring") {
       assert.equal(
-        packageMetadata.dependencies?.["@stepkit/core"],
+        packageMetadata.dependencies?.["@trailstep/core"],
         "workspace:*",
-        "@stepkit/authoring must retain a workspace dependency on @stepkit/core for builds",
+        "@trailstep/authoring must retain a workspace dependency on @trailstep/core for builds",
       );
       assert.equal(
-        packageMetadata.peerDependencies?.["@stepkit/core"],
+        packageMetadata.peerDependencies?.["@trailstep/core"],
         "^0.0.0",
-        "@stepkit/authoring must declare @stepkit/core peer compatibility",
+        "@trailstep/authoring must declare @trailstep/core peer compatibility",
       );
     }
 

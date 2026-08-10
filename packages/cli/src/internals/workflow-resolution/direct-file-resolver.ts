@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 import { tsImport } from "tsx/esm/api";
 
 import { CliUsageError } from "../command.types.js";

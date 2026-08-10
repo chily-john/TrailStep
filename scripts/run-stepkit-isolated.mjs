@@ -28,7 +28,7 @@ const timestamp = new Date()
 const slug = slugify(workflowId);
 const branch = `stepkit/${slug}-${timestamp}`;
 const worktree = resolve(repoRoot, ".stepkit", "worktrees", `${slug}-${timestamp}`);
-const runsRoot = resolve(repoRoot, ".stepkit", "runs");
+const runsRoot = resolve(repoRoot, ".trailstep", "runs");
 
 console.log(`Creating isolated StepKit worktree: ${worktree}`);
 console.log(`Branch: ${branch}`);

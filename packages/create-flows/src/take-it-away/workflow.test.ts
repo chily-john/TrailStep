@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { runWorkflow } from "@stepkit/core";
+import { runWorkflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";

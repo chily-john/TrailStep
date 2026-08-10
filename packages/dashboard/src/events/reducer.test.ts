@@ -1,4 +1,4 @@
-import type { Event } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { reduceDashboardEvents } from "./reducer";

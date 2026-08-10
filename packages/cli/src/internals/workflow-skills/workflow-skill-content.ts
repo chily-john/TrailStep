@@ -4,7 +4,7 @@ import {
   type Schema,
   type ShapeInput,
   type Workflow,
-} from "@stepkit/core";
+} from "@trailstep/core";
 
 export type WorkflowSkillMetadata = Workflow & { readonly description?: string };
 

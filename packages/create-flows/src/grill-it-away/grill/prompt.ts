@@ -1,4 +1,4 @@
-import { promptSections, section } from "@stepkit/authoring";
+import { promptSections, section } from "@trailstep/authoring";
 
 export function grillPrompt(): string {
   return promptSections(

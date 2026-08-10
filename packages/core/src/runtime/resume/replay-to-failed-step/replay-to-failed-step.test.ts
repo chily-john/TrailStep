@@ -146,7 +146,7 @@ describe("replayToFailedStep", () => {
 
   it("rejects a missing target with a specific failure code", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-resume-"));
-    const missingRunDir = join(cwd, ".stepkit", "runs", "missing-run");
+    const missingRunDir = join(cwd, ".trailstep", "runs", "missing-run");
 
     const result = await runWorkflow({
       workflow: replayWorkflow(),

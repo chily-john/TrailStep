@@ -1,1 +1,1 @@
-export const testkitPackageMarker = "@stepkit/testkit";
+export const testkitPackageMarker = "@trailstep/testkit";

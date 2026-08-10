@@ -1,5 +1,5 @@
-import type { Document } from "@stepkit/authoring";
-import { loadFragments, promptSections, section } from "@stepkit/authoring";
+import type { Document } from "@trailstep/authoring";
+import { loadFragments, promptSections, section } from "@trailstep/authoring";
 import type { StoryReviewGitContext } from "../shared/story-state.js";
 
 const fragments = loadFragments(import.meta.dirname, {

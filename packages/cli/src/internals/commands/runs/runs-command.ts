@@ -1,8 +1,8 @@
 import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Event, LatestUnresolvedFailure } from "@stepkit/core";
-import { defaultRunsRoot, readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
+import type { Event, LatestUnresolvedFailure } from "@trailstep/core";
+import { defaultRunsRoot, readRunEvents, selectLatestUnresolvedFailure } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { resolveRunsRoot } from "../../runs-root.js";

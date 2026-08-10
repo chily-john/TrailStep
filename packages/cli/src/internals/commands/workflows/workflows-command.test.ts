@@ -8,7 +8,7 @@ import { resolveCommand } from "../../command-registry.js";
 import { workflowsCommand } from "./workflows-command.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-workflows-command-tests", `${task.id}-${randomUUID()}`);
+  return join("node_modules", ".tmp-trailstep-workflows-command-tests", `${task.id}-${randomUUID()}`);
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -36,18 +36,18 @@ describe("workflowsCommand", () => {
     task,
   }) => {
     const cwd = tmpDir(task);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
-      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+      dependencies: { "@acme/trailstep-workflows": "1.0.0" },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       type: "module",
       main: "./index.mjs",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await writeFile(
       join(packageDir, "index.mjs"),
@@ -65,7 +65,7 @@ describe("workflowsCommand", () => {
     expect(exitCode).toBe(0);
     expect(lines).toEqual([
       "No registered workflows to edit.",
-      "@acme/stepkit-workflows:reviewFeature",
+      "@acme/trailstep-workflows:reviewFeature",
     ]);
   });
 

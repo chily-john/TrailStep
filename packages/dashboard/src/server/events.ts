@@ -1,5 +1,5 @@
-import type { Event } from "@stepkit/core";
-import { readRunEvents } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
+import { readRunEvents } from "@trailstep/core";
 
 export async function readDashboardRunEvents(runDir: string): Promise<Event[]> {
   try {

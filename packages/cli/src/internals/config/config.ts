@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { parseStepKitConfig, type StepKitConfig } from "@stepkit/core";
+import { parseStepKitConfig, type StepKitConfig } from "@trailstep/core";
 
 export class CliConfigError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {

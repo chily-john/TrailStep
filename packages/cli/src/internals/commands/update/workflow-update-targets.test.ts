@@ -51,7 +51,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   it("resolves latest stable version and dependency section for registered workflow packages", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, "package.json"), {
       devDependencies: { "@acme/review-workflow": "^1.2.0" },
     });
@@ -86,7 +86,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   });
 
   it("dedupes multiple registrations for the same package", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, "package.json"), {
       dependencies: { "@acme/workflows": "^1.0.0" },
     });
@@ -126,7 +126,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   });
 
   it("reports direct-file registrations as skips without npm view calls", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
@@ -150,7 +150,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   });
 
   it("errors on ambiguous bare workflow names", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: {
         project: { review: "@acme/project-review" },
@@ -169,7 +169,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   });
 
   it("falls back to raw package name when no registration matches", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, "package.json"), {
       peerDependencies: { "@acme/workflows": "~2.0.0" },
     });
@@ -198,7 +198,7 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
   });
 
   it("errors clearly when target package is not in root dependencies", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-update-target-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, "package.json"), { dependencies: {} });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "@acme/review-workflow" } },

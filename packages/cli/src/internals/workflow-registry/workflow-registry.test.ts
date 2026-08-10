@@ -15,7 +15,7 @@ import {
 } from "./workflow-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-workflow-registry-tests", `${task.id}-${randomUUID()}`);
+  return join("node_modules", ".tmp-trailstep-workflow-registry-tests", `${task.id}-${randomUUID()}`);
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {

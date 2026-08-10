@@ -6,7 +6,7 @@ import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 export type RunState = Record<string, unknown>;
 
 export function defaultRunsRoot(cwd: string): string {
-  return join(cwd, ".stepkit", "runs");
+  return join(cwd, ".trailstep", "runs");
 }
 
 export async function createRunDirectory(options: {
@@ -136,7 +136,7 @@ function isRunState(value: unknown): value is RunState {
 
 async function ensureStepkitGitignoreForRunsRoot(runsRoot: string): Promise<void> {
   const stepkitRoot = dirname(runsRoot);
-  if (basename(stepkitRoot) !== ".stepkit") {
+  if (basename(stepkitRoot) !== ".trailstep") {
     return;
   }
 

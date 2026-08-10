@@ -1,4 +1,4 @@
-import type { Event } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
 import type { DashboardRunSummary } from "../server/runs";
 import { type DashboardEventsState, reduceDashboardEvents } from "./reducer";
 

@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 
 import { loadStepKitProjectConfig, loadStepKitUserWorkflowRegistry } from "../config/config.js";
 import { discoverWorkflows } from "../discovery/discovery.js";

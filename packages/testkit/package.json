@@ -1,5 +1,5 @@
 {
-  "name": "@stepkit/testkit",
+  "name": "@trailstep/testkit",
   "version": "0.0.0",
   "description": "Testing utilities for StepKit workflows.",
   "license": "Apache-2.0",

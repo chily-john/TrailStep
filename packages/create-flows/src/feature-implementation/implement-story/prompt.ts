@@ -5,7 +5,7 @@ import {
   loadFragments,
   promptSections,
   section,
-} from "@stepkit/authoring";
+} from "@trailstep/authoring";
 import type { ReviewResult } from "../shared/review-schema.js";
 
 const fragments = loadFragments(import.meta.dirname, {

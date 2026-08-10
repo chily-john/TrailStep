@@ -1,4 +1,4 @@
-import { step } from "@stepkit/authoring";
+import { step } from "@trailstep/authoring";
 import { createFeatureDocStep } from "../../feature-implementation/create-feature-doc/step.js";
 import { takeItAwayInput } from "../../feature-implementation/shared/input-schema.js";
 import { grillPrompt } from "./prompt.js";

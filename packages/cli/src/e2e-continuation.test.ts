@@ -9,19 +9,19 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 async function writeContinuationWorkflowPackage(cwd: string): Promise<void> {
-  const packageDir = join(cwd, "node_modules", "@acme", "stepkit-continuation-workflows");
+  const packageDir = join(cwd, "node_modules", "@acme", "trailstep-continuation-workflows");
   const coreImportUrl = pathToFileURL(resolve("..", "core", "dist", "index.js")).href;
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(cwd, "package.json"), {
     name: "consumer",
-    dependencies: { "@acme/stepkit-continuation-workflows": "1.0.0" },
+    dependencies: { "@acme/trailstep-continuation-workflows": "1.0.0" },
   });
   await writeJson(join(packageDir, "package.json"), {
-    name: "@acme/stepkit-continuation-workflows",
+    name: "@acme/trailstep-continuation-workflows",
     version: "1.0.0",
     type: "module",
     main: "./index.mjs",
-    keywords: ["stepkit-workflow"],
+    keywords: ["trailstep-workflow"],
   });
   await writeFile(
     join(packageDir, "index.mjs"),
@@ -46,7 +46,7 @@ async function writeContinuationWorkflowPackage(cwd: string): Promise<void> {
 
 describe("continuation workflow CLI e2e", () => {
   it("lists and runs a local continuation workflow package through the CLI", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-e2e-continuation-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-e2e-continuation-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeContinuationWorkflowPackage(cwd);
 
@@ -55,27 +55,29 @@ describe("continuation workflow CLI e2e", () => {
       main({
         argv: ["workflows"],
         cwd,
+        env: {},
         io: { writeLine: (line) => listLines.push(line), writeError: () => undefined },
       }),
     ).resolves.toBe(0);
 
-    expect(listLines).toContain("@acme/stepkit-continuation-workflows:simpleWorkflow");
+    expect(listLines).toContain("@acme/trailstep-continuation-workflows:simpleWorkflow");
 
     const runLines: string[] = [];
     await expect(
       main({
         argv: [
-          "@acme/stepkit-continuation-workflows:simpleWorkflow",
+          "@acme/trailstep-continuation-workflows:simpleWorkflow",
           "run-001",
           "--input",
           '{"task":"say hello"}',
         ],
         cwd,
+        env: {},
         io: { writeLine: (line) => runLines.push(line), writeError: () => undefined },
       }),
     ).resolves.toBe(0);
 
-    const events = await readFile(join(cwd, ".stepkit", "runs", "run-001", "events.jsonl"), "utf8");
+    const events = await readFile(join(cwd, ".trailstep", "runs", "run-001", "events.jsonl"), "utf8");
     expect(runLines.join("\n")).toContain("Workflow completed");
     expect(events).toContain("workflow.completed");
     expect(events).toContain('"summary":"completed: say hello"');

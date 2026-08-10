@@ -175,7 +175,7 @@ describe("runWorkflow", () => {
 
         try {
           const contents = await readFile(
-            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            join(cwd, ".trailstep", "runs", event.runId, "events.jsonl"),
             "utf8",
           );
           eventsAtFirstStepCompletion = contents
@@ -225,7 +225,7 @@ describe("runWorkflow", () => {
 
         try {
           const contents = await readFile(
-            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            join(cwd, ".trailstep", "runs", event.runId, "events.jsonl"),
             "utf8",
           );
           eventsAtWorkflowFailure = contents
@@ -276,7 +276,7 @@ describe("runWorkflow", () => {
 
     expect(result.output).toEqual({ value: 6 });
     expect(result.runId).toBe("my-run");
-    expect(result.runDir).toBe(join(cwd, ".stepkit", "runs", "my-run"));
+    expect(result.runDir).toBe(join(cwd, ".trailstep", "runs", "my-run"));
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",

@@ -182,7 +182,7 @@ describe("runWorkflow retry", () => {
   it("manual retry appends events with ids unique from existing events", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-event-ids-"));
     const runName = "retry-event-ids";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
       {
@@ -261,7 +261,7 @@ describe("runWorkflow retry", () => {
   it("manual retry reports historical workflow failures without step metadata clearly", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-historical-workflow-failure-"));
     const runName = "retry-historical-workflow-failure";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
       {
@@ -314,7 +314,7 @@ describe("runWorkflow retry", () => {
   it("manual retry resumes a run whose latest persisted event is a dangling step.started", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-dangling-"));
     const runName = "retry-dangling";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
       {

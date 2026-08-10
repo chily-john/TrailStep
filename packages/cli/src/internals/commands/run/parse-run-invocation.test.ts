@@ -6,13 +6,13 @@ import { parseRunInvocation } from "./parse-run-invocation.js";
 describe("parseRunInvocation", () => {
   it("parses a workflow ref without an explicit run name and inline input", () => {
     const invocation = parseRunInvocation([
-      "@acme/stepkit-workflows:reviewFeature",
+      "@acme/trailstep-workflows:reviewFeature",
       "--input",
       '{"ok":true}',
     ]);
 
     expect(invocation).toMatchObject({
-      workflowId: "@acme/stepkit-workflows:reviewFeature",
+      workflowId: "@acme/trailstep-workflows:reviewFeature",
       input: { kind: "inline", json: '{"ok":true}' },
     });
     expect(invocation).not.toHaveProperty("workflowRunName");
@@ -31,29 +31,29 @@ describe("parseRunInvocation", () => {
   it("parses a workflow ref with an explicit run name and input file", () => {
     expect(
       parseRunInvocation([
-        "@acme/stepkit-workflows:reviewFeature",
+        "@acme/trailstep-workflows:reviewFeature",
         "my-run",
         "--input-file",
         "input.json",
       ]),
     ).toMatchObject({
-      workflowId: "@acme/stepkit-workflows:reviewFeature",
+      workflowId: "@acme/trailstep-workflows:reviewFeature",
       workflowRunName: "my-run",
       input: { kind: "file", path: "input.json" },
     });
   });
 
   it("rejects legacy resume syntax and points users to retry", () => {
-    expect(() => parseRunInvocation(["@acme/stepkit-workflows:reviewFeature", "--resume"])).toThrow(
+    expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"])).toThrow(
       CliUsageError,
     );
-    expect(() => parseRunInvocation(["@acme/stepkit-workflows:reviewFeature", "--resume"])).toThrow(
+    expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"])).toThrow(
       /stepkit retry/i,
     );
   });
 
   it("keeps clear usage errors for unknown options", () => {
-    expect(() => parseRunInvocation(["@acme/stepkit-workflows:reviewFeature", "--bogus"])).toThrow(
+    expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--bogus"])).toThrow(
       /Unknown option: --bogus/,
     );
   });
@@ -61,7 +61,7 @@ describe("parseRunInvocation", () => {
   it("keeps clear usage errors for conflicting input options", () => {
     expect(() =>
       parseRunInvocation([
-        "@acme/stepkit-workflows:reviewFeature",
+        "@acme/trailstep-workflows:reviewFeature",
         "my-run",
         "--input",
         "{}",

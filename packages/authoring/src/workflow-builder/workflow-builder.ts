@@ -1,4 +1,4 @@
-import type { PlainObject } from "@stepkit/core";
+import type { PlainObject } from "@trailstep/core";
 import { assertBuilderObject } from "../shared/assert-builder-object.js";
 import type { DefinedWorkflow, WorkflowBuilderOptions } from "./workflow-builder.types.js";
 

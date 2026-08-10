@@ -18,18 +18,18 @@ describe("main", () => {
   });
   it("prints discovered workflow ids for the workflows command", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", task.id);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
-      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+      dependencies: { "@acme/trailstep-workflows": "1.0.0" },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       type: "module",
       main: "./index.mjs",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await writeFile(
       join(packageDir, "index.mjs"),
@@ -49,25 +49,25 @@ describe("main", () => {
 
     expect(lines).toEqual([
       "No registered workflows to edit.",
-      "@acme/stepkit-workflows:reviewFeature",
+      "@acme/trailstep-workflows:reviewFeature",
     ]);
     expect(errors).toEqual([]);
   });
 
   it("runs a discovered continuation workflow", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-run`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
-      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+      dependencies: { "@acme/trailstep-workflows": "1.0.0" },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       type: "module",
       main: "./index.mjs",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await writeFile(
       join(packageDir, "index.mjs"),
@@ -80,7 +80,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
         eventSink: (event) => {
@@ -89,19 +89,19 @@ describe("main", () => {
       }),
     ).resolves.toBe(0);
 
-    expect(lines.join("\n")).toContain("Workflow completed: @acme/stepkit-workflows:reviewFeature");
+    expect(lines.join("\n")).toContain("Workflow completed: @acme/trailstep-workflows:reviewFeature");
     expect(errors).toEqual([]);
     expect(events).toContainEqual(expect.objectContaining({ payload: { input: { ok: true } } }));
   });
 
   it("run loads .stepkit/config.json and passes it to runWorkflow", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-config-run`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
-      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+      dependencies: { "@acme/trailstep-workflows": "1.0.0" },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       version: 1,
@@ -111,16 +111,16 @@ describe("main", () => {
       agents: { small: [{ provider: "local", model: "fake-model" }] },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       type: "module",
       main: "./index.mjs",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await writeFile(
       join(packageDir, "index.mjs"),
       [
-        "import { done, step } from '@stepkit/core';",
+        "import { done, step } from '@trailstep/core';",
         "export const reviewFeature = {",
         "  id: 'reviewFeature',",
         "  inputShape: { ok: 'boolean' },",
@@ -135,7 +135,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         workingAgentProcessRunner: async (request) => {
@@ -163,23 +163,23 @@ describe("main", () => {
       ".tmp-stepkit-main-tests",
       `${task.id}-missing-config-agent-run`,
     );
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
-      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+      dependencies: { "@acme/trailstep-workflows": "1.0.0" },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       type: "module",
       main: "./index.mjs",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await writeFile(
       join(packageDir, "index.mjs"),
       [
-        "import { done, step } from '@stepkit/core';",
+        "import { done, step } from '@trailstep/core';",
         "export const reviewFeature = {",
         "  id: 'reviewFeature',",
         "  inputShape: { ok: 'boolean' },",
@@ -195,7 +195,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
         cwd,
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
         workingAgentProcessRunner: async (request) => {
@@ -218,7 +218,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "run-001", "--input", "{}"],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", "{}"],
         cwd,
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),
@@ -239,7 +239,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "run-001", "--input", "{}"],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", "{}"],
         cwd,
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),
@@ -251,18 +251,18 @@ describe("main", () => {
 
   it("workflows does not require .stepkit/config.json", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-list-without-config`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
-      dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+      dependencies: { "@acme/trailstep-workflows": "1.0.0" },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       type: "module",
       main: "./index.mjs",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await writeFile(join(packageDir, "index.mjs"), "export {};", "utf8");
     const lines: string[] = [];
@@ -333,7 +333,7 @@ describe("main", () => {
       run(["./workflows/review.mjs", "direct-run", "--input", '{"ok":true}']),
     ).resolves.toMatch(/Workflow completed: .*review\.mjs/);
     await expect(run(["./workflows/review.mjs", "--input", '{"ok":true}'])).resolves.toContain(
-      join(".stepkit", "runs", "review-20260102-030405-abc123"),
+      join(".trailstep", "runs", "review-20260102-030405-abc123"),
     );
     await expect(
       run(["project/review", "project-run", "--input", '{"ok":true}']),
@@ -349,7 +349,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "run-001", "--input", "{"],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", "{"],
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),
     ).resolves.toBe(1);
@@ -387,23 +387,23 @@ describe("main", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-doctor-clean`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/authoring": "1.0.0" },
+      dependencies: { "@trailstep/authoring": "1.0.0" },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: { project: { review: "@acme/stepkit-workflows" } },
+      workflows: { project: { review: "@acme/trailstep-workflows" } },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       main: "index.mjs",
     });
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { defineWorkflow } from '@stepkit/authoring';\nexport const review = defineWorkflow;\n",
+      "import { defineWorkflow } from '@trailstep/authoring';\nexport const review = defineWorkflow;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -429,10 +429,10 @@ describe("main", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/authoring": "1.0.0" },
+      dependencies: { "@trailstep/authoring": "1.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@stepkit", "authoring", "package.json"), {
-      name: "@stepkit/authoring",
+    await writeJson(join(cwd, "node_modules", "@trailstep", "authoring", "package.json"), {
+      name: "@trailstep/authoring",
       version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
@@ -440,7 +440,7 @@ describe("main", () => {
     });
     await writeFile(
       join(cwd, "workflows", "review.mjs"),
-      "import { removedStep } from '@stepkit/authoring';\nexport const review = removedStep;\n",
+      "import { removedStep } from '@trailstep/authoring';\nexport const review = removedStep;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -455,34 +455,34 @@ describe("main", () => {
       }),
     ).resolves.toBe(2);
 
-    expect(lines.join("\n")).toContain("blocking @stepkit/authoring/removedStep");
+    expect(lines.join("\n")).toContain("blocking @trailstep/authoring/removedStep");
     expect(lines.join("\n")).toContain("workflows/review.mjs");
     expect(errors).toEqual(["Doctor found blocking deprecation findings."]);
   });
 
   it("doctor reports warning deprecations without blocking", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-doctor-warning`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/authoring": "1.0.0" },
+      dependencies: { "@trailstep/authoring": "1.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@stepkit", "authoring", "package.json"), {
-      name: "@stepkit/authoring",
+    await writeJson(join(cwd, "node_modules", "@trailstep", "authoring", "package.json"), {
+      name: "@trailstep/authoring",
       version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: { project: { review: "@acme/stepkit-workflows" } },
+      workflows: { project: { review: "@acme/trailstep-workflows" } },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       main: "index.mjs",
     });
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { oldStep } from '@stepkit/authoring';\nexport const review = oldStep;\n",
+      "import { oldStep } from '@trailstep/authoring';\nexport const review = oldStep;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -498,32 +498,32 @@ describe("main", () => {
       }),
     ).resolves.toBe(1);
 
-    expect(lines.join("\n")).toContain("warning @stepkit/authoring/oldStep");
+    expect(lines.join("\n")).toContain("warning @trailstep/authoring/oldStep");
   });
 
   it("doctor returns a blocking result for removed symbols", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-doctor-blocking`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/authoring": "1.0.0" },
+      dependencies: { "@trailstep/authoring": "1.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@stepkit", "authoring", "package.json"), {
-      name: "@stepkit/authoring",
+    await writeJson(join(cwd, "node_modules", "@trailstep", "authoring", "package.json"), {
+      name: "@trailstep/authoring",
       version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: { project: { review: "@acme/stepkit-workflows" } },
+      workflows: { project: { review: "@acme/trailstep-workflows" } },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       main: "index.mjs",
     });
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { removedStep } from '@stepkit/authoring';\nexport const review = removedStep;\n",
+      "import { removedStep } from '@trailstep/authoring';\nexport const review = removedStep;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -538,29 +538,29 @@ describe("main", () => {
       }),
     ).resolves.toBe(2);
 
-    expect(lines.join("\n")).toContain("blocking @stepkit/authoring/removedStep");
+    expect(lines.join("\n")).toContain("blocking @trailstep/authoring/removedStep");
     expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
   });
 
   it("doctor does not detect aliased imports (known limitation)", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-main-tests", `${task.id}-doctor-aliased`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/authoring": "1.0.0" },
+      dependencies: { "@trailstep/authoring": "1.0.0" },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
-      workflows: { project: { review: "@acme/stepkit-workflows" } },
+      workflows: { project: { review: "@acme/trailstep-workflows" } },
     });
     await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/stepkit-workflows",
+      name: "@acme/trailstep-workflows",
       version: "1.0.0",
       main: "index.mjs",
     });
     await writeFile(
       join(packageDir, "index.mjs"),
-      "import { removedStep as rs } from '@stepkit/authoring';\nexport const review = rs;\n",
+      "import { removedStep as rs } from '@trailstep/authoring';\nexport const review = rs;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -587,7 +587,7 @@ describe("main", () => {
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeJson(packageJsonPath, {
-      dependencies: { "@stepkit/core": "^1.0.0", "@acme/workflows": "^1.0.0" },
+      dependencies: { "@trailstep/core": "^1.0.0", "@acme/workflows": "^1.0.0" },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "@acme/workflows#review" } },
@@ -605,7 +605,7 @@ describe("main", () => {
       }),
     ).resolves.toBe(0);
 
-    expect(await readFile(packageJsonPath, "utf8")).toContain('"@stepkit/core": "^1.0.0"');
+    expect(await readFile(packageJsonPath, "utf8")).toContain('"@trailstep/core": "^1.0.0"');
   });
 
   it("update --all prints direct-file skips and excludes that file from the deprecation scan", async ({
@@ -615,14 +615,14 @@ describe("main", () => {
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await mkdir(join(cwd, ".stepkit"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "^1.0.0", "@stepkit/authoring": "^1.0.0" },
+      dependencies: { "@trailstep/core": "^1.0.0", "@trailstep/authoring": "^1.0.0" },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     await writeFile(
       join(cwd, "workflows", "review.mjs"),
-      "import { oldStep } from '@stepkit/authoring';\nexport const review = oldStep;\n",
+      "import { oldStep } from '@trailstep/authoring';\nexport const review = oldStep;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -643,7 +643,7 @@ describe("main", () => {
     // StepKit self-update preflight scans their source because StepKit API changes can affect
     // direct workflow files too.
     expect(lines.join("\n")).toContain("Skipped project/review: local file source");
-    expect(lines.join("\n")).toContain("warning @stepkit/authoring/oldStep");
+    expect(lines.join("\n")).toContain("warning @trailstep/authoring/oldStep");
     expect(lines.join("\n")).toContain("workflows/review.mjs");
   });
 
@@ -652,7 +652,7 @@ describe("main", () => {
     await mkdir(cwd, { recursive: true });
     await writeFile(join(cwd, "yarn.lock"), "", "utf8");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "^1.0.0" },
+      dependencies: { "@trailstep/core": "^1.0.0" },
     });
     const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
 
@@ -676,7 +676,7 @@ describe("main", () => {
 });
 
 const removedAuthoringSymbol = {
-  packageName: "@stepkit/authoring",
+  packageName: "@trailstep/authoring",
   symbol: "removedStep",
   deprecatedSince: "0.5.0",
   removedIn: "1.0.0",
@@ -686,9 +686,9 @@ const removedAuthoringSymbol = {
 
 async function latestStepkitTwo(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
-    "@stepkit/core": [{ version: "2.0.0" }],
-    "@stepkit/authoring": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
-    "@stepkit/cli": [{ version: "2.0.0", peerDependencies: { "@stepkit/core": "^2.0.0" } }],
+    "@trailstep/core": [{ version: "2.0.0" }],
+    "@trailstep/authoring": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
+    "@trailstep/cli": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");
   return { exitCode: 0, stdout: JSON.stringify(metadata[packageName]) };

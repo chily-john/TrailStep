@@ -9,7 +9,7 @@ import {
   type NpmPackageMetadata,
 } from "../../package-manager/npm-registry.js";
 
-const stepkitPackageNames = ["@stepkit/core", "@stepkit/authoring", "@stepkit/cli"] as const;
+const stepkitPackageNames = ["@trailstep/core", "@trailstep/authoring", "@trailstep/cli"] as const;
 
 type StepkitPackageName = (typeof stepkitPackageNames)[number];
 
@@ -49,35 +49,35 @@ export async function resolveStepKitSelfUpdateTargets({
   }
 
   const [coreMetadata, authoringMetadata, cliMetadata] = await Promise.all([
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/core", packageCommandRunner }),
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/authoring", packageCommandRunner }),
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/cli", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/core", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/authoring", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/cli", packageCommandRunner }),
   ]);
 
   const targetCore = selectLatestStable(coreMetadata.versions);
   if (!targetCore) {
-    throw new UpdateTargetResolutionError("No published @stepkit/core versions were found.");
+    throw new UpdateTargetResolutionError("No published @trailstep/core versions were found.");
   }
 
   const targetAuthoring = selectLatestPeerCompatibleVersion(authoringMetadata, targetCore);
   if (!targetAuthoring) {
     throw new UpdateTargetResolutionError(
-      `No @stepkit/authoring version has a @stepkit/core peer dependency compatible with ${targetCore}.`,
+      `No @trailstep/authoring version has a @trailstep/core peer dependency compatible with ${targetCore}.`,
     );
   }
 
   const targetCli = selectLatestPeerCompatibleVersion(cliMetadata, targetCore);
   if (!targetCli) {
     throw new UpdateTargetResolutionError(
-      `No @stepkit/cli version has a @stepkit/core peer dependency compatible with ${targetCore}.`,
+      `No @trailstep/cli version has a @trailstep/core peer dependency compatible with ${targetCore}.`,
     );
   }
 
   return {
     targets: [
-      createTarget("@stepkit/core", current, targetCore),
-      createTarget("@stepkit/authoring", current, targetAuthoring),
-      createTarget("@stepkit/cli", current, targetCli),
+      createTarget("@trailstep/core", current, targetCore),
+      createTarget("@trailstep/authoring", current, targetAuthoring),
+      createTarget("@trailstep/cli", current, targetCli),
     ].filter((target) => target.currentRange !== ""),
   };
 }
@@ -119,7 +119,7 @@ function readCorePeerRange(
   peerDependenciesByVersion: NpmPackageMetadata["peerDependenciesByVersion"],
   version: string,
 ): string | undefined {
-  return peerDependenciesByVersion[version]?.["@stepkit/core"];
+  return peerDependenciesByVersion[version]?.["@trailstep/core"];
 }
 
 export async function readRootPackageJson(cwd: string): Promise<Record<string, unknown>> {

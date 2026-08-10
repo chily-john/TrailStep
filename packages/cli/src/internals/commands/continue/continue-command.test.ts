@@ -54,7 +54,7 @@ function interactiveProtocol(options: {
 describe("continue command", () => {
   it("continues from inline JSON when it matches the stored schema", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-json`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -77,7 +77,7 @@ describe("continue command", () => {
 
   it("continues from a JSON file when it matches the stored schema", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-json-file`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -102,7 +102,7 @@ describe("continue command", () => {
 
   it("rejects an already completed session", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-completed`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -127,7 +127,7 @@ describe("continue command", () => {
 
   it("leaves the session active when submitted JSON fails schema validation", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-invalid-json`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -148,7 +148,7 @@ describe("continue command", () => {
 
   it("does not replace output.json when validation fails", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-no-replace`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -170,7 +170,7 @@ describe("continue command", () => {
 
   it("continues an active interactive session from a non-empty session file", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", task.id);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-discuss-feature");
     const interactiveFile = join(stepDir, "interactive.json");
     const lines: string[] = [];
@@ -214,9 +214,9 @@ describe("continue command", () => {
 
   it("prompts to select an active session when continue has no arguments", async ({ task }) => {
     const cwd = join(nodeTmpContinueTestsDir(task.id), "select-active");
-    const runDirA = join(cwd, ".stepkit", "runs", "alpha-run");
+    const runDirA = join(cwd, ".trailstep", "runs", "alpha-run");
     const stepDirA = join(runDirA, "steps", "0001-discuss-feature");
-    const runDirB = join(cwd, ".stepkit", "runs", "beta-run");
+    const runDirB = join(cwd, ".trailstep", "runs", "beta-run");
     const stepDirB = join(runDirB, "steps", "0002-approve-plan");
     await mkdir(stepDirA, { recursive: true });
     await mkdir(stepDirB, { recursive: true });
@@ -290,7 +290,7 @@ describe("continue command", () => {
     task,
   }) => {
     const cwd = nodeTmpContinueTestsDir(`${task.id}-json-select`);
-    const runDir = join(cwd, ".stepkit", "runs", "json-run");
+    const runDir = join(cwd, ".trailstep", "runs", "json-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     await mkdir(stepDir, { recursive: true });
     await writeJson(
@@ -320,11 +320,11 @@ describe("continue command", () => {
 
   it("ignores completed and cancelled interactive sessions during selection", async ({ task }) => {
     const cwd = nodeTmpContinueTestsDir(`${task.id}-filter`);
-    const activeRunDir = join(cwd, ".stepkit", "runs", "active-run");
+    const activeRunDir = join(cwd, ".trailstep", "runs", "active-run");
     const activeStepDir = join(activeRunDir, "steps", "0001-discuss-feature");
-    const completedRunDir = join(cwd, ".stepkit", "runs", "completed-run");
+    const completedRunDir = join(cwd, ".trailstep", "runs", "completed-run");
     const completedStepDir = join(completedRunDir, "steps", "0001-discuss-feature");
-    const cancelledRunDir = join(cwd, ".stepkit", "runs", "cancelled-run");
+    const cancelledRunDir = join(cwd, ".trailstep", "runs", "cancelled-run");
     const cancelledStepDir = join(cancelledRunDir, "steps", "0001-discuss-feature");
     await mkdir(activeStepDir, { recursive: true });
     await mkdir(completedStepDir, { recursive: true });
@@ -370,7 +370,7 @@ describe("continue command", () => {
 
   it("leaves the session active when the session file is empty", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-empty`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-discuss-feature");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });

@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 
 import { isWorkflow } from "../workflow-resolution/workflow-validator.js";
 
@@ -143,7 +143,7 @@ function findPackageJson(startDir: string): string | undefined {
 }
 
 function isWorkflowPackage(packageJson: PackageJson): boolean {
-  return Array.isArray(packageJson.keywords) && packageJson.keywords.includes("stepkit-workflow");
+  return Array.isArray(packageJson.keywords) && packageJson.keywords.includes("trailstep-workflow");
 }
 
 async function importPackage(

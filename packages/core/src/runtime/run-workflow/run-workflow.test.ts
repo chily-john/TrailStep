@@ -83,7 +83,7 @@ describe("runWorkflow runtime front-door", () => {
 
         try {
           const contents = await readFile(
-            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            join(cwd, ".trailstep", "runs", event.runId, "events.jsonl"),
             "utf8",
           );
           eventsAtFirstStepCompletion = contents

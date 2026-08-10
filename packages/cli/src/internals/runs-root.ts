@@ -15,5 +15,5 @@ export function resolveConfiguredRunsRoot(
 }
 
 export function resolveRunsRoot(context: Pick<CliCommandContext, "cwd" | "env">): string {
-  return resolveConfiguredRunsRoot(context) ?? join(context.cwd, ".stepkit", "runs");
+  return resolveConfiguredRunsRoot(context) ?? join(context.cwd, ".trailstep", "runs");
 }

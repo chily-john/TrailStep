@@ -7,7 +7,7 @@ import { readDashboardRunEvents } from "./events";
 
 describe("dashboard event helpers", () => {
   it("maps resume_target_not_found to an empty event list", async ({ task }) => {
-    const runDir = join(process.cwd(), ".tmp", task.id, ".stepkit", "runs", "missing-events");
+    const runDir = join(process.cwd(), ".tmp", task.id, ".trailstep", "runs", "missing-events");
     await mkdir(runDir, { recursive: true });
 
     await expect(readDashboardRunEvents(runDir)).resolves.toEqual([]);

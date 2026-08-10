@@ -1,5 +1,5 @@
 {
-  "name": "@stepkit/dashboard",
+  "name": "@trailstep/dashboard",
   "version": "0.0.0",
   "description": "StepKit dashboard placeholder shell.",
   "license": "Apache-2.0",
@@ -27,7 +27,7 @@
     "lint": "biome check index.html src svelte.config.js vite.config.ts"
   },
   "dependencies": {
-    "@stepkit/core": "workspace:*"
+    "@trailstep/core": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

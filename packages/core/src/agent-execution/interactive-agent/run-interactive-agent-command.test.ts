@@ -630,7 +630,7 @@ describe("continuation interactive agent roles", () => {
         );
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         expect(protocol.stepDir).toBe(
-          join(cwd, ".stepkit", "runs", "interactive-default-run", "steps", "0001-discuss-feature"),
+          join(cwd, ".trailstep", "runs", "interactive-default-run", "steps", "0001-discuss-feature"),
         );
         expect(protocol.runRelativeStepDir).toBe("steps/0001-discuss-feature");
         await writeFile(

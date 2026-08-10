@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { state } from "@stepkit/authoring";
+import { state } from "@trailstep/authoring";
 
 const execFileAsync = promisify(execFile);
 

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
-import type { PlainObject } from "@stepkit/core";
+import type { PlainObject } from "@trailstep/core";
 
 import type { InputSource } from "./run-command.types.js";
 

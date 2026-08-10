@@ -20,7 +20,7 @@ async function createBundleWorkflow(cwd: string, source: string): Promise<void> 
     name: "@acme/bundle",
     version: "1.0.0",
     main: "./index.mjs",
-    keywords: ["stepkit-workflow"],
+    keywords: ["trailstep-workflow"],
     stepkit: { workflows: { release: "./index.mjs#release" } },
   });
   await writeFile(join(packageDir, "index.mjs"), source, "utf8");
@@ -52,15 +52,15 @@ describe("doctor command", () => {
   it("uses installed manifest versions for warning detection", async ({ task }) => {
     const cwd = tmpDir(task, "installed-manifest-warning");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "^1.0.0" },
+      dependencies: { "@trailstep/core": "^1.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@stepkit", "core", "package.json"), {
-      name: "@stepkit/core",
+    await writeJson(join(cwd, "node_modules", "@trailstep", "core", "package.json"), {
+      name: "@trailstep/core",
       version: "2.0.0",
     });
     await createBundleWorkflow(
       cwd,
-      "import { oldStep } from '@stepkit/core';\nexport const release = oldStep;\n",
+      "import { oldStep } from '@trailstep/core';\nexport const release = oldStep;\n",
     );
     const lines: string[] = [];
     const errors: string[] = [];
@@ -71,7 +71,7 @@ describe("doctor command", () => {
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       deprecationManifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "oldStep",
           deprecatedSince: "2.0.0",
           message: "oldStep is deprecated.",
@@ -80,7 +80,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(lines.join("\n")).toContain("warning @stepkit/core/oldStep");
+    expect(lines.join("\n")).toContain("warning @trailstep/core/oldStep");
     expect(errors.join("\n")).toMatch(/deprecation warnings/i);
   });
 
@@ -89,15 +89,15 @@ describe("doctor command", () => {
   }) => {
     const cwd = tmpDir(task, "blocking");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "1.0.0" },
+      dependencies: { "@trailstep/core": "1.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@stepkit", "core", "package.json"), {
-      name: "@stepkit/core",
+    await writeJson(join(cwd, "node_modules", "@trailstep", "core", "package.json"), {
+      name: "@trailstep/core",
       version: "1.0.0",
     });
     await createBundleWorkflow(
       cwd,
-      "import { oldStep } from '@stepkit/core';\nexport const release = oldStep;\n",
+      "import { oldStep } from '@trailstep/core';\nexport const release = oldStep;\n",
     );
     const lines: string[] = [];
     const errors: string[] = [];
@@ -108,7 +108,7 @@ describe("doctor command", () => {
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       deprecationManifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           removedIn: "1.0.0",
@@ -118,7 +118,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(2);
-    expect(lines.join("\n")).toContain("blocking @stepkit/core/oldStep");
+    expect(lines.join("\n")).toContain("blocking @trailstep/core/oldStep");
     expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
   });
 
@@ -126,10 +126,10 @@ describe("doctor command", () => {
     const cwd = tmpDir(task, "direct-file");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "1.0.0" },
+      dependencies: { "@trailstep/core": "1.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@stepkit", "core", "package.json"), {
-      name: "@stepkit/core",
+    await writeJson(join(cwd, "node_modules", "@trailstep", "core", "package.json"), {
+      name: "@trailstep/core",
       version: "1.0.0",
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
@@ -137,7 +137,7 @@ describe("doctor command", () => {
     });
     await writeFile(
       join(cwd, "workflows", "review.mjs"),
-      "import { oldStep } from '@stepkit/core';\nexport const review = oldStep;\n",
+      "import { oldStep } from '@trailstep/core';\nexport const review = oldStep;\n",
       "utf8",
     );
     const lines: string[] = [];
@@ -149,7 +149,7 @@ describe("doctor command", () => {
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       deprecationManifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           message: "oldStep is deprecated.",
@@ -158,7 +158,7 @@ describe("doctor command", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(lines.join("\n")).toContain("warning @stepkit/core/oldStep");
+    expect(lines.join("\n")).toContain("warning @trailstep/core/oldStep");
     expect(lines.join("\n")).toContain("workflows/review.mjs");
     expect(errors).toEqual(["Doctor found deprecation warnings."]);
   });
@@ -166,11 +166,11 @@ describe("doctor command", () => {
   it("prints clean output and exits zero when no findings exist", async ({ task }) => {
     const cwd = tmpDir(task, "clean-registered");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "1.0.0" },
+      dependencies: { "@trailstep/core": "1.0.0" },
     });
     await createBundleWorkflow(
       cwd,
-      "import { step } from '@stepkit/core';\nexport const release = step;\n",
+      "import { step } from '@trailstep/core';\nexport const release = step;\n",
     );
     const lines: string[] = [];
     const errors: string[] = [];
@@ -181,7 +181,7 @@ describe("doctor command", () => {
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       deprecationManifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           message: "oldStep is deprecated.",
@@ -197,7 +197,7 @@ describe("doctor command", () => {
   it("skips unreadable targets without crashing", async ({ task }) => {
     const cwd = tmpDir(task, "unreadable-target");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "1.0.0" },
+      dependencies: { "@trailstep/core": "1.0.0" },
     });
     await writeJson(join(cwd, ".stepkit", "config.json"), {
       workflows: { project: { missing: "./workflows/missing.mjs" } },
@@ -211,7 +211,7 @@ describe("doctor command", () => {
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       deprecationManifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           message: "oldStep is deprecated.",
@@ -229,11 +229,11 @@ describe("doctor command", () => {
   }) => {
     const cwd = tmpDir(task, "aliased");
     await writeJson(join(cwd, "package.json"), {
-      dependencies: { "@stepkit/core": "1.0.0" },
+      dependencies: { "@trailstep/core": "1.0.0" },
     });
     await createBundleWorkflow(
       cwd,
-      "import { oldStep as os } from '@stepkit/core';\nexport const release = os;\n",
+      "import { oldStep as os } from '@trailstep/core';\nexport const release = os;\n",
     );
     const lines: string[] = [];
     const errors: string[] = [];
@@ -244,7 +244,7 @@ describe("doctor command", () => {
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       deprecationManifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           message: "oldStep is deprecated.",

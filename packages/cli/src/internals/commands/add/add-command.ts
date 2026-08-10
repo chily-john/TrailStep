@@ -6,7 +6,7 @@ import {
   resolveAgentTargets,
   type StepKitConfig,
   type WorkflowAgentRole,
-} from "@stepkit/core";
+} from "@trailstep/core";
 
 import {
   type ConfiguredCustomProvider,

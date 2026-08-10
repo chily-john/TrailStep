@@ -1,5 +1,5 @@
 {
-  "name": "@stepkit/core",
+  "name": "@trailstep/core",
   "version": "0.0.0",
   "description": "Core StepKit runtime primitives.",
   "license": "Apache-2.0",

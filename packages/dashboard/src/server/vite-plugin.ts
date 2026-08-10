@@ -31,8 +31,8 @@ export function stepkitDashboardPlugin(options: { readonly cwd?: string } = {}):
         const match = url.pathname.match(/^\/api\/stepkit\/runs\/([^/]+)\/events\/stream$/);
         if (request.method === "GET" && match?.[1]) {
           const runId = decodeURIComponent(match[1]);
-          const runDir = resolve(cwd, ".stepkit", "runs", runId);
-          const runsRoot = resolve(cwd, ".stepkit", "runs");
+          const runDir = resolve(cwd, ".trailstep", "runs", runId);
+          const runsRoot = resolve(cwd, ".trailstep", "runs");
 
           if (!runDir.startsWith(`${runsRoot}${sep}`) && runDir !== runsRoot) {
             response.statusCode = 400;

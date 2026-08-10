@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { type AgentAdapterObject, jsonSchema, runWorkflow } from "@stepkit/core";
+import { type AgentAdapterObject, jsonSchema, runWorkflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 import { defineWorkflow, done, step } from "./index.js";
 

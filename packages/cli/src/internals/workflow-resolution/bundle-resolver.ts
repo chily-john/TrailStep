@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 
 import type { BundleWorkflowReference } from "../workflow-reference/workflow-reference.types.js";
 import { WorkflowResolutionError } from "./workflow-resolution-error.js";

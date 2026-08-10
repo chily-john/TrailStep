@@ -10,18 +10,18 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 async function createConsumer(cwd: string): Promise<string> {
-  const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+  const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(cwd, "package.json"), {
     name: "consumer",
-    dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+    dependencies: { "@acme/trailstep-workflows": "1.0.0" },
   });
   await writeJson(join(packageDir, "package.json"), {
-    name: "@acme/stepkit-workflows",
+    name: "@acme/trailstep-workflows",
     version: "1.0.0",
     type: "module",
     main: "./index.mjs",
-    keywords: ["stepkit-workflow"],
+    keywords: ["trailstep-workflow"],
   });
   await writeFile(
     join(packageDir, "index.mjs"),
@@ -47,7 +47,7 @@ describe("skill-check command", () => {
 
     expect(exitCode).toBe(0);
     expect(lines).toEqual([
-      "Missing SKILL.md for @acme/stepkit-workflows: @acme/stepkit-workflows:reviewFeature",
+      "Missing SKILL.md for @acme/trailstep-workflows: @acme/trailstep-workflows:reviewFeature",
     ]);
     expect(errors).toEqual([]);
   });

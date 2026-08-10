@@ -12,7 +12,7 @@ async function writeDirectWorkflowFile(cwd: string): Promise<void> {
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     join(workflowDir, "review.mjs"),
-    `import { done, step } from '@stepkit/core';
+    `import { done, step } from '@trailstep/core';
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
       diagnostics: () => [],
@@ -87,7 +87,7 @@ async function writeRegisteredWorkflowFile(
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     join(workflowDir, `${workflowName}.mjs`),
-    `import { done, step } from '@stepkit/core';
+    `import { done, step } from '@trailstep/core';
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
       diagnostics: () => [],
@@ -145,7 +145,7 @@ async function writeBundleWorkflowPackage(cwd: string): Promise<void> {
   });
   await writeFile(
     join(packageDir, "index.mjs"),
-    `import { done, step } from '@stepkit/core';
+    `import { done, step } from '@trailstep/core';
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
       diagnostics: () => [],
@@ -166,22 +166,22 @@ async function writeBundleWorkflowPackage(cwd: string): Promise<void> {
 }
 
 async function writeWorkflowPackage(cwd: string): Promise<void> {
-  const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+  const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(cwd, "package.json"), {
     name: "consumer",
-    dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+    dependencies: { "@acme/trailstep-workflows": "1.0.0" },
   });
   await writeJson(join(packageDir, "package.json"), {
-    name: "@acme/stepkit-workflows",
+    name: "@acme/trailstep-workflows",
     version: "1.0.0",
     type: "module",
     main: "./index.mjs",
-    keywords: ["stepkit-workflow"],
+    keywords: ["trailstep-workflow"],
   });
   await writeFile(
     join(packageDir, "index.mjs"),
-    `import { done, step } from '@stepkit/core';
+    `import { done, step } from '@trailstep/core';
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
       diagnostics: () => [],
@@ -221,7 +221,7 @@ describe("run command", () => {
       }),
     ).resolves.toBe(0);
 
-    const runDir = join(cwd, ".stepkit", "runs", "review-20260717-153045-abc123");
+    const runDir = join(cwd, ".trailstep", "runs", "review-20260717-153045-abc123");
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
@@ -235,7 +235,7 @@ describe("run command", () => {
   it("runs a directly referenced workflow file into STEPKIT_RUNS_ROOT", async ({ task }) => {
     const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     const cwd = join(root, "worktree");
-    const runsRoot = resolve(root, "source", ".stepkit", "runs");
+    const runsRoot = resolve(root, "source", ".trailstep", "runs");
     await rm(root, { recursive: true, force: true });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
@@ -253,7 +253,7 @@ describe("run command", () => {
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
-    await expect(stat(join(cwd, ".stepkit", "runs"))).rejects.toThrow();
+    await expect(stat(join(cwd, ".trailstep", "runs"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(runDir);
   });
 
@@ -271,7 +271,7 @@ describe("run command", () => {
       }),
     ).resolves.toBe(0);
 
-    const runDir = join(cwd, ".stepkit", "runs", "run-one");
+    const runDir = join(cwd, ".trailstep", "runs", "run-one");
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
@@ -312,7 +312,7 @@ describe("run command", () => {
 
     expect(errors.join("\n")).toMatch(/path#exportName.*bulk add/i);
     expect(errors.join("\n")).toMatch(/Available workflow exports: cleanup, review/i);
-    await expect(stat(join(cwd, ".stepkit", "runs", "ambiguous-run"))).rejects.toThrow();
+    await expect(stat(join(cwd, ".trailstep", "runs", "ambiguous-run"))).rejects.toThrow();
   });
 
   it("runs a project-registered workflow from .stepkit/config.json", async ({ task }) => {
@@ -331,7 +331,7 @@ describe("run command", () => {
     });
     expect({ errors, exitCode }).toEqual({ errors: [], exitCode: 0 });
 
-    const runDir = join(cwd, ".stepkit", "runs", "release-20260717-153045-abc123");
+    const runDir = join(cwd, ".trailstep", "runs", "release-20260717-153045-abc123");
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
@@ -389,10 +389,10 @@ describe("run command", () => {
     ).resolves.toBe(0);
 
     await expect(
-      readFile(join(cwd, ".stepkit", "runs", "project-run", "events.jsonl"), "utf8"),
+      readFile(join(cwd, ".trailstep", "runs", "project-run", "events.jsonl"), "utf8"),
     ).resolves.toContain('"projectSelected":true');
     await expect(
-      readFile(join(cwd, ".stepkit", "runs", "user-run", "events.jsonl"), "utf8"),
+      readFile(join(cwd, ".trailstep", "runs", "user-run", "events.jsonl"), "utf8"),
     ).resolves.toContain('"userSelected":true');
     expect(projectLines.join("\n")).toContain("project/review");
     expect(userLines.join("\n")).toContain("global/review");
@@ -414,7 +414,7 @@ describe("run command", () => {
       }),
     ).resolves.toBe(0);
 
-    const runDir = join(cwd, ".stepkit", "runs", "review-workflow-20260717-153045-abc123");
+    const runDir = join(cwd, ".trailstep", "runs", "review-workflow-20260717-153045-abc123");
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
@@ -435,7 +435,7 @@ describe("run command", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "--input", '{"ok":true}'],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "--input", '{"ok":true}'],
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
         runNameClock: () => new Date("2026-07-17T15:30:45.000Z"),
@@ -443,7 +443,7 @@ describe("run command", () => {
       }),
     ).resolves.toBe(0);
 
-    const runDir = join(cwd, ".stepkit", "runs", "review-feature-20260717-153045-abc123");
+    const runDir = join(cwd, ".trailstep", "runs", "review-feature-20260717-153045-abc123");
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
@@ -459,26 +459,26 @@ describe("run command", () => {
     const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeWorkflowPackage(cwd);
-    await mkdir(join(cwd, ".stepkit", "runs", "my-run"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep", "runs", "my-run"), { recursive: true });
     await writeJson(join(cwd, "input.json"), { ok: true });
     const lines: string[] = [];
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "my-run", "--input-file", "input.json"],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "my-run", "--input-file", "input.json"],
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       }),
     ).resolves.toBe(0);
 
-    const runDir = join(cwd, ".stepkit", "runs", "my-run-2");
+    const runDir = join(cwd, ".trailstep", "runs", "my-run-2");
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.completed",
     );
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       '"prepared":true',
     );
-    expect(lines.join("\n")).toContain("@acme/stepkit-workflows:reviewFeature");
+    expect(lines.join("\n")).toContain("@acme/trailstep-workflows:reviewFeature");
     expect(lines.join("\n")).toContain(runDir);
   });
 
@@ -489,7 +489,7 @@ describe("run command", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:reviewFeature", "resume-run", "--resume"],
+        argv: ["@acme/trailstep-workflows:reviewFeature", "resume-run", "--resume"],
         cwd,
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),
@@ -508,7 +508,7 @@ describe("run command", () => {
 
     await expect(
       main({
-        argv: ["@acme/stepkit-workflows:missing", "my-run", "--input", "{}"],
+        argv: ["@acme/trailstep-workflows:missing", "my-run", "--input", "{}"],
         cwd,
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       }),

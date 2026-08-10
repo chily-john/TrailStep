@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAdapter, AgentAdapterRequest } from "./contracts/agents/agent-adapter.types.js";
 import { jsonSchema, runWorkflow, selectLatestUnresolvedFailure, subPrompt } from "./index.js";
 
-describe("@stepkit/core public API", () => {
+describe("@trailstep/core public API", () => {
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
     expect(runWorkflow).toBeTypeOf("function");
     expect(jsonSchema).toBeTypeOf("function");

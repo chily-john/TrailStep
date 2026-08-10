@@ -1,6 +1,6 @@
-import type { Document } from "@stepkit/authoring";
-import { done, fail, state, step } from "@stepkit/authoring";
-import type { ContinuationResult } from "@stepkit/core";
+import type { Document } from "@trailstep/authoring";
+import { done, fail, state, step } from "@trailstep/authoring";
+import type { ContinuationResult } from "@trailstep/core";
 import { implementStoryStep } from "../implement-story/step.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
 import {

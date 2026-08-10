@@ -4,9 +4,9 @@ import { CliUsageError, parseWorkflowId } from "./index.js";
 
 describe("parseWorkflowId", () => {
   it("parses a scoped package workflow id by splitting on the last colon", () => {
-    expect(parseWorkflowId("@acme/stepkit-workflows:reviewFeature")).toEqual({
+    expect(parseWorkflowId("@acme/trailstep-workflows:reviewFeature")).toEqual({
       kind: "legacy-package-export",
-      packageName: "@acme/stepkit-workflows",
+      packageName: "@acme/trailstep-workflows",
       exportName: "reviewFeature",
     });
   });

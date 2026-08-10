@@ -1,4 +1,4 @@
-import type { PlainObject, Workflow } from "@stepkit/core";
+import type { PlainObject, Workflow } from "@trailstep/core";
 
 export interface WorkflowBuilderOptions<
   TInput extends PlainObject = PlainObject,

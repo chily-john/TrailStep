@@ -1,4 +1,4 @@
-import { fail, step } from "@stepkit/authoring";
+import { fail, step } from "@trailstep/authoring";
 import { commitReviewedStoryStep } from "../commit-reviewed-story/step.js";
 import { implementStoryStep } from "../implement-story/step.js";
 import { MAX_STORY_REVIEW_ATTEMPTS } from "../shared/constants.js";

@@ -93,7 +93,7 @@ export function verifyRepositoryDocs() {
   assertIncludes(cliReadme, "Provider-level CLI `--resume`", "packages/cli/README.md");
   assertIncludes(
     packageReadmes.get("packages/dashboard/README.md") ?? "",
-    ".stepkit/runs",
+    ".trailstep/runs",
     "packages/dashboard/README.md",
   );
   assertIncludes(

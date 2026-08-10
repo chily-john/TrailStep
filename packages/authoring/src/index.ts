@@ -13,7 +13,7 @@ export type {
   TimeoutPolicy,
   TimeoutPolicyInput,
   Workflow,
-} from "@stepkit/core";
+} from "@trailstep/core";
 export {
   Document,
   document,
@@ -28,7 +28,7 @@ export {
   shape,
   state,
   step,
-} from "@stepkit/core";
+} from "@trailstep/core";
 export { defineWorkflow } from "./workflow-builder/workflow-builder.js";
 export type {
   DefinedWorkflow,

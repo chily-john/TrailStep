@@ -2,7 +2,9 @@ node_modules/
 dist/
 coverage/
 .turbo/
-.pi/
+.pi/*
+!.pi/rules/
+!.pi/rules/**
 .workflower/
 graphify-out/
 .vite/

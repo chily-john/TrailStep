@@ -1,9 +1,9 @@
 ---
 description: "Interactively grills the user until it understands the requested feature."
 ---
-Run the registered StepKit workflow `project/grill-it-away`.
+Run the registered TrailStep workflow `project/grill-it-away`.
 
-Create workflow input JSON at `.stepkit/inputs/project-grill-it-away-input.json` that matches this normalized schema:
+Create workflow input JSON at `.trailstep/inputs/project-grill-it-away-input.json` that matches this normalized schema:
 
 ```json
 {
@@ -19,7 +19,7 @@ If validation fails, fix the JSON file to match the schema before retrying.
 When this skill is invoked, run:
 
 ```bash
-stepkit project/grill-it-away --input-file .stepkit/inputs/project-grill-it-away-input.json
+trailstep project/grill-it-away --input-file .trailstep/inputs/project-grill-it-away-input.json
 ```
 
 Registered workflow source: `./packages/create-flows/src#grillItAway`

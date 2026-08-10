@@ -25,10 +25,10 @@ export function verifyRepositoryDocs() {
   const readme = assertFile("README.md");
   assertIncludes(
     readme,
-    "StepKit is a durable, typed, observable workflow harness for coding agents.",
+    "TrailStep is a durable, typed, observable workflow harness for coding agents.",
     "README.md",
   );
-  assertIncludes(readme, "git@github-personal:chily-john/stepkit.git", "README.md");
+  assertIncludes(readme, "git@github-personal:chily-john/trailstep.git", "README.md");
   assert.match(
     readme,
     /command-backed local agents/iu,
@@ -36,8 +36,12 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(readme, "workflow-level `agents`", "README.md");
   assertIncludes(readme, "step-level `agent`", "README.md");
+  assertIncludes(readme, "@trailstep/authoring", "README.md");
+  assertIncludes(readme, "trailstep-workflow", "README.md");
   assertIncludes(readme, "customProviders", "README.md");
   assertIncludes(readme, "agents.*.items", "README.md");
+  assertIncludes(readme, ".trailstep/config.json", "README.md");
+  assertIncludes(readme, ".trailstep/runs", "README.md");
   assertIncludes(readme, "Implementation guidance lives in `.pi/rules/`", "README.md");
   assertIncludes(readme, "automatic retry", "README.md");
   assertIncludes(readme, "safe pre-dispatch failures", "README.md");
@@ -84,10 +88,17 @@ export function verifyRepositoryDocs() {
     "defineWorkflow",
     "packages/authoring/README.md",
   );
-  assertIncludes(cliReadme, "stepkit init", "packages/cli/README.md");
-  assertIncludes(cliReadme, "stepkit agents", "packages/cli/README.md");
-  assertIncludes(cliReadme, "stepkit workflows", "packages/cli/README.md");
-  assertIncludes(cliReadme, "stepkit retry", "packages/cli/README.md");
+  assertIncludes(cliReadme, "trailstep init", "packages/cli/README.md");
+  assertIncludes(cliReadme, "trailstep agents", "packages/cli/README.md");
+  assertIncludes(cliReadme, "trailstep workflows", "packages/cli/README.md");
+  assertIncludes(cliReadme, "trailstep retry", "packages/cli/README.md");
+  assertIncludes(cliReadme, ".trailstep/config.json", "packages/cli/README.md");
+  assertIncludes(cliReadme, ".trailstep/runs", "packages/cli/README.md");
+  assertIncludes(cliReadme, "TRAILSTEP_RUNS_ROOT", "packages/cli/README.md");
+  assertIncludes(cliReadme, ".trailstep/skills/trst-<sanitized-name>/SKILL.md", "packages/cli/README.md");
+  assertIncludes(cliReadme, "@trailstep/core", "packages/cli/README.md");
+  assertIncludes(cliReadme, "@trailstep/authoring", "packages/cli/README.md");
+  assertIncludes(cliReadme, "trailstep-workflow", "packages/cli/README.md");
   assertIncludes(cliReadme, "automatic retry", "packages/cli/README.md");
   assertIncludes(cliReadme, "manual retry", "packages/cli/README.md");
   assertIncludes(cliReadme, "Provider-level CLI `--resume`", "packages/cli/README.md");
@@ -103,7 +114,7 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(
     packageReadmes.get("packages/create-flows/README.md") ?? "",
-    "stepkit add ./packages/create-flows/src/index.ts#takeItAway",
+    "trailstep add ./packages/create-flows/src/index.ts#takeItAway",
     "packages/create-flows/README.md",
   );
   assertIncludes(
@@ -113,9 +124,29 @@ export function verifyRepositoryDocs() {
   );
   assertIncludes(
     packageReadmes.get("packages/create-flows/README.md") ?? "",
+    "TRAILSTEP_RUNS_ROOT",
+    "packages/create-flows/README.md",
+  );
+  assertIncludes(
+    packageReadmes.get("packages/create-flows/README.md") ?? "",
     "Do not blindly retry pre-fix corrupted take-it-away run artifacts",
     "packages/create-flows/README.md",
   );
+
+  const activeDocs = new Map([
+    ["README.md", readme],
+    ["AGENTS.md", assertFile("AGENTS.md")],
+    [".github/branch-protection.md", assertFile(".github/branch-protection.md")],
+    ...packageReadmes,
+    ["agent/skills/project-grill-it-away/SKILL.md", assertFile("agent/skills/project-grill-it-away/SKILL.md")],
+    ["agent/skills/project-take-it-away/SKILL.md", assertFile("agent/skills/project-take-it-away/SKILL.md")],
+  ]);
+
+  for (const [path, text] of activeDocs) {
+    for (const forbidden of ["StepKit", "stepkit", "STEPKIT", "@stepkit", ".stepkit", "stepkit-workflow"]) {
+      assertNotIncludes(text, forbidden, path);
+    }
+  }
 
   for (const [path, text] of packageReadmes) {
     for (const forbidden of ["do" + "cs/", "sc" + "affold", "v" + "0"]) {
@@ -134,7 +165,6 @@ export function verifyRepositoryDocs() {
     ".pi/rules/packages/create-flows/create-flows.md",
   );
 
-  assertFile(".github/branch-protection.md");
 }
 
 verifyRepositoryDocs();

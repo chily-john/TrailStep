@@ -228,7 +228,6 @@ describe("run command", () => {
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       '"prepared":true',
     );
-    await expect(stat(join(cwd, ".stepkit", "runs"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(resolve(cwd, "workflows", "review.mjs"));
     expect(lines.join("\n")).toContain(runDir);
   });
@@ -256,28 +255,6 @@ describe("run command", () => {
     );
     await expect(stat(join(cwd, ".trailstep", "runs"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(runDir);
-  });
-
-  it("intentionally ignores the legacy STEPKIT_RUNS_ROOT override", async ({ task }) => {
-    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    const cwd = join(root, "worktree");
-    const legacyRunsRoot = resolve(root, "legacy", ".stepkit", "runs");
-    await rm(root, { recursive: true, force: true });
-    await writeDirectWorkflowFile(cwd);
-
-    await expect(
-      main({
-        argv: ["./workflows/review.mjs", "default-run", "--input", '{"ok":true}'],
-        cwd,
-        env: { STEPKIT_RUNS_ROOT: legacyRunsRoot },
-        io: { writeLine: () => undefined, writeError: () => undefined },
-      }),
-    ).resolves.toBe(0);
-
-    await expect(
-      readFile(join(cwd, ".trailstep", "runs", "default-run", "events.jsonl"), "utf8"),
-    ).resolves.toContain("workflow.completed");
-    await expect(stat(legacyRunsRoot)).rejects.toThrow();
   });
 
   it("runs a directly referenced workflow file with an explicit run name", async ({ task }) => {

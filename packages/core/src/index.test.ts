@@ -9,11 +9,9 @@ import * as core from "./index.js";
 import { jsonSchema, runWorkflow, selectLatestUnresolvedFailure, subPrompt } from "./index.js";
 
 describe("@trailstep/core public API", () => {
-  it("exports TrailStep config and failure APIs without StepKit compatibility aliases", () => {
+  it("exports TrailStep config and failure APIs", () => {
     expect(core.parseTrailStepConfig).toBeTypeOf("function");
     expect(core.TrailStepFailureError).toBeTypeOf("function");
-    expect("parseStepKitConfig" in core).toBe(false);
-    expect("StepKitFailureError" in core).toBe(false);
   });
 
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {

@@ -41,4 +41,3 @@ Useful checks:
 - `pnpm check:public-packages`
 - `pnpm run pack:public:dry-run`
 - `node scripts/check-local-artifact-ignore.mjs`
-- `pnpm check:verification-cleanup`

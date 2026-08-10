@@ -17,62 +17,50 @@ import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts
 import { runInteractiveAgentCommand } from "./run-interactive-agent-command.js";
 
 describe("continuation interactive agent roles", () => {
-  it("sets TRAILSTEP_INTERACTIVE_FILE without forwarding the migrated interactive env", async () => {
+  it("sets TRAILSTEP_INTERACTIVE_FILE for interactive processes", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-env-"));
     const runDir = join(cwd, ".trailstep", "runs", "interactive-env-run");
     const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });
-    const previousLegacyInteractiveFile = process.env.STEPKIT_INTERACTIVE_FILE;
-    process.env.STEPKIT_INTERACTIVE_FILE = "legacy-interactive.json";
-
-    try {
-      const result = await runInteractiveAgentCommand({
-        config: {
-          version: 1,
-          customProviders: {
-            terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
-          },
-          agents: { small: [{ provider: "terminalAgent" }] },
+    const result = await runInteractiveAgentCommand({
+      config: {
+        version: 1,
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
         },
-        workflowId: "interactive-env-workflow",
-        roleName: "reviewer",
-        role: { size: "small" },
-        stepId: "review",
-        renderedPrompt: "Review environment handling.",
-        runDir,
-        outputSchema: jsonSchema({
-          type: "object",
-          properties: { notes: { type: "string" } },
-          required: ["notes"],
-          additionalProperties: false,
-        }),
-        artifactPaths,
-        outputMode: "json",
-        runner: async (call) => {
-          expect(call.env?.TRAILSTEP_INTERACTIVE_FILE).toBe(artifactPaths.interactiveFile);
-          expect(call.env?.STEPKIT_INTERACTIVE_FILE).toBeUndefined();
-          const protocol = JSON.parse(await readFile(artifactPaths.interactiveFile, "utf8"));
-          await writeFile(
-            protocol.outputFile,
-            `${JSON.stringify({ notes: "TrailStep env only." }, null, 2)}\n`,
-            "utf8",
-          );
-          await writeFile(
-            artifactPaths.interactiveFile,
-            `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
-            "utf8",
-          );
-          return { exitCode: 0 };
-        },
-      });
+        agents: { small: [{ provider: "terminalAgent" }] },
+      },
+      workflowId: "interactive-env-workflow",
+      roleName: "reviewer",
+      role: { size: "small" },
+      stepId: "review",
+      renderedPrompt: "Review environment handling.",
+      runDir,
+      outputSchema: jsonSchema({
+        type: "object",
+        properties: { notes: { type: "string" } },
+        required: ["notes"],
+        additionalProperties: false,
+      }),
+      artifactPaths,
+      outputMode: "json",
+      runner: async (call) => {
+        expect(call.env?.TRAILSTEP_INTERACTIVE_FILE).toBe(artifactPaths.interactiveFile);
+        const protocol = JSON.parse(await readFile(artifactPaths.interactiveFile, "utf8"));
+        await writeFile(
+          protocol.outputFile,
+          `${JSON.stringify({ notes: "TrailStep env only." }, null, 2)}\n`,
+          "utf8",
+        );
+        await writeFile(
+          artifactPaths.interactiveFile,
+          `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
+          "utf8",
+        );
+        return { exitCode: 0 };
+      },
+    });
 
-      expect(result.output).toEqual({ notes: "TrailStep env only." });
-    } finally {
-      if (previousLegacyInteractiveFile === undefined) {
-        delete process.env.STEPKIT_INTERACTIVE_FILE;
-      } else {
-        process.env.STEPKIT_INTERACTIVE_FILE = previousLegacyInteractiveFile;
-      }
-    }
+    expect(result.output).toEqual({ notes: "TrailStep env only." });
   });
 
   it("passes custom structured interactive output into the continuation", async () => {

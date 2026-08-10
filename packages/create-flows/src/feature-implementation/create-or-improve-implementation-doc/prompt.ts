@@ -21,7 +21,7 @@ export function createOrImproveImplementationDocPrompt({
 }): string {
   const taskBody =
     input.previousReview === undefined
-      ? "Create `implementation-doc.md` from the feature doc above, following the format exactly enough that stories can later be split mechanically on the `<!-- stepkit-story-boundary -->` marker and shared context can be prepended from balanced `<context>` blocks."
+      ? "Create `implementation-doc.md` from the feature doc above, following the format exactly enough that stories can later be split mechanically on the `<!-- trailstep-story-boundary -->` marker and shared context can be prepended from balanced `<context>` blocks."
       : promptSections(
           `This is improvement attempt ${input.attempt}. A previous review scored this plan ${input.previousReview.score}/5: ${input.previousReview.summary}`,
           `Required improvements to address, without discarding what already works:\n\n${list(input.previousReview.requiredImprovements)}`,

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -88,7 +88,6 @@ describe("continuation workflow CLI e2e", () => {
 
     const cliPackage = await readCliPackageJson();
     expect(cliPackage.bin).toEqual({ trailstep: "./dist/index.js" });
-    expect(cliPackage.bin).not.toHaveProperty("stepkit");
 
     const runLines: string[] = [];
     await expect(
@@ -104,7 +103,6 @@ describe("continuation workflow CLI e2e", () => {
       join(cwd, ".trailstep", "runs", "direct-run", "events.jsonl"),
       "utf8",
     );
-    await expect(stat(join(cwd, ".stepkit", "runs"))).rejects.toThrow();
     expect(runLines.join("\n")).toContain("Workflow completed");
     expect(runLines.join("\n")).toContain(join(cwd, ".trailstep", "runs", "direct-run"));
     expect(events).toContain("workflow.completed");

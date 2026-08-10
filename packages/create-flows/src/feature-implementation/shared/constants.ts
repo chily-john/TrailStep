@@ -1,4 +1,4 @@
-export const STORY_BOUNDARY = "<!-- stepkit-story-boundary -->";
+export const STORY_BOUNDARY = "<!-- trailstep-story-boundary -->";
 
 export const STORY_CONTEXT_START = "<context>";
 

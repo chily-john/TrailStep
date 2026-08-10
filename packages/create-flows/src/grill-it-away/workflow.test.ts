@@ -117,7 +117,7 @@ describe("grill-it-away", () => {
               "",
               "Overview of the widget exporter plan.",
               "",
-              "<!-- stepkit-story-boundary -->",
+              "<!-- trailstep-story-boundary -->",
               "",
               "## Story 001: Build the widget exporter core",
               "",

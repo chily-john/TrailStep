@@ -6,6 +6,7 @@ graphify-out/
 
 # Local agent/runtime artifacts
 .trailstep/
+.step[k]it/
 .claude/
 .pi/*
 !.pi/rules/

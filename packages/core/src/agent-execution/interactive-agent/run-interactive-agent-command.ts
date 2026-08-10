@@ -170,8 +170,7 @@ async function runInteractiveAgentTarget(options: {
 function definedProcessEnv(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter(
-      (entry): entry is [string, string] =>
-        entry[1] !== undefined && !entry[0].startsWith("STEPKIT_"),
+      (entry): entry is [string, string] => entry[1] !== undefined,
     ),
   );
 }

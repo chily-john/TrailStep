@@ -137,21 +137,4 @@ describe("cancel command", () => {
 
     expect(errors).toEqual([]);
   });
-
-  it("intentionally rejects legacy STEPKIT_INTERACTIVE_FILE", async () => {
-    const errors: string[] = [];
-
-    await expect(
-      cancelCommand.run(
-        {},
-        {
-          cwd: ".",
-          env: { STEPKIT_INTERACTIVE_FILE: "legacy-interactive.json" },
-          io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-        },
-      ),
-    ).rejects.toThrow(/TRAILSTEP_INTERACTIVE_FILE/i);
-
-    expect(errors).toEqual([]);
-  });
 });

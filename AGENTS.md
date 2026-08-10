@@ -31,8 +31,8 @@ This root context file contains a map of the codebase. Path-scoped context files
 - Build: `pnpm build`
 - Format: `pnpm format`
 - Public package metadata readiness: `pnpm check:public-packages`
+- Public package tarball readiness: `pnpm run pack:public:dry-run`
 - Local artifact ignore readiness: `node scripts/check-local-artifact-ignore.mjs`
-- Verify stale verification-script cleanup: `pnpm check:verification-cleanup`
 
 ## Environment
 

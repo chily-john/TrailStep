@@ -1,5 +1,5 @@
 for (const key of Object.keys(process.env)) {
-  if (key.startsWith("TRAILSTEP_") || key.startsWith("STEPKIT_")) {
+  if (key.startsWith("TRAILSTEP_")) {
     delete process.env[key];
   }
 }

@@ -19,8 +19,7 @@
     "version": "changeset version",
     "publish:prepare": "pnpm build && changeset version",
     "check:public-packages": "node scripts/check-public-package-metadata.mjs",
-    "pack:public:dry-run": "node scripts/pack-public-packages.mjs",
-    "check:verification-cleanup": "node scripts/check-verification-cleanup.mjs"
+    "pack:public:dry-run": "node scripts/pack-public-packages.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

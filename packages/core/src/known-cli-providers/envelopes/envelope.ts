@@ -2,7 +2,7 @@ import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 
 /**
  * Extraction logic ported from the retired `claude-rpc-trailstep-agent.mjs` mock
- * wrapper's `extractStepkitOutput`, parameterized by which envelope field holds
+ * wrapper's `extractTrailStepOutput`, parameterized by which envelope field holds
  * the provider's final text (e.g. `"result"` for `claude --output-format json`).
  *
  * Handles four shapes of vendor CLI stdout:

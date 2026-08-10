@@ -1,26 +1,26 @@
 ---
-name: stepkit
-description: Use when authoring, installing, or running StepKit workflows with the StepKit CLI.
+name: trailstep
+description: Use when authoring, installing, or running TrailStep workflows with the TrailStep CLI.
 ---
 
-# StepKit usage skill
+# TrailStep usage skill
 
-Use StepKit to author, install, discover, run, continue, and retry durable typed coding-agent workflows from npm packages or project files.
+Use TrailStep to author, install, discover, run, continue, and retry durable typed coding-agent workflows from npm packages or project files.
 
 ## CLI quick start
 
-- Install the packaged StepKit skill and create local config with `stepkit init`.
-- List available workflows with `stepkit workflows`.
-- Run a workflow with a JSON input file: `stepkit <workflow-ref> --input-file .stepkit/inputs/input.json`.
-- Continue waiting or interrupted runs with `stepkit continue`.
-- Retry failed work with `stepkit retry`; retry instead of inventing a separate resume mechanism.
+- Install the packaged TrailStep skill and create local config with `trailstep init`.
+- List available workflows with `trailstep workflows`.
+- Run a workflow with a JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
+- Continue waiting or interrupted runs with `trailstep continue`.
+- Retry failed work with `trailstep retry`; retry instead of inventing a separate resume mechanism.
 
 ## Author continuation workflows
 
 Prefer continuation workflows that expose one clear public entry point:
 
 ```ts
-import { defineWorkflow, done, step } from "@stepkit/authoring";
+import { defineWorkflow, done, step } from "@trailstep/authoring";
 
 export const review = defineWorkflow({ start });
 
@@ -40,7 +40,7 @@ Authoring guidance:
 
 ## Workflow refs
 
-StepKit accepts these workflow reference forms:
+TrailStep accepts these workflow reference forms:
 
 - direct refs such as `./workflows/review.ts#review`
 - registered refs such as `project/review`
@@ -50,7 +50,7 @@ Use direct refs for local files, registered refs for named project or user workf
 
 ## Safety and run artifacts
 
-- do not manually edit `.stepkit/runs`.
+- do not manually edit `.trailstep/runs`.
 - local run artifacts are runtime outputs, not source of truth.
-- Use `stepkit continue` for normal continuation and `stepkit retry` for failed steps instead of adding a custom resume path.
+- Use `trailstep continue` for normal continuation and `trailstep retry` for failed steps instead of adding a custom resume path.
 - Keep reusable workflow behavior in workflow source and package exports, not in generated run directories.

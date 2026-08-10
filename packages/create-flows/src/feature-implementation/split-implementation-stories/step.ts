@@ -1,5 +1,5 @@
-import { type Document, document, fail, state, step } from "@stepkit/authoring";
-import type { ContinuationResult } from "@stepkit/core";
+import { type Document, document, fail, state, step } from "@trailstep/authoring";
+import type { ContinuationResult } from "@trailstep/core";
 import { implementStoryStep } from "../implement-story/step.js";
 import { STORY_BOUNDARY, STORY_CONTEXT_END, STORY_CONTEXT_START } from "../shared/constants.js";
 import { recordActiveStoryStartCommit, STORY_STATE_KEYS } from "../shared/story-state.js";

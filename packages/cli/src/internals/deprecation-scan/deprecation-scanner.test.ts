@@ -13,7 +13,7 @@ async function writeSource(cwd: string, contents: string): Promise<string> {
 }
 
 function tmpDir(task: { readonly id: string }, variant: string): string {
-  return join("node_modules", ".tmp-stepkit-deprecation-scanner-tests", `${task.id}-${variant}`);
+  return join("node_modules", ".tmp-trailstep-deprecation-scanner-tests", `${task.id}-${variant}`);
 }
 
 describe("scanWorkflowSourceForDeprecations", () => {
@@ -22,15 +22,15 @@ describe("scanWorkflowSourceForDeprecations", () => {
   }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "clean"),
-      "import { step } from '@stepkit/authoring';\nexport const review = step;\n",
+      "import { step } from '@trailstep/authoring';\nexport const review = step;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
-      versionsByPackageName: new Map([["@stepkit/authoring", { targetVersion: "2.0.0" }]]),
+      versionsByPackageName: new Map([["@trailstep/authoring", { targetVersion: "2.0.0" }]]),
       manifest: [
         {
-          packageName: "@stepkit/authoring",
+          packageName: "@trailstep/authoring",
           symbol: "unrelatedSymbol",
           deprecatedSince: "1.0.0",
           message: "unrelatedSymbol is deprecated.",
@@ -46,15 +46,15 @@ describe("scanWorkflowSourceForDeprecations", () => {
   }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "warning"),
-      "import { oldStep } from '@stepkit/authoring';\nexport const review = oldStep;\n",
+      "import { oldStep } from '@trailstep/authoring';\nexport const review = oldStep;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
-      versionsByPackageName: new Map([["@stepkit/authoring", { targetVersion: "2.0.0" }]]),
+      versionsByPackageName: new Map([["@trailstep/authoring", { targetVersion: "2.0.0" }]]),
       manifest: [
         {
-          packageName: "@stepkit/authoring",
+          packageName: "@trailstep/authoring",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           message: "oldStep is deprecated.",
@@ -66,7 +66,7 @@ describe("scanWorkflowSourceForDeprecations", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
       sourceFile,
-      packageName: "@stepkit/authoring",
+      packageName: "@trailstep/authoring",
       symbol: "oldStep",
       severity: "warning",
       message: "oldStep is deprecated.",
@@ -83,15 +83,15 @@ describe("scanWorkflowSourceForDeprecations", () => {
   }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "blocking"),
-      "import { removedStep } from '@stepkit/authoring';\nexport const review = removedStep;\n",
+      "import { removedStep } from '@trailstep/authoring';\nexport const review = removedStep;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
-      versionsByPackageName: new Map([["@stepkit/authoring", { targetVersion: "1.0.0" }]]),
+      versionsByPackageName: new Map([["@trailstep/authoring", { targetVersion: "1.0.0" }]]),
       manifest: [
         {
-          packageName: "@stepkit/authoring",
+          packageName: "@trailstep/authoring",
           symbol: "removedStep",
           deprecatedSince: "0.5.0",
           removedIn: "1.0.0",
@@ -103,7 +103,7 @@ describe("scanWorkflowSourceForDeprecations", () => {
 
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
-      packageName: "@stepkit/authoring",
+      packageName: "@trailstep/authoring",
       symbol: "removedStep",
       severity: "blocking",
       message: "removedStep was removed.",
@@ -114,15 +114,15 @@ describe("scanWorkflowSourceForDeprecations", () => {
   it("does not detect aliased imports (known limitation)", async ({ task }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "aliased"),
-      "import { step as s } from '@stepkit/authoring';\nexport const review = s;\n",
+      "import { step as s } from '@trailstep/authoring';\nexport const review = s;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
-      versionsByPackageName: new Map([["@stepkit/authoring", { targetVersion: "2.0.0" }]]),
+      versionsByPackageName: new Map([["@trailstep/authoring", { targetVersion: "2.0.0" }]]),
       manifest: [
         {
-          packageName: "@stepkit/authoring",
+          packageName: "@trailstep/authoring",
           symbol: "step",
           deprecatedSince: "1.0.0",
           message: "step is deprecated.",
@@ -138,17 +138,17 @@ describe("scanWorkflowSourceForDeprecations", () => {
   }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "warning-to-blocking"),
-      "import { removedStep } from '@stepkit/core';\nexport const review = removedStep;\n",
+      "import { removedStep } from '@trailstep/core';\nexport const review = removedStep;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
       versionsByPackageName: new Map([
-        ["@stepkit/core", { installedVersion: "2.5.0", targetVersion: "3.0.0" }],
+        ["@trailstep/core", { installedVersion: "2.5.0", targetVersion: "3.0.0" }],
       ]),
       manifest: [
         {
-          packageName: "@stepkit/core",
+          packageName: "@trailstep/core",
           symbol: "removedStep",
           deprecatedSince: "2.0.0",
           removedIn: "3.0.0",
@@ -159,7 +159,7 @@ describe("scanWorkflowSourceForDeprecations", () => {
 
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
-      packageName: "@stepkit/core",
+      packageName: "@trailstep/core",
       symbol: "removedStep",
       severity: "blocking",
       installedVersion: "2.5.0",
@@ -168,18 +168,20 @@ describe("scanWorkflowSourceForDeprecations", () => {
     });
   });
 
-  it("does not scan packages outside @stepkit/core and @stepkit/authoring", async ({ task }) => {
+  it("does not scan packages outside @trailstep/core and @trailstep/authoring", async ({
+    task,
+  }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "unsupported-package"),
-      "import { legacyCommand } from '@stepkit/cli';\nexport const review = legacyCommand;\n",
+      "import { legacyCommand } from '@trailstep/cli';\nexport const review = legacyCommand;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
-      versionsByPackageName: new Map([["@stepkit/cli", { targetVersion: "2.0.0" }]]),
+      versionsByPackageName: new Map([["@trailstep/cli", { targetVersion: "2.0.0" }]]),
       manifest: [
         {
-          packageName: "@stepkit/cli",
+          packageName: "@trailstep/cli",
           symbol: "legacyCommand",
           deprecatedSince: "1.0.0",
           message: "legacyCommand is deprecated.",
@@ -195,17 +197,17 @@ describe("scanWorkflowSourceForDeprecations", () => {
   }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "not-newly-triggered"),
-      "import { oldStep } from '@stepkit/authoring';\nexport const review = oldStep;\n",
+      "import { oldStep } from '@trailstep/authoring';\nexport const review = oldStep;\n",
     );
 
     const findings = await scanWorkflowSourceForDeprecations({
       sourceFile,
       versionsByPackageName: new Map([
-        ["@stepkit/authoring", { installedVersion: "1.5.0", targetVersion: "2.0.0" }],
+        ["@trailstep/authoring", { installedVersion: "1.5.0", targetVersion: "2.0.0" }],
       ]),
       manifest: [
         {
-          packageName: "@stepkit/authoring",
+          packageName: "@trailstep/authoring",
           symbol: "oldStep",
           deprecatedSince: "1.0.0",
           message: "oldStep is deprecated.",

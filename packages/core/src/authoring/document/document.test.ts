@@ -12,7 +12,7 @@ import { Document, document } from "./document.js";
 
 describe("document(content)", () => {
   it("writes content under the current step's directory as document-1.md and returns a matching Document", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-document-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-document-"));
     const { runId, runDir } = await createRunDirectory({ cwd, runName: "document-run" });
     const runContext = createRunContext({ runId, runName: "document-run", runDir });
     const stepDir = join(runDir, "steps", "0001-draft");
@@ -29,7 +29,7 @@ describe("document(content)", () => {
   });
 
   it("auto-numbers repeated calls within the same step (document-1.md, document-2.md, ...)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-document-multi-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-document-multi-"));
     const { runId, runDir } = await createRunDirectory({ cwd, runName: "document-multi-run" });
     const runContext = createRunContext({ runId, runName: "document-multi-run", runDir });
     const stepDir = join(runDir, "steps", "0001-report");
@@ -53,7 +53,7 @@ describe("document(content)", () => {
   });
 
   it("resets the index counter for each new step's context", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-document-reset-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-document-reset-"));
     const { runId, runDir } = await createRunDirectory({ cwd, runName: "document-reset-run" });
     const runContext = createRunContext({ runId, runName: "document-reset-run", runDir });
     const firstStepDir = join(runDir, "steps", "0001-first");
@@ -71,7 +71,7 @@ describe("document(content)", () => {
   });
 
   it("throws when called within an active run but outside any step context", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-document-no-step-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-document-no-step-"));
     const { runId, runDir } = await createRunDirectory({ cwd, runName: "document-no-step-run" });
     const runContext = createRunContext({ runId, runName: "document-no-step-run", runDir });
 
@@ -80,9 +80,9 @@ describe("document(content)", () => {
     );
   });
 
-  it("throws when called outside an active StepKit run entirely", async () => {
+  it("throws when called outside an active TrailStep run entirely", async () => {
     await expect(document("content")).rejects.toThrow(
-      /state\.\* called outside an active StepKit run/,
+      /state\.\* called outside an active TrailStep run/,
     );
   });
 });

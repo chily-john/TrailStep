@@ -4,7 +4,7 @@ import { generateWorkflowSkillContent, workflowSkillName } from "./workflow-skil
 
 describe("workflowSkillName", () => {
   it("prefixes sanitized workflow names without appending the namespace", () => {
-    expect(workflowSkillName("Project Tools", "Review_Workflow!!")).toBe("sk-review-workflow");
+    expect(workflowSkillName("Project Tools", "Review_Workflow!!")).toBe("trst-review-workflow");
   });
 });
 
@@ -33,7 +33,7 @@ describe("generateWorkflowSkillContent", () => {
     });
 
     expect(markdown).toContain(
-      'description: "[project] Run the StepKit workflow \\"project/review\\"."',
+      'description: "[project] Run the TrailStep workflow \\"project/review\\"."',
     );
   });
 
@@ -45,7 +45,7 @@ describe("generateWorkflowSkillContent", () => {
       workflow: { id: "review", start: () => ({ kind: "done", output: {} }) },
     });
 
-    expect(markdown).toContain("stepkit project/review");
+    expect(markdown).toContain("trailstep project/review");
     expect(markdown).not.toContain("--input-file");
     expect(markdown).not.toContain("sessionFile");
     expect(markdown).not.toContain("Export dense conversation");
@@ -63,10 +63,10 @@ describe("generateWorkflowSkillContent", () => {
       },
     });
 
-    expect(skillName).toBe("sk-review");
-    expect(markdown).toContain(".stepkit/inputs/sk-review-input.json");
+    expect(skillName).toBe("trst-review");
+    expect(markdown).toContain(".trailstep/inputs/trst-review-input.json");
     expect(markdown).toContain(
-      "stepkit project/review --input-file .stepkit/inputs/sk-review-input.json",
+      "trailstep project/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(markdown).toContain('"topic": {');
     expect(markdown).toContain('"type": "string"');
@@ -99,11 +99,11 @@ describe("generateWorkflowSkillContent", () => {
     });
 
     expect(markdown).toContain(
-      "Export dense conversation/session context to `.stepkit/inputs/sk-review-context.md`",
+      "Export dense conversation/session context to `.trailstep/inputs/trst-review-context.md`",
     );
-    expect(markdown).toContain('{ "sessionFile": ".stepkit/inputs/sk-review-context.md" }');
+    expect(markdown).toContain('{ "sessionFile": ".trailstep/inputs/trst-review-context.md" }');
     expect(markdown).toContain(
-      "stepkit project/review --input-file .stepkit/inputs/sk-review-input.json",
+      "trailstep project/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(markdown).toContain('"sessionFile": {');
   });

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
-import { jsonSchema, type PlainObject } from "@stepkit/core";
+import { jsonSchema, type PlainObject } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliInputError } from "../run/load-run-input.js";
@@ -65,10 +65,10 @@ async function resolveContinueTarget(
     return { interactiveFile: args.path, outputArgs: { mode: "selected" } };
   }
 
-  const interactiveFile = context.env?.STEPKIT_INTERACTIVE_FILE;
+  const interactiveFile = context.env?.TRAILSTEP_INTERACTIVE_FILE;
   if (!interactiveFile) {
     throw new CliInputError(
-      "STEPKIT_INTERACTIVE_FILE is required to continue an active interactive StepKit session.",
+      "TRAILSTEP_INTERACTIVE_FILE is required to continue an active interactive TrailStep session.",
     );
   }
 
@@ -84,7 +84,9 @@ async function promptForInteractiveSession(context: CliCommandContext): Promise<
 
   const sessions = await findActiveInteractiveSessions(context.cwd);
   if (sessions.length === 0) {
-    throw new CliInputError("No active interactive StepKit sessions found under .stepkit/runs.");
+    throw new CliInputError(
+      "No active interactive TrailStep sessions found under .trailstep/runs.",
+    );
   }
 
   const labels = sessions.map((session) => session.label);

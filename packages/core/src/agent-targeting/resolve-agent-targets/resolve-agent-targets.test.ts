@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
-import { parseStepKitConfig } from "../parse-stepkit-config/parse-stepkit-config.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
+import { parseTrailStepConfig } from "../parse-trailstep-config/parse-trailstep-config.js";
 import { resolveAgentTargets } from "./resolve-agent-targets.js";
 
-describe("StepKit config", () => {
+describe("TrailStep config", () => {
   it("resolves the unified precedence chain from workflow role, size, then default", () => {
-    const config = parseStepKitConfig({
+    const config = parseTrailStepConfig({
       version: 1,
       customProviders: {
         workflowReviewer: customProvider("workflow-reviewer"),
@@ -36,7 +36,7 @@ describe("StepKit config", () => {
   });
 
   it("falls back from empty size mapping to agents.default", () => {
-    const config = parseStepKitConfig({
+    const config = parseTrailStepConfig({
       version: 1,
       customProviders: {
         defaultReviewer: customProvider("default-reviewer"),
@@ -59,7 +59,7 @@ describe("StepKit config", () => {
 
   it("rejects targets that reference providers not declared in customProviders", () => {
     expect(() =>
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
         customProviders: {
           reviewer: customProvider("reviewer"),
@@ -68,11 +68,11 @@ describe("StepKit config", () => {
           default: [target("missing")],
         },
       }),
-    ).toThrow(StepKitFailureError);
+    ).toThrow(TrailStepFailureError);
   });
 
   it("throws a structured failure when no usable target exists", () => {
-    const config = parseStepKitConfig({
+    const config = parseTrailStepConfig({
       version: 1,
       customProviders: {
         reviewer: customProvider("reviewer"),

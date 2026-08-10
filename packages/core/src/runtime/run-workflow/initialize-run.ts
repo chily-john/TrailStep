@@ -29,6 +29,10 @@ export async function initializeRun<TInput extends PlainObject, TOutput extends 
   if (runName === undefined) {
     throw new Error("Expected runName for a new workflow run.");
   }
-  const { runId, runDir } = await createRunDirectory({ cwd, runName });
+  const { runId, runDir } = await createRunDirectory({
+    cwd,
+    runName,
+    runsRoot: options.runsRoot,
+  });
   return { runId, runName, runDir, previousEvents: [] };
 }

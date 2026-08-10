@@ -50,7 +50,7 @@ function assertNotIgnored(path) {
 function assertNoTrackedLocalArtifacts() {
   const tracked = execFileSync(
     "git",
-    ["ls-files", ".stepkit", ".claude", "skills-lock", "skills-lock.json", "agent/skills"],
+    ["ls-files", ".trailstep", ".claude", "skills-lock", "skills-lock.json", "agent/skills"],
     { cwd: root, encoding: "utf8" },
   )
     .split(/\r?\n/u)
@@ -75,7 +75,7 @@ function assertPackageFilesExcludeLocalArtifacts() {
   }
 
   const localArtifactPatterns = [
-    /^\.stepkit(?:\/|$)/u,
+    /^\.trailstep(?:\/|$)/u,
     /^\.claude(?:\/|$)/u,
     /^agent\/skills(?:\/|$)/u,
     /^skills-lock(?:\.json)?$/u,
@@ -97,7 +97,7 @@ function escapeRegExp(value) {
 }
 
 for (const pattern of [
-  ".stepkit/",
+  ".trailstep/",
   ".claude/",
   "agent/skills/",
   "skills-lock",
@@ -107,7 +107,7 @@ for (const pattern of [
 }
 
 for (const path of [
-  ".stepkit/runs/example/events.jsonl",
+  ".trailstep/runs/example/events.jsonl",
   ".claude/settings.json",
   "agent/skills/example/SKILL.md",
   "skills-lock.json",
@@ -115,7 +115,7 @@ for (const path of [
   assertIgnored(path);
 }
 
-assertNotIgnored("packages/cli/stepkit-skill/SKILL.md");
+assertNotIgnored("packages/cli/trailstep-skill/SKILL.md");
 assertNoTrackedLocalArtifacts();
 assertPackageFilesExcludeLocalArtifacts();
 

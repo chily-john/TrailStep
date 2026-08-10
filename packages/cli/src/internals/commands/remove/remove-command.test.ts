@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { resolveCommand } from "../../command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-remove-command-tests", `${task.id}-${randomUUID()}`);
+  return join("node_modules", ".tmp-trailstep-remove-command-tests", `${task.id}-${randomUUID()}`);
 }
 
 async function readJson(path: string): Promise<unknown> {
@@ -22,7 +22,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 describe("removeCommand", () => {
   it("removes a registration found in exactly one scope", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
 
@@ -35,14 +35,14 @@ describe("removeCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(lines).toEqual(["Removed project/review from project config."]);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({ workflows: {} });
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
   });
 
   it("removes the entry but keeps sibling entries in the same namespace bucket", async ({
     task,
   }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs", cleanup: "./cleanup.mjs" } },
     });
 
@@ -52,7 +52,7 @@ describe("removeCommand", () => {
       io: { writeLine: () => undefined, writeError: () => undefined },
     });
 
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { cleanup: "./cleanup.mjs" } },
     });
   });
@@ -71,10 +71,10 @@ describe("removeCommand", () => {
 
   it("errors and asks for --scope when the ref matches more than one scope", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./shared-review.mjs" } },
     });
-    await writeJson(join(cwd, ".stepkit", "config-local.json"), {
+    await writeJson(join(cwd, ".trailstep", "config-local.json"), {
       workflows: { project: { review: "./local-review.mjs" } },
     });
 
@@ -91,10 +91,10 @@ describe("removeCommand", () => {
     task,
   }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./shared-review.mjs" } },
     });
-    await writeJson(join(cwd, ".stepkit", "config-local.json"), {
+    await writeJson(join(cwd, ".trailstep", "config-local.json"), {
       workflows: { project: { review: "./local-review.mjs" } },
     });
 
@@ -107,8 +107,8 @@ describe("removeCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(lines).toEqual(["Removed project/review from local config."]);
-    expect(await readJson(join(cwd, ".stepkit", "config-local.json"))).toEqual({ workflows: {} });
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config-local.json"))).toEqual({ workflows: {} });
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./shared-review.mjs" } },
     });
   });
@@ -131,10 +131,10 @@ describe("removeCommand", () => {
     task,
   }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
-    await mkdir(join(cwd, ".stepkit", "skills", "sk-review"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep", "skills", "trst-review"), { recursive: true });
 
     const command = resolveCommand(["remove", "project/review"]);
     const errors: string[] = [];
@@ -146,6 +146,6 @@ describe("removeCommand", () => {
     expect(
       errors.some((line) => line.includes("skill directory") && line.includes("not removed")),
     ).toBe(true);
-    await expect(stat(join(cwd, ".stepkit", "skills", "sk-review"))).resolves.toBeTruthy();
+    await expect(stat(join(cwd, ".trailstep", "skills", "trst-review"))).resolves.toBeTruthy();
   });
 });

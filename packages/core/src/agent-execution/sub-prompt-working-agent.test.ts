@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   done,
-  parseStepKitConfig,
+  parseTrailStepConfig,
   runWorkflow,
   step,
   subPrompt,
@@ -16,7 +16,7 @@ import {
 
 describe("subPrompt configured working agent dispatch", () => {
   it("fails with subPrompt parent-step diagnostics when config is missing", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-missing-config-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-missing-config-"));
 
     const workflow: Workflow<{ topic: string }, { final: string }> = {
       id: "sub-prompt-missing-config-workflow",
@@ -61,7 +61,7 @@ describe("subPrompt configured working agent dispatch", () => {
   });
 
   it("runs a subPrompt through a configured working agent and validates output.json", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-working-agent-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-working-agent-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ topic: string }, { final: string }> = {
@@ -86,7 +86,7 @@ describe("subPrompt configured working agent dispatch", () => {
       input: { topic: "alpha" },
       runName: "sub-prompt-working-agent-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {
           local: { binary: "local-agent" },

@@ -7,8 +7,8 @@ import { listRunSummaries } from "./run-summaries.js";
 
 describe("listRunSummaries", () => {
   it("does not classify a retried-successful run as a recent failed run", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-summaries-tests", task.id);
-    const runDir = join(cwd, ".stepkit", "runs", "retried-successful-run");
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runDir = join(cwd, ".trailstep", "runs", "retried-successful-run");
     await mkdir(runDir, { recursive: true });
 
     await writeFile(

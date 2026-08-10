@@ -7,7 +7,7 @@ describe("distributeWorkflowSkill", () => {
     const calls: Array<{ command: string; args: readonly string[] }> = [];
 
     await distributeWorkflowSkill({
-      skillDirectory: ".stepkit/skills/project-review",
+      skillDirectory: ".trailstep/skills/project-review",
       target: "project",
       resolver: async () => "/repo/node_modules/skills/dist/index.js",
       runner: async (command, args) => {
@@ -22,7 +22,7 @@ describe("distributeWorkflowSkill", () => {
         args: [
           "/repo/node_modules/skills/dist/index.js",
           "add",
-          ".stepkit/skills/project-review",
+          ".trailstep/skills/project-review",
           "--agent",
           "*",
           "-y",
@@ -35,7 +35,7 @@ describe("distributeWorkflowSkill", () => {
     const calls: Array<{ command: string; args: readonly string[] }> = [];
 
     await distributeWorkflowSkill({
-      skillDirectory: ".stepkit/skills/project-review",
+      skillDirectory: ".trailstep/skills/project-review",
       target: "user",
       resolver: async () => "/repo/node_modules/skills/dist/index.js",
       runner: async (command, args) => {
@@ -47,7 +47,7 @@ describe("distributeWorkflowSkill", () => {
     expect(calls[0]?.args).toEqual([
       "/repo/node_modules/skills/dist/index.js",
       "add",
-      ".stepkit/skills/project-review",
+      ".trailstep/skills/project-review",
       "--agent",
       "*",
       "-y",
@@ -58,7 +58,7 @@ describe("distributeWorkflowSkill", () => {
   it("rejects when skills CLI cannot be resolved", async () => {
     await expect(
       distributeWorkflowSkill({
-        skillDirectory: ".stepkit/skills/project-review",
+        skillDirectory: ".trailstep/skills/project-review",
         target: "project",
         resolver: async () => {
           throw new Error("Cannot find module 'skills/package.json'");
@@ -71,7 +71,7 @@ describe("distributeWorkflowSkill", () => {
   it("rejects when skills CLI exits non-zero", async () => {
     await expect(
       distributeWorkflowSkill({
-        skillDirectory: ".stepkit/skills/project-review",
+        skillDirectory: ".trailstep/skills/project-review",
         target: "project",
         resolver: async () => "/repo/node_modules/skills/dist/index.js",
         runner: async () => ({ exitCode: 2 }),

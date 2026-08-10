@@ -1,21 +1,23 @@
 import {
-  isParsedStepKitConfig,
-  parseStepKitConfig,
-} from "../../agent-targeting/parse-stepkit-config/parse-stepkit-config.js";
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+  isParsedTrailStepConfig,
+  parseTrailStepConfig,
+} from "../../agent-targeting/parse-trailstep-config/parse-trailstep-config.js";
+import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { RunWorkflowOptions } from "./run-workflow.types.js";
 
-export function parseStepKitConfigInput(value: RunWorkflowOptions["stepkitConfig"]): StepKitConfig {
-  if (isParsedStepKitConfig(value) || isFlattenedStepKitConfig(value)) {
+export function parseTrailStepConfigInput(
+  value: RunWorkflowOptions["trailstepConfig"],
+): TrailStepConfig {
+  if (isParsedTrailStepConfig(value) || isFlattenedTrailStepConfig(value)) {
     return value;
   }
 
-  return parseStepKitConfig(value);
+  return parseTrailStepConfig(value);
 }
 
-function isFlattenedStepKitConfig(
-  value: RunWorkflowOptions["stepkitConfig"],
-): value is StepKitConfig {
+function isFlattenedTrailStepConfig(
+  value: RunWorkflowOptions["trailstepConfig"],
+): value is TrailStepConfig {
   if (!isPlainRecord(value) || value.version !== 1) {
     return false;
   }
@@ -44,7 +46,7 @@ function isFlattenedStepKitConfig(
   );
 }
 
-function isFlattenedSettings(value: unknown): value is NonNullable<StepKitConfig["settings"]> {
+function isFlattenedSettings(value: unknown): value is NonNullable<TrailStepConfig["settings"]> {
   return (
     isPlainRecord(value) &&
     (value.retry === undefined || isPlainRecord(value.retry)) &&
@@ -52,7 +54,7 @@ function isFlattenedSettings(value: unknown): value is NonNullable<StepKitConfig
   );
 }
 
-function isFlattenedAgentMappings(value: unknown): value is StepKitConfig["agents"] {
+function isFlattenedAgentMappings(value: unknown): value is TrailStepConfig["agents"] {
   return (
     isPlainRecord(value) &&
     Object.values(value).every(
@@ -61,7 +63,9 @@ function isFlattenedAgentMappings(value: unknown): value is StepKitConfig["agent
   );
 }
 
-function isFlattenedAgentTarget(value: unknown): value is StepKitConfig["agents"][string][number] {
+function isFlattenedAgentTarget(
+  value: unknown,
+): value is TrailStepConfig["agents"][string][number] {
   return isPlainRecord(value) && typeof value.provider === "string";
 }
 

@@ -5,9 +5,17 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AgentAdapter, AgentAdapterRequest } from "./contracts/agents/agent-adapter.types.js";
+import * as core from "./index.js";
 import { jsonSchema, runWorkflow, selectLatestUnresolvedFailure, subPrompt } from "./index.js";
 
-describe("@stepkit/core public API", () => {
+describe("@trailstep/core public API", () => {
+  it("exports TrailStep config and failure APIs without StepKit compatibility aliases", () => {
+    expect(core.parseTrailStepConfig).toBeTypeOf("function");
+    expect(core.TrailStepFailureError).toBeTypeOf("function");
+    expect("parseStepKitConfig" in core).toBe(false);
+    expect("StepKitFailureError" in core).toBe(false);
+  });
+
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
     expect(runWorkflow).toBeTypeOf("function");
     expect(jsonSchema).toBeTypeOf("function");

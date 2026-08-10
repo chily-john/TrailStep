@@ -74,7 +74,7 @@ function workflowWithTwoSubPrompts(options?: {
 
 describe("subPrompt limits", () => {
   it("uses maxSubPrompts per-call override to stop dispatching over the limit", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-limit-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-limit-"));
     const dispatchCount = { value: 0 };
 
     const result = await runWorkflow({
@@ -102,7 +102,7 @@ describe("subPrompt limits", () => {
   });
 
   it("uses workflow settings maxSubPrompts as the default", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-settings-limit-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-settings-limit-"));
     const dispatchCount = { value: 0 };
     const workflow = workflowWithTwoSubPrompts({
       workflowId: "settings-limit-workflow",
@@ -114,7 +114,7 @@ describe("subPrompt limits", () => {
       input: {},
       runName: "sub-prompt-settings-limit",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {},
         agents: {},
@@ -135,7 +135,7 @@ describe("subPrompt limits", () => {
   });
 
   it("uses regular prompt options maxSubPrompts for subPrompts inside prompted step onOutput", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-prompt-option-limit-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-prompt-option-limit-"));
     let subPromptDispatchCount = 0;
 
     const promptAdapter: AgentAdapter<Record<string, never>, { topic: string }> = async (

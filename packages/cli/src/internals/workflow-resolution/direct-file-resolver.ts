@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 import { tsImport } from "tsx/esm/api";
 
 import { CliUsageError } from "../command.types.js";
@@ -206,7 +206,7 @@ function isTypeScriptSourcePath(path: string): boolean {
 
 function throwUnsupportedTsx(path: string): never {
   throw new CliUsageError(
-    `Unsupported direct workflow source extension .tsx for ${path}. JSX workflow source files are not supported by stepkit add/run yet; use .ts, .mts, .js, or .mjs.`,
+    `Unsupported direct workflow source extension .tsx for ${path}. JSX workflow source files are not supported by trailstep add/run yet; use .ts, .mts, .js, or .mjs.`,
   );
 }
 

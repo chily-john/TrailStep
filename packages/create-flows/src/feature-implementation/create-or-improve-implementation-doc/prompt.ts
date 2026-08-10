@@ -1,5 +1,5 @@
-import type { Document } from "@stepkit/authoring";
-import { list, loadFragments, promptSections, section } from "@stepkit/authoring";
+import type { Document } from "@trailstep/authoring";
+import { list, loadFragments, promptSections, section } from "@trailstep/authoring";
 import type { ReviewResult } from "../shared/review-schema.js";
 
 const fragments = loadFragments(import.meta.dirname, {

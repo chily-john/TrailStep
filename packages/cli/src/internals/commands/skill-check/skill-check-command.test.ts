@@ -10,18 +10,18 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 async function createConsumer(cwd: string): Promise<string> {
-  const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+  const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(cwd, "package.json"), {
     name: "consumer",
-    dependencies: { "@acme/stepkit-workflows": "1.0.0" },
+    dependencies: { "@acme/trailstep-workflows": "1.0.0" },
   });
   await writeJson(join(packageDir, "package.json"), {
-    name: "@acme/stepkit-workflows",
+    name: "@acme/trailstep-workflows",
     version: "1.0.0",
     type: "module",
     main: "./index.mjs",
-    keywords: ["stepkit-workflow"],
+    keywords: ["trailstep-workflow"],
   });
   await writeFile(
     join(packageDir, "index.mjs"),
@@ -33,7 +33,7 @@ async function createConsumer(cwd: string): Promise<string> {
 
 describe("skill-check command", () => {
   it("prints packages missing SKILL.md with workflow ids and exits zero", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-skill-check-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-skill-check-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await createConsumer(cwd);
     const lines: string[] = [];
@@ -47,13 +47,13 @@ describe("skill-check command", () => {
 
     expect(exitCode).toBe(0);
     expect(lines).toEqual([
-      "Missing SKILL.md for @acme/stepkit-workflows: @acme/stepkit-workflows:reviewFeature",
+      "Missing SKILL.md for @acme/trailstep-workflows: @acme/trailstep-workflows:reviewFeature",
     ]);
     expect(errors).toEqual([]);
   });
 
   it("prints nothing when every workflow package has SKILL.md", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-skill-check-tests", `${task.id}-present`);
+    const cwd = join("node_modules", ".tmp-trailstep-skill-check-tests", `${task.id}-present`);
     await mkdir(cwd, { recursive: true });
     const packageDir = await createConsumer(cwd);
     await writeFile(join(packageDir, "SKILL.md"), "# Workflow skill\n", "utf8");

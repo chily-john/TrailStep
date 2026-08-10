@@ -2,21 +2,21 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { runWorkflow } from "@stepkit/core";
+import { runWorkflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { grillItAway } from "./workflow.js";
 
 describe("grill-it-away", () => {
   it("fails when the completion payload does not match the conversation schema", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-grill-it-away-invalid-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-grill-it-away-invalid-"));
 
     const result = await runWorkflow({
       workflow: grillItAway,
       input: {},
       runName: "grill-it-away-invalid-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -26,7 +26,7 @@ describe("grill-it-away", () => {
         },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         await writeFile(protocol.outputFile, `${JSON.stringify({}, null, 2)}\n`, "utf8");
         await writeFile(
@@ -42,7 +42,7 @@ describe("grill-it-away", () => {
   });
 
   it("once grilling completes, grill-it-away proceeds into feature-implementation's create-feature-doc with the transcript, and runs the full reviewed pipeline through to done", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-grill-it-away-pipeline-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-grill-it-away-pipeline-"));
     const transcript = "User: I want a widget.\nAgent: Tell me more...\nUser: ...";
 
     const passingReview = {
@@ -65,7 +65,7 @@ describe("grill-it-away", () => {
       input: {},
       runName: "grill-it-away-pipeline-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -84,7 +84,7 @@ describe("grill-it-away", () => {
         },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         await writeFile(
           protocol.outputFile,

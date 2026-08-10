@@ -8,7 +8,7 @@ import {
   Document,
   done,
   jsonSchema,
-  parseStepKitConfig,
+  parseTrailStepConfig,
   runWorkflow,
   step,
   type Workflow,
@@ -26,7 +26,7 @@ import { runWorkingAgentCommand } from "./run-working-agent-command.js";
 
 describe("runWorkingAgentCommand", () => {
   it("writes repeated working-agent outputs to distinct ordered step directories", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-ordered-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-ordered-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -60,7 +60,7 @@ describe("runWorkingAgentCommand", () => {
       input: { task: "repeat" },
       runName: "working-agent-ordered-artifacts-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: { medium: [{ provider: "worker" }] },
@@ -107,7 +107,7 @@ describe("runWorkingAgentCommand", () => {
   it("falls back to the next working target and reports exhausted attempts when all targets fail", async () => {
     expect(runWorkingAgentCommand).toBeTypeOf("function");
 
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-exhausted-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-exhausted-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -132,7 +132,7 @@ describe("runWorkingAgentCommand", () => {
       input: { task: "fallback" },
       runName: "working-agent-exhausted-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {
           first: { binary: "first-agent" },
@@ -175,7 +175,7 @@ describe("runWorkingAgentCommand", () => {
   });
 
   it("preserves provider failure details in exhausted target attempts", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-details-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-details-"));
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
       id: "working-agent-details-workflow",
@@ -197,7 +197,7 @@ describe("runWorkingAgentCommand", () => {
       input: { task: "spawn failure" },
       runName: "working-agent-details-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { medium: [{ provider: "pi" }] },
@@ -243,7 +243,7 @@ describe("provider output repair (session-resumable providers only)", () => {
   }
 
   it("resumes the same claude session once to repair a malformed final answer, and accepts a well-formed repair reply as the step's output", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-repair-ok-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-repair-ok-"));
     const calls: ProviderWorkingProcessRequest[] = [];
 
     const result = await runWorkflow({
@@ -251,7 +251,7 @@ describe("provider output repair (session-resumable providers only)", () => {
       input: { task: "repair" },
       runName: "working-agent-repair-ok-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { medium: [{ provider: "claude" }] },
@@ -289,7 +289,7 @@ describe("provider output repair (session-resumable providers only)", () => {
   });
 
   it("falls through to agent_target_exhausted when the repair attempt also returns malformed output (no second repair, no infinite loop)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-repair-fail-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-repair-fail-"));
     const calls: ProviderWorkingProcessRequest[] = [];
 
     const result = await runWorkflow({
@@ -297,7 +297,7 @@ describe("provider output repair (session-resumable providers only)", () => {
       input: { task: "repair-fail" },
       runName: "working-agent-repair-fail-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { medium: [{ provider: "claude" }] },
@@ -323,7 +323,7 @@ describe("provider output repair (session-resumable providers only)", () => {
   });
 
   it("leaves a provider without repairOutput (e.g. gemini) failing immediately on malformed output, even when a session id is present", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-no-repair-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-no-repair-"));
     const calls: ProviderWorkingProcessRequest[] = [];
 
     const result = await runWorkflow({
@@ -331,7 +331,7 @@ describe("provider output repair (session-resumable providers only)", () => {
       input: { task: "no-repair" },
       runName: "working-agent-no-repair-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { medium: [{ provider: "gemini" }] },
@@ -416,7 +416,7 @@ describe("raw-text capture mode", () => {
 
   describe("readWorkingAgentOutput", () => {
     it("writes a document artifact under the current step's directory and returns an asserted Document, skipping JSON.parse", async () => {
-      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-rawtext-"));
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-rawtext-"));
       const { runId, runDir } = await createRunDirectory({ cwd, runName: "write-doc-run" });
       const runContext = createRunContext({ runId, runName: "write-doc-run", runDir });
       const stepDir = join(runDir, "steps", "0001-write-doc");
@@ -449,7 +449,7 @@ describe("raw-text capture mode", () => {
     });
 
     it("still requires JSON.parse to succeed when captureMode is absent (regression)", async () => {
-      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-json-regression-"));
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-json-regression-"));
       const outputFile = join(cwd, "output.json");
       await writeFile(outputFile, "this is not JSON", "utf8");
 
@@ -478,7 +478,7 @@ describe("raw-text capture mode", () => {
 
   describe("runWorkingAgentCommand end-to-end", () => {
     it("captures a working agent's raw stdout as a Document under the step's own artifact directory", async () => {
-      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-doc-e2e-"));
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-doc-e2e-"));
 
       const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
         id: "working-agent-document-workflow",
@@ -500,7 +500,7 @@ describe("raw-text capture mode", () => {
         input: { topic: "raw-text capture" },
         runName: "working-agent-document-run",
         cwd,
-        stepkitConfig: parseStepKitConfig({
+        trailstepConfig: parseTrailStepConfig({
           version: 1,
           customProviders: { worker: { binary: "worker-agent" } },
           agents: { medium: [{ provider: "worker" }] },
@@ -528,7 +528,7 @@ describe("raw-text capture mode", () => {
     });
 
     it("captures a registered CLI provider's raw stdout as a Document without throwing agent_target_exhausted", async () => {
-      const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-working-agent-provider-doc-e2e-"));
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-provider-doc-e2e-"));
 
       const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
         id: "working-agent-provider-document-workflow",
@@ -550,7 +550,7 @@ describe("raw-text capture mode", () => {
         input: { topic: "raw-text capture" },
         runName: "working-agent-provider-document-run",
         cwd,
-        stepkitConfig: parseStepKitConfig({
+        trailstepConfig: parseTrailStepConfig({
           version: 1,
           customProviders: {},
           agents: { medium: [{ provider: "claude" }] },

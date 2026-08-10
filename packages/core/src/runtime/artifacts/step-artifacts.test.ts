@@ -7,7 +7,7 @@ import { resolveStepArtifactPaths } from "./step-artifacts.js";
 describe("resolveStepArtifactPaths", () => {
   it("builds zero-padded run-relative step artifact directories with sanitized step ids", async () => {
     const paths = resolveStepArtifactPaths({
-      runDir: join(".stepkit", "runs", "ordered-artifacts-run"),
+      runDir: join(".trailstep", "runs", "ordered-artifacts-run"),
       stepId: "Review & Approve/Plan?",
       stepIndex: 2,
     });
@@ -18,7 +18,7 @@ describe("resolveStepArtifactPaths", () => {
       "steps/0002-review-approve-plan/session-description.md",
     );
     expect(paths.stepDir).toBe(
-      join(".stepkit", "runs", "ordered-artifacts-run", "steps", "0002-review-approve-plan"),
+      join(".trailstep", "runs", "ordered-artifacts-run", "steps", "0002-review-approve-plan"),
     );
     expect(paths.outputFile).toBe(join(paths.stepDir, "output.json"));
     expect(paths.usageFile).toBe(join(paths.stepDir, "usage.json"));

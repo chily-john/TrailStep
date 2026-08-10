@@ -9,13 +9,17 @@ import {
   deleteWorkflowRegistryEntry,
   findExistingRegistrationScope,
   listRegisteredWorkflowEntries,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "./workflow-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-workflow-registry-tests", `${task.id}-${randomUUID()}`);
+  return join(
+    "node_modules",
+    ".tmp-trailstep-workflow-registry-tests",
+    `${task.id}-${randomUUID()}`,
+  );
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -24,36 +28,43 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 describe("configPathForScope", () => {
-  it("resolves project scope to <cwd>/.stepkit/config.json", () => {
+  it("resolves project scope to <cwd>/.trailstep/config.json", () => {
     expect(configPathForScope("project", { cwd: "/repo" })).toBe(
-      join("/repo", ".stepkit", "config.json"),
+      join("/repo", ".trailstep", "config.json"),
     );
   });
 
-  it("resolves local scope to <cwd>/.stepkit/config-local.json", () => {
+  it("resolves local scope to <cwd>/.trailstep/config-local.json", () => {
     expect(configPathForScope("local", { cwd: "/repo" })).toBe(
-      join("/repo", ".stepkit", "config-local.json"),
+      join("/repo", ".trailstep", "config-local.json"),
     );
   });
 
-  it("resolves global scope to <homeDir>/.stepkit/config.json", () => {
+  it("resolves global scope to <homeDir>/.trailstep/config.json", () => {
     expect(configPathForScope("global", { cwd: "/repo", homeDir: "/home/me" })).toBe(
-      join("/home/me", ".stepkit", "config.json"),
+      join("/home/me", ".trailstep", "config.json"),
     );
   });
 });
 
-describe("readRawStepKitConfigFile / writeRawStepKitConfigFile", () => {
+describe("readRawTrailStepConfigFile / writeRawTrailStepConfigFile", () => {
   it("returns an empty object when the file does not exist", async ({ task }) => {
-    const path = join(tmpDir(task), ".stepkit", "config.json");
-    await expect(readRawStepKitConfigFile(path)).resolves.toEqual({});
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await expect(readRawTrailStepConfigFile(path)).resolves.toEqual({});
+  });
+
+  it("reports invalid project config as TrailStep config", async ({ task }) => {
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await writeJson(path, []);
+
+    await expect(readRawTrailStepConfigFile(path)).rejects.toThrow(/Invalid TrailStep config/);
   });
 
   it("round-trips a written config through mkdir -p and pretty-printed JSON", async ({ task }) => {
-    const path = join(tmpDir(task), ".stepkit", "config.json");
-    await writeRawStepKitConfigFile(path, { workflows: { project: { review: "./review.mjs" } } });
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await writeRawTrailStepConfigFile(path, { workflows: { project: { review: "./review.mjs" } } });
 
-    await expect(readRawStepKitConfigFile(path)).resolves.toEqual({
+    await expect(readRawTrailStepConfigFile(path)).resolves.toEqual({
       workflows: { project: { review: "./review.mjs" } },
     });
     await expect(readFile(path, "utf8")).resolves.toMatch(/\n$/);
@@ -120,13 +131,13 @@ describe("listRegisteredWorkflowEntries", () => {
   }) => {
     const cwd = tmpDir(task);
     const homeDir = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
-    await writeJson(join(cwd, ".stepkit", "config-local.json"), {
+    await writeJson(join(cwd, ".trailstep", "config-local.json"), {
       workflows: { project: { scratch: "./scratch.mjs" } },
     });
-    await writeJson(join(homeDir, ".stepkit", "config.json"), {
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
       workflows: { global: { deploy: "./deploy.mjs" } },
     });
 
@@ -156,7 +167,7 @@ describe("listRegisteredWorkflowEntries", () => {
 
   it("ignores non-string leaves (per-workflow agent config) when enumerating", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: {
         project: { review: "./review.mjs" },
         release: { agents: { reviewer: [{ provider: "local" }] } },
@@ -173,7 +184,7 @@ describe("listRegisteredWorkflowEntries", () => {
 describe("findExistingRegistrationScope", () => {
   it("checks both project files when scope is project", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config-local.json"), {
+    await writeJson(join(cwd, ".trailstep", "config-local.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
 
@@ -184,7 +195,7 @@ describe("findExistingRegistrationScope", () => {
 
   it("checks both project files when scope is local", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./review.mjs" } },
     });
 
@@ -198,11 +209,11 @@ describe("findExistingRegistrationScope", () => {
 
   it("only checks the global file when scope is global", async ({ task }) => {
     const cwd = tmpDir(task);
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { global: { review: "./review.mjs" } },
     });
     const homeDir = tmpDir(task);
-    await writeJson(join(homeDir, ".stepkit", "config.json"), {
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
       workflows: { global: { deploy: "./deploy.mjs" } },
     });
 

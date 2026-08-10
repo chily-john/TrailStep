@@ -4,12 +4,12 @@ export interface Failure {
   readonly details?: unknown;
 }
 
-export class StepKitFailureError extends Error {
+export class TrailStepFailureError extends Error {
   readonly failure: Failure;
 
   constructor(failure: Failure) {
     super(failure.message);
-    this.name = "StepKitFailureError";
+    this.name = "TrailStepFailureError";
     this.failure = failure;
   }
 }

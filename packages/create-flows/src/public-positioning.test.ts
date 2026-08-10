@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 describe("public package positioning", () => {
-  it("frames @stepkit/create-flows as a public reusable workflow package with docs matching exports", async () => {
+  it("frames @trailstep/create-flows as a public reusable workflow package with docs matching exports", async () => {
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
     ) as {
@@ -20,25 +20,25 @@ describe("public package positioning", () => {
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");
 
-    expect(packageJson.name).toBe("@stepkit/create-flows");
+    expect(packageJson.name).toBe("@trailstep/create-flows");
     expect(packageJson[["pri", "vate"].join("") as keyof typeof packageJson]).not.toBe(true);
     expect(packageJson.description).toMatch(/public|reusable|general-purpose/i);
     expect(packageJson.license).toBe("Apache-2.0");
     expect(packageJson.repository).toEqual({
       type: "git",
-      url: "git+ssh://git@github.com/chily-john/stepkit.git",
+      url: "git+ssh://git@github.com/chily-john/trailstep.git",
     });
-    expect(packageJson.bugs?.url).toBe("https://github.com/chily-john/stepkit/issues");
-    expect(packageJson.homepage).toBe("https://github.com/chily-john/stepkit#readme");
+    expect(packageJson.bugs?.url).toBe("https://github.com/chily-john/trailstep/issues");
+    expect(packageJson.homepage).toBe("https://github.com/chily-john/trailstep#readme");
     expect(packageJson.publishConfig?.access).toBe("public");
     expect(packageJson.files).toEqual(expect.arrayContaining(["dist", "README.md", "LICENSE"]));
-    expect(packageJson.keywords).toContain("stepkit-workflow");
+    expect(packageJson.keywords).toContain("trailstep-workflow");
 
     expect(readme).toMatch(/public/i);
     expect(readme).toMatch(/reusable/i);
     expect(readme).toMatch(/general-purpose/i);
-    expect(readme).toContain("@stepkit/create-flows#takeItAway");
-    expect(readme).toContain("@stepkit/create-flows#grillItAway");
+    expect(readme).toContain("@trailstep/create-flows#takeItAway");
+    expect(readme).toContain("@trailstep/create-flows#grillItAway");
 
     const forbiddenPublicPhraseSources = [
       ["Per", "sonal collection"],

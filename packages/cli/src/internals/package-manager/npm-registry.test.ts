@@ -8,13 +8,13 @@ describe("fetchNpmPackageMetadata", () => {
 
     const metadata = await fetchNpmPackageMetadata({
       cwd: "/repo",
-      packageName: "@stepkit/core",
+      packageName: "@trailstep/core",
       packageCommandRunner: async (request) => {
         requests.push(request);
         return {
           exitCode: 0,
           stdout: JSON.stringify([
-            { version: "0.0.1", peerDependencies: { "@stepkit/core": "^0.0.1" } },
+            { version: "0.0.1", peerDependencies: { "@trailstep/core": "^0.0.1" } },
             { version: "0.0.2" },
           ]),
         };
@@ -24,15 +24,15 @@ describe("fetchNpmPackageMetadata", () => {
     expect(requests).toEqual([
       {
         command: "npm",
-        args: ["view", "@stepkit/core@*", "version", "peerDependencies", "--json"],
+        args: ["view", "@trailstep/core@*", "version", "peerDependencies", "--json"],
         cwd: "/repo",
       },
     ]);
     expect(metadata).toEqual({
-      packageName: "@stepkit/core",
+      packageName: "@trailstep/core",
       versions: ["0.0.1", "0.0.2"],
       peerDependenciesByVersion: {
-        "0.0.1": { "@stepkit/core": "^0.0.1" },
+        "0.0.1": { "@trailstep/core": "^0.0.1" },
         "0.0.2": {},
       },
     });
@@ -42,26 +42,26 @@ describe("fetchNpmPackageMetadata", () => {
     await expect(
       fetchNpmPackageMetadata({
         cwd: "/repo",
-        packageName: "@stepkit/authoring",
+        packageName: "@trailstep/authoring",
         packageCommandRunner: async () => ({ exitCode: 1, stderr: "registry unavailable" }),
       }),
     ).rejects.toThrow(NpmRegistryError);
     await expect(
       fetchNpmPackageMetadata({
         cwd: "/repo",
-        packageName: "@stepkit/authoring",
+        packageName: "@trailstep/authoring",
         packageCommandRunner: async () => ({ exitCode: 1, stderr: "registry unavailable" }),
       }),
-    ).rejects.toThrow(/@stepkit\/authoring.*registry unavailable/s);
+    ).rejects.toThrow(/@trailstep\/authoring.*registry unavailable/s);
   });
 
   it("reports malformed npm view JSON clearly", async () => {
     await expect(
       fetchNpmPackageMetadata({
         cwd: "/repo",
-        packageName: "@stepkit/cli",
+        packageName: "@trailstep/cli",
         packageCommandRunner: async () => ({ exitCode: 0, stdout: "not json" }),
       }),
-    ).rejects.toThrow(/Malformed npm view JSON for @stepkit\/cli/);
+    ).rejects.toThrow(/Malformed npm view JSON for @trailstep\/cli/);
   });
 });

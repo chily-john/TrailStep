@@ -1,4 +1,4 @@
-import type { Event } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
 import type { DashboardRunSummary } from "../server/runs";
 import { type DashboardEventsState, reduceDashboardEvents } from "./reducer";
 
@@ -9,9 +9,9 @@ export interface DashboardRunsResponse {
 export async function fetchDashboardRuns(
   fetcher: typeof fetch = fetch,
 ): Promise<readonly DashboardRunSummary[]> {
-  const response = await fetcher("/api/stepkit/runs");
+  const response = await fetcher("/api/trailstep/runs");
   if (!response.ok) {
-    throw new Error(`Unable to load StepKit runs: ${response.status}`);
+    throw new Error(`Unable to load TrailStep runs: ${response.status}`);
   }
 
   const body = (await response.json()) as DashboardRunsResponse;
@@ -27,10 +27,10 @@ export function connectRunEventStream(options: {
   let state = options.initialState ?? { rows: [] };
   const createEventSource = options.eventSourceFactory ?? ((url: string) => new EventSource(url));
   const source = createEventSource(
-    `/api/stepkit/runs/${encodeURIComponent(options.runId)}/events/stream`,
+    `/api/trailstep/runs/${encodeURIComponent(options.runId)}/events/stream`,
   );
 
-  source.addEventListener("stepkit-event", (message) => {
+  source.addEventListener("trailstep-event", (message) => {
     const event = JSON.parse(message.data) as Event;
     state = reduceDashboardEvents(state, { type: "events.received", events: [event] });
     options.onState(state);

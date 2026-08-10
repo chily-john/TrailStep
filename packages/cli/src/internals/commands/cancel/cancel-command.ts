@@ -10,10 +10,10 @@ export const cancelCommand: CliCommand<CancelCommandArgs> = {
   name: "cancel",
   parseArgs: parseCancelInvocation,
   async run(args, context) {
-    const interactiveFile = context.env?.STEPKIT_INTERACTIVE_FILE;
+    const interactiveFile = context.env?.TRAILSTEP_INTERACTIVE_FILE;
     if (!interactiveFile) {
       throw new CliInputError(
-        "STEPKIT_INTERACTIVE_FILE is required to cancel an active interactive StepKit session.",
+        "TRAILSTEP_INTERACTIVE_FILE is required to cancel an active interactive TrailStep session.",
       );
     }
 

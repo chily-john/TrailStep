@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { runWorkflow } from "@stepkit/core";
+import { runWorkflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
@@ -19,7 +19,7 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 
 describe("take-it-away", () => {
   it("keeps the selected story durably active when implementation is interrupted before review", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
 
     const passingReview = {
       score: 5,
@@ -39,7 +39,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-interrupted-story-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
@@ -110,7 +110,7 @@ describe("take-it-away", () => {
   });
 
   it("prepends implementation context blocks to every split story", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
 
     const passingReview = {
       score: 5,
@@ -130,7 +130,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-context-split-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
@@ -207,10 +207,10 @@ describe("take-it-away", () => {
   });
 
   it("review prompt includes committed and uncommitted story changes from the story baseline", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);
-    await git(cwd, ["config", "user.email", "stepkit@example.test"]);
-    await git(cwd, ["config", "user.name", "StepKit Test"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await writeFile(join(cwd, "widget.txt"), "initial widget\n", "utf8");
     await git(cwd, ["add", "widget.txt"]);
     await git(cwd, ["commit", "-m", "initial widget"]);
@@ -236,7 +236,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-story-baseline-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
@@ -321,18 +321,18 @@ describe("take-it-away", () => {
   });
 
   it("commits each passing reviewed story when story commit mode is enabled", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);
-    await git(cwd, ["config", "user.email", "stepkit@example.test"]);
-    await git(cwd, ["config", "user.name", "StepKit Test"]);
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
-    await writeFile(join(cwd, ".stepkit", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
-    await git(cwd, ["add", "README.md", ".stepkit/.gitignore"]);
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
 
-    const previousCommitMode = process.env.STEPKIT_STORY_COMMIT_MODE;
-    process.env.STEPKIT_STORY_COMMIT_MODE = "enabled";
+    const previousCommitMode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
+    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const passingReview = {
       score: 5,
@@ -353,7 +353,7 @@ describe("take-it-away", () => {
         input: { conversation: "We want a widget exporter." },
         runName: "take-it-away-autocommit-run",
         cwd,
-        stepkitConfig: {
+        trailstepConfig: {
           version: 1,
           customProviders: { worker: { binary: "worker-agent" } },
           agents: {
@@ -419,19 +419,19 @@ describe("take-it-away", () => {
 
       expect(result.status).toBe("success");
       const log = await git(cwd, ["log", "--oneline", "--max-count=2"]);
-      expect(log).toContain("stepkit: Story 001: Build the widget exporter core");
+      expect(log).toContain("trailstep: Story 001: Build the widget exporter core");
       expect(await git(cwd, ["status", "--short"])).toBe("");
     } finally {
       if (previousCommitMode === undefined) {
-        delete process.env.STEPKIT_STORY_COMMIT_MODE;
+        delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
       } else {
-        process.env.STEPKIT_STORY_COMMIT_MODE = previousCommitMode;
+        process.env.TRAILSTEP_STORY_COMMIT_MODE = previousCommitMode;
       }
     }
   });
 
   it("retry of an interrupted story implements the active story before advancing", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
 
     const passingReview = {
       score: 5,
@@ -446,7 +446,7 @@ describe("take-it-away", () => {
       requiredImprovements: [],
     };
 
-    const stepkitConfig = {
+    const trailstepConfig = {
       version: 1 as const,
       customProviders: { worker: { binary: "worker-agent" } },
       agents: {
@@ -460,7 +460,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-retry-active-story-run",
       cwd,
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         if (request.outputFile.includes("create-feature-doc")) {
           await writeFile(
@@ -515,7 +515,7 @@ describe("take-it-away", () => {
     const retried = await runWorkflow({
       workflow: takeItAway,
       retry: { runDir: failed.runDir, kind: "manual" },
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         if (request.outputFile.includes("implement-story")) {
           const prompt = await readFile(request.promptFile, "utf8");
@@ -556,7 +556,7 @@ describe("take-it-away", () => {
   it("wires straight into feature-implementation's create-feature-doc with the supplied conversation and completes the full reviewed pipeline", async () => {
     expect(createFeatureDocStep).toBeTypeOf("function");
 
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-take-it-away-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
 
     const passingReview = {
       score: 5,
@@ -576,7 +576,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-tracer-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {

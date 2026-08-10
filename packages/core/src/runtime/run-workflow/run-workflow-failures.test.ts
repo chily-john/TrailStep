@@ -370,7 +370,7 @@ describe("runWorkflow failure paths", () => {
       },
     });
 
-    expectFailure(result, "missing_agent_config", "Missing .stepkit/config.json");
+    expectFailure(result, "missing_agent_config", "Missing .trailstep/config.json");
     expectFailure(result, "missing_agent_config", "agent 'builder'");
     expect(requests).toEqual([]);
     expect(result.events.map((event) => event.type)).toEqual([
@@ -500,7 +500,7 @@ function nameSchema(): Schema<{ name: string }> {
 }
 
 async function testCwd(): Promise<string> {
-  return await mkdtemp(join(tmpdir(), "stepkit-core-runtime-failures-"));
+  return await mkdtemp(join(tmpdir(), "trailstep-core-runtime-failures-"));
 }
 
 function expectFailure(

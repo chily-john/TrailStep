@@ -5,11 +5,11 @@ import type { Plugin } from "vite";
 import { streamRunEvents } from "./events";
 import { listRuns } from "./runs";
 
-export function stepkitDashboardPlugin(options: { readonly cwd?: string } = {}): Plugin {
+export function trailstepDashboardPlugin(options: { readonly cwd?: string } = {}): Plugin {
   const cwd = options.cwd ?? process.cwd();
 
   return {
-    name: "stepkit-dashboard-local-api",
+    name: "trailstep-dashboard-local-api",
     apply: "serve",
     configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
@@ -20,7 +20,7 @@ export function stepkitDashboardPlugin(options: { readonly cwd?: string } = {}):
 
         const url = new URL(request.url, "http://localhost");
 
-        if (request.method === "GET" && url.pathname === "/api/stepkit/runs") {
+        if (request.method === "GET" && url.pathname === "/api/trailstep/runs") {
           const runs = await listRuns({ cwd });
           response.statusCode = 200;
           response.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -28,11 +28,11 @@ export function stepkitDashboardPlugin(options: { readonly cwd?: string } = {}):
           return;
         }
 
-        const match = url.pathname.match(/^\/api\/stepkit\/runs\/([^/]+)\/events\/stream$/);
+        const match = url.pathname.match(/^\/api\/trailstep\/runs\/([^/]+)\/events\/stream$/);
         if (request.method === "GET" && match?.[1]) {
           const runId = decodeURIComponent(match[1]);
-          const runDir = resolve(cwd, ".stepkit", "runs", runId);
-          const runsRoot = resolve(cwd, ".stepkit", "runs");
+          const runDir = resolve(cwd, ".trailstep", "runs", runId);
+          const runsRoot = resolve(cwd, ".trailstep", "runs");
 
           if (!runDir.startsWith(`${runsRoot}${sep}`) && runDir !== runsRoot) {
             response.statusCode = 400;

@@ -76,7 +76,7 @@ describe("addCommand", () => {
   it("prompts for scope only in a zero-flag add, deriving namespace and name", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -119,7 +119,7 @@ describe("addCommand", () => {
       "Add to project skills?",
       "Add to user skills?",
     ]);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
   });
@@ -129,7 +129,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -145,7 +145,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config-local.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config-local.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
   });
@@ -153,7 +153,7 @@ describe("addCommand", () => {
   it("supports an explicit --name override without deriving from workflow.id", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -183,7 +183,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { "custom-name": "./workflows/review.mjs" } },
     });
   });
@@ -193,7 +193,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -218,7 +218,7 @@ describe("addCommand", () => {
   it("rejects --namespace project combined with --scope global", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -258,12 +258,12 @@ describe("addCommand", () => {
   it("warns for a duplicate registration across project and local scope", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "./workflows/existing.mjs" } },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
@@ -303,7 +303,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -337,10 +337,10 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
-    await expect(stat(resolve(cwd, ".stepkit", "skills"))).rejects.toMatchObject({
+    await expect(stat(resolve(cwd, ".trailstep", "skills"))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
@@ -348,7 +348,7 @@ describe("addCommand", () => {
   it("uses direct workflow metadata when generating a project workflow skill", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -385,11 +385,11 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
     expect(skillSource).toContain('description: "[project] Review the active change set."');
-    expect(skillSource).toContain("stepkit project/review");
+    expect(skillSource).toContain("trailstep project/review");
     expect(skillSource).not.toContain("--input-file");
     expect(skillSource).not.toContain("sessionFile");
   });
@@ -399,7 +399,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -435,22 +435,22 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
-    expect(skillSource).toContain("name: sk-review");
+    expect(skillSource).toContain("name: trst-review");
     expect(skillSource).toContain("description:");
-    expect(skillSource).toContain("stepkit project/review");
+    expect(skillSource).toContain("trailstep project/review");
   });
 
   it("warns and returns success when skills CLI cannot be resolved", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -490,18 +490,18 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill sk-review: Could not resolve skills CLI.",
+      "Warning: registered project/review but could not distribute project workflow skill trst-review: Could not resolve skills CLI.",
     );
   });
 
   it("warns and returns success when skills CLI exits non-zero", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -540,18 +540,18 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill sk-review: skills CLI exited with code 3.",
+      "Warning: registered project/review but could not distribute project workflow skill trst-review: skills CLI exited with code 3.",
     );
   });
 
   it("warns for global skill pointing at project-scoped registration", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -596,7 +596,7 @@ describe("addCommand", () => {
   it("attempts project and user skill distribution independently", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -644,7 +644,7 @@ describe("addCommand", () => {
       [
         "/repo/node_modules/skills/dist/index.js",
         "add",
-        join(cwd, ".stepkit", "skills", "sk-review"),
+        join(cwd, ".trailstep", "skills", "trst-review"),
         "--agent",
         "*",
         "-y",
@@ -652,7 +652,7 @@ describe("addCommand", () => {
       [
         "/repo/node_modules/skills/dist/index.js",
         "add",
-        join(cwd, ".stepkit", "skills", "sk-review"),
+        join(cwd, ".trailstep", "skills", "trst-review"),
         "--agent",
         "*",
         "-y",
@@ -666,11 +666,11 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await mkdir(join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"), {
+    await mkdir(join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"), {
       recursive: true,
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
@@ -706,11 +706,11 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
     expect(errors).toEqual([
-      "Warning: registered project/review but could not write project workflow skill sk-review.",
+      "Warning: registered project/review but could not write project workflow skill trst-review.",
     ]);
   });
 
@@ -719,7 +719,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -762,7 +762,7 @@ describe("addCommand", () => {
       "Add to project skills?",
       "Add to user skills?",
     ]);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
   });
@@ -772,7 +772,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -825,7 +825,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(prompts).toEqual(["Add to project skills?", "Add to user skills?"]);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
   });
@@ -835,12 +835,12 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -905,7 +905,7 @@ describe("addCommand", () => {
       "Configure workflow role reviewer (medium) — Review code",
       "Named agent for workflow role reviewer",
     ]);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -921,12 +921,12 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -985,7 +985,7 @@ describe("addCommand", () => {
       "Configure workflow role reviewer (medium) — Review code",
       "Named agent for workflow role reviewer",
     ]);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1000,12 +1000,12 @@ describe("addCommand", () => {
   it("does not prompt for skipped-conflict workflow roles", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1064,7 +1064,7 @@ describe("addCommand", () => {
       "Configure workflow role reviewer (medium) — Review code",
       "Named agent for workflow role reviewer",
     ]);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1078,12 +1078,12 @@ describe("addCommand", () => {
   it("dedupes role prompts by role name regardless of size", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1141,7 +1141,7 @@ describe("addCommand", () => {
       "Configure workflow role reviewer (small) — Review code",
       "Named agent for workflow role reviewer",
     ]);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1156,12 +1156,12 @@ describe("addCommand", () => {
   it("does not prompt for workflow roles covered by default fallback", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
@@ -1205,7 +1205,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
@@ -1216,12 +1216,12 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       version: 1,
       customProviders: {
         reviewer: { binary: "reviewer" },
@@ -1263,7 +1263,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       version: 1,
       customProviders: {
         reviewer: { binary: "reviewer" },
@@ -1280,10 +1280,10 @@ describe("addCommand", () => {
   it("registers a selected workflow from a direct source barrel", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, "package.json"), { type: "module" });
     await writeFile(
@@ -1338,7 +1338,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { dailyNote: "./workflows#dailyNote" } },
     });
     expect(lines).toEqual([
@@ -1349,10 +1349,10 @@ describe("addCommand", () => {
   it("lists direct barrel workflow choices in alphabetical order", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, "package.json"), { type: "module" });
     await writeFile(
@@ -1398,7 +1398,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { zebra: "./workflows#zebra" } },
     });
   });
@@ -1408,12 +1408,12 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       version: 1,
       customProviders: {
         reviewer: { binary: "reviewer" },
@@ -1454,10 +1454,10 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(join(cwd, ".stepkit", "config-local.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config-local.json"))).toEqual({
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       version: 1,
       customProviders: {
         reviewer: { binary: "reviewer" },
@@ -1474,12 +1474,12 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       version: 1,
       workflows: {
         release: { workingAgent: "builder", interactiveAgent: "reviewer", limits: { retries: 1 } },
@@ -1507,7 +1507,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(join(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       version: 1,
       workflows: {
         release: { workingAgent: "builder", interactiveAgent: "reviewer", limits: { retries: 1 } },
@@ -1521,7 +1521,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1529,13 +1529,13 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(
       join(packageDir, "index.mjs"),
       [
         "import { existsSync } from 'node:fs';",
-        "if (existsSync(new URL('../.stepkit/config.json', import.meta.url))) {",
+        "if (existsSync(new URL('../.trailstep/config.json', import.meta.url))) {",
         "  throw new Error('metadata unavailable after registration');",
         "}",
         "export const reviewWorkflow = {",
@@ -1570,11 +1570,11 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { review: "./local-workflow-package#review" } },
     });
     expect(errors).toEqual([
-      "Warning: registered acme/review but could not write project workflow skill sk-review.",
+      "Warning: registered acme/review but could not write project workflow skill trst-review.",
     ]);
   });
 
@@ -1583,7 +1583,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1591,7 +1591,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: {
+      trailstep: {
         workflows: {
           review: "./index.mjs#reviewWorkflow",
           cleanup: "./index.mjs#cleanupWorkflow",
@@ -1635,17 +1635,17 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
     expect(skillSource).toContain('description: "[acme] Review a local bundle change set."');
     expect(skillSource).toContain('"changeId"');
     expect(skillSource).toContain('"risk"');
     expect(skillSource).toContain(
-      "stepkit acme/review --input-file .stepkit/inputs/sk-review-input.json",
+      "trailstep acme/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(skillSource).toContain("Registered workflow source: `./local-workflow-package#review`");
-    expect(skillSource).not.toContain('Run the StepKit workflow "acme/review".');
+    expect(skillSource).not.toContain('Run the TrailStep workflow "acme/review".');
   });
 
   it("generates workflow skill content from selected installed bundle workflow metadata", async ({
@@ -1653,7 +1653,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
@@ -1663,7 +1663,7 @@ describe("addCommand", () => {
       name: "@acme/workflows",
       type: "module",
       exports: { "./package.json": "./package.json" },
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(
       join(packageDir, "index.mjs"),
@@ -1701,22 +1701,22 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     const skillSource = await readFile(
-      join(cwd, ".stepkit", "skills", "sk-review", "SKILL.md"),
+      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
       "utf8",
     );
     expect(skillSource).toContain('description: "[acme] Review an installed bundle package."');
     expect(skillSource).toContain('"ticket"');
     expect(skillSource).toContain(
-      "stepkit acme/review --input-file .stepkit/inputs/sk-review-input.json",
+      "trailstep acme/review --input-file .trailstep/inputs/trst-review-input.json",
     );
     expect(skillSource).toContain("Registered workflow source: `@acme/workflows#review`");
-    expect(skillSource).not.toContain('Run the StepKit workflow "acme/review".');
+    expect(skillSource).not.toContain('Run the TrailStep workflow "acme/review".');
   });
 
   it("adds only the selected workflow from a bundle manifest", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1724,7 +1724,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: {
+      trailstep: {
         workflows: {
           review: "./index.mjs#reviewWorkflow",
           cleanup: "./index.mjs#cleanupWorkflow",
@@ -1762,7 +1762,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { review: "./local-workflow-package#review" } },
     });
   });
@@ -1770,7 +1770,7 @@ describe("addCommand", () => {
   it("preserves bundle manifest order when listing add candidates", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1778,7 +1778,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: {
+      trailstep: {
         workflows: {
           review: "./index.mjs#reviewWorkflow",
           cleanup: "./index.mjs#cleanupWorkflow",
@@ -1829,7 +1829,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { cleanup: "./local-workflow-package#cleanup" } },
     });
   });
@@ -1837,7 +1837,7 @@ describe("addCommand", () => {
   it("prompts for which workflow to register from a bundle manifest", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1845,7 +1845,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: {
+      trailstep: {
         workflows: {
           review: "./index.mjs#reviewWorkflow",
           cleanup: "./index.mjs#cleanupWorkflow",
@@ -1901,7 +1901,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { cleanup: "./local-workflow-package#cleanup" } },
     });
   });
@@ -1909,7 +1909,7 @@ describe("addCommand", () => {
   it("prompts with Select all and registers all selected workflows", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1917,7 +1917,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: {
+      trailstep: {
         workflows: {
           review: "./index.mjs#reviewWorkflow",
           cleanup: "./index.mjs#cleanupWorkflow",
@@ -1967,7 +1967,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: {
         acme: {
           review: "./local-workflow-package#review",
@@ -1980,7 +1980,7 @@ describe("addCommand", () => {
   it("treats Select all as a submit-time override", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2027,7 +2027,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { alpha: "./workflows#alpha", beta: "./workflows#beta" } },
     });
   });
@@ -2035,7 +2035,7 @@ describe("addCommand", () => {
   it("registers all bundle workflows for --workflow '*'", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -2043,7 +2043,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: {
+      trailstep: {
         workflows: {
           review: "./index.mjs#reviewWorkflow",
           cleanup: "./index.mjs#cleanupWorkflow",
@@ -2079,7 +2079,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: {
         acme: {
           review: "./local-workflow-package#review",
@@ -2093,7 +2093,7 @@ describe("addCommand", () => {
   it("registers a comma-separated direct barrel subset in source order", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2127,7 +2127,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { alpha: "./workflows#alpha", gamma: "./workflows#gamma" } },
     });
   });
@@ -2135,7 +2135,7 @@ describe("addCommand", () => {
   it("allows --name for exactly one selected workflow", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2170,7 +2170,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { custom: "./workflows#alpha" } },
     });
   });
@@ -2178,7 +2178,7 @@ describe("addCommand", () => {
   it("rejects --name for multiple selected workflows", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2218,12 +2218,12 @@ describe("addCommand", () => {
   it("skips only conflicting workflows without --force", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { acme: { alpha: "./workflows/existing.mjs", settings: { agents: {} } } },
     });
     await writeJson(join(cwd, "package.json"), { type: "module" });
@@ -2256,7 +2256,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: {
         acme: {
           alpha: "./workflows/existing.mjs",
@@ -2273,7 +2273,7 @@ describe("addCommand", () => {
   it("generates one project skill per successfully registered workflow", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2308,22 +2308,22 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(
-      await readFile(join(cwd, ".stepkit", "skills", "sk-alpha", "SKILL.md"), "utf8"),
-    ).toContain("stepkit acme/alpha");
+      await readFile(join(cwd, ".trailstep", "skills", "trst-alpha", "SKILL.md"), "utf8"),
+    ).toContain("trailstep acme/alpha");
     expect(
-      await readFile(join(cwd, ".stepkit", "skills", "sk-beta", "SKILL.md"), "utf8"),
-    ).toContain("stepkit acme/beta");
+      await readFile(join(cwd, ".trailstep", "skills", "trst-beta", "SKILL.md"), "utf8"),
+    ).toContain("trailstep acme/beta");
   });
 
   it("prints a bulk registration summary", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { acme: { alpha: "./workflows/existing.mjs" } },
     });
     await writeJson(join(cwd, "package.json"), { type: "module" });
@@ -2362,7 +2362,7 @@ describe("addCommand", () => {
   it("adds a selected installed package bundle workflow by package ref", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
@@ -2372,7 +2372,7 @@ describe("addCommand", () => {
       name: "@acme/workflows",
       type: "module",
       exports: { "./package.json": "./package.json" },
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(
       join(packageDir, "index.mjs"),
@@ -2401,7 +2401,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { review: "@acme/workflows#review" } },
     });
   });
@@ -2409,10 +2409,10 @@ describe("addCommand", () => {
   it("errors with available choices for an invalid --workflow", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
-    await mkdir(join(cwd, ".stepkit"), { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, "package.json"), { type: "module" });
     await writeFile(
@@ -2448,7 +2448,7 @@ describe("addCommand", () => {
   it("fails clearly when an installed bundle package cannot be resolved", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(cwd, { recursive: true });
@@ -2480,7 +2480,7 @@ describe("addCommand", () => {
   it("throws before prompting when a bundle manifest declares zero workflows", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -2488,7 +2488,7 @@ describe("addCommand", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflow-package",
       type: "module",
-      stepkit: { workflows: {} },
+      trailstep: { workflows: {} },
     });
 
     const command = resolveCommand(["add", "./local-workflow-package"]);
@@ -2529,7 +2529,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });

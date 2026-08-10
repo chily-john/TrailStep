@@ -5,9 +5,11 @@ coverage/
 graphify-out/
 
 # Local agent/runtime artifacts
-.stepkit/
+.trailstep/
 .claude/
-.pi/
+.pi/*
+!.pi/rules/
+!.pi/rules/**
 .workflower/
 agent/skills/
 skills-lock

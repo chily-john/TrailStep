@@ -1,11 +1,11 @@
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import { isProviderRegistryKey } from "../../known-cli-providers/registry/provider-registry.js";
-import type { RawStepKitAgentMappings, RawStepKitAgentTarget } from "./parse-agent-targets.js";
-import type { RawStepKitWorkflowConfig } from "./parse-workflow-agent-mappings.js";
+import type { RawTrailStepAgentMappings, RawTrailStepAgentTarget } from "./parse-agent-targets.js";
+import type { RawTrailStepWorkflowConfig } from "./parse-workflow-agent-mappings.js";
 
 export function validateProviderReferences(options: {
-  readonly agents: RawStepKitAgentMappings;
-  readonly workflows: Readonly<Record<string, RawStepKitWorkflowConfig>> | undefined;
+  readonly agents: RawTrailStepAgentMappings;
+  readonly workflows: Readonly<Record<string, RawTrailStepWorkflowConfig>> | undefined;
   readonly providerNames: Set<string>;
 }): void {
   const providerViolations: string[] = [];
@@ -24,7 +24,7 @@ export function validateProviderReferences(options: {
   }
 
   if (providerViolations.length > 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_unknown",
       message:
         "One or more agent targets reference a provider that is neither a built-in provider nor a declared customProviders entry.",
@@ -35,7 +35,7 @@ export function validateProviderReferences(options: {
 
 function validateAgentMappings(
   path: string,
-  mappings: RawStepKitAgentMappings | undefined,
+  mappings: RawTrailStepAgentMappings | undefined,
   providerNames: Set<string>,
   diagnostics: string[],
 ): void {
@@ -50,7 +50,7 @@ function validateAgentMappings(
 
 function validateTargetReferences(
   path: string,
-  targets: readonly RawStepKitAgentTarget[],
+  targets: readonly RawTrailStepAgentTarget[],
   providerNames: Set<string>,
   diagnostics: string[],
 ): void {

@@ -1,5 +1,5 @@
 import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
-import { StepKitFailureError } from "../../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type {
   ProviderAdapter,
   ProviderWorkingRunner,
@@ -74,7 +74,7 @@ export async function attemptProviderOutputRepair(options: {
 function extractRepairableFailure(
   error: unknown,
 ): { readonly sessionId: string; readonly rawResultText?: string } | undefined {
-  if (!(error instanceof StepKitFailureError)) {
+  if (!(error instanceof TrailStepFailureError)) {
     return undefined;
   }
 

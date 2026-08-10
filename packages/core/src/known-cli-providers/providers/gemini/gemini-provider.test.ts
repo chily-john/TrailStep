@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
 import { geminiProvider } from "./gemini-provider.js";
 
@@ -16,7 +16,7 @@ import { geminiProvider } from "./gemini-provider.js";
 // production.
 describe("geminiProvider.runWorking", () => {
   it("builds -p @<promptFile> --yolo -m <model> --output-format json and writes outputFile", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hello to Ada.", "utf8");
@@ -57,7 +57,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("omits -m when model is not provided, and thinking never appears in argv (documented no-op)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-bare-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-bare-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -76,7 +76,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("keeps large prompt content out of argv by passing only a prompt-file reference", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-large-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-large-prompt-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     const largePrompt = "x".repeat(120_000);
@@ -96,7 +96,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("throws agent_provider_failed on a non-zero exit code", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-fail-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-fail-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -112,7 +112,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("throws agent_provider_output_invalid when stdout has no usable JSON", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-badjson-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-badjson-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -122,7 +122,7 @@ describe("geminiProvider.runWorking", () => {
         exitCode: 0,
         stdout: "not usable",
       })),
-    ).rejects.toBeInstanceOf(StepKitFailureError);
+    ).rejects.toBeInstanceOf(TrailStepFailureError);
 
     await expect(
       geminiProvider.runWorking({ promptFile, outputFile, cwd }, async () => ({
@@ -135,7 +135,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("throws agent_provider_spawn_error when the runner rejects", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-spawn-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-spawn-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -150,7 +150,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("writes a plain-text response verbatim, with no JSON parsing, when captureMode is raw-text", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-rawtext-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-rawtext-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.md");
     await writeFile(promptFile, "Write a feature doc.", "utf8");
@@ -169,7 +169,7 @@ describe("geminiProvider.runWorking", () => {
   });
 
   it("still JSON-extracts when captureMode is json (or omitted), regression check", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-gemini-provider-jsonmode-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-jsonmode-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");

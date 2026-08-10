@@ -8,14 +8,75 @@ import { describe, expect, it } from "vitest";
 import {
   done,
   type InteractiveProcessRunner,
+  jsonSchema,
   runWorkflow,
   step,
   type Workflow,
 } from "../../index.js";
+import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
+import { runInteractiveAgentCommand } from "./run-interactive-agent-command.js";
 
 describe("continuation interactive agent roles", () => {
+  it("sets TRAILSTEP_INTERACTIVE_FILE without forwarding the migrated interactive env", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-env-"));
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-env-run");
+    const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });
+    const previousLegacyInteractiveFile = process.env.STEPKIT_INTERACTIVE_FILE;
+    process.env.STEPKIT_INTERACTIVE_FILE = "legacy-interactive.json";
+
+    try {
+      const result = await runInteractiveAgentCommand({
+        config: {
+          version: 1,
+          customProviders: {
+            terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+          },
+          agents: { small: [{ provider: "terminalAgent" }] },
+        },
+        workflowId: "interactive-env-workflow",
+        roleName: "reviewer",
+        role: { size: "small" },
+        stepId: "review",
+        renderedPrompt: "Review environment handling.",
+        runDir,
+        outputSchema: jsonSchema({
+          type: "object",
+          properties: { notes: { type: "string" } },
+          required: ["notes"],
+          additionalProperties: false,
+        }),
+        artifactPaths,
+        outputMode: "json",
+        runner: async (call) => {
+          expect(call.env?.TRAILSTEP_INTERACTIVE_FILE).toBe(artifactPaths.interactiveFile);
+          expect(call.env?.STEPKIT_INTERACTIVE_FILE).toBeUndefined();
+          const protocol = JSON.parse(await readFile(artifactPaths.interactiveFile, "utf8"));
+          await writeFile(
+            protocol.outputFile,
+            `${JSON.stringify({ notes: "TrailStep env only." }, null, 2)}\n`,
+            "utf8",
+          );
+          await writeFile(
+            artifactPaths.interactiveFile,
+            `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      });
+
+      expect(result.output).toEqual({ notes: "TrailStep env only." });
+    } finally {
+      if (previousLegacyInteractiveFile === undefined) {
+        delete process.env.STEPKIT_INTERACTIVE_FILE;
+      } else {
+        process.env.STEPKIT_INTERACTIVE_FILE = previousLegacyInteractiveFile;
+      }
+    }
+  });
+
   it("passes custom structured interactive output into the continuation", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-json-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-json-"));
     const workflow: Workflow<{ task: string }, { notes: string }> = {
       id: "interactive-json-workflow",
       inputShape: { task: "string" },
@@ -41,7 +102,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "interactive updates" },
       runName: "interactive-json-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -51,7 +112,7 @@ describe("continuation interactive agent roles", () => {
         },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         expect(protocol.outputMode).toBe("json");
         expect(protocol.outputSchema).toMatchObject({
@@ -82,10 +143,10 @@ describe("continuation interactive agent roles", () => {
     expect(result.output).toEqual({ notes: "Approved." });
     await expect(
       readFile(join(result.runDir, "steps", "0001-approve-plan", "prompt.txt"), "utf8"),
-    ).resolves.toEqual(expect.stringContaining("stepkit continue --json"));
+    ).resolves.toEqual(expect.stringContaining("trailstep continue --json"));
     await expect(
       readFile(join(result.runDir, "steps", "0001-approve-plan", "prompt.txt"), "utf8"),
-    ).resolves.toEqual(expect.stringContaining("stepkit continue --json-file output.json"));
+    ).resolves.toEqual(expect.stringContaining("trailstep continue --json-file output.json"));
     await expect(
       readFile(join(result.runDir, "steps", "0001-approve-plan", "prompt.txt"), "utf8"),
     ).resolves.toEqual(expect.stringContaining('"approved"'));
@@ -95,7 +156,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("uses global step order for repeated interactive step ids", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-ordered-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-ordered-"));
     const stepDirs: string[] = [];
     const workflow: Workflow<{ task: string }, { notes: string }> = {
       id: "interactive-ordered-artifacts-workflow",
@@ -136,7 +197,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "repeat" },
       runName: "interactive-ordered-artifacts-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -144,7 +205,7 @@ describe("continuation interactive agent roles", () => {
         agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         stepDirs.push(protocol.runRelativeStepDir);
         await writeFile(
@@ -179,7 +240,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("continues when completion is marked before the interactive process exits and aborts the runner", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-completion-wins-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-completion-wins-"));
     let aborted = false;
     const workflow: Workflow<{ task: string }, { notes: string }> = {
       id: "interactive-completion-wins-workflow",
@@ -204,7 +265,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "cancellation" },
       runName: "interactive-completion-wins-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -212,7 +273,7 @@ describe("continuation interactive agent roles", () => {
         agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         expect(call.signal).toBeDefined();
         await completeInteractive(call, { notes: "Completed from another terminal." });
         await new Promise<void>((resolve) => {
@@ -240,7 +301,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("fails when the interactive process exits before completion", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-incomplete-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-incomplete-"));
     const workflow: Workflow<{ task: string }, { notes: string }> = {
       id: "interactive-incomplete-workflow",
       inputShape: { task: "string" },
@@ -264,7 +325,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "safety" },
       runName: "interactive-incomplete-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -283,7 +344,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("fails when the interactive session is cancelled", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-cancelled-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-cancelled-"));
     const workflow: Workflow<{ task: string }, { notes: string }> = {
       id: "interactive-cancelled-workflow",
       inputShape: { task: "string" },
@@ -307,7 +368,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "cancellation" },
       runName: "interactive-cancelled-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -315,7 +376,7 @@ describe("continuation interactive agent roles", () => {
         agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         await writeFile(
           interactiveFile ?? "",
@@ -336,7 +397,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("fails when completion output is missing or invalid", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-output-invalid-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-output-invalid-"));
     const workflow: Workflow<{ task: string }, { approved: boolean; notes: string }> = {
       id: "interactive-output-invalid-workflow",
       inputShape: { task: "string" },
@@ -360,7 +421,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "safety" },
       runName: "interactive-output-invalid-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -368,7 +429,7 @@ describe("continuation interactive agent roles", () => {
         agents: { small: [{ provider: "terminalAgent" }] },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         await writeFile(
           protocol.outputFile,
@@ -393,7 +454,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("prepends dense session-description instructions for default interactive steps", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-dense-preamble-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-dense-preamble-"));
     let prompt = "";
     const workflow: Workflow<{ task: string }, { sessionFile: string }> = {
       id: "interactive-dense-preamble-workflow",
@@ -415,7 +476,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "dense context" },
       runName: "interactive-dense-preamble-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
@@ -451,7 +512,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("does not write a prompt file when the interactive command receives the prompt directly", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-direct-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-direct-prompt-"));
     const workflow: Workflow<{ task: string }, { sessionFile: string }> = {
       id: "interactive-direct-prompt-workflow",
       inputShape: { task: "string" },
@@ -472,7 +533,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "direct prompt" },
       runName: "interactive-direct-prompt-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["--prompt", "{{prompt}}"] },
@@ -496,7 +557,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("keeps default and custom interactive artifact directories minimal", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-minimal-artifacts-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-minimal-artifacts-"));
 
     const defaultWorkflow: Workflow<{ task: string }, { sessionFile: string }> = {
       id: "interactive-minimal-default-workflow",
@@ -535,7 +596,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "minimal default" },
       runName: "interactive-minimal-default-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
@@ -552,7 +613,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "minimal custom" },
       runName: "interactive-minimal-custom-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{prompt}}"] },
@@ -583,7 +644,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("continues a default interactive step from session-file completion artifacts", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-default-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-default-"));
     const workflow: Workflow<{ task: string }, { sessionFile: string }> = {
       id: "interactive-default-workflow",
       inputShape: { task: "string" },
@@ -606,7 +667,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "interactive updates" },
       runName: "interactive-default-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -616,11 +677,11 @@ describe("continuation interactive agent roles", () => {
         },
       },
       processRunner: async (call) => {
-        const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
         expect(interactiveFile).toBe(
           join(
             cwd,
-            ".stepkit",
+            ".trailstep",
             "runs",
             "interactive-default-run",
             "steps",
@@ -630,7 +691,14 @@ describe("continuation interactive agent roles", () => {
         );
         const protocol = JSON.parse(await readFile(interactiveFile ?? "", "utf8"));
         expect(protocol.stepDir).toBe(
-          join(cwd, ".stepkit", "runs", "interactive-default-run", "steps", "0001-discuss-feature"),
+          join(
+            cwd,
+            ".trailstep",
+            "runs",
+            "interactive-default-run",
+            "steps",
+            "0001-discuss-feature",
+          ),
         );
         expect(protocol.runRelativeStepDir).toBe("steps/0001-discuss-feature");
         await writeFile(
@@ -678,11 +746,11 @@ describe("continuation interactive agent roles", () => {
     );
     await expect(
       readFile(join(result.runDir, "steps", "0001-discuss-feature", "prompt.txt"), "utf8"),
-    ).resolves.toContain("stepkit continue --session-file session-description.md");
+    ).resolves.toContain("trailstep continue --session-file session-description.md");
   });
 
   it("resolves a continuation interactive agent role from the unified agents mapping", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-agent-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-agent-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-agent-workflow",
@@ -709,7 +777,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "feature" },
       runName: "interactive-agent-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           working: { binary: "working-agent", args: ["{{promptFile}}"] },
@@ -742,7 +810,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("rejects a custom interactive provider that only declares working args", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-unsupported-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-unsupported-"));
     let runnerCalled = false;
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-unsupported-workflow",
@@ -767,7 +835,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "unsupported provider" },
       runName: "interactive-unsupported-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", args: ["{{promptFile}}"] },
@@ -790,7 +858,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("passes rendered prompt to configured interactive command without a shell", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-prompt-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-prompt-workflow",
@@ -817,7 +885,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "prompt handoff" },
       runName: "interactive-prompt-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: {
@@ -854,7 +922,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("dispatches an interactive target whose provider matches a registry key through the built-in provider", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-registry-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-registry-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-registry-workflow",
@@ -881,7 +949,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "prompt handoff" },
       runName: "interactive-registry-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {},
         agents: {
@@ -922,7 +990,7 @@ describe("continuation interactive agent roles", () => {
   });
 
   it("omits --dangerously-skip-permissions when the resolved target sets permissionMode to prompt", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-interactive-registry-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-registry-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-registry-workflow",
@@ -949,7 +1017,7 @@ describe("continuation interactive agent roles", () => {
       input: { task: "prompt handoff" },
       runName: "interactive-registry-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {},
         agents: {
@@ -977,9 +1045,9 @@ async function completeInteractiveWithSessionFile(
   call: Parameters<InteractiveProcessRunner>[0],
   sessionDescription: string,
 ): Promise<void> {
-  const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+  const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
   if (!interactiveFile) {
-    throw new Error("Expected STEPKIT_INTERACTIVE_FILE to be set.");
+    throw new Error("Expected TRAILSTEP_INTERACTIVE_FILE to be set.");
   }
 
   const protocol = JSON.parse(await readFile(interactiveFile, "utf8"));
@@ -1000,9 +1068,9 @@ async function completeInteractive(
   call: Parameters<InteractiveProcessRunner>[0],
   output: Record<string, unknown>,
 ): Promise<void> {
-  const interactiveFile = call.env?.STEPKIT_INTERACTIVE_FILE;
+  const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
   if (!interactiveFile) {
-    throw new Error("Expected STEPKIT_INTERACTIVE_FILE to be set.");
+    throw new Error("Expected TRAILSTEP_INTERACTIVE_FILE to be set.");
   }
 
   const protocol = JSON.parse(await readFile(interactiveFile, "utf8"));

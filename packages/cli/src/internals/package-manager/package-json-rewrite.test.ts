@@ -7,7 +7,7 @@ import { rewritePackageJsonDependencies } from "./package-json-rewrite.js";
 
 describe("rewritePackageJsonDependencies", () => {
   it("preserves caret, tilde, and exact dependency range styles", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-json-rewrite-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-json-rewrite-tests", task.id);
     await mkdir(cwd, { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
@@ -15,11 +15,11 @@ describe("rewritePackageJsonDependencies", () => {
       `${JSON.stringify(
         {
           dependencies: {
-            "@stepkit/core": "^1.0.0",
-            "@stepkit/authoring": "~1.0.0",
+            "@trailstep/core": "^1.0.0",
+            "@trailstep/authoring": "~1.0.0",
           },
           devDependencies: {
-            "@stepkit/cli": "1.0.0",
+            "@trailstep/cli": "1.0.0",
           },
         },
         null,
@@ -31,14 +31,18 @@ describe("rewritePackageJsonDependencies", () => {
     await rewritePackageJsonDependencies({
       cwd,
       updates: [
-        { packageName: "@stepkit/core", targetVersion: "2.0.0", dependencySection: "dependencies" },
         {
-          packageName: "@stepkit/authoring",
+          packageName: "@trailstep/core",
           targetVersion: "2.0.0",
           dependencySection: "dependencies",
         },
         {
-          packageName: "@stepkit/cli",
+          packageName: "@trailstep/authoring",
+          targetVersion: "2.0.0",
+          dependencySection: "dependencies",
+        },
+        {
+          packageName: "@trailstep/cli",
           targetVersion: "2.0.0",
           dependencySection: "devDependencies",
         },
@@ -49,21 +53,21 @@ describe("rewritePackageJsonDependencies", () => {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
-    expect(rewritten.dependencies["@stepkit/core"]).toBe("^2.0.0");
-    expect(rewritten.dependencies["@stepkit/authoring"]).toBe("~2.0.0");
-    expect(rewritten.devDependencies["@stepkit/cli"]).toBe("2.0.0");
+    expect(rewritten.dependencies["@trailstep/core"]).toBe("^2.0.0");
+    expect(rewritten.dependencies["@trailstep/authoring"]).toBe("~2.0.0");
+    expect(rewritten.devDependencies["@trailstep/cli"]).toBe("2.0.0");
   });
 
   it("writes dependencies and devDependencies in the same sections they came from", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-json-rewrite-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-json-rewrite-tests", task.id);
     await mkdir(cwd, { recursive: true });
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
       packageJsonPath,
       `${JSON.stringify(
-        { dependencies: { "@stepkit/core": "^1.0.0" }, devDependencies: {} },
+        { dependencies: { "@trailstep/core": "^1.0.0" }, devDependencies: {} },
         null,
         2,
       )}\n`,
@@ -73,7 +77,11 @@ describe("rewritePackageJsonDependencies", () => {
     await rewritePackageJsonDependencies({
       cwd,
       updates: [
-        { packageName: "@stepkit/core", targetVersion: "2.0.0", dependencySection: "dependencies" },
+        {
+          packageName: "@trailstep/core",
+          targetVersion: "2.0.0",
+          dependencySection: "dependencies",
+        },
       ],
     });
 
@@ -81,8 +89,8 @@ describe("rewritePackageJsonDependencies", () => {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
-    expect(rewritten.dependencies["@stepkit/core"]).toBe("^2.0.0");
-    expect(rewritten.devDependencies["@stepkit/core"]).toBeUndefined();
+    expect(rewritten.dependencies["@trailstep/core"]).toBe("^2.0.0");
+    expect(rewritten.devDependencies["@trailstep/core"]).toBeUndefined();
     expect(await readFile(packageJsonPath, "utf8")).toMatch(/\n$/u);
   });
 });

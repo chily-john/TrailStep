@@ -4,7 +4,7 @@ import {
   type Schema,
   type ShapeInput,
   type Workflow,
-} from "@stepkit/core";
+} from "@trailstep/core";
 
 export type WorkflowSkillMetadata = Workflow & { readonly description?: string };
 
@@ -29,7 +29,7 @@ export function generateWorkflowSkillContent(
   const baseDescription =
     input.workflow?.description ??
     input.description ??
-    `Run the StepKit workflow "${registeredRef}".`;
+    `Run the TrailStep workflow "${registeredRef}".`;
   const description = workflowSkillDescription(input.namespace, baseDescription);
   const inputMode = classifyWorkflowInput(input.workflow);
 
@@ -41,7 +41,7 @@ export function generateWorkflowSkillContent(
       `description: ${frontmatterString(description)}`,
       "---",
       "",
-      `Run the registered StepKit workflow \`${registeredRef}\`.`,
+      `Run the registered TrailStep workflow \`${registeredRef}\`.`,
       "",
       ...inputInstructions({ inputMode, registeredRef, skillName }),
       `Registered workflow source: \`${input.registeredRef}\``,
@@ -51,7 +51,7 @@ export function generateWorkflowSkillContent(
 }
 
 export function workflowSkillName(_namespace: string, name: string): string {
-  return `sk-${sanitizeSkillNamePart(name) || "workflow"}`;
+  return `trst-${sanitizeSkillNamePart(name) || "workflow"}`;
 }
 
 type WorkflowInputMode =
@@ -79,7 +79,7 @@ function inputInstructions(input: {
   readonly registeredRef: string;
   readonly skillName: string;
 }): readonly string[] {
-  const inputFile = `.stepkit/inputs/${input.skillName}-input.json`;
+  const inputFile = `.trailstep/inputs/${input.skillName}-input.json`;
 
   if (input.inputMode.kind === "none") {
     return [
@@ -88,7 +88,7 @@ function inputInstructions(input: {
       "When this skill is invoked, run:",
       "",
       "```bash",
-      `stepkit ${input.registeredRef}`,
+      `trailstep ${input.registeredRef}`,
       "```",
       "",
     ];
@@ -107,13 +107,13 @@ function inputInstructions(input: {
       "When this skill is invoked, run:",
       "",
       "```bash",
-      `stepkit ${input.registeredRef} --input-file ${inputFile}`,
+      `trailstep ${input.registeredRef} --input-file ${inputFile}`,
       "```",
       "",
     ];
   }
 
-  const contextFile = `.stepkit/inputs/${input.skillName}-context.md`;
+  const contextFile = `.trailstep/inputs/${input.skillName}-context.md`;
   const lines = [
     `Export dense conversation/session context to \`${contextFile}\` before invoking this workflow.`,
     `Create \`${inputFile}\` containing an object such as:`,
@@ -141,7 +141,7 @@ function inputInstructions(input: {
     "When this skill is invoked, run:",
     "",
     "```bash",
-    `stepkit ${input.registeredRef} --input-file ${inputFile}`,
+    `trailstep ${input.registeredRef} --input-file ${inputFile}`,
     "```",
     "",
   );

@@ -26,11 +26,13 @@ const timestamp = new Date()
   .replaceAll(/[-:]/g, "")
   .replace(/\.\d{3}Z$/, "Z");
 const slug = slugify(workflowId);
-const branch = `stepkit/${slug}-${timestamp}`;
-const worktree = resolve(repoRoot, ".stepkit", "worktrees", `${slug}-${timestamp}`);
+const branch = `trailstep/${slug}-${timestamp}`;
+const worktree = resolve(repoRoot, ".trailstep", "worktrees", `${slug}-${timestamp}`);
+const runsRoot = resolve(repoRoot, ".trailstep", "runs");
 
-console.log(`Creating isolated StepKit worktree: ${worktree}`);
+console.log(`Creating isolated TrailStep worktree: ${worktree}`);
 console.log(`Branch: ${branch}`);
+console.log(`Central TrailStep runs root: ${runsRoot}`);
 await mkdir(dirname(worktree), { recursive: true });
 await run("git", ["worktree", "add", "-b", branch, worktree, "HEAD"], repoRoot);
 
@@ -38,26 +40,32 @@ const worktreeInput = resolve(worktree, relativeInput);
 await mkdir(dirname(worktreeInput), { recursive: true });
 await copyFile(resolvedInput, worktreeInput);
 
-const stepkitEnv = {
+const trailstepEnv = {
   ...process.env,
-  STEPKIT_BRANCH: branch,
-  STEPKIT_GIT_ISOLATED: "worktree",
-  STEPKIT_SOURCE_REPO: repoRoot,
-  STEPKIT_STORY_COMMIT_MODE: "enabled",
-  STEPKIT_WORKTREE: worktree,
+  TRAILSTEP_BRANCH: branch,
+  TRAILSTEP_GIT_ISOLATED: "worktree",
+  TRAILSTEP_RUNS_ROOT: runsRoot,
+  TRAILSTEP_SOURCE_REPO: repoRoot,
+  TRAILSTEP_STORY_COMMIT_MODE: "enabled",
+  TRAILSTEP_WORKTREE: worktree,
 };
 
-const stepkitResult = await run("stepkit", [workflowId, "--input-file", relativeInput], worktree, {
-  allowFailure: true,
-  env: stepkitEnv,
-});
+const trailstepResult = await run(
+  "trailstep",
+  [workflowId, "--input-file", relativeInput],
+  worktree,
+  {
+    allowFailure: true,
+    env: trailstepEnv,
+  },
+);
 
-if (stepkitResult.exitCode !== 0) {
-  console.error(`StepKit workflow failed in isolated worktree: ${worktree}`);
-  process.exit(stepkitResult.exitCode);
+if (trailstepResult.exitCode !== 0) {
+  console.error(`TrailStep workflow failed in isolated worktree: ${worktree}`);
+  process.exit(trailstepResult.exitCode);
 }
 
-console.log(`StepKit workflow completed on ${branch}.`);
+console.log(`TrailStep workflow completed on ${branch}.`);
 
 if (openPr) {
   await pushAndOpenPr(worktree, branch);
@@ -185,9 +193,9 @@ function fail(message) {
 }
 
 function printUsage() {
-  console.log(`Usage: node scripts/run-stepkit-isolated.mjs <workflow-id> <input-file> [--pr|--no-pr]
+  console.log(`Usage: node scripts/run-trailstep-isolated.mjs <workflow-id> <input-file> [--pr|--no-pr]
 
-Creates a git worktree under .stepkit/worktrees/, copies the input file into it,
-runs the StepKit workflow there, enables per-story commits after successful
+Creates a git worktree under .trailstep/worktrees/, copies the input file into it,
+runs the TrailStep workflow there, enables per-story commits after successful
 reviews, and optionally pushes/opens a GitHub PR with gh.`);
 }

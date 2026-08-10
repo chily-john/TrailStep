@@ -8,7 +8,7 @@ export function parseRunArgs(rest: readonly string[]): ParsedRunOptions | undefi
     const option = rest[index];
     if (option === "--resume") {
       throw new CliUsageError(
-        "Legacy --resume is no longer supported. Use stepkit retry <workflow-ref> <runName> instead.",
+        "Legacy --resume is no longer supported. Use trailstep retry <workflow-ref> <runName> instead.",
       );
     }
 

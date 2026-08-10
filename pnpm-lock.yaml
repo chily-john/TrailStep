@@ -29,7 +29,7 @@ importers:
 
   packages/authoring:
     dependencies:
-      '@stepkit/core':
+      '@trailstep/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -54,7 +54,7 @@ importers:
       '@clack/prompts':
         specifier: ^1.7.0
         version: 1.7.0
-      '@stepkit/core':
+      '@trailstep/core':
         specifier: workspace:*
         version: link:../core
       semver:
@@ -119,14 +119,14 @@ importers:
 
   packages/create-flows:
     dependencies:
-      '@stepkit/authoring':
+      '@trailstep/authoring':
         specifier: workspace:*
         version: link:../authoring
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.1.1
         version: 2.5.3
-      '@stepkit/core':
+      '@trailstep/core':
         specifier: workspace:*
         version: link:../core
       '@types/node':
@@ -144,7 +144,7 @@ importers:
 
   packages/dashboard:
     dependencies:
-      '@stepkit/core':
+      '@trailstep/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

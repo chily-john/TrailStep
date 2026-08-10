@@ -1,21 +1,21 @@
-import type { StepKitAgentTarget, StepKitCustomProviderConfig } from "@stepkit/core";
+import type { TrailStepAgentTarget, TrailStepCustomProviderConfig } from "@trailstep/core";
 
-import { CliUsageError, type StepkitCliPrompts } from "../command.types.js";
+import { CliUsageError, type TrailStepCliPrompts } from "../command.types.js";
 
 const THINKING_CHOICES = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
 export interface ConfigureLiteralAgentTargetOptions {
-  readonly prompts: StepkitCliPrompts;
+  readonly prompts: TrailStepCliPrompts;
   readonly providerChoices: readonly string[];
 }
 
 export interface ConfiguredCustomProvider {
   readonly name: string;
-  readonly config: StepKitCustomProviderConfig;
+  readonly config: TrailStepCustomProviderConfig;
 }
 
 export interface ConfigureLiteralAgentTargetResult {
-  readonly target: StepKitAgentTarget;
+  readonly target: TrailStepAgentTarget;
   readonly customProvider?: ConfiguredCustomProvider;
 }
 
@@ -36,10 +36,10 @@ export async function configureLiteralAgentTarget(
     throw new CliUsageError(`Invalid thinking selection: ${thinking}`);
   }
 
-  const target: StepKitAgentTarget = {
+  const target: TrailStepAgentTarget = {
     provider,
     ...(model.length === 0 ? {} : { model }),
-    ...(thinking === "none" ? {} : { thinking: thinking as StepKitAgentTarget["thinking"] }),
+    ...(thinking === "none" ? {} : { thinking: thinking as TrailStepAgentTarget["thinking"] }),
   };
 
   return {
@@ -48,7 +48,9 @@ export async function configureLiteralAgentTarget(
   };
 }
 
-async function promptCustomProvider(prompts: StepkitCliPrompts): Promise<ConfiguredCustomProvider> {
+async function promptCustomProvider(
+  prompts: TrailStepCliPrompts,
+): Promise<ConfiguredCustomProvider> {
   const name = (await prompts.text("Custom provider name")).trim();
   if (name.length === 0) {
     throw new CliUsageError("Custom provider name is required.");

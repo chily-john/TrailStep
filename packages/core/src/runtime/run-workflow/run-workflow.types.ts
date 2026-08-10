@@ -1,10 +1,10 @@
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type { ProviderWorkingRunner } from "../../known-cli-providers/registry/provider-registry.types.js";
 
-export type StepKitConfigInput = StepKitConfig | Readonly<Record<string, unknown>>;
+export type TrailStepConfigInput = TrailStepConfig | Readonly<Record<string, unknown>>;
 
 export interface InteractiveProcessRequest {
   readonly command: string;
@@ -88,9 +88,10 @@ export type Result<TOutput extends PlainObject = PlainObject> =
 interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends PlainObject> {
   readonly workflow: Workflow<TInput, TOutput>;
   readonly cwd?: string;
+  readonly runsRoot?: string;
   readonly eventSink?: (event: Event) => void | Promise<void>;
   readonly processRunner?: InteractiveProcessRunner;
-  readonly stepkitConfig?: StepKitConfigInput;
+  readonly trailstepConfig?: TrailStepConfigInput;
   readonly workingAgentProcessRunner?: WorkingAgentProcessRunner;
   /** Injectable stdout-capturing runner for built-in registry provider adapters (e.g. Claude). Test-only seam. */
   readonly providerWorkingRunner?: ProviderWorkingRunner;

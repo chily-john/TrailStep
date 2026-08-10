@@ -1,23 +1,23 @@
-import type { StepKitSettings } from "../targeting.types.js";
+import type { TrailStepSettings } from "../targeting.types.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
-import type { RawStepKitAgentMappings } from "./parse-agent-targets.js";
+import type { RawTrailStepAgentMappings } from "./parse-agent-targets.js";
 import { parseSettings } from "./parse-settings.js";
 import { isRecord } from "./parse-utils.js";
 
-export interface RawStepKitWorkflowConfig {
-  readonly agents?: RawStepKitAgentMappings;
-  readonly settings?: StepKitSettings;
+export interface RawTrailStepWorkflowConfig {
+  readonly agents?: RawTrailStepAgentMappings;
+  readonly settings?: TrailStepSettings;
 }
 
 export function parseWorkflows(
   value: unknown,
   diagnostics: string[],
-): Record<string, RawStepKitWorkflowConfig> | undefined {
+): Record<string, RawTrailStepWorkflowConfig> | undefined {
   if (value === undefined) {
     return undefined;
   }
 
-  const workflows: Record<string, RawStepKitWorkflowConfig> = {};
+  const workflows: Record<string, RawTrailStepWorkflowConfig> = {};
 
   if (!isRecord(value)) {
     diagnostics.push("workflows must be an object when present.");

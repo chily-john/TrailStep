@@ -9,7 +9,7 @@ import {
   done,
   type Event,
   fail,
-  parseStepKitConfig,
+  parseTrailStepConfig,
   runWorkflow,
   step,
   type Workflow,
@@ -21,7 +21,7 @@ function eventTypes(events: readonly Event[]): readonly string[] {
 
 describe("runWorkflow retry", () => {
   it("manual retry targets a step that returned fail", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-fail-node-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-fail-node-"));
     let shouldFail = true;
 
     const workflow: Workflow<Record<string, never>, { reviewed: boolean }> = {
@@ -79,7 +79,7 @@ describe("runWorkflow retry", () => {
   });
 
   it("manual retry targets a prompt step whose continuation returned fail", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-prompt-fail-node-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-prompt-fail-node-"));
     let shouldFail = true;
     let agentAttempts = 0;
 
@@ -104,7 +104,7 @@ describe("runWorkflow retry", () => {
       },
     };
 
-    const stepkitConfig = parseStepKitConfig({
+    const trailstepConfig = parseTrailStepConfig({
       version: 1,
       customProviders: { worker: { binary: "worker-agent" } },
       agents: { small: [{ provider: "worker" }] },
@@ -115,7 +115,7 @@ describe("runWorkflow retry", () => {
       input: { task: "prompt retry" },
       runName: "retry-prompt-fail-node",
       cwd,
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         agentAttempts += 1;
         await writeFile(request.outputFile, JSON.stringify({ approved: true }), "utf8");
@@ -142,7 +142,7 @@ describe("runWorkflow retry", () => {
     const retried = await runWorkflow({
       workflow,
       retry: { runDir: failed.runDir, kind: "manual" },
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         agentAttempts += 1;
         await writeFile(request.outputFile, JSON.stringify({ approved: true }), "utf8");
@@ -180,9 +180,9 @@ describe("runWorkflow retry", () => {
   });
 
   it("manual retry appends events with ids unique from existing events", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-event-ids-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-event-ids-"));
     const runName = "retry-event-ids";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
       {
@@ -259,9 +259,9 @@ describe("runWorkflow retry", () => {
   });
 
   it("manual retry reports historical workflow failures without step metadata clearly", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-historical-workflow-failure-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-historical-workflow-failure-"));
     const runName = "retry-historical-workflow-failure";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
       {
@@ -312,9 +312,9 @@ describe("runWorkflow retry", () => {
   });
 
   it("manual retry resumes a run whose latest persisted event is a dangling step.started", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-dangling-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-dangling-"));
     const runName = "retry-dangling";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
       {
@@ -394,7 +394,7 @@ describe("runWorkflow retry", () => {
   });
 
   it("manual retry resumes the latest unresolved failure and continues artifact ordinals", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-"));
     let shouldFail = true;
     const documentPaths: string[] = [];
 
@@ -459,7 +459,7 @@ describe("runWorkflow retry", () => {
   });
 
   it("manual retry writes a failed prompt agent attempt and retried attempt to separate step artifact directories", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-retry-agent-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-agent-"));
     let agentAttempts = 0;
 
     const workflow: Workflow<{ task: string }, { notes: string }> = {
@@ -477,7 +477,7 @@ describe("runWorkflow retry", () => {
       },
     };
 
-    const stepkitConfig = parseStepKitConfig({
+    const trailstepConfig = parseTrailStepConfig({
       version: 1,
       customProviders: { worker: { binary: "worker-agent" } },
       agents: { small: [{ provider: "worker" }] },
@@ -488,7 +488,7 @@ describe("runWorkflow retry", () => {
       input: { task: "artifact retry" },
       runName: "retry-agent",
       cwd,
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         agentAttempts += 1;
         await writeFile(
@@ -514,7 +514,7 @@ describe("runWorkflow retry", () => {
     const retried = await runWorkflow({
       workflow,
       retry: { runDir: failed.runDir, kind: "manual" },
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         agentAttempts += 1;
         await writeFile(

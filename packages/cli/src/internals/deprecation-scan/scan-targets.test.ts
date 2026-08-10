@@ -11,7 +11,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 function tmpDir(task: { readonly id: string }, variant: string): string {
-  return join("node_modules", ".tmp-stepkit-scan-targets-tests", `${task.id}-${variant}`);
+  return join("node_modules", ".tmp-trailstep-scan-targets-tests", `${task.id}-${variant}`);
 }
 
 describe("resolveDeprecationScanTargets", () => {
@@ -19,7 +19,7 @@ describe("resolveDeprecationScanTargets", () => {
     const cwd = tmpDir(task, "direct-doctor");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(join(cwd, "workflows", "local.mjs"), "export const local = {};\n", "utf8");
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { local: "./workflows/local.mjs" } },
     });
 
@@ -32,7 +32,7 @@ describe("resolveDeprecationScanTargets", () => {
     const cwd = tmpDir(task, "direct-workflow-update");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(join(cwd, "workflows", "local.mjs"), "export const local = {};\n", "utf8");
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { local: "./workflows/local.mjs" } },
     });
 
@@ -55,7 +55,7 @@ describe("resolveDeprecationScanTargets", () => {
       "export const global = {};\n",
       "utf8",
     );
-    await writeJson(join(homeDir, ".stepkit", "config.json"), {
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
       workflows: { user: { global: "./workflows/global.mjs" } },
     });
 
@@ -68,7 +68,7 @@ describe("resolveDeprecationScanTargets", () => {
     const cwd = tmpDir(task, "package-exports");
     const packageDir = join(cwd, "node_modules", "@acme", "plain-pkg");
 
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { plain: "@acme/plain-pkg" } },
     });
     await writeJson(join(packageDir, "package.json"), {
@@ -90,14 +90,14 @@ describe("resolveDeprecationScanTargets", () => {
     const cwd = tmpDir(task, "bundle-source");
     const bundleDir = join(cwd, "node_modules", "@acme", "bundle");
 
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { release: "@acme/bundle#release" } },
     });
     await writeJson(join(bundleDir, "package.json"), {
       name: "@acme/bundle",
       version: "1.0.0",
       main: "./index.mjs",
-      stepkit: {
+      trailstep: {
         workflows: {
           release: "./dist/release.mjs#releaseWorkflow",
           cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
@@ -116,13 +116,13 @@ describe("resolveDeprecationScanTargets", () => {
     const cwd = tmpDir(task, "local-bundle-source");
     const bundleDir = join(cwd, "local-workflow-package");
 
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { cleanup: "./local-workflow-package#cleanup" } },
     });
     await writeJson(join(bundleDir, "package.json"), {
       name: "local-workflow-package",
       version: "1.0.0",
-      stepkit: {
+      trailstep: {
         workflows: {
           cleanup: "./src/cleanup.mjs#cleanupWorkflow",
         },
@@ -148,7 +148,7 @@ describe("resolveDeprecationScanTargets", () => {
       version: "1.0.0",
       type: "module",
       exports: { ".": { import: "./dist/workflows.mjs" } },
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
     });
     await mkdir(join(discoveredDir, "dist"), { recursive: true });
     await writeFile(
@@ -162,7 +162,7 @@ describe("resolveDeprecationScanTargets", () => {
     await writeJson(join(unlistedDir, "package.json"), {
       name: "@acme/unlisted",
       version: "1.0.0",
-      keywords: ["stepkit-workflow"],
+      keywords: ["trailstep-workflow"],
       main: "./wrongly-scanned.mjs",
     });
 
@@ -178,7 +178,7 @@ describe("resolveDeprecationScanTargets", () => {
     await writeJson(join(bundleDir, "package.json"), {
       name: "@acme/bundle",
       version: "1.0.0",
-      stepkit: {
+      trailstep: {
         workflows: {
           release: "./dist/release.mjs#releaseWorkflow",
           cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
@@ -200,14 +200,14 @@ describe("resolveDeprecationScanTargets", () => {
     const cwd = tmpDir(task, "invalid-bundle-target");
     const bundleDir = join(cwd, "node_modules", "@acme", "bundle");
 
-    await writeJson(join(cwd, ".stepkit", "config.json"), {
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { release: "@acme/bundle#release" } },
     });
     await writeJson(join(bundleDir, "package.json"), {
       name: "@acme/bundle",
       version: "1.0.0",
       main: "./index.mjs",
-      stepkit: { workflows: { release: "./dist/release.mjs" } },
+      trailstep: { workflows: { release: "./dist/release.mjs" } },
     });
 
     await expect(resolveDeprecationScanTargets({ cwd })).resolves.toEqual([]);

@@ -7,8 +7,8 @@ import { main } from "../../../index.js";
 
 describe("runs command", () => {
   it("excludes retried-successful runs from recent failed section", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-runs-command-tests", task.id);
-    const runDir = join(cwd, ".stepkit", "runs", "retried-successful-run");
+    const cwd = join("node_modules", ".tmp-trailstep-runs-command-tests", task.id);
+    const runDir = join(cwd, ".trailstep", "runs", "retried-successful-run");
     await mkdir(runDir, { recursive: true });
     await writeFile(
       join(runDir, "events.jsonl"),

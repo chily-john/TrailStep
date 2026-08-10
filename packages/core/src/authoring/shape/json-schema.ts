@@ -1,6 +1,6 @@
 import { Ajv, type ErrorObject, type JSONSchemaType } from "ajv/dist/ajv.js";
 
-import { StepKitFailureError, validationFailure } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError, validationFailure } from "../../contracts/failures/failure.js";
 import type {
   PlainObject,
   Schema,
@@ -54,7 +54,7 @@ export function jsonSchema<T extends PlainObject>(schema: JsonSchemaObject): Sch
       const diagnostics = this.diagnostics(value);
 
       if (diagnostics.length > 0) {
-        throw new StepKitFailureError(
+        throw new TrailStepFailureError(
           validationFailure(
             `${label} failed schema validation: ${formatDiagnostics(diagnostics)}`,
             { diagnostics },

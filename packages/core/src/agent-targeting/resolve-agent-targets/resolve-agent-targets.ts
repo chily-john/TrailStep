@@ -1,9 +1,9 @@
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
-import type { ResolveAgentTargetsOptions, StepKitAgentTarget } from "../targeting.types.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
+import type { ResolveAgentTargetsOptions, TrailStepAgentTarget } from "../targeting.types.js";
 
 export function resolveAgentTargets(
   options: ResolveAgentTargetsOptions,
-): readonly StepKitAgentTarget[] {
+): readonly TrailStepAgentTarget[] {
   const workflowMappings = options.config.workflows?.[options.workflowId]?.agents;
 
   const targetLists = [
@@ -20,7 +20,7 @@ export function resolveAgentTargets(
     return targets;
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "agent_targets_unavailable",
     message: `No agent targets found for role ${options.roleName} with size ${options.roleSize} in workflow ${options.workflowId}.`,
     details: {

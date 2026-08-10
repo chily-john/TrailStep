@@ -1,10 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 
 import { resolveAgentTargets } from "../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
-import type { StepKitConfig } from "../../agent-targeting/targeting.types.js";
+import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type { ProviderWorkingRunner } from "../../known-cli-providers/registry/provider-registry.types.js";
 import type { WorkingAgentProcessRunner } from "../../runtime/run-workflow/run-workflow.types.js";
@@ -22,7 +22,7 @@ import {
 export type { WorkingAgentFiles } from "./artifacts/resolve-step-agent-files.js";
 
 export async function runWorkingAgentCommand<TOutput extends PlainObject>(options: {
-  readonly config: StepKitConfig;
+  readonly config: TrailStepConfig;
   readonly workflowId: string;
   readonly roleName: string;
   readonly role: WorkflowAgentRole;
@@ -72,7 +72,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
     }
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "agent_target_exhausted",
     message: `Working agent step ${options.step.id} for role ${options.roleName} exhausted ${failures.length} target(s).`,
     details: {

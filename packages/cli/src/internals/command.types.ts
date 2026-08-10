@@ -1,30 +1,30 @@
-import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@stepkit/core";
-import type { StepKitDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
+import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
+import type { TrailStepDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
 import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skills/skills-cli.js";
 
 export const usageText = [
   "Usage:",
-  "  stepkit add <workflow-file-or-bundle> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
-  "  stepkit remove <namespace>/<name> [--scope <local|project|global>]",
-  "  stepkit init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
-  "  stepkit agents",
-  "  stepkit agents set <name> --provider <provider> --model <model> [--thinking <none|low|medium|high|xhigh|max>] --scope <local|project|global>",
-  "  stepkit agents delete <name> --scope <local|project|global>",
-  "  stepkit agents rename <old> <new> --scope <local|project|global>",
-  "  stepkit workflows",
-  "  stepkit continue",
-  "  stepkit continue --interactive-file <path>",
-  "  stepkit continue --session-file <path>",
-  "  stepkit continue --json-file <path>",
-  "  stepkit continue --json '<json>'",
-  "  stepkit cancel [--reason '<text>']",
-  "  stepkit doctor",
-  "  stepkit update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]",
-  "  stepkit <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
-  "  stepkit retry <workflow-ref> <runName>",
-  "  stepkit runs",
+  "  trailstep add <workflow-file-or-bundle> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
+  "  trailstep remove <namespace>/<name> [--scope <local|project|global>]",
+  "  trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
+  "  trailstep agents",
+  "  trailstep agents set <name> --provider <provider> --model <model> [--thinking <none|low|medium|high|xhigh|max>] --scope <local|project|global>",
+  "  trailstep agents delete <name> --scope <local|project|global>",
+  "  trailstep agents rename <old> <new> --scope <local|project|global>",
+  "  trailstep workflows",
+  "  trailstep continue",
+  "  trailstep continue --interactive-file <path>",
+  "  trailstep continue --session-file <path>",
+  "  trailstep continue --json-file <path>",
+  "  trailstep continue --json '<json>'",
+  "  trailstep cancel [--reason '<text>']",
+  "  trailstep doctor",
+  "  trailstep update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]",
+  "  trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
+  "  trailstep retry <workflow-ref> <runName>",
+  "  trailstep runs",
   "",
-  "stepkit add defaults: scope prompts interactively when omitted (no default); namespace",
+  "trailstep add defaults: scope prompts interactively when omitted (no default); namespace",
   'defaults to "project" for --scope project/local, or to "global" for --scope global',
   "unless you opt into a custom one; name defaults to the workflow's own id.",
   "For bundle packages with multiple workflows, --workflow accepts one name, a comma-separated",
@@ -49,12 +49,12 @@ export class CliUsageError extends Error {
   }
 }
 
-export interface StepkitCliIo {
+export interface TrailStepCliIo {
   writeLine: (line: string) => void;
   writeError: (line: string) => void;
 }
 
-export interface StepkitCliPrompts {
+export interface TrailStepCliPrompts {
   text: (prompt: string) => Promise<string>;
   select: (prompt: string, choices: readonly string[]) => Promise<string>;
   multiSelect?: (prompt: string, choices: readonly string[]) => Promise<readonly string[]>;
@@ -80,8 +80,8 @@ export type PackageCommandRunner = (
 export interface CliCommandContext {
   cwd: string;
   homeDir?: string;
-  io: StepkitCliIo;
-  prompts?: StepkitCliPrompts;
+  io: TrailStepCliIo;
+  prompts?: TrailStepCliPrompts;
   eventSink?: (event: Event) => void | Promise<void>;
   env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
@@ -91,7 +91,7 @@ export interface CliCommandContext {
   runNameClock?: () => Date;
   runNameRandomSuffix?: () => string;
   packageCommandRunner?: PackageCommandRunner;
-  deprecationManifest?: readonly StepKitDeprecationEntry[];
+  deprecationManifest?: readonly TrailStepDeprecationEntry[];
 }
 
 export interface CliCommand<TArgs> {

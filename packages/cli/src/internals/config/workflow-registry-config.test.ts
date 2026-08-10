@@ -1,30 +1,30 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadStepKitProjectConfig } from "./config.js";
+import { loadTrailStepProjectConfig } from "./config.js";
 
 async function writeConfig(cwd: string, value: unknown): Promise<void> {
-  await mkdir(join(cwd, ".stepkit"), { recursive: true });
+  await mkdir(join(cwd, ".trailstep"), { recursive: true });
   await writeFile(
-    join(cwd, ".stepkit", "config.json"),
+    join(cwd, ".trailstep", "config.json"),
     `${JSON.stringify(value, null, 2)}\n`,
     "utf8",
   );
 }
 
 async function writeLocalConfig(cwd: string, value: unknown): Promise<void> {
-  await mkdir(join(cwd, ".stepkit"), { recursive: true });
+  await mkdir(join(cwd, ".trailstep"), { recursive: true });
   await writeFile(
-    join(cwd, ".stepkit", "config-local.json"),
+    join(cwd, ".trailstep", "config-local.json"),
     `${JSON.stringify(value, null, 2)}\n`,
     "utf8",
   );
 }
 
 async function writeUserConfig(homeDir: string, value: unknown): Promise<void> {
-  await mkdir(join(homeDir, ".stepkit"), { recursive: true });
+  await mkdir(join(homeDir, ".trailstep"), { recursive: true });
   await writeFile(
-    join(homeDir, ".stepkit", "config.json"),
+    join(homeDir, ".trailstep", "config.json"),
     `${JSON.stringify(value, null, 2)}\n`,
     "utf8",
   );
@@ -34,7 +34,7 @@ describe("workflow registry project config", () => {
   it("parses string-valued project workflow registrations without losing agent config", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       version: 1,
@@ -46,7 +46,7 @@ describe("workflow registry project config", () => {
       },
       workflows: {
         project: {
-          release: "./.stepkit/workflows/release.mjs",
+          release: "./.trailstep/workflows/release.mjs",
         },
         review: {
           agents: {
@@ -56,13 +56,13 @@ describe("workflow registry project config", () => {
       },
     });
 
-    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
+    await expect(loadTrailStepProjectConfig(cwd)).resolves.toMatchObject({
       workflowRegistry: {
         project: {
-          release: "./.stepkit/workflows/release.mjs",
+          release: "./.trailstep/workflows/release.mjs",
         },
       },
-      stepkitConfig: {
+      trailstepConfig: {
         workflows: {
           review: {
             agents: {
@@ -77,7 +77,7 @@ describe("workflow registry project config", () => {
   it("merges global, project, and local run config with agents replaced by entry name", async ({
     task,
   }) => {
-    const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true });
@@ -111,8 +111,8 @@ describe("workflow registry project config", () => {
       },
     });
 
-    await expect(loadStepKitProjectConfig(cwd, { homeDir })).resolves.toMatchObject({
-      stepkitConfig: {
+    await expect(loadTrailStepProjectConfig(cwd, { homeDir })).resolves.toMatchObject({
+      trailstepConfig: {
         customProviders: {
           local: { binary: "local-pi" },
         },
@@ -129,7 +129,7 @@ describe("workflow registry project config", () => {
   it("replaces top-level workflows for run config while keeping registry scopes merged", async ({
     task,
   }) => {
-    const root = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true });
@@ -175,7 +175,7 @@ describe("workflow registry project config", () => {
       },
     });
 
-    const loaded = await loadStepKitProjectConfig(cwd, { homeDir });
+    const loaded = await loadTrailStepProjectConfig(cwd, { homeDir });
 
     expect(loaded.workflowRegistry).toEqual({
       project: {
@@ -183,17 +183,17 @@ describe("workflow registry project config", () => {
         review: "./review.mjs",
       },
     });
-    expect(loaded.stepkitConfig?.workflows?.localWorkflow?.agents?.reviewer).toEqual([
+    expect(loaded.trailstepConfig?.workflows?.localWorkflow?.agents?.reviewer).toEqual([
       { provider: "codex", model: "local-model" },
     ]);
-    expect(loaded.stepkitConfig?.workflows).not.toHaveProperty("userWorkflow");
-    expect(loaded.stepkitConfig?.workflows).not.toHaveProperty("projectWorkflow");
+    expect(loaded.trailstepConfig?.workflows).not.toHaveProperty("userWorkflow");
+    expect(loaded.trailstepConfig?.workflows).not.toHaveProperty("projectWorkflow");
   });
 
   it("merges config-local.json over config.json, with local winning per top-level key", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       version: 1,
@@ -211,8 +211,8 @@ describe("workflow registry project config", () => {
       },
     });
 
-    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
-      stepkitConfig: {
+    await expect(loadTrailStepProjectConfig(cwd)).resolves.toMatchObject({
+      trailstepConfig: {
         customProviders: {
           shared: { binary: "pi" },
           local: { binary: "pi", args: ["--model", "small"] },
@@ -227,7 +227,7 @@ describe("workflow registry project config", () => {
   it("merges workflows per-namespace instead of replacing the shared registry wholesale", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       workflows: {
@@ -244,7 +244,7 @@ describe("workflow registry project config", () => {
       },
     });
 
-    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
+    await expect(loadTrailStepProjectConfig(cwd)).resolves.toMatchObject({
       workflowRegistry: {
         project: {
           release: "./release.mjs",
@@ -257,7 +257,7 @@ describe("workflow registry project config", () => {
   it("lets config-local.json win on a same-name workflow registration conflict", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeConfig(cwd, {
       workflows: {
@@ -274,7 +274,7 @@ describe("workflow registry project config", () => {
       },
     });
 
-    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
+    await expect(loadTrailStepProjectConfig(cwd)).resolves.toMatchObject({
       workflowRegistry: {
         project: {
           review: "./local-review.mjs",
@@ -284,7 +284,7 @@ describe("workflow registry project config", () => {
   });
 
   it("loads config-local.json alone when config.json is absent", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-workflow-registry-config-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeLocalConfig(cwd, {
       customProviders: {
@@ -295,8 +295,8 @@ describe("workflow registry project config", () => {
       },
     });
 
-    await expect(loadStepKitProjectConfig(cwd)).resolves.toMatchObject({
-      stepkitConfig: {
+    await expect(loadTrailStepProjectConfig(cwd)).resolves.toMatchObject({
+      trailstepConfig: {
         agents: {
           small: [{ provider: "local" }],
         },

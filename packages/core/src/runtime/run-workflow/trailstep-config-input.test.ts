@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseStepKitConfigInput } from "./stepkit-config-input.js";
+import { parseTrailStepConfigInput } from "./trailstep-config-input.js";
 
-describe("parseStepKitConfigInput", () => {
+describe("parseTrailStepConfigInput", () => {
   it("parses raw config input into runtime-ready agent mappings", () => {
-    const config = parseStepKitConfigInput({
+    const config = parseTrailStepConfigInput({
       version: 1,
       customProviders: { local: { binary: "local-agent" } },
       agents: {
@@ -24,7 +24,7 @@ describe("parseStepKitConfigInput", () => {
   });
 
   it("returns already parsed config without behavioral change", () => {
-    const parsed = parseStepKitConfigInput({
+    const parsed = parseTrailStepConfigInput({
       version: 1,
       customProviders: { local: { binary: "local-agent" } },
       agents: {
@@ -33,7 +33,7 @@ describe("parseStepKitConfigInput", () => {
       },
     });
 
-    expect(parseStepKitConfigInput(parsed)).toBe(parsed);
+    expect(parseTrailStepConfigInput(parsed)).toBe(parsed);
   });
 
   it("accepts flattened config with providers and array-based agent mappings", () => {
@@ -50,6 +50,6 @@ describe("parseStepKitConfigInput", () => {
       },
     } as const;
 
-    expect(parseStepKitConfigInput(flattened)).toBe(flattened);
+    expect(parseTrailStepConfigInput(flattened)).toBe(flattened);
   });
 });

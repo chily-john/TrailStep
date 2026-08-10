@@ -1,8 +1,8 @@
 import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Event, LatestUnresolvedFailure } from "@stepkit/core";
-import { readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
+import type { Event, LatestUnresolvedFailure } from "@trailstep/core";
+import { defaultRunsRoot, readRunEvents, selectLatestUnresolvedFailure } from "@trailstep/core";
 
 export interface RunSummary {
   readonly runId: string;
@@ -18,8 +18,11 @@ export interface EligibleRetryRun {
   readonly label: string;
 }
 
-export async function listRunSummaries(options: { readonly cwd: string }): Promise<RunSummary[]> {
-  const runsRoot = join(options.cwd, ".stepkit", "runs");
+export async function listRunSummaries(options: {
+  readonly cwd: string;
+  readonly runsRoot?: string;
+}): Promise<RunSummary[]> {
+  const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
 
   let entries: Dirent[];
   try {
@@ -40,6 +43,7 @@ export async function listRunSummaries(options: { readonly cwd: string }): Promi
 
 export async function listEligibleRetryRuns(options: {
   readonly cwd: string;
+  readonly runsRoot?: string;
 }): Promise<EligibleRetryRun[]> {
   const summaries = await listRunSummaries(options);
   const eligibleRuns: EligibleRetryRun[] = [];

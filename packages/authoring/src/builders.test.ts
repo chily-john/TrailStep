@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { jsonSchema, runWorkflow, type Workflow } from "@stepkit/core";
+import { jsonSchema, runWorkflow, type Workflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 import { defineWorkflow, done, step } from "./index.js";
 
@@ -52,7 +52,7 @@ describe("authoring workflow builders", () => {
       description: "Builds a greeting from mapped input.",
     });
 
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-builder-test-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-authoring-builder-test-"));
     const result = await runWorkflow({
       workflow,
       input: { person: "Ada" },

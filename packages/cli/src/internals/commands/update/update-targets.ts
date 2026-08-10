@@ -9,24 +9,28 @@ import {
   type NpmPackageMetadata,
 } from "../../package-manager/npm-registry.js";
 
-const stepkitPackageNames = ["@stepkit/core", "@stepkit/authoring", "@stepkit/cli"] as const;
+const trailstepPackageNames = [
+  "@trailstep/core",
+  "@trailstep/authoring",
+  "@trailstep/cli",
+] as const;
 
-type StepkitPackageName = (typeof stepkitPackageNames)[number];
+type TrailStepPackageName = (typeof trailstepPackageNames)[number];
 
 export type DependencySection = "dependencies" | "devDependencies" | "peerDependencies";
 
 export interface UpdateTarget {
-  packageName: StepkitPackageName;
+  packageName: TrailStepPackageName;
   currentRange: string;
   targetVersion: string;
   dependencySection: DependencySection;
 }
 
-export interface StepKitSelfUpdatePlan {
+export interface TrailStepSelfUpdatePlan {
   targets: UpdateTarget[];
 }
 
-export interface ResolveStepKitSelfUpdateTargetsOptions {
+export interface ResolveTrailStepSelfUpdateTargetsOptions {
   cwd: string;
   packageCommandRunner?: PackageCommandRunner;
 }
@@ -38,53 +42,53 @@ export class UpdateTargetResolutionError extends Error {
   }
 }
 
-export async function resolveStepKitSelfUpdateTargets({
+export async function resolveTrailStepSelfUpdateTargets({
   cwd,
   packageCommandRunner,
-}: ResolveStepKitSelfUpdateTargetsOptions): Promise<StepKitSelfUpdatePlan> {
+}: ResolveTrailStepSelfUpdateTargetsOptions): Promise<TrailStepSelfUpdatePlan> {
   const packageJson = await readRootPackageJson(cwd);
-  const current = readCurrentStepKitRanges(packageJson);
+  const current = readCurrentTrailStepRanges(packageJson);
   if (current.size === 0) {
     return { targets: [] };
   }
 
   const [coreMetadata, authoringMetadata, cliMetadata] = await Promise.all([
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/core", packageCommandRunner }),
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/authoring", packageCommandRunner }),
-    fetchNpmPackageMetadata({ cwd, packageName: "@stepkit/cli", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/core", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/authoring", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/cli", packageCommandRunner }),
   ]);
 
   const targetCore = selectLatestStable(coreMetadata.versions);
   if (!targetCore) {
-    throw new UpdateTargetResolutionError("No published @stepkit/core versions were found.");
+    throw new UpdateTargetResolutionError("No published @trailstep/core versions were found.");
   }
 
   const targetAuthoring = selectLatestPeerCompatibleVersion(authoringMetadata, targetCore);
   if (!targetAuthoring) {
     throw new UpdateTargetResolutionError(
-      `No @stepkit/authoring version has a @stepkit/core peer dependency compatible with ${targetCore}.`,
+      `No @trailstep/authoring version has a @trailstep/core peer dependency compatible with ${targetCore}.`,
     );
   }
 
   const targetCli = selectLatestPeerCompatibleVersion(cliMetadata, targetCore);
   if (!targetCli) {
     throw new UpdateTargetResolutionError(
-      `No @stepkit/cli version has a @stepkit/core peer dependency compatible with ${targetCore}.`,
+      `No @trailstep/cli version has a @trailstep/core peer dependency compatible with ${targetCore}.`,
     );
   }
 
   return {
     targets: [
-      createTarget("@stepkit/core", current, targetCore),
-      createTarget("@stepkit/authoring", current, targetAuthoring),
-      createTarget("@stepkit/cli", current, targetCli),
+      createTarget("@trailstep/core", current, targetCore),
+      createTarget("@trailstep/authoring", current, targetAuthoring),
+      createTarget("@trailstep/cli", current, targetCli),
     ].filter((target) => target.currentRange !== ""),
   };
 }
 
 function createTarget(
-  packageName: StepkitPackageName,
-  current: Map<StepkitPackageName, { range: string; section: DependencySection }>,
+  packageName: TrailStepPackageName,
+  current: Map<TrailStepPackageName, { range: string; section: DependencySection }>,
   targetVersion: string,
 ): UpdateTarget {
   const currentEntry = current.get(packageName);
@@ -119,7 +123,7 @@ function readCorePeerRange(
   peerDependenciesByVersion: NpmPackageMetadata["peerDependenciesByVersion"],
   version: string,
 ): string | undefined {
-  return peerDependenciesByVersion[version]?.["@stepkit/core"];
+  return peerDependenciesByVersion[version]?.["@trailstep/core"];
 }
 
 export async function readRootPackageJson(cwd: string): Promise<Record<string, unknown>> {
@@ -143,9 +147,9 @@ export function readPackageDependencyEntry(
   return undefined;
 }
 
-function readCurrentStepKitRanges(packageJson: Record<string, unknown>) {
-  const entries = new Map<StepkitPackageName, { range: string; section: DependencySection }>();
-  for (const packageName of stepkitPackageNames) {
+function readCurrentTrailStepRanges(packageJson: Record<string, unknown>) {
+  const entries = new Map<TrailStepPackageName, { range: string; section: DependencySection }>();
+  for (const packageName of trailstepPackageNames) {
     const entry = readPackageDependencyEntry(packageJson, packageName);
     if (entry) {
       entries.set(packageName, entry);

@@ -1,5 +1,5 @@
-import type { Event } from "@stepkit/core";
-import { readRunEvents } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
+import { readRunEvents } from "@trailstep/core";
 
 export async function readDashboardRunEvents(runDir: string): Promise<Event[]> {
   try {
@@ -37,7 +37,7 @@ export function streamRunEvents(options: {
 
         seen.add(event.id);
         options.response.write(`id: ${event.id}\n`);
-        options.response.write(`event: stepkit-event\n`);
+        options.response.write(`event: trailstep-event\n`);
         options.response.write(`data: ${JSON.stringify(event)}\n\n`);
       }
     } finally {

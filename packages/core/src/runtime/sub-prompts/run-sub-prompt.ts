@@ -12,7 +12,7 @@ import type {
   SubPromptOptions,
 } from "../../authoring/step/continuation.types.js";
 import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js";
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import { createEvent } from "../events/create-run-event.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
@@ -35,7 +35,7 @@ export function resolveMaxSubPrompts(value: unknown): number {
     return value;
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "invalid_max_sub_prompts",
     message: "maxSubPrompts must be a positive integer.",
   });
@@ -52,22 +52,22 @@ export async function runSubPrompt<
   const resolvedInput = (input ?? {}) as TInput;
   const context = runContextStorage.getStore();
   if (!context?.currentStep) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "sub_prompt_outside_step_context",
-      message: "subPrompt requires an active StepKit step run context.",
+      message: "subPrompt requires an active TrailStep step run context.",
     });
   }
 
   if (!context.workflowId || !context.workflowAgents || !context.cwd || !context.emit) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "sub_prompt_context_unavailable",
-      message: "subPrompt requires a full active StepKit step run context.",
+      message: "subPrompt requires a full active TrailStep step run context.",
     });
   }
 
   const parentStep = context.currentStep;
   if (options.output === undefined) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "sub_prompt_output_required",
       message: `subPrompt in step ${parentStep.id} with a prompt requires an output shape`,
     });
@@ -141,7 +141,7 @@ export async function runSubPrompt<
       adapter: options.adapter,
     };
 
-    if (!context.stepkitConfig && options.adapter === undefined) {
+    if (!context.trailstepConfig && options.adapter === undefined) {
       throwMissingSubPromptAgentConfig({
         workflowId: context.workflowId,
         parentStepId: parentStep.id,
@@ -151,9 +151,9 @@ export async function runSubPrompt<
     }
 
     const rawOutput =
-      context.stepkitConfig && options.adapter === undefined
+      context.trailstepConfig && options.adapter === undefined
         ? await runWorkingAgentCommand({
-            config: context.stepkitConfig,
+            config: context.trailstepConfig,
             workflowId: context.workflowId,
             roleName: resolvedRole.roleName,
             role: resolvedRole.role,

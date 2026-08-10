@@ -1,8 +1,9 @@
-import type { Event } from "@stepkit/core";
-import { runWorkflow } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
+import { runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { loadStepKitConfig } from "../../config/config.js";
+import { loadTrailStepConfig } from "../../config/config.js";
+import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { generateRunName } from "./generate-run-name.js";
 import { loadJsonInput } from "./load-run-input.js";
@@ -18,7 +19,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
   async run(args: RunCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
     const input = await loadJsonInput(args.input, cwd);
-    const stepkitConfig = await loadStepKitConfig(cwd);
+    const trailstepConfig = await loadTrailStepConfig(cwd);
     const resolvedWorkflow = await resolveWorkflowReference(args.workflowId, {
       cwd,
       homeDir: context.homeDir,
@@ -26,7 +27,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
 
     if (!resolvedWorkflow) {
       io.writeError(
-        `Workflow not found: ${args.workflowId}. Run stepkit workflows to see available workflows.`,
+        `Workflow not found: ${args.workflowId}. Run trailstep workflows to see available workflows.`,
       );
       return 1;
     }
@@ -40,12 +41,13 @@ export const runCommand: CliCommand<RunCommandArgs> = {
     const sharedRunOptions = {
       workflow: resolvedWorkflow.workflow,
       cwd,
+      runsRoot: resolveRunsRoot(context),
       eventSink,
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
       ...(context.workingAgentProcessRunner === undefined
         ? {}
         : { workingAgentProcessRunner: context.workingAgentProcessRunner }),
-      ...(stepkitConfig === undefined ? {} : { stepkitConfig }),
+      ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
     };
 
     const workflowRunName =

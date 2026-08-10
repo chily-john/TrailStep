@@ -35,7 +35,7 @@ interface PendingRequest {
 
 describe("subPrompt concurrency", () => {
   it("assigns stable ordinals by invocation order under Promise.all", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-concurrency-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-concurrency-"));
     const pendingRequests: PendingRequest[] = [];
 
     const adapter: AgentAdapter<{ path: string }, { answer: string }> = (request) => {

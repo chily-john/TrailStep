@@ -9,7 +9,7 @@ import {
   document,
   done,
   type Event,
-  parseStepKitConfig,
+  parseTrailStepConfig,
   runWorkflow,
   state,
   step,
@@ -18,7 +18,7 @@ import {
 
 describe("runWorkflow", () => {
   it("branches to the next continuation step based on validated output", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
 
     const workflow: Workflow<{ shouldReview: boolean }, { destination: string }> = {
       id: "branching-workflow",
@@ -62,7 +62,7 @@ describe("runWorkflow", () => {
   });
 
   it("fails when a continuation step references an undeclared workflow agent role", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
 
     const workflow: Workflow<{ path: string }, { approved: boolean }> = {
       id: "portable-review",
@@ -103,7 +103,7 @@ describe("runWorkflow", () => {
   });
 
   it("passes durable ambient state to orchestration step continuations", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
 
     const rememberStep = step({ id: "remember" }).do(async (input: { value: number }) => {
       await state.set("count", { value: input.value });
@@ -143,7 +143,7 @@ describe("runWorkflow", () => {
   });
 
   it("persists step events before the event sink observes a later event", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];
 
     const firstStep = step({ id: "first" }).do((input: { value: number }) =>
@@ -175,7 +175,7 @@ describe("runWorkflow", () => {
 
         try {
           const contents = await readFile(
-            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            join(cwd, ".trailstep", "runs", event.runId, "events.jsonl"),
             "utf8",
           );
           eventsAtFirstStepCompletion = contents
@@ -199,7 +199,7 @@ describe("runWorkflow", () => {
   });
 
   it("appends workflow.failed through the same emit path", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
     let eventsAtWorkflowFailure: readonly Event[] = [];
 
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -225,7 +225,7 @@ describe("runWorkflow", () => {
 
         try {
           const contents = await readFile(
-            join(cwd, ".stepkit", "runs", event.runId, "events.jsonl"),
+            join(cwd, ".trailstep", "runs", event.runId, "events.jsonl"),
             "utf8",
           );
           eventsAtWorkflowFailure = contents
@@ -249,7 +249,7 @@ describe("runWorkflow", () => {
   });
 
   it("runs a continuation workflow from start through a code step to done", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
 
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "math-workflow",
@@ -276,7 +276,7 @@ describe("runWorkflow", () => {
 
     expect(result.output).toEqual({ value: 6 });
     expect(result.runId).toBe("my-run");
-    expect(result.runDir).toBe(join(cwd, ".stepkit", "runs", "my-run"));
+    expect(result.runDir).toBe(join(cwd, ".trailstep", "runs", "my-run"));
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
@@ -298,7 +298,7 @@ describe("runWorkflow", () => {
   });
 
   it("runs a prompt step whose output is Document, delivering a Document to .do(...)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-document-"));
 
     const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
       id: "document-workflow",
@@ -320,7 +320,7 @@ describe("runWorkflow", () => {
       input: { topic: "continuations" },
       runName: "document-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: { medium: [{ provider: "worker" }] },
@@ -352,7 +352,7 @@ describe("runWorkflow", () => {
   });
 
   it("writes two document(...) calls in one code step to auto-numbered files in that step's directory", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-runtime-document-multi-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-document-multi-"));
 
     const workflow: Workflow<{ topic: string }, { first: string; second: string }> = {
       id: "multi-document-workflow",

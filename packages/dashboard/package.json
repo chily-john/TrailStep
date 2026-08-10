@@ -1,17 +1,17 @@
 {
-  "name": "@stepkit/dashboard",
-  "version": "0.0.0",
-  "description": "StepKit dashboard placeholder shell.",
+  "name": "@trailstep/dashboard",
+  "version": "0.1.0",
+  "description": "TrailStep dashboard placeholder shell.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/chily-john/stepkit.git"
+    "url": "git+ssh://git@github.com/chily-john/trailstep.git"
   },
   "bugs": {
-    "url": "https://github.com/chily-john/stepkit/issues"
+    "url": "https://github.com/chily-john/trailstep/issues"
   },
-  "homepage": "https://github.com/chily-john/stepkit#readme",
+  "homepage": "https://github.com/chily-john/trailstep#readme",
   "files": [
     "dist",
     "README.md",
@@ -24,7 +24,7 @@
     "lint": "biome check index.html src svelte.config.js vite.config.ts"
   },
   "dependencies": {
-    "@stepkit/core": "workspace:*"
+    "@trailstep/core": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",

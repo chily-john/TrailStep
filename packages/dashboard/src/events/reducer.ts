@@ -1,4 +1,4 @@
-import type { Event } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
 
 export interface DashboardEventRow {
   readonly id: string;

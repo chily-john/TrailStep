@@ -12,7 +12,7 @@ export interface DashboardRunSummary {
 }
 
 export async function listRuns(options: { readonly cwd: string }): Promise<DashboardRunSummary[]> {
-  const runsRoot = join(options.cwd, ".stepkit", "runs");
+  const runsRoot = join(options.cwd, ".trailstep", "runs");
   let entries: Dirent<string>[];
 
   try {

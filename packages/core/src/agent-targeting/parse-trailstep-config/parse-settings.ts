@@ -1,12 +1,12 @@
 import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
-import type { StepKitSettings } from "../targeting.types.js";
+import type { TrailStepSettings } from "../targeting.types.js";
 import { isRecord } from "./parse-utils.js";
 
 export function parseSettings(
   path: string,
   value: unknown,
   diagnostics: string[],
-): StepKitSettings | undefined {
+): TrailStepSettings | undefined {
   if (value === undefined) {
     return undefined;
   }

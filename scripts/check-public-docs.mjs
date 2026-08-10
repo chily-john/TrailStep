@@ -14,12 +14,12 @@ const docPaths = [
 ];
 
 const publicPackages = [
-  "@stepkit/core",
-  "@stepkit/authoring",
-  "@stepkit/cli",
-  "@stepkit/create-flows",
+  "@trailstep/core",
+  "@trailstep/authoring",
+  "@trailstep/cli",
+  "@trailstep/create-flows",
 ];
-const unpublishedPackages = ["@stepkit/testkit", "@stepkit/dashboard"];
+const unpublishedPackages = ["@trailstep/testkit", "@trailstep/dashboard"];
 const staleVerificationScripts = [
   `verify-${"repository-docs"}`,
   `verify-${"package-metadata"}`,
@@ -44,7 +44,7 @@ const rootReadme = docs.get("README.md");
 
 assertIncludes(
   rootReadme,
-  "StepKit is a durable, typed, observable workflow harness for coding agents.",
+  "TrailStep is a durable, typed, observable workflow harness for coding agents.",
   "Root README",
 );
 
@@ -69,7 +69,7 @@ for (const packageName of unpublishedPackages) {
 }
 
 const requiredRootTopics = [
-  "stepkit init",
+  "trailstep init",
   "--install-skill",
   "--no-install-skill",
   "no npm postinstall prompt",
@@ -82,9 +82,9 @@ const requiredRootTopics = [
   "Direct refs",
   "Registered refs",
   "Bundle refs",
-  "stepkit continue",
-  "stepkit retry",
-  ".stepkit/runs",
+  "trailstep continue",
+  "trailstep retry",
+  ".trailstep/runs",
   "should not be manually mutated",
   "ignored by default",
   "pnpm check:public-packages",
@@ -112,23 +112,23 @@ for (const [path, text] of docs) {
 }
 
 for (const packageName of publicPackages) {
-  const path = `packages/${packageName.replace("@stepkit/", "")}/README.md`;
+  const path = `packages/${packageName.replace("@trailstep/", "")}/README.md`;
   assertIncludes(docs.get(path), packageName, `${path} package identity`);
 }
 
 assertMatches(
   docs.get("packages/create-flows/README.md"),
-  /public package of reusable, general-purpose StepKit workflows/u,
-  "@stepkit/create-flows README must be public and reusable",
+  /public package of reusable, general-purpose TrailStep workflows/u,
+  "@trailstep/create-flows README must be public and reusable",
 );
 assert.doesNotMatch(
   docs.get("packages/create-flows/README.md"),
   /\b(my|personal|private|local-only)\b/iu,
-  "@stepkit/create-flows README must not use personal/private/local-only framing",
+  "@trailstep/create-flows README must not use personal/private/local-only framing",
 );
 
 for (const packageName of unpublishedPackages) {
-  const path = `packages/${packageName.replace("@stepkit/", "")}/README.md`;
+  const path = `packages/${packageName.replace("@trailstep/", "")}/README.md`;
   assertIncludes(
     docs.get(path),
     "not part of the initial public publish set",

@@ -1,6 +1,6 @@
-import type { Document } from "@stepkit/authoring";
-import { done, fail, state, step } from "@stepkit/authoring";
-import type { ContinuationResult } from "@stepkit/core";
+import type { Document } from "@trailstep/authoring";
+import { done, fail, state, step } from "@trailstep/authoring";
+import type { ContinuationResult } from "@trailstep/core";
 import { implementStoryStep } from "../implement-story/step.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
 import {
@@ -40,7 +40,7 @@ export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
 );
 
 function storyAutoCommitEnabled(): boolean {
-  const mode = process.env.STEPKIT_STORY_COMMIT_MODE ?? process.env.STEPKIT_AUTO_COMMIT_STORIES;
+  const mode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
   return ["1", "true", "enabled", "worktree"].includes(mode?.toLowerCase() ?? "");
 }
 
@@ -61,7 +61,7 @@ async function commitReviewedStoryChanges(
     return {
       ok: false,
       code: "story_commit_missing_cwd",
-      message: "Cannot commit reviewed story because the StepKit workflow cwd is unavailable.",
+      message: "Cannot commit reviewed story because the TrailStep workflow cwd is unavailable.",
       details: { storyPath: activeStory.path },
     };
   }
@@ -128,7 +128,7 @@ async function commitReviewedStoryChanges(
     [
       "commit",
       "-m",
-      truncateCommitSubject(`stepkit: ${storyTitle}`),
+      truncateCommitSubject(`trailstep: ${storyTitle}`),
       "-m",
       commitBody(activeStory, implementationSummary, staged.stdout),
     ],
@@ -139,7 +139,7 @@ async function commitReviewedStoryChanges(
     return {
       ok: false,
       code: "story_commit_failed",
-      message: "The story passed review, but StepKit could not create the story commit.",
+      message: "The story passed review, but TrailStep could not create the story commit.",
       details: { storyPath: activeStory.path, gitError: commit.error },
     };
   }
@@ -191,7 +191,7 @@ function commitBody(
   stagedFiles: string,
 ): string {
   return [
-    "Committed automatically by StepKit after a passing story review.",
+    "Committed automatically by TrailStep after a passing story review.",
     "",
     `Story artifact: ${activeStory.path}`,
     "",

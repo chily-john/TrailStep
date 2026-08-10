@@ -12,14 +12,18 @@ const packCommand =
     : { command: "pnpm", args: ["pack", "--dry-run", "--json"] };
 
 const publicPackages = [
-  { name: "@stepkit/core", directory: "packages/core" },
-  { name: "@stepkit/authoring", directory: "packages/authoring" },
-  { name: "@stepkit/cli", directory: "packages/cli", requiredFiles: ["stepkit-skill/SKILL.md"] },
-  { name: "@stepkit/create-flows", directory: "packages/create-flows" },
+  { name: "@trailstep/core", directory: "packages/core" },
+  { name: "@trailstep/authoring", directory: "packages/authoring" },
+  {
+    name: "@trailstep/cli",
+    directory: "packages/cli",
+    requiredFiles: ["trailstep-skill/SKILL.md"],
+  },
+  { name: "@trailstep/create-flows", directory: "packages/create-flows" },
 ];
-const unpublishedPackageNames = ["@stepkit/testkit", "@stepkit/dashboard"];
+const unpublishedPackageNames = ["@trailstep/testkit", "@trailstep/dashboard"];
 const forbiddenPackedPathPatterns = [
-  { label: ".stepkit", pattern: /^\.stepkit(?:\/|$)/u },
+  { label: ".trailstep", pattern: /^\.trailstep(?:\/|$)/u },
   { label: ".claude", pattern: /^\.claude(?:\/|$)/u },
   { label: "agent/skills", pattern: /^agent\/skills(?:\/|$)/u },
   { label: "skills-lock", pattern: /^skills-lock(?:\.json)?$/u },

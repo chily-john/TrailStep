@@ -1,4 +1,4 @@
-import { fail, step } from "@stepkit/authoring";
+import { fail, step } from "@trailstep/authoring";
 import { reviewStoryImplementationStep } from "../review-story-implementation/step.js";
 import { loadStoryReviewGitContext } from "../shared/story-state.js";
 import {

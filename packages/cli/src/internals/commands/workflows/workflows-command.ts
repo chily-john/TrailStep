@@ -10,10 +10,10 @@ import {
   findExistingRegistrationScope,
   listRegisteredWorkflowEntries,
   type RegisteredWorkflowEntry,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
   type WorkflowRegistryContext,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
@@ -35,7 +35,7 @@ const CUSTOM_NAMESPACE_OPTION = "Type a new namespace...";
 const REMOVE_OPTION = "Remove";
 const BACK_OPTION = "Back to workflow list";
 const EXIT_OPTION = "Exit";
-const usageHint = "stepkit workflows requires an interactive session.";
+const usageHint = "trailstep workflows requires an interactive session.";
 
 type PageBOutcome = "back" | "exit";
 
@@ -44,7 +44,7 @@ export const workflowsCommand: CliCommand<WorkflowsCommandArgs> = {
   parseArgs(argv: readonly string[]): WorkflowsCommandArgs {
     const rest = argv[0] === "workflows" ? argv.slice(1) : argv;
     if (rest.length > 0) {
-      throw new CliUsageError(`Unknown option for stepkit workflows: ${rest.join(" ")}`);
+      throw new CliUsageError(`Unknown option for trailstep workflows: ${rest.join(" ")}`);
     }
     return {};
   },
@@ -195,13 +195,13 @@ async function removeSelectedEntry(
   }
 
   const path = configPathForScope(selected.scope, registryContext);
-  const config = await readRawStepKitConfigFile(path);
+  const config = await readRawTrailStepConfigFile(path);
   const workflows = deleteWorkflowRegistryEntry(
     toMutableWorkflowRegistry(config.workflows),
     selected.namespace,
     selected.name,
   );
-  await writeRawStepKitConfigFile(path, { ...config, workflows });
+  await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
   context.io.writeLine(
     `Removed ${selected.namespace}/${selected.name} from ${selected.scope} config.`,
@@ -273,11 +273,11 @@ async function applyRename(
   }
 
   const path = configPathForScope(selected.scope, context);
-  const config = await readRawStepKitConfigFile(path);
+  const config = await readRawTrailStepConfigFile(path);
   let workflows = toMutableWorkflowRegistry(config.workflows);
   workflows = deleteWorkflowRegistryEntry(workflows, selected.namespace, selected.name);
   workflows[newNamespace] = { ...workflows[newNamespace], [newName]: selected.targetRef };
-  await writeRawStepKitConfigFile(path, { ...config, workflows });
+  await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
   context.io.writeLine(
     `Renamed ${selected.scope}: ${selected.namespace}/${selected.name} -> ${newNamespace}/${newName}`,

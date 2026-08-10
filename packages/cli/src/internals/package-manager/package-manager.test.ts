@@ -17,7 +17,7 @@ describe("detectPackageManager", () => {
     ["yarn.lock", "yarn"],
     ["bun.lockb", "bun"],
   ] as const)("selects %s before packageManager metadata", async (lockfile, name) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-manager-tests", `lockfile-${name}`);
+    const cwd = join("node_modules", ".tmp-trailstep-package-manager-tests", `lockfile-${name}`);
     await writePackageJson(cwd, { packageManager: "npm@10.0.0" });
     await writeFile(join(cwd, lockfile), "", "utf8");
 
@@ -29,7 +29,7 @@ describe("detectPackageManager", () => {
   });
 
   it("uses packageManager metadata when no known lockfile exists", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-manager-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-manager-tests", task.id);
     await writePackageJson(cwd, { packageManager: "pnpm@10.13.1" });
 
     await expect(detectPackageManager({ cwd })).resolves.toEqual({
@@ -42,7 +42,7 @@ describe("detectPackageManager", () => {
   it("defaults to npm with a warning when no known lockfile or packageManager exists", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-manager-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-manager-tests", task.id);
     await writePackageJson(cwd);
 
     await expect(detectPackageManager({ cwd })).resolves.toEqual({
@@ -57,7 +57,7 @@ describe("createPackageInstallRunner", () => {
   it("runs the detected install command through an injected package command runner", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-package-manager-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-package-manager-tests", task.id);
     await writePackageJson(cwd);
     await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
     const requests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];

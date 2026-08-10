@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@stepkit/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
+      "@trailstep/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
     },
   },
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { StepkitCliPrompts } from "../command.types.js";
+import type { TrailStepCliPrompts } from "../command.types.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
 
 function fakePrompts(
@@ -9,7 +9,7 @@ function fakePrompts(
     readonly choices?: readonly string[];
     readonly answer: string;
   }[],
-): StepkitCliPrompts {
+): TrailStepCliPrompts {
   const queue = [...expected];
   return {
     async text(label) {

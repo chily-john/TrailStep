@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { readRunEvents } from "../artifacts/run-storage.js";
+import { defaultRunsRoot, readRunEvents } from "../artifacts/run-storage.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
@@ -18,8 +18,11 @@ export interface RunSummary {
   readonly warning?: string;
 }
 
-export async function listRunSummaries(options: { readonly cwd: string }): Promise<RunSummary[]> {
-  const runsRoot = join(options.cwd, ".stepkit", "runs");
+export async function listRunSummaries(options: {
+  readonly cwd: string;
+  readonly runsRoot?: string;
+}): Promise<RunSummary[]> {
+  const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
 
   let entries: Dirent[];
   try {

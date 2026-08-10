@@ -1,4 +1,4 @@
-import { defineWorkflow, shape } from "@stepkit/authoring";
+import { defineWorkflow, shape } from "@trailstep/authoring";
 import { takeItAwayOutput } from "../feature-implementation/shared/output-schema.js";
 import { grillStep } from "./grill/step.js";
 

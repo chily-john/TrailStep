@@ -1,4 +1,4 @@
-import { loadFragments, promptSections, section } from "@stepkit/authoring";
+import { loadFragments, promptSections, section } from "@trailstep/authoring";
 import type { TakeItAwayInput } from "../shared/input-schema.js";
 
 const fragments = loadFragments(import.meta.dirname, {

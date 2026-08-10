@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { document } from "../../../authoring/document/document.js";
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 
 export async function readWorkingAgentOutput<TOutput extends PlainObject>(options: {
@@ -14,7 +14,7 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
   try {
     raw = await readFile(options.outputFile, "utf8");
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_output_unreadable",
       message: `Working agent step ${options.stepId} output.json could not be read.`,
       details:
@@ -40,7 +40,7 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_output_invalid_json",
       message: `Working agent step ${options.stepId} output.json must contain one JSON object.`,
       details:
@@ -51,7 +51,7 @@ export async function readWorkingAgentOutput<TOutput extends PlainObject>(option
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_output_invalid_json",
       message: `Working agent step ${options.stepId} output.json must contain one JSON object.`,
       details: { path: options.outputFile },

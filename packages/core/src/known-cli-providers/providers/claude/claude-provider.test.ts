@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
 import { claudeProvider } from "./claude-provider.js";
 
@@ -14,7 +14,7 @@ vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 describe("claudeProvider.runWorking", () => {
   it("builds -p @<promptFile> --output-format json --dangerously-skip-permissions --model <model> --effort <level> and writes outputFile", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hello to Ada.", "utf8");
@@ -61,7 +61,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("omits --model and --effort when not provided", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-bare-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-bare-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -84,7 +84,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("passes a prompt-file reference instead of prompt content, even for a 100KB+ prompt (Windows CreateProcess argv-length regression check)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-large-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-large-prompt-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     const largePrompt = "x".repeat(120_000);
@@ -106,7 +106,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("the default runner (spawnClaudeCapturingStdout) ignores stdin when the prompt is a file reference", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-stdin-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-stdin-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -131,7 +131,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("writes usage.json after successful output extraction", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-usage-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-usage-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     const usageFile = join(cwd, "usage.json");
@@ -161,7 +161,9 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("does not write usage.json when Claude exits nonzero or output parsing fails", async () => {
-    const failedCwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-no-usage-fail-"));
+    const failedCwd = await mkdtemp(
+      join(tmpdir(), "trailstep-core-claude-provider-no-usage-fail-"),
+    );
     const failedPromptFile = join(failedCwd, "prompt.md");
     const failedOutputFile = join(failedCwd, "output.json");
     const failedUsageFile = join(failedCwd, "usage.json");
@@ -181,7 +183,7 @@ describe("claudeProvider.runWorking", () => {
     await expect(access(failedUsageFile)).rejects.toThrow();
 
     const invalidCwd = await mkdtemp(
-      join(tmpdir(), "stepkit-core-claude-provider-no-usage-invalid-"),
+      join(tmpdir(), "trailstep-core-claude-provider-no-usage-invalid-"),
     );
     const invalidPromptFile = join(invalidCwd, "prompt.md");
     const invalidOutputFile = join(invalidCwd, "output.json");
@@ -203,7 +205,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("throws agent_provider_failed on a non-zero exit code", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-fail-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-fail-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -219,7 +221,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("throws agent_provider_output_invalid when stdout has no usable JSON", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-badjson-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-badjson-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -229,7 +231,7 @@ describe("claudeProvider.runWorking", () => {
         exitCode: 0,
         stdout: "not usable",
       })),
-    ).rejects.toBeInstanceOf(StepKitFailureError);
+    ).rejects.toBeInstanceOf(TrailStepFailureError);
 
     await expect(
       claudeProvider.runWorking({ promptFile, outputFile, cwd }, async () => ({
@@ -242,7 +244,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("surfaces sessionId and rawResultText in the failure details when the envelope parses but its result field isn't usable JSON, so a repair attempt is possible", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-badjson-session-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-badjson-session-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -267,7 +269,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("omits sessionId from failure details when stdout has no parsable envelope at all (repair is not attempted)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-badjson-nosession-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-badjson-nosession-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -279,14 +281,14 @@ describe("claudeProvider.runWorking", () => {
       })),
     ).rejects.toSatisfy((error: unknown) => {
       return (
-        error instanceof StepKitFailureError &&
+        error instanceof TrailStepFailureError &&
         !Object.hasOwn(error.failure.details as object, "sessionId")
       );
     });
   });
 
   it("throws agent_provider_spawn_error when the runner rejects", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-spawn-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-spawn-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -301,7 +303,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("writes a plain-text result verbatim, with no JSON parsing, when captureMode is raw-text", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-rawtext-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-rawtext-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.md");
     await writeFile(promptFile, "Write a feature doc.", "utf8");
@@ -320,7 +322,7 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("still JSON-extracts when captureMode is json (or omitted), regression check", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-provider-jsonmode-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-jsonmode-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -339,7 +341,7 @@ describe("claudeProvider.runWorking", () => {
 
 describe("claudeProvider.repairOutput", () => {
   it("builds --resume <sessionId> -p --output-format json --dangerously-skip-permissions (plus model/effort), sends a reformat-only prompt via stdin, and accepts a well-formed reply", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-repair-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-repair-"));
     const outputFile = join(cwd, "output.json");
 
     const calls: ProviderWorkingProcessRequest[] = [];
@@ -392,7 +394,7 @@ describe("claudeProvider.repairOutput", () => {
   });
 
   it("omits --model and --effort when not provided", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-repair-bare-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-repair-bare-"));
     const outputFile = join(cwd, "output.json");
 
     const calls: ProviderWorkingProcessRequest[] = [];
@@ -422,7 +424,7 @@ describe("claudeProvider.repairOutput", () => {
   });
 
   it("throws agent_provider_output_invalid when the repair reply is itself malformed, without retrying again", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-claude-repair-stillbad-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-repair-stillbad-"));
     const outputFile = join(cwd, "output.json");
 
     const calls: ProviderWorkingProcessRequest[] = [];

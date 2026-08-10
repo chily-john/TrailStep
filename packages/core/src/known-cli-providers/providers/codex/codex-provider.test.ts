@@ -4,13 +4,13 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
 import { codexProvider } from "./codex-provider.js";
 
 describe("codexProvider.runWorking", () => {
   it('builds exec --dangerously-bypass-approvals-and-sandbox -m <model> -c model_reasoning_effort="<level>" -o <outputFile> @<promptFile> and never touches envelope parsing', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hello to Ada.", "utf8");
@@ -69,7 +69,7 @@ describe("codexProvider.runWorking", () => {
   });
 
   it("omits -m and -c when model/thinking are not provided, but always includes -o", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-bare-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-bare-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -91,7 +91,7 @@ describe("codexProvider.runWorking", () => {
   });
 
   it("keeps large prompt content out of argv by passing only a prompt-file reference", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-large-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-large-prompt-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     const largePrompt = "x".repeat(120_000);
@@ -112,7 +112,7 @@ describe("codexProvider.runWorking", () => {
   });
 
   it("throws agent_provider_thinking_unsupported for the 'max' tier (Codex has no max reasoning level)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-max-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-max-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -128,7 +128,7 @@ describe("codexProvider.runWorking", () => {
   });
 
   it("throws agent_provider_failed on a non-zero exit code", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-fail-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-fail-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -144,7 +144,7 @@ describe("codexProvider.runWorking", () => {
   });
 
   it("throws agent_provider_spawn_error when the runner rejects", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-codex-provider-spawn-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-spawn-"));
     const promptFile = join(cwd, "prompt.md");
     const outputFile = join(cwd, "output.json");
     await writeFile(promptFile, "Say hi.", "utf8");
@@ -153,7 +153,7 @@ describe("codexProvider.runWorking", () => {
       codexProvider.runWorking({ promptFile, outputFile, cwd }, async () => {
         throw new Error("ENOENT");
       }),
-    ).rejects.toBeInstanceOf(StepKitFailureError);
+    ).rejects.toBeInstanceOf(TrailStepFailureError);
 
     await expect(
       codexProvider.runWorking({ promptFile, outputFile, cwd }, async () => {

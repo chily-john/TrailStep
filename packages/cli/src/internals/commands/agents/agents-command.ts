@@ -19,9 +19,9 @@ import { CliUsageError } from "../../command.types.js";
 import {
   configPathForScope,
   listRegisteredWorkflowEntries,
-  readRawStepKitConfigFile,
+  readRawTrailStepConfigFile,
   type WorkflowRegistryScope,
-  writeRawStepKitConfigFile,
+  writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 
@@ -75,7 +75,7 @@ export const agentsCommand: CliCommand<AgentCommandArgs> = {
     }
 
     throw new CliUsageError(
-      "stepkit agents requires set, delete, rename, or no subcommand for interactive mode.",
+      "trailstep agents requires set, delete, rename, or no subcommand for interactive mode.",
     );
   },
   async run(args: AgentCommandArgs, context: CliCommandContext): Promise<number> {
@@ -94,17 +94,17 @@ export const agentsCommand: CliCommand<AgentCommandArgs> = {
 
 function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
   const [name, ...flagsArgv] = argv;
-  assertAgentName(name, "stepkit agents set requires <name>.");
+  assertAgentName(name, "trailstep agents set requires <name>.");
   const flags = parseFlags(flagsArgv, ["--provider", "--model", "--thinking", "--scope"]);
   const scope = parseRequiredScope(
     flags.scope,
-    "stepkit agents set requires --scope <local|project|global>.",
+    "trailstep agents set requires --scope <local|project|global>.",
   );
   const provider = parseRequiredFlag(
     flags.provider,
-    "stepkit agents set requires --provider <provider>.",
+    "trailstep agents set requires --provider <provider>.",
   );
-  const model = parseRequiredFlag(flags.model, "stepkit agents set requires --model <model>.");
+  const model = parseRequiredFlag(flags.model, "trailstep agents set requires --model <model>.");
   const thinking = parseThinking(flags.thinking);
 
   return {
@@ -119,24 +119,24 @@ function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
 
 function parseDeleteArgs(argv: readonly string[]): AgentCommandArgs {
   const [name, ...flagsArgv] = argv;
-  assertAgentName(name, "stepkit agents delete requires <name>.");
+  assertAgentName(name, "trailstep agents delete requires <name>.");
   const flags = parseFlags(flagsArgv, ["--scope"]);
   return {
     action: "delete",
     name,
     scope: parseRequiredScope(
       flags.scope,
-      "stepkit agents delete requires --scope <local|project|global>.",
+      "trailstep agents delete requires --scope <local|project|global>.",
     ),
   };
 }
 
 function parseRenameArgs(argv: readonly string[]): AgentCommandArgs {
   const [oldName, newName, ...flagsArgv] = argv;
-  assertAgentName(oldName, "stepkit agents rename requires <old>.");
-  assertAgentName(newName, "stepkit agents rename requires <new>.");
+  assertAgentName(oldName, "trailstep agents rename requires <old>.");
+  assertAgentName(newName, "trailstep agents rename requires <new>.");
   if (oldName === newName) {
-    throw new CliUsageError("stepkit agents rename requires different old and new names.");
+    throw new CliUsageError("trailstep agents rename requires different old and new names.");
   }
   const flags = parseFlags(flagsArgv, ["--scope"]);
   return {
@@ -145,7 +145,7 @@ function parseRenameArgs(argv: readonly string[]): AgentCommandArgs {
     newName,
     scope: parseRequiredScope(
       flags.scope,
-      "stepkit agents rename requires --scope <local|project|global>.",
+      "trailstep agents rename requires --scope <local|project|global>.",
     ),
   };
 }
@@ -159,7 +159,7 @@ function parseFlags(
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option === undefined || !allowedFlags.includes(option)) {
-      throw new CliUsageError(`Unknown option for stepkit agents: ${option ?? ""}`);
+      throw new CliUsageError(`Unknown option for trailstep agents: ${option ?? ""}`);
     }
 
     const value = argv[index + 1];
@@ -179,7 +179,7 @@ async function setAgent(
   context: CliCommandContext,
 ): Promise<number> {
   const configPath = configPathForScope(args.scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
   agents[args.name] = [
     {
@@ -190,7 +190,7 @@ async function setAgent(
         : { thinking: args.thinking }),
     },
   ];
-  await writeRawStepKitConfigFile(configPath, { ...config, agents });
+  await writeRawTrailStepConfigFile(configPath, { ...config, agents });
   context.io.writeLine(`Wrote agent ${args.name} to ${configPath}.`);
   return 0;
 }
@@ -202,10 +202,10 @@ async function deleteAgent(
   await blockDeleteWhenAgentReferrersExist(args.name, context);
 
   const configPath = configPathForScope(args.scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
   delete agents[args.name];
-  await writeRawStepKitConfigFile(configPath, { ...config, agents });
+  await writeRawTrailStepConfigFile(configPath, { ...config, agents });
   context.io.writeLine(`Deleted agent ${args.name} from ${configPath}.`);
   return 0;
 }
@@ -215,7 +215,7 @@ async function renameAgent(
   context: CliCommandContext,
 ): Promise<number> {
   const configPath = configPathForScope(args.scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
   if (!(args.oldName in agents)) {
     throw new CliUsageError(`Agent ${args.oldName} does not exist in ${args.scope} config.`);
@@ -228,7 +228,7 @@ async function renameAgent(
   const entry = renamedAgents[args.oldName];
   delete renamedAgents[args.oldName];
   renamedAgents[args.newName] = entry;
-  await writeRawStepKitConfigFile(configPath, { ...config, agents: renamedAgents });
+  await writeRawTrailStepConfigFile(configPath, { ...config, agents: renamedAgents });
   await renameAgentRefs(args.oldName, args.newName, context);
   context.io.writeLine(`Renamed agent ${args.oldName} to ${args.newName}.`);
   return 0;
@@ -240,7 +240,7 @@ const PROVIDER_CHOICES = ["claude", "codex", "gemini", "pi"] as const;
 
 async function runInteractiveAgents(context: CliCommandContext): Promise<number> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
 
   const scopeLabel = await context.prompts.select("Scope", INTERACTIVE_SCOPES);
@@ -290,7 +290,7 @@ async function buildInteractiveRows(
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
 ): Promise<readonly InteractiveRow[]> {
-  const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+  const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
   const agents = toMutableRecord(config.agents);
   const customNames = Object.keys(agents)
     .filter((name) => !RESERVED_AGENT_NAMES.includes(name as (typeof RESERVED_AGENT_NAMES)[number]))
@@ -339,7 +339,7 @@ async function createNamedAgent(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const name = (await context.prompts.text("Agent name")).trim();
   assertAgentName(name, "Agent name is required.");
@@ -363,7 +363,7 @@ async function editNamedAgent(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const action = await context.prompts.select(`Agent ${row.name}`, [
     "Edit",
@@ -423,7 +423,7 @@ async function editWorkflowRole(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const actions = workflowRoleActions(row.state);
   const action = await context.prompts.select(
@@ -502,7 +502,7 @@ async function setWorkflowRoleToNamedAgent(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const names = await listNamedAgentChoices(context);
   const selection = await context.prompts.select("Named agent", ["+ Create new agent", ...names]);
@@ -542,7 +542,7 @@ async function setWorkflowRoleToInline(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
@@ -572,7 +572,7 @@ async function editWorkflowRoleInline(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const existingEntry = await readWorkflowRoleEntry(scope, row, context);
   const nextEntry = await editNamedAgentEntry(existingEntry, scope, context);
@@ -599,7 +599,7 @@ async function readWorkflowRoleEntry(
   row: InteractiveWorkflowRoleRow,
   context: CliCommandContext,
 ): Promise<AgentEntryItems> {
-  const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+  const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
   const workflowConfig = toMutableRecord(toMutableRecord(config.workflows)[row.workflowId]);
   const workflowAgents = toMutableRecord(workflowConfig.agents);
   return readAgentEntryItems(workflowAgents[row.roleName]);
@@ -611,7 +611,7 @@ async function removeWorkflowRoleOverride(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const outcome = await confirmAgentConfigSave({
     context: saveConfirmContextForWorkflowRole(row),
@@ -621,13 +621,13 @@ async function removeWorkflowRoleOverride(
     return;
   }
   const configPath = configPathForScope(scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const workflows = toMutableRecord(config.workflows);
   const workflowConfig = toMutableRecord(workflows[row.workflowId]);
   const workflowAgents = toMutableRecord(workflowConfig.agents);
   delete workflowAgents[row.roleName];
   workflows[row.workflowId] = { ...workflowConfig, agents: workflowAgents };
-  await writeRawStepKitConfigFile(configPath, { ...config, workflows });
+  await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
 }
 
 async function editReferencedNamedAgent(
@@ -636,7 +636,7 @@ async function editReferencedNamedAgent(
   context: CliCommandContext,
 ): Promise<void> {
   if (context.prompts === undefined || row.ref === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const targetScope = await findNamedAgentScope(row.ref, context);
   const existingEntry = await readNamedAgentEntry(targetScope, row.ref, context);
@@ -667,7 +667,7 @@ async function readNamedAgentEntry(
   name: string,
   context: CliCommandContext,
 ): Promise<AgentEntryItems> {
-  const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+  const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
   return readAgentEntryItems(toMutableRecord(config.agents)[name]);
 }
 
@@ -677,7 +677,7 @@ async function editNamedAgentEntry(
   context: CliCommandContext,
 ): Promise<AgentEntryItems> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
 
   let current = entry;
@@ -746,7 +746,7 @@ async function addItemToEntry(
   context: CliCommandContext,
 ): Promise<AgentEntryItems> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const choice = await context.prompts.select("Add item", ["Pick existing agent", "Create new"]);
   if (choice === "Pick existing agent") {
@@ -769,7 +769,7 @@ async function editRefItemInPlace(
   context: CliCommandContext,
 ): Promise<AgentEntryItems> {
   if (context.prompts === undefined) {
-    throw new CliUsageError("stepkit agents requires prompts for interactive mode.");
+    throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const targetScope = await findNamedAgentScope(ref, context);
   const existingEntry = await readNamedAgentEntry(targetScope, ref, context);
@@ -796,7 +796,7 @@ async function findNamedAgentScope(
   context: CliCommandContext,
 ): Promise<WorkflowRegistryScope> {
   for (const scope of ["local", "project", "global"] as const) {
-    const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+    const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
     if (name in toMutableRecord(config.agents)) {
       return scope;
     }
@@ -807,7 +807,7 @@ async function findNamedAgentScope(
 async function listNamedAgentChoices(context: CliCommandContext): Promise<readonly string[]> {
   const names = new Set<string>(RESERVED_AGENT_NAMES);
   for (const scope of ["local", "project", "global"] as const) {
-    const config = await readRawStepKitConfigFile(configPathForScope(scope, context));
+    const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
     for (const name of Object.keys(toMutableRecord(config.agents))) {
       names.add(name);
     }
@@ -838,10 +838,10 @@ async function writeNamedAgent(
   context: CliCommandContext,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
   agents[name] = entry;
-  await writeRawStepKitConfigFile(configPath, { ...config, agents });
+  await writeRawTrailStepConfigFile(configPath, { ...config, agents });
   context.io.writeLine(`Wrote agent ${name} to ${configPath}.`);
 }
 
@@ -852,13 +852,13 @@ async function writeWorkflowRole(
   context: CliCommandContext,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
-  const config = await readRawStepKitConfigFile(configPath);
+  const config = await readRawTrailStepConfigFile(configPath);
   const workflows = toMutableRecord(config.workflows);
   const workflowConfig = toMutableRecord(workflows[row.workflowId]);
   const workflowAgents = toMutableRecord(workflowConfig.agents);
   workflowAgents[row.roleName] = entry;
   workflows[row.workflowId] = { ...workflowConfig, agents: workflowAgents };
-  await writeRawStepKitConfigFile(configPath, { ...config, workflows });
+  await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
   context.io.writeLine(`Wrote workflow ${row.workflowId} role ${row.roleName} to ${configPath}.`);
 }
 
@@ -927,7 +927,7 @@ function parseRequiredScope(
   const scope = parseRequiredFlag(value, missingMessage);
   if (scope !== "local" && scope !== "project" && scope !== "global") {
     throw new CliUsageError(
-      "stepkit agents requires --scope local, --scope project, or --scope global.",
+      "trailstep agents requires --scope local, --scope project, or --scope global.",
     );
   }
   return scope;

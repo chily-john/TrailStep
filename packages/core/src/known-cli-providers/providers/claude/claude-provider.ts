@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
   InteractiveProcessResult,
@@ -40,7 +40,7 @@ async function runWorking(
       signal: request.signal,
     });
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: "claude provider process could not be started.",
       details: { cause: error instanceof Error ? error.message : String(error) },
@@ -50,7 +50,7 @@ async function runWorking(
   const harnessDurationMs = Math.max(0, Math.round(performance.now() - startedAt));
 
   if (result.exitCode !== 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `claude provider process exited with code ${result.exitCode}.`,
       details: { exitCode: result.exitCode },
@@ -110,7 +110,7 @@ async function writeCapturedOutput(options: {
     try {
       text = extractEnvelopeText(options.stdout, { resultField: "result" });
     } catch (error) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "agent_provider_output_invalid",
         message: `claude provider ${label}stdout did not contain a usable result.`,
         details: {
@@ -126,7 +126,7 @@ async function writeCapturedOutput(options: {
     try {
       output = extractEnvelopeOutput(options.stdout, { resultField: "result" });
     } catch (error) {
-      throw new StepKitFailureError({
+      throw new TrailStepFailureError({
         code: "agent_provider_output_invalid",
         message: `claude provider ${label}stdout did not contain a usable JSON result.`,
         details: {
@@ -165,7 +165,7 @@ async function repairOutput(
       signal: request.signal,
     });
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: "claude provider repair process could not be started.",
       details: { cause: error instanceof Error ? error.message : String(error) },
@@ -175,7 +175,7 @@ async function repairOutput(
   const harnessDurationMs = Math.max(0, Math.round(performance.now() - startedAt));
 
   if (result.exitCode !== 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `claude provider repair process exited with code ${result.exitCode}.`,
       details: { exitCode: result.exitCode },
@@ -221,7 +221,7 @@ function buildClaudeRepairArgs(request: ProviderWorkingRepairRequest): string[] 
 function buildClaudeRepairPrompt(request: ProviderWorkingRepairRequest): string {
   if (request.captureMode === "raw-text") {
     return [
-      "# StepKit output repair",
+      "# TrailStep output repair",
       "",
       "Your previous final answer in this session could not be used as-is.",
       "Do not redo the task or make any further changes - the work is already done.",
@@ -235,7 +235,7 @@ function buildClaudeRepairPrompt(request: ProviderWorkingRepairRequest): string 
   }
 
   return [
-    "# StepKit output repair",
+    "# TrailStep output repair",
     "",
     "Your previous final answer in this session was not valid JSON matching the required schema.",
     "Do not redo the task, re-read files, or make any further changes - the work is already done.",
@@ -293,7 +293,7 @@ async function runInteractive(
   }
 
   if (!request.systemPromptFile) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_invalid_request",
       message: "claude provider's interactive mode requires systemPromptFile.",
     });

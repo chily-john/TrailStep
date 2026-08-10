@@ -11,7 +11,7 @@ export async function warnIfGeneratedSkillDirectoryExists(
 ): Promise<void> {
   const skillDirectory = join(
     context.cwd,
-    ".stepkit",
+    ".trailstep",
     "skills",
     workflowSkillName(namespace, name),
   );

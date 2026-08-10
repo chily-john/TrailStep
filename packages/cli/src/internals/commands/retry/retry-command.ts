@@ -1,12 +1,13 @@
 import { join } from "node:path";
 
-import type { Event } from "@stepkit/core";
-import { runWorkflow } from "@stepkit/core";
+import type { Event } from "@trailstep/core";
+import { runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
-import { loadStepKitConfig } from "../../config/config.js";
+import { loadTrailStepConfig } from "../../config/config.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
+import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { createTerminalEventLogger } from "../run/terminal-event-logger.js";
 import { listEligibleRetryRuns } from "./eligible-retry-runs.js";
@@ -20,6 +21,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
   },
   async run(args: RetryCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
+    const runsRoot = resolveRunsRoot(context);
     let retryTarget: { readonly workflowId: string; readonly workflowRunName: string };
     try {
       retryTarget =
@@ -31,7 +33,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
       throw error;
     }
-    const stepkitConfig = await loadStepKitConfig(cwd);
+    const trailstepConfig = await loadTrailStepConfig(cwd);
     const resolvedWorkflow = await resolveWorkflowReference(retryTarget.workflowId, {
       cwd,
       homeDir: context.homeDir,
@@ -39,7 +41,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
     if (!resolvedWorkflow) {
       io.writeError(
-        `Workflow not found: ${retryTarget.workflowId}. Run stepkit workflows to see available workflows.`,
+        `Workflow not found: ${retryTarget.workflowId}. Run trailstep workflows to see available workflows.`,
       );
       return 1;
     }
@@ -54,12 +56,13 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
       workflow: resolvedWorkflow.workflow,
       cwd,
       eventSink,
-      retry: { runDir: join(cwd, ".stepkit", "runs", retryTarget.workflowRunName), kind: "manual" },
+      runsRoot,
+      retry: { runDir: join(runsRoot, retryTarget.workflowRunName), kind: "manual" },
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
       ...(context.workingAgentProcessRunner === undefined
         ? {}
         : { workingAgentProcessRunner: context.workingAgentProcessRunner }),
-      ...(stepkitConfig === undefined ? {} : { stepkitConfig }),
+      ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
     });
 
     if (result.status === "success") {
@@ -79,12 +82,15 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
   readonly workflowRunName: string;
 }> {
   const usageHint =
-    "An explicit retry target is required in non-interactive mode. Expected stepkit retry <workflow-ref> <runName>.";
+    "An explicit retry target is required in non-interactive mode. Expected trailstep retry <workflow-ref> <runName>.";
   if (context.prompts === undefined) {
     throw new CliUsageError(usageHint);
   }
 
-  const eligibleRuns = await listEligibleRetryRuns({ cwd: context.cwd });
+  const eligibleRuns = await listEligibleRetryRuns({
+    cwd: context.cwd,
+    runsRoot: resolveRunsRoot(context),
+  });
   if (eligibleRuns.length === 0) {
     context.io.writeLine("No eligible failed runs found to retry.");
     return Promise.reject(new NoEligibleRetryRuns());

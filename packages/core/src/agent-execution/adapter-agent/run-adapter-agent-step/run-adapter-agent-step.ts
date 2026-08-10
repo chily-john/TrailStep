@@ -6,7 +6,7 @@ import type {
   AgentTool,
 } from "../../../contracts/agents/agent-adapter.types.js";
 import type { AgentModelTarget } from "../../../contracts/agents/agent-role.types.js";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.js";
 
 const PROVIDER_NEUTRAL_ADAPTER_KEY = "custom";
@@ -59,7 +59,7 @@ export async function runAgentStep<
   });
 
   if (submittedOutput === undefined) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_output_missing",
       message: `Agent step ${options.step.id} did not call submit_output.`,
     });
@@ -95,7 +95,7 @@ function resolveAgentAdapter<TInput extends PlainObject, TOutput extends PlainOb
     return (request) => selection.runAgentStep(request);
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "agent_adapter_unavailable",
     message:
       "Agent steps that do not use a configured command runner require a custom adapter function or adapter object.",
@@ -108,7 +108,7 @@ function createSubmitOutputTool<TOutput extends PlainObject>(
 ): AgentTool<TOutput> {
   return {
     name: "submit_output",
-    description: "Submit the typed output for this StepKit agent step.",
+    description: "Submit the typed output for this TrailStep agent step.",
     schema,
     async call(input) {
       await onOutput(input);

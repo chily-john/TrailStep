@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
   InteractiveProcessResult,
@@ -55,7 +55,7 @@ async function runWorking(
   try {
     result = await runner({ command: PI_BINARY, args, cwd: request.cwd, signal: request.signal });
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: "pi provider process could not be started.",
       details: { cause: error instanceof Error ? error.message : String(error) },
@@ -94,8 +94,8 @@ async function runWorking(
  * non-interactive `-p` runs on approval the way Claude and Codex do.
  *
  * Pi's `--thinking` vocabulary (`off|minimal|low|medium|high|xhigh|max`,
- * per `pi --help`) is a strict superset of StepKit's `WorkflowAgentThinking`
- * (`low|medium|high|xhigh|max`), so every StepKit thinking value passes
+ * per `pi --help`) is a strict superset of TrailStep's `WorkflowAgentThinking`
+ * (`low|medium|high|xhigh|max`), so every TrailStep thinking value passes
  * straight through with no mapping or validation needed (unlike Codex, which
  * has no `"max"` tier and must reject it).
  */
@@ -105,14 +105,14 @@ function throwPiOutputFailure(options: {
   readonly json: boolean;
 }): never {
   if (options.exitCode !== 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `pi provider process exited with code ${options.exitCode}.`,
       details: { exitCode: options.exitCode },
     });
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "agent_provider_output_invalid",
     message: options.json
       ? "pi provider stdout did not contain a usable JSON result."

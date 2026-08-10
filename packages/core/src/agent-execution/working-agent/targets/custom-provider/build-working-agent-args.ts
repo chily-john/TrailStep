@@ -1,4 +1,4 @@
-import { StepKitFailureError } from "../../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 
 export function buildWorkingAgentArgs(options: {
   readonly argv: readonly string[] | undefined;
@@ -30,7 +30,7 @@ export function buildWorkingAgentArgs(options: {
           arg.includes("{{outputFile}}") ||
           arg.includes("{{model}}")
         ) {
-          throw new StepKitFailureError({
+          throw new TrailStepFailureError({
             code: "agent_provider_invalid",
             message: "Working agent command placeholders must be whole argv values.",
           });

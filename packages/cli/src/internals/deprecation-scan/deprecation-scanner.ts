@@ -4,14 +4,14 @@ import {
   type DeprecationManifest,
   type DeprecationTargetPackage,
   findDeprecationsAsOf,
-} from "@stepkit/core";
+} from "@trailstep/core";
 
-import { extractStepKitImportTokens } from "./import-specifier-tokens.js";
+import { extractTrailStepImportTokens } from "./import-specifier-tokens.js";
 
-export type StepKitDeprecationSeverity = "warning" | "blocking";
-type StepKitDeprecationSeverityState = "none" | StepKitDeprecationSeverity;
+export type TrailStepDeprecationSeverity = "warning" | "blocking";
+type TrailStepDeprecationSeverityState = "none" | TrailStepDeprecationSeverity;
 
-export interface StepKitDeprecationEntry {
+export interface TrailStepDeprecationEntry {
   readonly packageName: string;
   readonly symbol: string;
   readonly deprecatedSince: string;
@@ -20,10 +20,10 @@ export interface StepKitDeprecationEntry {
   readonly replacement?: string;
 }
 
-// Adapts @stepkit/core's manifest (field name "package") to this module's local shape (field name
+// Adapts @trailstep/core's manifest (field name "package") to this module's local shape (field name
 // "packageName"). This is the real default used in production; tests override it via
 // ScanWorkflowSourceOptions.manifest / CliCommandContext.deprecationManifest.
-const defaultManifest: readonly StepKitDeprecationEntry[] = coreDeprecationManifest.map(
+const defaultManifest: readonly TrailStepDeprecationEntry[] = coreDeprecationManifest.map(
   (entry) => ({
     packageName: entry.package,
     symbol: entry.symbol,
@@ -38,7 +38,7 @@ export interface DeprecationFinding {
   readonly sourceFile: string;
   readonly packageName: string;
   readonly symbol: string;
-  readonly severity: StepKitDeprecationSeverity;
+  readonly severity: TrailStepDeprecationSeverity;
   readonly message: string;
   readonly replacement?: string;
   readonly line: number;
@@ -54,7 +54,7 @@ export interface ScanWorkflowSourceOptions {
     string,
     { readonly installedVersion?: string; readonly targetVersion: string }
   >;
-  readonly manifest?: readonly StepKitDeprecationEntry[];
+  readonly manifest?: readonly TrailStepDeprecationEntry[];
 }
 
 export async function scanWorkflowSourceForDeprecations({
@@ -66,7 +66,7 @@ export async function scanWorkflowSourceForDeprecations({
   const coreManifest = toCoreManifest(manifest);
   const findings: DeprecationFinding[] = [];
 
-  for (const token of extractStepKitImportTokens(source)) {
+  for (const token of extractTrailStepImportTokens(source)) {
     const versions = versionsByPackageName.get(token.packageName);
     if (!versions) {
       continue;
@@ -114,7 +114,7 @@ export async function scanWorkflowSourceForDeprecations({
   return findings;
 }
 
-function toCoreManifest(entries: readonly StepKitDeprecationEntry[]): DeprecationManifest {
+function toCoreManifest(entries: readonly TrailStepDeprecationEntry[]): DeprecationManifest {
   return entries.map((entry) => ({
     package: entry.packageName as DeprecationTargetPackage,
     symbol: entry.symbol,
@@ -137,7 +137,7 @@ function findMatchingStatus(
   }).find((status) => status.symbol === symbol);
 }
 
-function severityRank(severity: StepKitDeprecationSeverityState): number {
+function severityRank(severity: TrailStepDeprecationSeverityState): number {
   switch (severity) {
     case "none":
       return 0;

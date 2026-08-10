@@ -9,7 +9,7 @@ import {
   done,
   jsonSchema,
   type ProviderWorkingProcessRequest,
-  parseStepKitConfig,
+  parseTrailStepConfig,
   promptTemplate,
   runWorkflow,
   step,
@@ -42,7 +42,7 @@ describe("agent steps", () => {
   });
 
   it("chains an agent step into a code step through a custom adapter and validates submitted structured output", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-agent-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-agent-"));
     const agentOutputSchema = jsonSchema<{ answer: string }>({
       type: "object",
       properties: { answer: { type: "string" } },
@@ -119,7 +119,7 @@ describe("agent steps", () => {
   });
 
   it("renders an agent prompt from live step input and passes it to a custom adapter", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-unified-agent-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-unified-agent-"));
     const finalOutputSchema = jsonSchema<{ answer: string }>({
       type: "object",
       properties: { answer: { type: "string" } },
@@ -169,7 +169,7 @@ describe("agent steps", () => {
   });
 
   it("runs a continuation agent role through a configured command and validates output.json", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-command-agent-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-command-agent-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -196,7 +196,7 @@ describe("agent steps", () => {
       input: { task: "alpha" },
       runName: "command-agent-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {
           local: {
@@ -240,7 +240,9 @@ describe("agent steps", () => {
   });
 
   it("falls back to the second working-agent target after invalid JSON", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-command-agent-fallback-invalid-json-"));
+    const cwd = await mkdtemp(
+      join(tmpdir(), "trailstep-core-command-agent-fallback-invalid-json-"),
+    );
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -265,7 +267,7 @@ describe("agent steps", () => {
       input: { task: "gamma" },
       runName: "command-agent-fallback-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {
           broken: { binary: "broken-agent" },
@@ -308,7 +310,7 @@ describe("agent steps", () => {
   });
 
   it("falls back to agents.default when role and size mappings are unusable", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-command-agent-default-fallback-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-command-agent-default-fallback-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -333,7 +335,7 @@ describe("agent steps", () => {
       input: { task: "delta" },
       runName: "command-agent-default-fallback-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {
           role: { binary: "role-agent" },
@@ -373,7 +375,7 @@ describe("agent steps", () => {
   });
 
   it("fails with agent_target_exhausted after all targets fail", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-command-agent-exhausted-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-command-agent-exhausted-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -398,7 +400,7 @@ describe("agent steps", () => {
       input: { task: "epsilon" },
       runName: "command-agent-exhausted-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {
           first: { binary: "first-agent" },
@@ -438,7 +440,7 @@ describe("agent steps", () => {
   });
 
   it("writes prompt.md with output-file and schema instructions before invoking the command", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-command-agent-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-command-agent-prompt-"));
     let promptFileBeforeRun: string | undefined;
     let promptTextBeforeRun: string | undefined;
 
@@ -464,7 +466,7 @@ describe("agent steps", () => {
       input: { task: "beta" },
       runName: "command-agent-prompt-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { local: { binary: "local-agent" } },
         agents: { small: [{ provider: "local" }] },
@@ -493,7 +495,7 @@ describe("agent steps", () => {
 
 describe("registry-vs-customProviders dispatch split", () => {
   it("dispatches a working target whose provider matches a registry key through the built-in provider, with no customProviders entry required", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-dispatch-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-"));
     const providerCalls: ProviderWorkingProcessRequest[] = [];
 
     const workflow: Workflow<{ name: string }, { greeting: string }> = {
@@ -518,7 +520,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       input: { name: "Ada" },
       runName: "registry-dispatch-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { small: [{ provider: "claude", model: "sonnet" }] },
@@ -546,7 +548,7 @@ describe("registry-vs-customProviders dispatch split", () => {
   });
 
   it("dispatches a codex working target through the built-in provider using direct -o file capture, with no envelope stdout parsing", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-dispatch-codex-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-codex-"));
     const providerCalls: ProviderWorkingProcessRequest[] = [];
 
     const workflow: Workflow<{ name: string }, { greeting: string }> = {
@@ -571,7 +573,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       input: { name: "Dee" },
       runName: "registry-dispatch-codex-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { small: [{ provider: "codex", model: "gpt-5.5" }] },
@@ -611,7 +613,7 @@ describe("registry-vs-customProviders dispatch split", () => {
   });
 
   it("dispatches a pi working target through the built-in provider, extracting its message-shaped envelope field", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-dispatch-pi-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-pi-"));
     const providerCalls: ProviderWorkingProcessRequest[] = [];
 
     const workflow: Workflow<{ name: string }, { greeting: string }> = {
@@ -636,7 +638,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       input: { name: "Pip" },
       runName: "registry-dispatch-pi-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { small: [{ provider: "pi", model: "openai-codex/gpt-5.5" }] },
@@ -682,7 +684,7 @@ describe("registry-vs-customProviders dispatch split", () => {
   });
 
   it("dispatches a gemini working target through the built-in provider, using an injected fake runner (structural-only: the real gemini CLI is not installed here)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-dispatch-gemini-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-gemini-"));
     const providerCalls: ProviderWorkingProcessRequest[] = [];
 
     const workflow: Workflow<{ name: string }, { greeting: string }> = {
@@ -707,7 +709,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       input: { name: "Gigi" },
       runName: "registry-dispatch-gemini-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { small: [{ provider: "gemini", model: "gemini-2.5-pro" }] },
@@ -744,7 +746,7 @@ describe("registry-vs-customProviders dispatch split", () => {
   it("prefers built-in known CLI providers over same-named customProviders after provider registry is moved", async () => {
     expect(providerRegistry.claude.id).toBe("claude");
 
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-registry-priority-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-priority-"));
     const providerCalls: ProviderWorkingProcessRequest[] = [];
     const legacyRequests: WorkingAgentProcessRequest[] = [];
 
@@ -770,7 +772,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       input: { name: "Bea" },
       runName: "registry-priority-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { claude: { binary: "should-not-run" } },
         agents: { small: [{ provider: "claude" }] },
@@ -798,7 +800,7 @@ describe("registry-vs-customProviders dispatch split", () => {
   });
 
   it("still dispatches a provider name that is only a customProviders key through the command path", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-customagents-fallback-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-customagents-fallback-"));
     const legacyRequests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ name: string }, { greeting: string }> = {
@@ -823,7 +825,7 @@ describe("registry-vs-customProviders dispatch split", () => {
       input: { name: "Cy" },
       runName: "customagents-fallback-run",
       cwd,
-      stepkitConfig: parseStepKitConfig({
+      trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { "local-cli": { binary: "local-cli" } },
         agents: { small: [{ provider: "local-cli" }] },
@@ -846,7 +848,7 @@ describe("registry-vs-customProviders dispatch split", () => {
 
   it("rejects a target whose provider matches neither the registry nor customProviders with agent_provider_unknown", () => {
     expect(() =>
-      parseStepKitConfig({
+      parseTrailStepConfig({
         version: 1,
         customProviders: {},
         agents: { small: [{ provider: "totally-unknown-provider" }] },
@@ -861,7 +863,7 @@ describe("registry-vs-customProviders dispatch split", () => {
 
 describe("promptTemplate prompt source", () => {
   it("resolves a step's prompt from a local file relative to cwd", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-prompt-template-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-prompt-template-"));
     await writeFile(join(cwd, "prompt.md"), "Say hello.", "utf8");
     const outputSchema = jsonSchema<{ answer: string }>({
       type: "object",
@@ -908,7 +910,7 @@ describe("promptTemplate prompt source", () => {
   });
 
   it("routes an unreadable promptTemplate file through normal step failure, recoverable via .catch", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-prompt-template-missing-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-prompt-template-missing-"));
     const outputSchema = jsonSchema<{ answer: string }>({
       type: "object",
       properties: { answer: { type: "string" } },

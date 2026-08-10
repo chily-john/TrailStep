@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { StepKitFailureError } from "../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 
 export async function waitForInteractiveCompletion(
@@ -44,7 +44,7 @@ export async function readCompletedInteractiveOutput(options: {
   });
 
   if (protocol.status === "cancelled") {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "interactive_session_cancelled",
       message: `Interactive agent step ${options.stepId} was cancelled.`,
       details: {
@@ -55,7 +55,7 @@ export async function readCompletedInteractiveOutput(options: {
   }
 
   if (protocol.status !== "completed") {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "interactive_session_incomplete",
       message: `Interactive agent step ${options.stepId} did not complete the file-based protocol.`,
       details: { status: protocol.status },
@@ -71,7 +71,7 @@ export async function readCompletedInteractiveOutput(options: {
 
   const diagnostics = options.outputSchema.diagnostics(output);
   if (diagnostics.length > 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "interactive_output_invalid",
       message: `Interactive agent step ${options.stepId} output.json failed schema validation: ${formatDiagnostics(diagnostics)}`,
       details: { diagnostics },
@@ -93,7 +93,7 @@ async function readPlainJsonFile(
   try {
     contents = await readFile(path, "utf8");
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: failure.readCode,
       message: failure.message,
       details: { path, cause: error instanceof Error ? error.message : String(error) },
@@ -104,7 +104,7 @@ async function readPlainJsonFile(
   try {
     parsed = JSON.parse(contents);
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: failure.invalidCode,
       message: failure.message,
       details: { path, cause: error instanceof Error ? error.message : String(error) },
@@ -112,7 +112,7 @@ async function readPlainJsonFile(
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: failure.invalidCode,
       message: `${failure.message} Expected a plain JSON object.`,
       details: { path },
@@ -127,7 +127,7 @@ function requireProtocolString(value: unknown, field: string, stepId: string): s
     return value;
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "interactive_session_invalid",
     message: `Interactive agent step ${stepId} interactive.json is missing ${field}.`,
   });

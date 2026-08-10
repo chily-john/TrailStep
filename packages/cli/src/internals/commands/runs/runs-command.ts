@@ -1,10 +1,11 @@
 import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Event, LatestUnresolvedFailure } from "@stepkit/core";
-import { readRunEvents, selectLatestUnresolvedFailure } from "@stepkit/core";
+import type { Event, LatestUnresolvedFailure } from "@trailstep/core";
+import { defaultRunsRoot, readRunEvents, selectLatestUnresolvedFailure } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { resolveRunsRoot } from "../../runs-root.js";
 
 type RunSummaryStatus = "active" | "completed" | "failed" | "unknown";
 
@@ -22,11 +23,14 @@ export const runsCommand: CliCommand<void> = {
   name: "runs",
   parseArgs(argv) {
     if (argv.length !== 1 || argv[0] !== "runs") {
-      throw new CliUsageError("Usage: stepkit runs");
+      throw new CliUsageError("Usage: trailstep runs");
     }
   },
   async run(_args, context) {
-    const summaries = await listCommandRunSummaries({ cwd: context.cwd });
+    const summaries = await listCommandRunSummaries({
+      cwd: context.cwd,
+      runsRoot: resolveRunsRoot(context),
+    });
     const activeRuns = summaries.filter((summary) => summary.status === "active");
     const recentFailedRuns = selectRecentFailedRunSummaries(summaries);
 
@@ -44,8 +48,11 @@ export const runsCommand: CliCommand<void> = {
   },
 };
 
-async function listCommandRunSummaries(options: { readonly cwd: string }): Promise<RunSummary[]> {
-  const runsRoot = join(options.cwd, ".stepkit", "runs");
+async function listCommandRunSummaries(options: {
+  readonly cwd: string;
+  readonly runsRoot?: string;
+}): Promise<RunSummary[]> {
+  const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
 
   let entries: Dirent[];
   try {

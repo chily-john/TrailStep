@@ -33,8 +33,8 @@ function interactiveProtocol(options: { runDir: string; stepDir: string }) {
 
 describe("cancel command", () => {
   it("cancels an active interactive session", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-active`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-active`);
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -44,7 +44,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel"],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
     });
 
@@ -55,8 +55,8 @@ describe("cancel command", () => {
   });
 
   it("records an optional cancellation reason", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-reason`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-reason`);
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -65,7 +65,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel", "--reason", "Requirements changed."],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -76,8 +76,8 @@ describe("cancel command", () => {
   });
 
   it("rejects an already completed session", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-completed`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-completed`);
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -89,7 +89,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel"],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -99,8 +99,8 @@ describe("cancel command", () => {
   });
 
   it("rejects an already cancelled session", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-cancel-tests", `${task.id}-cancelled`);
-    const runDir = join(cwd, ".stepkit", "runs", "interactive-run");
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-cancelled`);
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
     await mkdir(stepDir, { recursive: true });
@@ -112,7 +112,7 @@ describe("cancel command", () => {
 
     const exitCode = await main({
       argv: ["cancel"],
-      env: { STEPKIT_INTERACTIVE_FILE: interactiveFile },
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
     });
 
@@ -121,7 +121,7 @@ describe("cancel command", () => {
     expect(errors.join("\n")).toMatch(/not active/i);
   });
 
-  it("requires STEPKIT_INTERACTIVE_FILE", async () => {
+  it("requires TRAILSTEP_INTERACTIVE_FILE", async () => {
     const errors: string[] = [];
 
     await expect(
@@ -133,7 +133,24 @@ describe("cancel command", () => {
           io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
         },
       ),
-    ).rejects.toThrow(/STEPKIT_INTERACTIVE_FILE/i);
+    ).rejects.toThrow(/TRAILSTEP_INTERACTIVE_FILE/i);
+
+    expect(errors).toEqual([]);
+  });
+
+  it("intentionally rejects legacy STEPKIT_INTERACTIVE_FILE", async () => {
+    const errors: string[] = [];
+
+    await expect(
+      cancelCommand.run(
+        {},
+        {
+          cwd: ".",
+          env: { STEPKIT_INTERACTIVE_FILE: "legacy-interactive.json" },
+          io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+        },
+      ),
+    ).rejects.toThrow(/TRAILSTEP_INTERACTIVE_FILE/i);
 
     expect(errors).toEqual([]);
   });

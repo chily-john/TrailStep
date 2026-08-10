@@ -11,7 +11,7 @@ async function writeRetryWorkflow(cwd: string): Promise<void> {
     `import { access } from 'node:fs/promises';
     import { dirname, join } from 'node:path';
     import { fileURLToPath } from 'node:url';
-    import { document, done, step } from '@stepkit/core';
+    import { document, done, step } from '@trailstep/core';
     const workflowDir = dirname(fileURLToPath(import.meta.url));
     const schema = {
       validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
@@ -66,7 +66,7 @@ describe("retry command", () => {
   });
 
   it("exits cleanly when no eligible failed runs exist", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     const lines: string[] = [];
@@ -86,7 +86,7 @@ describe("retry command", () => {
   it("prompts to select and confirm an eligible failed run when retry has no arguments", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
@@ -145,22 +145,22 @@ describe("retry command", () => {
     });
 
     const events = parseEvents(
-      await readFile(join(cwd, ".stepkit", "runs", "failed-beta", "events.jsonl"), "utf8"),
+      await readFile(join(cwd, ".trailstep", "runs", "failed-beta", "events.jsonl"), "utf8"),
     );
     expect(events.map((event) => event.type)).toContain("workflow.retryStarted");
-    expect(lines.join("\n")).toContain(join(cwd, ".stepkit", "runs", "failed-beta"));
+    expect(lines.join("\n")).toContain(join(cwd, ".trailstep", "runs", "failed-beta"));
   });
 
   it("includes a dangling step.started run in the no-argument eligible retry prompt", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
     await writeFile(join(cwd, "fixed.txt"), "fixed\n", "utf8");
     const runName = "dangling-run";
-    const runDir = join(cwd, ".stepkit", "runs", runName);
+    const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const danglingEvents = [
       {
@@ -236,7 +236,7 @@ describe("retry command", () => {
   it("retries an explicitly targeted failed run and preserves failed attempt artifacts", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
@@ -250,7 +250,7 @@ describe("retry command", () => {
       }),
     ).resolves.toBe(1);
 
-    const runDir = join(cwd, ".stepkit", "runs", "retry-me");
+    const runDir = join(cwd, ".trailstep", "runs", "retry-me");
     const failedStepDir = join(runDir, "steps", "0001-review");
     expect((await stat(failedStepDir)).isDirectory()).toBe(true);
     await expect(readFile(join(failedStepDir, "document-1.md"), "utf8")).resolves.toBe(
@@ -283,7 +283,7 @@ describe("retry command", () => {
     await expect(readFile(join(retriedStepDir, "document-1.md"), "utf8")).resolves.toBe(
       "retried attempt",
     );
-    await expect(stat(join(cwd, ".stepkit", "runs", "retry-me-2"))).rejects.toThrow();
+    await expect(stat(join(cwd, ".trailstep", "runs", "retry-me-2"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(runDir);
   });
 });

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { parseStepKitConfig, type StepKitConfig } from "@stepkit/core";
+import { parseTrailStepConfig, type TrailStepConfig } from "@trailstep/core";
 
 export class CliConfigError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -11,63 +11,65 @@ export class CliConfigError extends Error {
   }
 }
 
-export interface StepKitProjectConfig {
-  readonly stepkitConfig: StepKitConfig | undefined;
+export interface TrailStepProjectConfig {
+  readonly trailstepConfig: TrailStepConfig | undefined;
   readonly workflowRegistry: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 /**
  * Loads optional project configuration for workflow runs.
  *
- * A missing `.stepkit/config.json` is allowed so code-only workflows and commands that do not
+ * A missing `.trailstep/config.json` is allowed so code-only workflows and commands that do not
  * need agent configuration can still run; core reports a workflow failure if a later agent step
  * requires configuration that was not provided.
  */
-export async function loadStepKitConfig(cwd = process.cwd()): Promise<StepKitConfig | undefined> {
-  return (await loadStepKitProjectConfig(cwd)).stepkitConfig;
+export async function loadTrailStepConfig(
+  cwd = process.cwd(),
+): Promise<TrailStepConfig | undefined> {
+  return (await loadTrailStepProjectConfig(cwd)).trailstepConfig;
 }
 
-export interface LoadStepKitProjectConfigOptions {
+export interface LoadTrailStepProjectConfigOptions {
   readonly homeDir?: string;
 }
 
-export async function loadStepKitProjectConfig(
+export async function loadTrailStepProjectConfig(
   cwd = process.cwd(),
-  options: LoadStepKitProjectConfigOptions = {},
-): Promise<StepKitProjectConfig> {
+  options: LoadTrailStepProjectConfigOptions = {},
+): Promise<TrailStepProjectConfig> {
   const homeDir = options.homeDir ?? homedir();
   const [user, project, projectLocal] = await Promise.all([
-    readRawScopeConfig(join(homeDir, ".stepkit", "config.json"), {
-      description: "~/.stepkit/config.json",
+    readRawScopeConfig(join(homeDir, ".trailstep", "config.json"), {
+      description: "~/.trailstep/config.json",
     }),
-    readRawScopeConfig(join(cwd, ".stepkit", "config.json"), {
-      description: ".stepkit/config.json",
+    readRawScopeConfig(join(cwd, ".trailstep", "config.json"), {
+      description: ".trailstep/config.json",
     }),
-    readRawScopeConfig(join(cwd, ".stepkit", "config-local.json"), {
-      description: ".stepkit/config-local.json",
+    readRawScopeConfig(join(cwd, ".trailstep", "config-local.json"), {
+      description: ".trailstep/config-local.json",
     }),
   ]);
 
   if (user === undefined && project === undefined && projectLocal === undefined) {
-    return { stepkitConfig: undefined, workflowRegistry: {} };
+    return { trailstepConfig: undefined, workflowRegistry: {} };
   }
 
   const mergedRunConfig = mergeEffectiveRunConfig(user, project, projectLocal);
-  const mergedProjectRegistryConfig = mergeRawStepKitConfig(project, projectLocal);
+  const mergedProjectRegistryConfig = mergeRawTrailStepConfig(project, projectLocal);
 
   try {
     return {
-      stepkitConfig: parseStepKitConfig(toCoreStepKitConfigValue(mergedRunConfig)),
+      trailstepConfig: parseTrailStepConfig(toCoreTrailStepConfigValue(mergedRunConfig)),
       workflowRegistry: parseWorkflowRegistry(mergedProjectRegistryConfig),
     };
   } catch (error) {
     const detail = formatConfigValidationDetail(error);
-    throw new CliConfigError(`Invalid .stepkit/config.json.${detail}`, { cause: error });
+    throw new CliConfigError(`Invalid .trailstep/config.json.${detail}`, { cause: error });
   }
 }
 
 /**
- * Merges `.stepkit/config-local.json` over `.stepkit/config.json`.
+ * Merges `.trailstep/config-local.json` over `.trailstep/config.json`.
  *
  * The merge is shallow at the top level: a key present in the local override (e.g.
  * `customProviders`) replaces the shared value for that key wholesale rather than being
@@ -78,7 +80,7 @@ export async function loadStepKitProjectConfig(
  * shallow replace here would make every project-scope registration disappear the moment
  * a local registration exists, since both configs share the same `workflows` key.
  */
-function mergeRawStepKitConfig(base: unknown, local: unknown): unknown {
+function mergeRawTrailStepConfig(base: unknown, local: unknown): unknown {
   if (!isRecord(base)) {
     return local ?? base;
   }
@@ -149,11 +151,11 @@ function mergeWorkflowsRecord(base: unknown, local: unknown): unknown {
   return merged;
 }
 
-export async function loadStepKitUserWorkflowRegistry(
+export async function loadTrailStepUserWorkflowRegistry(
   homeDir = homedir(),
 ): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
-  const parsed = await readRawScopeConfig(join(homeDir, ".stepkit", "config.json"), {
-    description: "~/.stepkit/config.json",
+  const parsed = await readRawScopeConfig(join(homeDir, ".trailstep", "config.json"), {
+    description: "~/.trailstep/config.json",
   });
 
   return parsed === undefined ? {} : parseWorkflowRegistry(parsed);
@@ -212,7 +214,7 @@ function parseWorkflowRegistry(
   return registry;
 }
 
-function toCoreStepKitConfigValue(value: unknown): unknown {
+function toCoreTrailStepConfigValue(value: unknown): unknown {
   if (!isRecord(value)) {
     return value;
   }
@@ -253,7 +255,7 @@ function formatConfigValidationDetail(error: unknown): string {
     return ` ${diagnostics.join(" ")}`;
   }
 
-  if (error instanceof Error && error.message !== "Invalid .stepkit/config.json.") {
+  if (error instanceof Error && error.message !== "Invalid .trailstep/config.json.") {
     return ` ${error.message}`;
   }
 

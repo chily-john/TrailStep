@@ -16,7 +16,7 @@ import {
 
 describe("subPrompt", () => {
   it("dispatches an adapter-backed subPrompt inside a code step and returns validated output", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-sub-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sub-prompt-"));
     const resultShape = jsonSchema<{ answer: string }>({
       type: "object",
       properties: { answer: { type: "string" } },

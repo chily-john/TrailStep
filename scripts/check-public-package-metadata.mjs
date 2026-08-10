@@ -6,15 +6,15 @@ const root = process.cwd();
 
 const packageDirectories = ["core", "authoring", "cli", "create-flows", "testkit", "dashboard"];
 const publishablePackageNames = [
-  "@stepkit/core",
-  "@stepkit/authoring",
-  "@stepkit/cli",
-  "@stepkit/create-flows",
+  "@trailstep/core",
+  "@trailstep/authoring",
+  "@trailstep/cli",
+  "@trailstep/create-flows",
 ];
-const unpublishedPackageNames = ["@stepkit/testkit", "@stepkit/dashboard"];
+const unpublishedPackageNames = ["@trailstep/testkit", "@trailstep/dashboard"];
 const expectedRepository = {
   type: "git",
-  url: "git+ssh://git@github.com/chily-john/stepkit.git",
+  url: "git+ssh://git@github.com/chily-john/trailstep.git",
 };
 
 function readJson(path) {
@@ -26,7 +26,7 @@ function assertFile(path) {
 }
 
 function packageDirectoryFor(packageName) {
-  return packageName.replace("@stepkit/", "");
+  return packageName.replace("@trailstep/", "");
 }
 
 function assertNoPostinstallScripts(packageManifests) {
@@ -49,12 +49,12 @@ function assertPublicNpmMetadata(manifest) {
   );
   assert.equal(
     manifest.bugs?.url,
-    "https://github.com/chily-john/stepkit/issues",
+    "https://github.com/chily-john/trailstep/issues",
     `${manifest.name} must expose bugs metadata`,
   );
   assert.equal(
     manifest.homepage,
-    "https://github.com/chily-john/stepkit#readme",
+    "https://github.com/chily-john/trailstep#readme",
     `${manifest.name} must expose homepage metadata`,
   );
   assert.equal(
@@ -121,38 +121,38 @@ function verifyPublicPackageMetadata() {
   }
 
   assert.equal(
-    manifestByName.get("@stepkit/authoring")?.dependencies?.["@stepkit/core"],
+    manifestByName.get("@trailstep/authoring")?.dependencies?.["@trailstep/core"],
     "workspace:*",
-    "@stepkit/authoring must keep @stepkit/core as a workspace dependency",
+    "@trailstep/authoring must keep @trailstep/core as a workspace dependency",
   );
   assert.equal(
-    manifestByName.get("@stepkit/authoring")?.peerDependencies?.["@stepkit/core"],
+    manifestByName.get("@trailstep/authoring")?.peerDependencies?.["@trailstep/core"],
     "^0.1.0",
-    "@stepkit/authoring must declare @stepkit/core 0.1 peer compatibility",
+    "@trailstep/authoring must declare @trailstep/core 0.1 peer compatibility",
   );
   assert.equal(
-    manifestByName.get("@stepkit/cli")?.dependencies?.["@stepkit/core"],
+    manifestByName.get("@trailstep/cli")?.dependencies?.["@trailstep/core"],
     "workspace:*",
-    "@stepkit/cli must keep @stepkit/core as a workspace dependency",
+    "@trailstep/cli must keep @trailstep/core as a workspace dependency",
   );
   assert.equal(
-    manifestByName.get("@stepkit/cli")?.peerDependencies?.["@stepkit/core"],
+    manifestByName.get("@trailstep/cli")?.peerDependencies?.["@trailstep/core"],
     "^0.1.0",
-    "@stepkit/cli must declare @stepkit/core 0.1 peer compatibility",
+    "@trailstep/cli must declare @trailstep/core 0.1 peer compatibility",
   );
   assert.equal(
-    manifestByName.get("@stepkit/create-flows")?.dependencies?.["@stepkit/authoring"],
+    manifestByName.get("@trailstep/create-flows")?.dependencies?.["@trailstep/authoring"],
     "workspace:*",
-    "@stepkit/create-flows must keep @stepkit/authoring as a workspace dependency",
+    "@trailstep/create-flows must keep @trailstep/authoring as a workspace dependency",
   );
   assert.equal(
-    manifestByName.get("@stepkit/create-flows")?.peerDependencies?.["@stepkit/authoring"],
+    manifestByName.get("@trailstep/create-flows")?.peerDependencies?.["@trailstep/authoring"],
     "^0.1.0",
-    "@stepkit/create-flows must declare @stepkit/authoring 0.1 peer compatibility",
+    "@trailstep/create-flows must declare @trailstep/authoring 0.1 peer compatibility",
   );
   assert.ok(
-    manifestByName.get("@stepkit/cli")?.files?.includes("stepkit-skill"),
-    "@stepkit/cli must include stepkit-skill in published files",
+    manifestByName.get("@trailstep/cli")?.files?.includes("trailstep-skill"),
+    "@trailstep/cli must include trailstep-skill in published files",
   );
 }
 

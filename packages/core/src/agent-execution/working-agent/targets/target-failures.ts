@@ -1,5 +1,5 @@
-import type { StepKitAgentTarget } from "../../../agent-targeting/targeting.types.js";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import type { TrailStepAgentTarget } from "../../../agent-targeting/targeting.types.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 
 export interface WorkingAgentAttemptFailure {
   readonly target: string;
@@ -10,10 +10,10 @@ export interface WorkingAgentAttemptFailure {
 }
 
 export function summarizeWorkingAgentAttemptFailure(
-  target: StepKitAgentTarget,
+  target: TrailStepAgentTarget,
   error: unknown,
 ): WorkingAgentAttemptFailure {
-  if (error instanceof StepKitFailureError) {
+  if (error instanceof TrailStepFailureError) {
     return {
       target: target.provider,
       ...(target.model === undefined ? {} : { model: target.model }),

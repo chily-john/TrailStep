@@ -33,7 +33,7 @@ describe("parseRetryInvocation", () => {
 
   it("rejects a workflow ref without a run name", () => {
     expect(() => parseRetryInvocation(["retry", "project/review"])).toThrow(
-      /Expected stepkit retry <workflow-ref> <runName>/,
+      /Expected trailstep retry <workflow-ref> <runName>/,
     );
   });
 

@@ -1,6 +1,6 @@
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
@@ -190,7 +190,7 @@ async function readReattachedInteractiveOutput(options: {
     return second;
   }
 
-  throw new StepKitFailureError({
+  throw new TrailStepFailureError({
     code: "interactive_session_incomplete",
     message: `Interactive agent step ${options.stepId} did not complete after reattaching.`,
   });
@@ -208,7 +208,7 @@ async function tryReadCompletedInteractiveOutput(options: {
   try {
     return { status: "success", output: await readCompletedInteractiveOutput(options) };
   } catch (error) {
-    if (error instanceof StepKitFailureError) {
+    if (error instanceof TrailStepFailureError) {
       if (error.failure.code === "interactive_session_incomplete") {
         return { status: "still-active" };
       }

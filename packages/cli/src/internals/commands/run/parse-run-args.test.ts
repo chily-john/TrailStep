@@ -6,6 +6,6 @@ import { parseRunArgs } from "./parse-run-args.js";
 describe("parseRunArgs", () => {
   it("rejects legacy --resume and points users to retry", () => {
     expect(() => parseRunArgs(["--resume"])).toThrow(CliUsageError);
-    expect(() => parseRunArgs(["--resume"])).toThrow(/stepkit retry/i);
+    expect(() => parseRunArgs(["--resume"])).toThrow(/trailstep retry/i);
   });
 });

@@ -10,14 +10,14 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 async function createWorkflowPackage(cwd: string): Promise<void> {
-  const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+  const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(packageDir, "package.json"), {
-    name: "@acme/stepkit-workflows",
+    name: "@acme/trailstep-workflows",
     version: "1.0.0",
     type: "module",
     main: "./index.mjs",
-    keywords: ["stepkit-workflow"],
+    keywords: ["trailstep-workflow"],
   });
   await writeFile(
     join(packageDir, "index.mjs"),
@@ -33,7 +33,7 @@ async function createWorkflowPackage(cwd: string): Promise<void> {
 
 describe("discoverWorkflows", () => {
   it("resolves package entry files with exports/module/main/default precedence", () => {
-    const packageDir = resolve("node_modules", ".tmp-stepkit-entry-tests", "package");
+    const packageDir = resolve("node_modules", ".tmp-trailstep-entry-tests", "package");
 
     expect(
       resolvePackageEntryFilePath(
@@ -57,25 +57,25 @@ describe("discoverWorkflows", () => {
     expect(resolvePackageEntryFilePath({}, packageDir)).toBe(join(packageDir, "index.js"));
   });
 
-  it("discovers named continuation workflow exports from stepkit-workflow packages", async ({
+  it("discovers named continuation workflow exports from trailstep-workflow packages", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-discovery-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
       type: "module",
       dependencies: {
-        "@acme/stepkit-workflows": "1.0.0",
+        "@acme/trailstep-workflows": "1.0.0",
       },
     });
     await createWorkflowPackage(cwd);
 
     await expect(discoverWorkflows({ cwd })).resolves.toEqual([
       {
-        id: "@acme/stepkit-workflows:reviewFeature",
-        packageName: "@acme/stepkit-workflows",
-        packageDir: resolve(cwd, "node_modules", "@acme", "stepkit-workflows"),
+        id: "@acme/trailstep-workflows:reviewFeature",
+        packageName: "@acme/trailstep-workflows",
+        packageDir: resolve(cwd, "node_modules", "@acme", "trailstep-workflows"),
         exportName: "reviewFeature",
         workflow: expect.objectContaining({ id: "reviewFeature" }),
       },
@@ -83,13 +83,13 @@ describe("discoverWorkflows", () => {
   });
 
   it("returns packageDir for discovered workflow packages", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-tests", `${task.id}-package-dir`);
-    const packageDir = join(cwd, "node_modules", "@acme", "stepkit-workflows");
+    const cwd = join("node_modules", ".tmp-trailstep-discovery-tests", `${task.id}-package-dir`);
+    const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
       dependencies: {
-        "@acme/stepkit-workflows": "1.0.0",
+        "@acme/trailstep-workflows": "1.0.0",
       },
     });
     await createWorkflowPackage(cwd);
@@ -103,12 +103,12 @@ describe("discoverWorkflows", () => {
   it("ignores default exports and skips invalid named exports without crashing", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-tests", `${task.id}-invalid`);
+    const cwd = join("node_modules", ".tmp-trailstep-discovery-tests", `${task.id}-invalid`);
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
       name: "consumer",
       dependencies: {
-        "@acme/stepkit-workflows": "1.0.0",
+        "@acme/trailstep-workflows": "1.0.0",
       },
     });
     await createWorkflowPackage(cwd);
@@ -116,7 +116,7 @@ describe("discoverWorkflows", () => {
     const workflows = await discoverWorkflows({ cwd });
 
     expect(workflows.map((workflow) => workflow.id)).toEqual([
-      "@acme/stepkit-workflows:reviewFeature",
+      "@acme/trailstep-workflows:reviewFeature",
     ]);
   });
 });

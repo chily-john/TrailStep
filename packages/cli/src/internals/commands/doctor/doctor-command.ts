@@ -4,7 +4,7 @@ import {
   type DeprecationFinding,
   scanWorkflowSourceForDeprecations,
 } from "../../deprecation-scan/deprecation-scanner.js";
-import { resolveInstalledStepKitVersions } from "../../deprecation-scan/resolve-installed-stepkit-versions.js";
+import { resolveInstalledTrailStepVersions } from "../../deprecation-scan/resolve-installed-trailstep-versions.js";
 import { resolveDeprecationScanTargets } from "../../deprecation-scan/scan-targets.js";
 
 interface DoctorCommandArgs {
@@ -23,7 +23,7 @@ export const doctorCommand: CliCommand<DoctorCommandArgs> = {
     return { includeDiscovered: true };
   },
   async run(args, context) {
-    const versionsByPackageName = await resolveInstalledStepKitVersions({ cwd: context.cwd });
+    const versionsByPackageName = await resolveInstalledTrailStepVersions({ cwd: context.cwd });
     const targets = await resolveDeprecationScanTargets({
       cwd: context.cwd,
       homeDir: context.homeDir,
@@ -50,7 +50,7 @@ export const doctorCommand: CliCommand<DoctorCommandArgs> = {
     }
 
     if (findings.length === 0) {
-      context.io.writeLine("No StepKit deprecation findings.");
+      context.io.writeLine("No TrailStep deprecation findings.");
       return 0;
     }
 

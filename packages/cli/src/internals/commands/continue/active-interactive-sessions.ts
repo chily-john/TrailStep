@@ -18,7 +18,7 @@ interface InteractiveSessionRecord {
 export async function findActiveInteractiveSessions(
   cwd: string,
 ): Promise<readonly ActiveInteractiveSessionSummary[]> {
-  const runsDir = join(cwd, ".stepkit", "runs");
+  const runsDir = join(cwd, ".trailstep", "runs");
   const files = await findInteractiveFiles(runsDir);
   const sessions: ActiveInteractiveSessionSummary[] = [];
 
@@ -88,7 +88,7 @@ function formatSessionLabel(
 }
 
 function inferRunId(cwd: string, interactiveFile: string): string {
-  const parts = relative(join(cwd, ".stepkit", "runs"), interactiveFile).split(/[\\/]/u);
+  const parts = relative(join(cwd, ".trailstep", "runs"), interactiveFile).split(/[\\/]/u);
   return parts[0] ?? "unknown";
 }
 

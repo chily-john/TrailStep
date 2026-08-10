@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@stepkit/core";
+import type { Workflow } from "@trailstep/core";
 
 import type { BundleWorkflowReference } from "../workflow-reference/workflow-reference.types.js";
 import { WorkflowResolutionError } from "./workflow-resolution-error.js";
@@ -51,7 +51,7 @@ export async function loadBundleWorkflow(
     const moduleUrl = pathToFileURL(modulePath);
     if (options.freshImport === true) {
       freshImportCounter += 1;
-      moduleUrl.searchParams.set("stepkitImport", `${freshImportCounter}`);
+      moduleUrl.searchParams.set("trailstepImport", `${freshImportCounter}`);
     }
     workflowModule = (await import(moduleUrl.href)) as Record<string, unknown>;
   } catch (error) {
@@ -140,17 +140,17 @@ export function readBundleWorkflowManifest(
     );
   }
 
-  const stepkit = packageJson.stepkit;
-  if (!isPlainObject(stepkit) || !isPlainObject(stepkit.workflows)) {
+  const trailstep = packageJson.trailstep;
+  if (!isPlainObject(trailstep) || !isPlainObject(trailstep.workflows)) {
     throw new WorkflowResolutionError(
-      `Missing stepkit.workflows manifest metadata in bundle package: ${packageName}`,
+      `Missing trailstep.workflows manifest metadata in bundle package: ${packageName}`,
     );
   }
 
-  const workflows = stepkit.workflows;
+  const workflows = trailstep.workflows;
   if (!Object.values(workflows).every((target) => typeof target === "string")) {
     throw new WorkflowResolutionError(
-      `Invalid stepkit.workflows manifest metadata in bundle package: ${packageName}`,
+      `Invalid trailstep.workflows manifest metadata in bundle package: ${packageName}`,
     );
   }
 

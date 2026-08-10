@@ -1,10 +1,10 @@
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
-import type { StepKitConfig } from "../../../agent-targeting/targeting.types.js";
+import type { TrailStepConfig } from "../../../agent-targeting/targeting.types.js";
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
 import { isDoneNode, isFailNode, isStepNode } from "../../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
-import { StepKitFailureError } from "../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
   Event,
@@ -30,7 +30,7 @@ export interface RunContinuationOptions {
   readonly workflowTimeout?: TimeoutPolicyInput;
   readonly runDir: string;
   readonly cwd: string;
-  readonly stepkitConfig?: StepKitConfig;
+  readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner?: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner?: RunWorkflowOptions["processRunner"];
@@ -50,7 +50,7 @@ export async function runContinuation(
   // ever recorded, successful or failed), not restart at 1 -- otherwise their
   // artifact directories collide with/shadow the pre-resume steps' dirs.
   let executedSteps = options.initialExecutedSteps ?? 0;
-  const stepkitConfig = options.stepkitConfig;
+  const trailstepConfig = options.trailstepConfig;
 
   while (true) {
     if (isDoneNode(node)) {
@@ -83,15 +83,15 @@ export async function runContinuation(
     const { config } = stepNode;
     const hasPrompt = config.prompt !== undefined;
     const timeoutPolicy = resolveTimeoutPolicy({
-      global: stepkitConfig?.settings?.timeout,
+      global: trailstepConfig?.settings?.timeout,
       workflow:
         options.workflowTimeout ??
-        stepkitConfig?.workflows?.[options.workflowId]?.settings?.timeout,
+        trailstepConfig?.workflows?.[options.workflowId]?.settings?.timeout,
       step: config.timeout,
     });
     const maxSubPrompts =
       config.maxSubPrompts ??
-      stepkitConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
+      trailstepConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
 
     await options.emit(
       createEvent({
@@ -139,7 +139,7 @@ export async function runContinuation(
                   workflowAgents: options.workflowAgents,
                   runDir: options.runDir,
                   cwd: options.cwd,
-                  stepkitConfig,
+                  trailstepConfig,
                   workingAgentProcessRunner: options.workingAgentProcessRunner,
                   providerWorkingRunner: options.providerWorkingRunner,
                   processRunner: options.processRunner,
@@ -300,8 +300,8 @@ function throwIfStepTimedOut(
   }
 }
 
-function stepTimeoutFailure(stepId: string, timeoutMs: number): StepKitFailureError {
-  return new StepKitFailureError({
+function stepTimeoutFailure(stepId: string, timeoutMs: number): TrailStepFailureError {
+  return new TrailStepFailureError({
     code: "step_timeout",
     message: `Step ${stepId} timed out after ${timeoutMs}ms.`,
     details: { stepId, timeoutMs },
@@ -309,7 +309,7 @@ function stepTimeoutFailure(stepId: string, timeoutMs: number): StepKitFailureEr
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof StepKitFailureError) {
+  if (error instanceof TrailStepFailureError) {
     return error.message;
   }
 

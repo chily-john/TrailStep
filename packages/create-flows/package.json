@@ -1,22 +1,19 @@
 {
-  "name": "@stepkit/create-flows",
+  "name": "@trailstep/create-flows",
   "version": "0.1.0",
-  "description": "Public reusable general-purpose StepKit workflows.",
+  "description": "Public reusable general-purpose TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/chily-john/stepkit.git"
+    "url": "git+ssh://git@github.com/chily-john/trailstep.git"
   },
   "bugs": {
-    "url": "https://github.com/chily-john/stepkit/issues"
+    "url": "https://github.com/chily-john/trailstep/issues"
   },
-  "homepage": "https://github.com/chily-john/stepkit#readme",
-  "publishConfig": {
-    "access": "public"
-  },
+  "homepage": "https://github.com/chily-john/trailstep#readme",
   "keywords": [
-    "stepkit-workflow"
+    "trailstep-workflow"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,11 +23,6 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -38,17 +30,25 @@
     "lint": "biome check src"
   },
   "dependencies": {
-    "@stepkit/authoring": "workspace:*"
+    "@trailstep/authoring": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
-    "@stepkit/core": "workspace:*",
+    "@trailstep/core": "workspace:*",
     "@types/node": "^26.1.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "peerDependencies": {
-    "@stepkit/authoring": "^0.1.0"
+    "@trailstep/authoring": "^0.1.0"
   }
 }

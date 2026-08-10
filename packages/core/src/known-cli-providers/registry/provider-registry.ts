@@ -6,7 +6,7 @@ import type { ProviderAdapter } from "./provider-registry.types.js";
 
 /**
  * Core's built-in known-CLI provider registry. Each entry maps a provider id
- * (matched against a `.stepkit/config.json` target's `provider` field) to a
+ * (matched against a `.trailstep/config.json` target's `provider` field) to a
  * core-owned CLI print-mode invocation for a single named vendor.
  *
  * This is the full four-provider set. Unlike Claude/Codex/Pi, `gemini`'s

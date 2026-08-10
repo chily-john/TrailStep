@@ -21,7 +21,7 @@ const workflowModuleSource = [
 describe("loadBundleWorkflow", () => {
   it("exports a bundle manifest reader used by loadBundleWorkflow", () => {
     const manifest = readBundleWorkflowManifest(
-      { stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } } },
+      { trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } } },
       "@acme/workflows",
     );
 
@@ -47,7 +47,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("resolves a scoped package manifest workflow to the named export", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
@@ -57,7 +57,7 @@ describe("loadBundleWorkflow", () => {
     await writeJson(join(packageDir, "package.json"), {
       name: "@acme/workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(join(packageDir, "index.mjs"), workflowModuleSource, "utf8");
 
@@ -76,13 +76,13 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("resolves a local package manifest workflow to the named export", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
     await writeFile(join(packageDir, "index.mjs"), workflowModuleSource, "utf8");
 
@@ -96,7 +96,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the package is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
 
@@ -106,7 +106,7 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest metadata is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
@@ -116,17 +116,17 @@ describe("loadBundleWorkflow", () => {
 
     await expect(
       loadBundleWorkflow({ packageName: "./local-workflows", workflowName: "review" }, { cwd }),
-    ).rejects.toThrow(/missing stepkit\.workflows/i);
+    ).rejects.toThrow(/missing trailstep\.workflows/i);
   });
 
   it("fails clearly when the manifest module is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./missing.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./missing.mjs#reviewWorkflow" } },
     });
 
     await expect(
@@ -135,14 +135,14 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest workflow key is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), { name: "consumer" });
     await writeJson(join(packageDir, "package.json"), {
       name: "@acme/workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
     });
 
     await expect(
@@ -151,13 +151,13 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest export is not a workflow", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs#notWorkflow" } },
+      trailstep: { workflows: { review: "./index.mjs#notWorkflow" } },
     });
     await writeFile(join(packageDir, "index.mjs"), "export const notWorkflow = {};", "utf8");
 
@@ -167,13 +167,13 @@ describe("loadBundleWorkflow", () => {
   });
 
   it("fails clearly when the manifest target is malformed", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-bundle-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = resolve(cwd, "local-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(packageDir, "package.json"), {
       name: "local-workflows",
       type: "module",
-      stepkit: { workflows: { review: "./index.mjs" } },
+      trailstep: { workflows: { review: "./index.mjs" } },
     });
 
     await expect(

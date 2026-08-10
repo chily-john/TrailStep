@@ -8,7 +8,7 @@ import { createRunContext } from "./create-run-context.js";
 
 describe("createRunContext", () => {
   it("creates two RunContext instances that share durable state for the same run directory", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-context-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-context-"));
     const { runId, runDir } = await createRunDirectory({ cwd, runName: "shared-state" });
 
     const first = createRunContext({ runId, runName: "shared-state", runDir });
@@ -25,7 +25,7 @@ describe("createRunContext", () => {
   });
 
   it("does not lose updates from concurrent set calls on the same instance", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-core-run-context-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-context-"));
     const { runId, runDir } = await createRunDirectory({ cwd, runName: "concurrent-state" });
 
     const context = createRunContext({ runId, runName: "concurrent-state", runDir });

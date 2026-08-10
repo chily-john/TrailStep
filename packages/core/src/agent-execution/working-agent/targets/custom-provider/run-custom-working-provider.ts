@@ -1,9 +1,9 @@
 import type {
-  StepKitAgentTarget,
-  StepKitConfig,
+  TrailStepAgentTarget,
+  TrailStepConfig,
 } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
-import { StepKitFailureError } from "../../../../contracts/failures/failure.js";
+import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import type {
   WorkingAgentProcessResult,
@@ -15,17 +15,17 @@ import { buildWorkingAgentArgs } from "./build-working-agent-args.js";
 import { spawnWorkingAgentProcess } from "./spawn-working-agent-process.js";
 
 export async function runCustomWorkingProvider<TOutput extends PlainObject>(options: {
-  readonly config: StepKitConfig;
+  readonly config: TrailStepConfig;
   readonly step: AgentStepRequestConfig<PlainObject, TOutput>;
   readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
-  readonly target: StepKitAgentTarget;
+  readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
 }): Promise<TOutput> {
   const agentConfig = options.config.customProviders[options.target.provider];
   if (!agentConfig) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_unavailable",
       message: `Working agent target '${options.target.provider}' does not reference a configured custom agent.`,
       details: { provider: options.target.provider },
@@ -53,7 +53,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       signal: options.signal,
     });
   } catch (error) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
       details: {
@@ -65,7 +65,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   }
 
   if (result.exitCode !== 0) {
-    throw new StepKitFailureError({
+    throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
       details: {

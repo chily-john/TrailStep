@@ -7,7 +7,7 @@ import type { DashboardRunSummary } from "./server/runs";
 
 let runs: readonly DashboardRunSummary[] = [];
 let selectedRunId = "";
-let status = "No local StepKit runs found.";
+let status = "No local TrailStep runs found.";
 let rows: readonly DashboardEventRow[] = [];
 let stopStreaming: (() => void) | undefined;
 
@@ -55,7 +55,7 @@ onMount(() => {
         connectToRun(latestRun);
       }
     } catch (error) {
-      status = error instanceof Error ? error.message : "Unable to load local StepKit runs.";
+      status = error instanceof Error ? error.message : "Unable to load local TrailStep runs.";
     }
   };
 
@@ -69,8 +69,8 @@ onMount(() => {
 </script>
 
 <main aria-labelledby="dashboard-title">
-  <h1 id="dashboard-title">StepKit Local Runs</h1>
-  <p>Read-only local dashboard for live local StepKit events from .stepkit/runs.</p>
+  <h1 id="dashboard-title">TrailStep Local Runs</h1>
+  <p>Read-only local dashboard for live local TrailStep events from .trailstep/runs.</p>
 
   <section aria-labelledby="run-list-title">
     <h2 id="run-list-title">Local runs</h2>
@@ -87,7 +87,7 @@ onMount(() => {
         {/each}
       </select>
     {:else}
-      <p>No runs found under <code>.stepkit/runs</code>.</p>
+      <p>No runs found under <code>.trailstep/runs</code>.</p>
     {/if}
     <p id="run-status" aria-live="polite">{status}</p>
   </section>

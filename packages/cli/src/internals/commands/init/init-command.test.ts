@@ -17,7 +17,7 @@ describe("initCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init", "--scope", "project"]);
@@ -47,7 +47,7 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the StepKit usage/authoring skill?") {
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -56,7 +56,7 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
   });
@@ -66,7 +66,7 @@ describe("initCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init"]);
@@ -103,7 +103,7 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return confirmAnswers.shift() ?? false;
           }
-          if (prompt === "Install the StepKit usage/authoring skill?") {
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -112,7 +112,7 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".stepkit", "config-local.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config-local.json"))).toEqual({
       customProviders: { "local-agent": { binary: "agent-bin" } },
       agents: {
         default: [{ provider: "claude", model: "opus" }],
@@ -121,12 +121,12 @@ describe("initCommand", () => {
     });
   });
 
-  it("prompts interactively to install the StepKit usage skill when no skill flag is passed", async ({
+  it("prompts interactively to install the TrailStep usage skill when no skill flag is passed", async ({
     task,
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init", "--scope", "project"]);
@@ -157,7 +157,7 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the StepKit usage/authoring skill?") {
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
             return true;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -171,7 +171,7 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(confirmPrompts).toContain("Install the StepKit usage/authoring skill?");
+    expect(confirmPrompts).toContain("Install the TrailStep usage/authoring skill?");
     expect(skillsCalls).toHaveLength(1);
   });
 
@@ -180,7 +180,7 @@ describe("initCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init", "--scope", "project", "--no-install-skill"]);
@@ -225,7 +225,7 @@ describe("initCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(confirmPrompts).not.toContain("Install the StepKit usage/authoring skill?");
+    expect(confirmPrompts).not.toContain("Install the TrailStep usage/authoring skill?");
     expect(skillsCalls).toHaveLength(0);
   });
 
@@ -255,12 +255,12 @@ describe("initCommand", () => {
     expect(skillsCalls).toHaveLength(0);
   });
 
-  it("installs the packaged StepKit usage skill when --install-skill is passed", async ({
+  it("installs the packaged TrailStep usage skill when --install-skill is passed", async ({
     task,
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init", "--scope", "project", "--install-skill"]);
@@ -315,22 +315,24 @@ describe("initCommand", () => {
     expect(skillsCalls[0]?.args.slice(0, 3)).toEqual([
       "/repo/node_modules/skills/dist/index.js",
       "add",
-      expect.stringContaining("stepkit-skill"),
+      expect.stringContaining("trailstep-skill"),
     ]);
     expect(skillsCalls[0]?.args.slice(3)).toEqual(["--agent", "*", "-y"]);
-    expect(lines).toContain("Installed StepKit usage skill.");
+    expect(lines).toContain("Installed TrailStep usage skill.");
   });
 
-  it("installs the packaged StepKit usage skill globally for --scope global", async ({ task }) => {
+  it("installs the packaged TrailStep usage skill globally for --scope global", async ({
+    task,
+  }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
       "project",
     );
     const homeDir = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
       "home",
     );
@@ -376,7 +378,7 @@ describe("initCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(skillsCalls[0]?.args.slice(-1)).toEqual(["-g"]);
-    expect(await readJson(resolve(homeDir, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(homeDir, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
   });
@@ -384,7 +386,7 @@ describe("initCommand", () => {
   it("reports skill installation failures after writing agent config", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init", "--scope", "project", "--install-skill"]);
@@ -420,10 +422,10 @@ describe("initCommand", () => {
         skillsCliProcessRunner: async () => ({ exitCode: 2 }),
       }),
     ).rejects.toThrow(
-      "Failed to install StepKit usage skill after writing StepKit agent config: skills CLI exited with code 2.",
+      "Failed to install TrailStep usage skill after writing TrailStep agent config: skills CLI exited with code 2.",
     );
 
-    expect(await readJson(resolve(cwd, ".stepkit", "config.json"))).toEqual({
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
   });

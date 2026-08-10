@@ -9,7 +9,7 @@ import { grillItAway } from "./workflow.js";
 
 describe("grill-it-away", () => {
   it("fails when the completion payload does not match the conversation schema", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-grill-it-away-invalid-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-grill-it-away-invalid-"));
 
     const result = await runWorkflow({
       workflow: grillItAway,
@@ -42,7 +42,7 @@ describe("grill-it-away", () => {
   });
 
   it("once grilling completes, grill-it-away proceeds into feature-implementation's create-feature-doc with the transcript, and runs the full reviewed pipeline through to done", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-grill-it-away-pipeline-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-grill-it-away-pipeline-"));
     const transcript = "User: I want a widget.\nAgent: Tell me more...\nUser: ...";
 
     const passingReview = {

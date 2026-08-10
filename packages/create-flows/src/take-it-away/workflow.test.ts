@@ -39,7 +39,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-interrupted-story-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
@@ -130,7 +130,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-context-split-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
@@ -236,7 +236,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-story-baseline-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
@@ -353,7 +353,7 @@ describe("take-it-away", () => {
         input: { conversation: "We want a widget exporter." },
         runName: "take-it-away-autocommit-run",
         cwd,
-        stepkitConfig: {
+        trailstepConfig: {
           version: 1,
           customProviders: { worker: { binary: "worker-agent" } },
           agents: {
@@ -446,7 +446,7 @@ describe("take-it-away", () => {
       requiredImprovements: [],
     };
 
-    const stepkitConfig = {
+    const trailstepConfig = {
       version: 1 as const,
       customProviders: { worker: { binary: "worker-agent" } },
       agents: {
@@ -460,7 +460,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-retry-active-story-run",
       cwd,
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         if (request.outputFile.includes("create-feature-doc")) {
           await writeFile(
@@ -515,7 +515,7 @@ describe("take-it-away", () => {
     const retried = await runWorkflow({
       workflow: takeItAway,
       retry: { runDir: failed.runDir, kind: "manual" },
-      stepkitConfig,
+      trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         if (request.outputFile.includes("implement-story")) {
           const prompt = await readFile(request.promptFile, "utf8");
@@ -576,7 +576,7 @@ describe("take-it-away", () => {
       input: { conversation: "We want a widget exporter." },
       runName: "take-it-away-tracer-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {

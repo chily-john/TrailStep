@@ -16,7 +16,7 @@ describe("grill-it-away", () => {
       input: {},
       runName: "grill-it-away-invalid-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
@@ -65,7 +65,7 @@ describe("grill-it-away", () => {
       input: {},
       runName: "grill-it-away-pipeline-run",
       cwd,
-      stepkitConfig: {
+      trailstepConfig: {
         version: 1,
         customProviders: {
           terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },

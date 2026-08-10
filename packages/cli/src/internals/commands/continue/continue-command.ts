@@ -84,7 +84,9 @@ async function promptForInteractiveSession(context: CliCommandContext): Promise<
 
   const sessions = await findActiveInteractiveSessions(context.cwd);
   if (sessions.length === 0) {
-    throw new CliInputError("No active interactive TrailStep sessions found under .trailstep/runs.");
+    throw new CliInputError(
+      "No active interactive TrailStep sessions found under .trailstep/runs.",
+    );
   }
 
   const labels = sessions.map((session) => session.label);

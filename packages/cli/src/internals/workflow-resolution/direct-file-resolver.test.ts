@@ -24,7 +24,7 @@ const multipleWorkflowSource = [
 
 describe("loadDirectWorkflowFile", () => {
   it("accepts a workflow with no declared input shape", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
@@ -40,7 +40,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("loads a default-exported workflow from a relative local file path", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "review.mjs"), workflowSource, "utf8");
@@ -54,7 +54,7 @@ describe("loadDirectWorkflowFile", () => {
   it("loads exactly one valid named workflow when no valid default workflow exists", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "review.mjs"), namedWorkflowSource, "utf8");
@@ -66,7 +66,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("loads workflows from an absolute local file path", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowPath = resolve(cwd, "workflows", "review.mjs");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(workflowPath, workflowSource, "utf8");
@@ -78,7 +78,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("fails clearly for a missing direct file path", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
 
     await expect(loadDirectWorkflowFile("./workflows/missing.mjs", { cwd })).rejects.toThrow(
       /Direct workflow file not found:/,
@@ -86,7 +86,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("rejects a direct file with multiple valid workflow exports", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowPath = resolve(cwd, "workflows", "review.mjs");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(workflowPath, multipleWorkflowSource, "utf8");
@@ -99,7 +99,7 @@ describe("loadDirectWorkflowFile", () => {
   it("rejects a direct file with no valid workflow exports and includes the file path", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowPath = resolve(cwd, "workflows", "empty.mjs");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(workflowPath, "export const value = 1;", "utf8");
@@ -110,7 +110,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("rejects default plus named valid workflows as ambiguous", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowPath = resolve(cwd, "workflows", "review.mjs");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(
@@ -128,7 +128,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("selects a named workflow export from a direct source ref", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "index.mjs"), multipleWorkflowSource, "utf8");
@@ -142,7 +142,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("selects #default when default is a workflow", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "index.mjs"), workflowSource, "utf8");
@@ -156,7 +156,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("errors with available workflows when a direct named export is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "index.mjs"), multipleWorkflowSource, "utf8");
@@ -169,7 +169,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("errors with available workflows when a named export is not a workflow", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "index.mjs"), namedWorkflowSource, "utf8");
@@ -180,7 +180,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("preserves direct file import errors as the diagnostic cause", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowPath = resolve(cwd, "workflows", "broken.mjs");
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(workflowPath, "throw new Error('boom');", "utf8");
@@ -192,7 +192,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("loads a TypeScript workflow source with emitted-style .js specifiers", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
@@ -215,7 +215,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("resolves extensionless direct source candidates", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "review.ts"), workflowSource, "utf8");
@@ -227,7 +227,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("resolves direct source directories through index candidates", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "index.ts"), workflowSource, "utf8");
@@ -239,7 +239,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("rejects .tsx direct source refs clearly", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
     const workflowDir = join(cwd, "workflows");
     await mkdir(workflowDir, { recursive: true });
     await writeFile(join(workflowDir, "review.tsx"), workflowSource, "utf8");
@@ -250,7 +250,7 @@ describe("loadDirectWorkflowFile", () => {
   });
 
   it("reports missing direct source refs before bundle mode", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-direct-file-resolver-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-direct-file-resolver-tests", task.id);
 
     await expect(loadDirectWorkflowFile("./workflows/missing.ts#review", { cwd })).rejects.toThrow(
       /Direct workflow source not found:/,

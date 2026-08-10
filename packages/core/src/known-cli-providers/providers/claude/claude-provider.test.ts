@@ -161,7 +161,9 @@ describe("claudeProvider.runWorking", () => {
   });
 
   it("does not write usage.json when Claude exits nonzero or output parsing fails", async () => {
-    const failedCwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-no-usage-fail-"));
+    const failedCwd = await mkdtemp(
+      join(tmpdir(), "trailstep-core-claude-provider-no-usage-fail-"),
+    );
     const failedPromptFile = join(failedCwd, "prompt.md");
     const failedOutputFile = join(failedCwd, "output.json");
     const failedUsageFile = join(failedCwd, "usage.json");

@@ -10,7 +10,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 function nodeTmpContinueTestsDir(name: string): string {
-  return join("node_modules", ".tmp-stepkit-continue-tests", name);
+  return join("node_modules", ".tmp-trailstep-continue-tests", name);
 }
 
 function interactiveProtocol(options: {
@@ -53,7 +53,7 @@ function interactiveProtocol(options: {
 
 describe("continue command", () => {
   it("continues from inline JSON when it matches the stored schema", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-json`);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-json`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
@@ -76,7 +76,7 @@ describe("continue command", () => {
   });
 
   it("continues from a JSON file when it matches the stored schema", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-json-file`);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-json-file`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
@@ -101,7 +101,7 @@ describe("continue command", () => {
   });
 
   it("rejects an already completed session", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-completed`);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-completed`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
@@ -126,7 +126,7 @@ describe("continue command", () => {
   });
 
   it("leaves the session active when submitted JSON fails schema validation", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-invalid-json`);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-invalid-json`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
@@ -147,7 +147,7 @@ describe("continue command", () => {
   });
 
   it("does not replace output.json when validation fails", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-no-replace`);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-no-replace`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-approve-plan");
     const interactiveFile = join(stepDir, "interactive.json");
@@ -169,7 +169,7 @@ describe("continue command", () => {
   });
 
   it("continues an active interactive session from a non-empty session file", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", task.id);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-discuss-feature");
     const interactiveFile = join(stepDir, "interactive.json");
@@ -386,7 +386,7 @@ describe("continue command", () => {
   });
 
   it("leaves the session active when the session file is empty", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-continue-tests", `${task.id}-empty`);
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-empty`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
     const stepDir = join(runDir, "steps", "0001-discuss-feature");
     const interactiveFile = join(stepDir, "interactive.json");

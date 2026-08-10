@@ -10,7 +10,9 @@ export interface RawTrailStepAgentRef {
 }
 
 export type RawTrailStepAgentTarget = TrailStepAgentTarget | RawTrailStepAgentRef;
-export type RawTrailStepAgentMappings = Readonly<Record<string, readonly RawTrailStepAgentTarget[]>>;
+export type RawTrailStepAgentMappings = Readonly<
+  Record<string, readonly RawTrailStepAgentTarget[]>
+>;
 
 export const AGENT_SIZES = new Set<WorkflowAgentSize>([
   "default",

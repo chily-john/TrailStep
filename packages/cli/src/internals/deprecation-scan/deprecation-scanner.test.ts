@@ -168,7 +168,9 @@ describe("scanWorkflowSourceForDeprecations", () => {
     });
   });
 
-  it("does not scan packages outside @trailstep/core and @trailstep/authoring", async ({ task }) => {
+  it("does not scan packages outside @trailstep/core and @trailstep/authoring", async ({
+    task,
+  }) => {
     const sourceFile = await writeSource(
       tmpDir(task, "unsupported-package"),
       "import { legacyCommand } from '@trailstep/cli';\nexport const review = legacyCommand;\n",

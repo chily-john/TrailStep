@@ -76,7 +76,7 @@ describe("addCommand", () => {
   it("prompts for scope only in a zero-flag add, deriving namespace and name", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -129,7 +129,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -153,7 +153,7 @@ describe("addCommand", () => {
   it("supports an explicit --name override without deriving from workflow.id", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -193,7 +193,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -218,7 +218,7 @@ describe("addCommand", () => {
   it("rejects --namespace project combined with --scope global", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -258,7 +258,7 @@ describe("addCommand", () => {
   it("warns for a duplicate registration across project and local scope", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -303,7 +303,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -348,7 +348,7 @@ describe("addCommand", () => {
   it("uses direct workflow metadata when generating a project workflow skill", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -399,7 +399,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -450,7 +450,7 @@ describe("addCommand", () => {
   it("warns and returns success when skills CLI cannot be resolved", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -501,7 +501,7 @@ describe("addCommand", () => {
   it("warns and returns success when skills CLI exits non-zero", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -551,7 +551,7 @@ describe("addCommand", () => {
   it("warns for global skill pointing at project-scoped registration", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -596,7 +596,7 @@ describe("addCommand", () => {
   it("attempts project and user skill distribution independently", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -666,7 +666,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -719,7 +719,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -772,7 +772,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -835,7 +835,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -921,7 +921,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1000,7 +1000,7 @@ describe("addCommand", () => {
   it("does not prompt for skipped-conflict workflow roles", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1078,7 +1078,7 @@ describe("addCommand", () => {
   it("dedupes role prompts by role name regardless of size", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1156,7 +1156,7 @@ describe("addCommand", () => {
   it("does not prompt for workflow roles covered by default fallback", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1216,7 +1216,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1280,7 +1280,7 @@ describe("addCommand", () => {
   it("registers a selected workflow from a direct source barrel", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1349,7 +1349,7 @@ describe("addCommand", () => {
   it("lists direct barrel workflow choices in alphabetical order", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1408,7 +1408,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1474,7 +1474,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -1521,7 +1521,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1583,7 +1583,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1653,7 +1653,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
@@ -1716,7 +1716,7 @@ describe("addCommand", () => {
   it("adds only the selected workflow from a bundle manifest", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1770,7 +1770,7 @@ describe("addCommand", () => {
   it("preserves bundle manifest order when listing add candidates", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1837,7 +1837,7 @@ describe("addCommand", () => {
   it("prompts for which workflow to register from a bundle manifest", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1909,7 +1909,7 @@ describe("addCommand", () => {
   it("prompts with Select all and registers all selected workflows", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -1980,7 +1980,7 @@ describe("addCommand", () => {
   it("treats Select all as a submit-time override", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2035,7 +2035,7 @@ describe("addCommand", () => {
   it("registers all bundle workflows for --workflow '*'", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -2093,7 +2093,7 @@ describe("addCommand", () => {
   it("registers a comma-separated direct barrel subset in source order", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2135,7 +2135,7 @@ describe("addCommand", () => {
   it("allows --name for exactly one selected workflow", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2178,7 +2178,7 @@ describe("addCommand", () => {
   it("rejects --name for multiple selected workflows", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2218,7 +2218,7 @@ describe("addCommand", () => {
   it("skips only conflicting workflows without --force", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -2273,7 +2273,7 @@ describe("addCommand", () => {
   it("generates one project skill per successfully registered workflow", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });
@@ -2318,7 +2318,7 @@ describe("addCommand", () => {
   it("prints a bulk registration summary", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -2362,7 +2362,7 @@ describe("addCommand", () => {
   it("adds a selected installed package bundle workflow by package ref", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
@@ -2409,7 +2409,7 @@ describe("addCommand", () => {
   it("errors with available choices for an invalid --workflow", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
@@ -2448,7 +2448,7 @@ describe("addCommand", () => {
   it("fails clearly when an installed bundle package cannot be resolved", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(cwd, { recursive: true });
@@ -2480,7 +2480,7 @@ describe("addCommand", () => {
   it("throws before prompting when a bundle manifest declares zero workflows", async ({ task }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const packageDir = join(cwd, "local-workflow-package");
@@ -2529,7 +2529,7 @@ describe("addCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-add-command-tests",
+      ".tmp-trailstep-add-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     await mkdir(join(cwd, "workflows"), { recursive: true });

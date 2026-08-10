@@ -1,8 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, it, vi } from "vitest";
 import type { ViteDevServer } from "vite";
+import { describe, expect, it, vi } from "vitest";
 
 import { trailstepDashboardPlugin } from "./vite-plugin";
 
@@ -35,7 +34,9 @@ function createResponse() {
 }
 
 function installMiddleware(cwd: string) {
-  let middleware: ((request: any, response: any, next: () => void) => void | Promise<void>) | undefined;
+  let middleware:
+    | ((request: any, response: any, next: () => void) => void | Promise<void>)
+    | undefined;
   const plugin = trailstepDashboardPlugin({ cwd });
   const configureServer = plugin.configureServer;
   const server = {
@@ -60,11 +61,17 @@ function installMiddleware(cwd: string) {
 }
 
 describe("TrailStep dashboard Vite plugin", () => {
-  it("handles the TrailStep runs API route without retaining the old product route", async ({ task }) => {
+  it("handles the TrailStep runs API route without retaining the old product route", async ({
+    task,
+  }) => {
     const cwd = join(process.cwd(), ".tmp", task.id);
     const runDir = join(cwd, ".trailstep", "runs", "run-a");
     await mkdir(runDir, { recursive: true });
-    await writeFile(join(runDir, "events.jsonl"), `${JSON.stringify(workflowStartedEvent)}\n`, "utf8");
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify(workflowStartedEvent)}\n`,
+      "utf8",
+    );
 
     const middleware = installMiddleware(cwd);
     const response = createResponse();
@@ -89,7 +96,11 @@ describe("TrailStep dashboard Vite plugin", () => {
       const cwd = join(process.cwd(), ".tmp", task.id);
       const runDir = join(cwd, ".trailstep", "runs", "run-a");
       await mkdir(runDir, { recursive: true });
-      await writeFile(join(runDir, "events.jsonl"), `${JSON.stringify(workflowStartedEvent)}\n`, "utf8");
+      await writeFile(
+        join(runDir, "events.jsonl"),
+        `${JSON.stringify(workflowStartedEvent)}\n`,
+        "utf8",
+      );
 
       const middleware = installMiddleware(cwd);
       const response = createResponse();

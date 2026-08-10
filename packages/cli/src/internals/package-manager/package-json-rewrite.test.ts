@@ -31,7 +31,11 @@ describe("rewritePackageJsonDependencies", () => {
     await rewritePackageJsonDependencies({
       cwd,
       updates: [
-        { packageName: "@trailstep/core", targetVersion: "2.0.0", dependencySection: "dependencies" },
+        {
+          packageName: "@trailstep/core",
+          targetVersion: "2.0.0",
+          dependencySection: "dependencies",
+        },
         {
           packageName: "@trailstep/authoring",
           targetVersion: "2.0.0",
@@ -73,7 +77,11 @@ describe("rewritePackageJsonDependencies", () => {
     await rewritePackageJsonDependencies({
       cwd,
       updates: [
-        { packageName: "@trailstep/core", targetVersion: "2.0.0", dependencySection: "dependencies" },
+        {
+          packageName: "@trailstep/core",
+          targetVersion: "2.0.0",
+          dependencySection: "dependencies",
+        },
       ],
     });
 

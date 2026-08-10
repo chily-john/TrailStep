@@ -240,7 +240,9 @@ describe("agent steps", () => {
   });
 
   it("falls back to the second working-agent target after invalid JSON", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-command-agent-fallback-invalid-json-"));
+    const cwd = await mkdtemp(
+      join(tmpdir(), "trailstep-core-command-agent-fallback-invalid-json-"),
+    );
     const requests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {

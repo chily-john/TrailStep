@@ -17,7 +17,7 @@ describe("initCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init", "--scope", "project"]);
@@ -63,7 +63,7 @@ describe("initCommand", () => {
   }) => {
     const cwd = join(
       "node_modules",
-      ".tmp-stepkit-init-command-tests",
+      ".tmp-trailstep-init-command-tests",
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init"]);

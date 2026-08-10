@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { resolveCommand } from "../../command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-remove-command-tests", `${task.id}-${randomUUID()}`);
+  return join("node_modules", ".tmp-trailstep-remove-command-tests", `${task.id}-${randomUUID()}`);
 }
 
 async function readJson(path: string): Promise<unknown> {

@@ -9,7 +9,7 @@ import { CliInputError, loadJsonInput } from "./load-run-input.js";
 const tempDirs: string[] = [];
 
 async function createTempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "stepkit-cli-input-"));
+  const dir = await mkdtemp(join(tmpdir(), "trailstep-cli-input-"));
   tempDirs.push(dir);
   return dir;
 }

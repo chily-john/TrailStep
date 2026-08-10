@@ -8,7 +8,7 @@ import { defineWorkflow, done, step } from "./index.js";
 
 describe("authoring agent step prompt rendering", () => {
   it("splits an agent prompt into adapter messages before a custom adapter is called", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-agent-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-authoring-agent-prompt-"));
     const schema = jsonSchema<{ value: string }>({
       type: "object",
       properties: { value: { type: "string" } },
@@ -57,7 +57,7 @@ describe("authoring agent step prompt rendering", () => {
   });
 
   it("defines an agent step whose prompt function renders from live input", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-agent-function-prompt-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-authoring-agent-function-prompt-"));
     const inputShape = jsonSchema<{ topic: string }>({
       type: "object",
       properties: { topic: { type: "string" } },
@@ -73,7 +73,7 @@ describe("authoring agent step prompt rendering", () => {
     const adapter: AgentAdapterObject<{ topic: string }, { response: string }> = {
       async runAgentStep(request) {
         expect(request.messages).toEqual([
-          { role: "user", content: "Explain live input for StepKit." },
+          { role: "user", content: "Explain live input for TrailStep." },
         ]);
         await request.tools[0]?.call({ response: `prompted:${request.input.topic}` });
       },
@@ -88,7 +88,7 @@ describe("authoring agent step prompt rendering", () => {
         return step({
           id: "explain",
         })
-          .prompt(({ input: liveInput }) => `Explain ${liveInput.topic} for StepKit.`, {
+          .prompt(({ input: liveInput }) => `Explain ${liveInput.topic} for TrailStep.`, {
             output: outputShape,
             agent: "assistant",
             adapter,

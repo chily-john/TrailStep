@@ -66,7 +66,7 @@ describe("retry command", () => {
   });
 
   it("exits cleanly when no eligible failed runs exist", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     const lines: string[] = [];
@@ -86,7 +86,7 @@ describe("retry command", () => {
   it("prompts to select and confirm an eligible failed run when retry has no arguments", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
@@ -154,7 +154,7 @@ describe("retry command", () => {
   it("includes a dangling step.started run in the no-argument eligible retry prompt", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
@@ -236,7 +236,7 @@ describe("retry command", () => {
   it("retries an explicitly targeted failed run and preserves failed attempt artifacts", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-retry-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);

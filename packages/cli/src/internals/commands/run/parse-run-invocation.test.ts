@@ -44,18 +44,18 @@ describe("parseRunInvocation", () => {
   });
 
   it("rejects legacy resume syntax and points users to retry", () => {
-    expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"])).toThrow(
-      CliUsageError,
-    );
-    expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"])).toThrow(
-      /trailstep retry/i,
-    );
+    expect(() =>
+      parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"]),
+    ).toThrow(CliUsageError);
+    expect(() =>
+      parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"]),
+    ).toThrow(/trailstep retry/i);
   });
 
   it("keeps clear usage errors for unknown options", () => {
-    expect(() => parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--bogus"])).toThrow(
-      /Unknown option: --bogus/,
-    );
+    expect(() =>
+      parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--bogus"]),
+    ).toThrow(/Unknown option: --bogus/);
   });
 
   it("keeps clear usage errors for conflicting input options", () => {

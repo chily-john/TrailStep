@@ -9,7 +9,11 @@ import {
   type NpmPackageMetadata,
 } from "../../package-manager/npm-registry.js";
 
-const trailstepPackageNames = ["@trailstep/core", "@trailstep/authoring", "@trailstep/cli"] as const;
+const trailstepPackageNames = [
+  "@trailstep/core",
+  "@trailstep/authoring",
+  "@trailstep/cli",
+] as const;
 
 type TrailStepPackageName = (typeof trailstepPackageNames)[number];
 

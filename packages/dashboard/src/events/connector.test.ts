@@ -4,11 +4,12 @@ import { connectRunEventStream, fetchDashboardRuns } from "./connector";
 
 describe("dashboard API connector", () => {
   it("fetches TrailStep dashboard runs from the project-owned API route", async () => {
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify({ runs: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ runs: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     );
 
     await expect(fetchDashboardRuns(fetcher as unknown as typeof fetch)).resolves.toEqual([]);

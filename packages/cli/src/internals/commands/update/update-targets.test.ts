@@ -3,7 +3,10 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import type { PackageCommandRequest } from "../../command.types.js";
-import { resolveTrailStepSelfUpdateTargets, UpdateTargetResolutionError } from "./update-targets.js";
+import {
+  resolveTrailStepSelfUpdateTargets,
+  UpdateTargetResolutionError,
+} from "./update-targets.js";
 
 async function writeRootPackageJson(cwd: string) {
   await mkdir(cwd, { recursive: true });
@@ -39,7 +42,11 @@ describe("resolveTrailStepSelfUpdateTargets", () => {
     const plan = await resolveTrailStepSelfUpdateTargets({
       cwd,
       packageCommandRunner: registryRunner({
-        "@trailstep/core": [{ version: "1.0.0" }, { version: "1.1.0-beta.1" }, { version: "1.1.0" }],
+        "@trailstep/core": [
+          { version: "1.0.0" },
+          { version: "1.1.0-beta.1" },
+          { version: "1.1.0" },
+        ],
         "@trailstep/authoring": [
           { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
           { version: "1.1.0", peerDependencies: { "@trailstep/core": "^1.1.0" } },
@@ -160,7 +167,9 @@ describe("resolveTrailStepSelfUpdateTargets", () => {
           "@trailstep/authoring": [
             { version: "1.9.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
           ],
-          "@trailstep/cli": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
+          "@trailstep/cli": [
+            { version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
+          ],
         }),
       }),
     ).rejects.toThrow(UpdateTargetResolutionError);
@@ -178,7 +187,9 @@ describe("resolveTrailStepSelfUpdateTargets", () => {
           "@trailstep/authoring": [
             { version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
           ],
-          "@trailstep/cli": [{ version: "1.9.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],
+          "@trailstep/cli": [
+            { version: "1.9.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+          ],
         }),
       }),
     ).rejects.toThrow(UpdateTargetResolutionError);

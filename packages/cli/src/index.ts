@@ -17,14 +17,14 @@ import { WorkflowResolutionError } from "./internals/workflow-resolution/workflo
 
 export { CliInputError, loadJsonInput } from "./internals/commands/run/load-run-input.js";
 export type { InputSource } from "./internals/commands/run/run-command.types.js";
+export type {
+  LoadTrailStepProjectConfigOptions,
+  TrailStepProjectConfig,
+} from "./internals/config/config.js";
 export {
   CliConfigError,
   loadTrailStepConfig,
   loadTrailStepProjectConfig,
-} from "./internals/config/config.js";
-export type {
-  LoadTrailStepProjectConfigOptions,
-  TrailStepProjectConfig,
 } from "./internals/config/config.js";
 export { type DiscoveredWorkflow, discoverWorkflows } from "./internals/discovery/discovery.js";
 export type { WorkflowReference } from "./internals/workflow-reference/workflow-reference.types.js";

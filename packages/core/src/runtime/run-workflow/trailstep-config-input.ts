@@ -5,7 +5,9 @@ import {
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { RunWorkflowOptions } from "./run-workflow.types.js";
 
-export function parseTrailStepConfigInput(value: RunWorkflowOptions["trailstepConfig"]): TrailStepConfig {
+export function parseTrailStepConfigInput(
+  value: RunWorkflowOptions["trailstepConfig"],
+): TrailStepConfig {
   if (isParsedTrailStepConfig(value) || isFlattenedTrailStepConfig(value)) {
     return value;
   }
@@ -61,7 +63,9 @@ function isFlattenedAgentMappings(value: unknown): value is TrailStepConfig["age
   );
 }
 
-function isFlattenedAgentTarget(value: unknown): value is TrailStepConfig["agents"][string][number] {
+function isFlattenedAgentTarget(
+  value: unknown,
+): value is TrailStepConfig["agents"][string][number] {
   return isPlainRecord(value) && typeof value.provider === "string";
 }
 

@@ -11,7 +11,7 @@ import {
 } from "./agent-referrers.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-agent-referrers-tests", `${task.id}-${randomUUID()}`);
+  return join("node_modules", ".tmp-trailstep-agent-referrers-tests", `${task.id}-${randomUUID()}`);
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {

@@ -206,7 +206,7 @@ describe("run command", () => {
   it("runs a directly referenced workflow file without a run name and writes events", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
@@ -234,7 +234,7 @@ describe("run command", () => {
   });
 
   it("runs a directly referenced workflow file into TRAILSTEP_RUNS_ROOT", async ({ task }) => {
-    const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "worktree");
     const runsRoot = resolve(root, "source", ".trailstep", "runs");
     await rm(root, { recursive: true, force: true });
@@ -259,7 +259,7 @@ describe("run command", () => {
   });
 
   it("intentionally ignores the legacy STEPKIT_RUNS_ROOT override", async ({ task }) => {
-    const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "worktree");
     const legacyRunsRoot = resolve(root, "legacy", ".stepkit", "runs");
     await rm(root, { recursive: true, force: true });
@@ -281,7 +281,7 @@ describe("run command", () => {
   });
 
   it("runs a directly referenced workflow file with an explicit run name", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
@@ -302,7 +302,7 @@ describe("run command", () => {
   });
 
   it("fails clearly for a missing directly referenced workflow file", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     const errors: string[] = [];
 
@@ -320,7 +320,7 @@ describe("run command", () => {
   it("fails direct workflow files with multiple valid exports before creating a run directory", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeAmbiguousDirectWorkflowFile(cwd);
     const errors: string[] = [];
@@ -339,7 +339,7 @@ describe("run command", () => {
   });
 
   it("runs a project-registered workflow from .trailstep/config.json", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeRegisteredProjectWorkflow(cwd);
     const lines: string[] = [];
@@ -368,7 +368,7 @@ describe("run command", () => {
   it("runs an unqualified project-registered workflow from .trailstep/config.json", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeRegisteredProjectWorkflow(cwd);
     const errors: string[] = [];
@@ -384,7 +384,7 @@ describe("run command", () => {
   it("prefers project registrations for unqualified conflicts while explicit global refs remain available", async ({
     task,
   }) => {
-    const root = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true });
@@ -422,7 +422,7 @@ describe("run command", () => {
   });
 
   it("runs a workflow from scoped package bundle manifest metadata", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeBundleWorkflowPackage(cwd);
     const lines: string[] = [];
@@ -451,7 +451,7 @@ describe("run command", () => {
   it("runs a discovered workflow without a run name and creates a generated run directory", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeWorkflowPackage(cwd);
     const lines: string[] = [];
@@ -479,7 +479,7 @@ describe("run command", () => {
   it("runs a discovered workflow and creates a numbered run directory when the requested name already exists", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeWorkflowPackage(cwd);
     await mkdir(join(cwd, ".trailstep", "runs", "my-run"), { recursive: true });
@@ -506,7 +506,7 @@ describe("run command", () => {
   });
 
   it("rejects legacy resume syntax and points users to retry", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     const errors: string[] = [];
 
@@ -524,7 +524,7 @@ describe("run command", () => {
   it("fails with a list suggestion when the package-qualified workflow id is unknown", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-run-command-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true });
     await writeWorkflowPackage(cwd);
     const errors: string[] = [];

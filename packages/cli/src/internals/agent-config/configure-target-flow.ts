@@ -48,7 +48,9 @@ export async function configureLiteralAgentTarget(
   };
 }
 
-async function promptCustomProvider(prompts: TrailStepCliPrompts): Promise<ConfiguredCustomProvider> {
+async function promptCustomProvider(
+  prompts: TrailStepCliPrompts,
+): Promise<ConfiguredCustomProvider> {
   const name = (await prompts.text("Custom provider name")).trim();
   if (name.length === 0) {
     throw new CliUsageError("Custom provider name is required.");

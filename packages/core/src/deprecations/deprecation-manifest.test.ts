@@ -6,9 +6,9 @@ describe("findDeprecationsAsOf", () => {
   it("returns [] for an empty manifest, regardless of query", () => {
     const manifest: DeprecationManifest = [];
 
-    expect(findDeprecationsAsOf(manifest, { package: "@trailstep/core", version: "1.0.0" })).toEqual(
-      [],
-    );
+    expect(
+      findDeprecationsAsOf(manifest, { package: "@trailstep/core", version: "1.0.0" }),
+    ).toEqual([]);
     expect(
       findDeprecationsAsOf(manifest, { package: "@trailstep/authoring", version: "9.9.9" }),
     ).toEqual([]);
@@ -73,9 +73,9 @@ describe("findDeprecationsAsOf", () => {
     };
     const manifest: DeprecationManifest = [coreEntry, authoringEntry];
 
-    expect(findDeprecationsAsOf(manifest, { package: "@trailstep/core", version: "1.0.0" })).toEqual([
-      { ...coreEntry, severity: "warning" },
-    ]);
+    expect(
+      findDeprecationsAsOf(manifest, { package: "@trailstep/core", version: "1.0.0" }),
+    ).toEqual([{ ...coreEntry, severity: "warning" }]);
     expect(
       findDeprecationsAsOf(manifest, { package: "@trailstep/authoring", version: "1.0.0" }),
     ).toEqual([{ ...authoringEntry, severity: "warning" }]);

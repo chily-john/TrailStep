@@ -8,7 +8,7 @@ import { CliUsageError } from "../../command.types.js";
 import { resolveCommand } from "../../command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-stepkit-agents-command-tests", `${task.id}-${randomUUID()}`);
+  return join("node_modules", ".tmp-trailstep-agents-command-tests", `${task.id}-${randomUUID()}`);
 }
 
 async function readJson(path: string): Promise<unknown> {

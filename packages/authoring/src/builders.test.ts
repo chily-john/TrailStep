@@ -52,7 +52,7 @@ describe("authoring workflow builders", () => {
       description: "Builds a greeting from mapped input.",
     });
 
-    const cwd = await mkdtemp(join(tmpdir(), "stepkit-authoring-builder-test-"));
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-authoring-builder-test-"));
     const result = await runWorkflow({
       workflow,
       input: { person: "Ada" },

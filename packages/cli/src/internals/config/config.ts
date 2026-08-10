@@ -23,7 +23,9 @@ export interface TrailStepProjectConfig {
  * need agent configuration can still run; core reports a workflow failure if a later agent step
  * requires configuration that was not provided.
  */
-export async function loadTrailStepConfig(cwd = process.cwd()): Promise<TrailStepConfig | undefined> {
+export async function loadTrailStepConfig(
+  cwd = process.cwd(),
+): Promise<TrailStepConfig | undefined> {
   return (await loadTrailStepProjectConfig(cwd)).trailstepConfig;
 }
 

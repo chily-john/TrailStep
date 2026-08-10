@@ -136,7 +136,9 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     );
 
     if (args.name !== undefined && registryTargets.length > 1) {
-      throw new CliUsageError("trailstep add --name can only be used when registering one workflow.");
+      throw new CliUsageError(
+        "trailstep add --name can only be used when registering one workflow.",
+      );
     }
 
     const namespace = await resolveNamespace(args.namespace, scope, context.prompts);

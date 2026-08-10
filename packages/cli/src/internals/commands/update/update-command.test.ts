@@ -16,7 +16,9 @@ describe("updateCommand", () => {
     const packageJsonPath = join(cwd, "package.json");
     await writeFile(
       packageJsonPath,
-      JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
+      JSON.stringify({
+        dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" },
+      }),
       "utf8",
     );
     await writeFile(
@@ -61,7 +63,9 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
+      JSON.stringify({
+        dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" },
+      }),
       "utf8",
     );
     await writeFile(
@@ -101,7 +105,9 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
+      JSON.stringify({
+        dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" },
+      }),
       "utf8",
     );
     await writeFile(
@@ -142,7 +148,9 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
+      JSON.stringify({
+        dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" },
+      }),
       "utf8",
     );
     await writeFile(
@@ -181,7 +189,9 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
+      JSON.stringify({
+        dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" },
+      }),
       "utf8",
     );
     await writeFile(
@@ -269,7 +279,9 @@ describe("updateCommand", () => {
           "@trailstep/authoring": [
             { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
           ],
-          "@trailstep/cli": [{ version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],
+          "@trailstep/cli": [
+            { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+          ],
         };
         const packageName = String(request.args[1]).replace(/@\*$/u, "");
         return { exitCode: 0, stdout: JSON.stringify(metadata[packageName]) };
@@ -422,7 +434,9 @@ describe("updateCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
-      JSON.stringify({ dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" } }),
+      JSON.stringify({
+        dependencies: { "@trailstep/core": "0.1.0", "@trailstep/authoring": "0.1.0" },
+      }),
       "utf8",
     );
     await writeFile(
@@ -881,7 +895,9 @@ async function latestWorkflowPackage(request: { readonly args: readonly string[]
 async function latestTrailStepTwo(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@trailstep/core": [{ version: "2.0.0" }],
-    "@trailstep/authoring": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
+    "@trailstep/authoring": [
+      { version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
+    ],
     "@trailstep/cli": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");
@@ -899,7 +915,9 @@ async function latestTrailStepTwoAndWorkflowPackage(request: { readonly args: re
 async function latestTrailStepOne(request: { readonly args: readonly string[] }) {
   const metadata: Record<string, unknown> = {
     "@trailstep/core": [{ version: "1.0.0" }],
-    "@trailstep/authoring": [{ version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],
+    "@trailstep/authoring": [
+      { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+    ],
     "@trailstep/cli": [{ version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");

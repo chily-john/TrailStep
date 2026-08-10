@@ -8,7 +8,11 @@ import { resolveCommand } from "../../command-registry.js";
 import { workflowsCommand } from "./workflows-command.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-trailstep-workflows-command-tests", `${task.id}-${randomUUID()}`);
+  return join(
+    "node_modules",
+    ".tmp-trailstep-workflows-command-tests",
+    `${task.id}-${randomUUID()}`,
+  );
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {

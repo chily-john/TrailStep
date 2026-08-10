@@ -63,9 +63,19 @@ describe("registered workflow resolver", () => {
   it("resolves project/name from .trailstep/config.json to a direct workflow file relative to cwd", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -93,9 +103,19 @@ describe("registered workflow resolver", () => {
   it("dispatches direct-looking hash refs to the direct resolver before bundle parsing", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -106,9 +126,19 @@ describe("registered workflow resolver", () => {
   });
 
   it("preserves clean metadata for direct named exports", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -128,9 +158,19 @@ describe("registered workflow resolver", () => {
   });
 
   it("keeps bare package hash refs in bundle mode", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -156,9 +196,19 @@ describe("registered workflow resolver", () => {
   it("keeps direct-looking package refs with bundle workflow manifests in bundle resolution", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -179,9 +229,19 @@ describe("registered workflow resolver", () => {
   });
 
   it("resolves an unqualified name from the project namespace when present", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -203,9 +263,19 @@ describe("registered workflow resolver", () => {
   it("resolves global/name from an injected home directory and expands ~ targets", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });
@@ -232,9 +302,19 @@ describe("registered workflow resolver", () => {
   });
 
   it("names the requested registered ref when the namespace is missing", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "project");
-    const homeDir = join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id, "home");
-    await rm(join("node_modules", ".tmp-stepkit-registered-resolver-tests", task.id), {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-registered-resolver-tests",
+      task.id,
+      "home",
+    );
+    await rm(join("node_modules", ".tmp-trailstep-registered-resolver-tests", task.id), {
       recursive: true,
       force: true,
     });

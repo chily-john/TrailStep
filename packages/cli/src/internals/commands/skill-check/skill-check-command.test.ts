@@ -33,7 +33,7 @@ async function createConsumer(cwd: string): Promise<string> {
 
 describe("skill-check command", () => {
   it("prints packages missing SKILL.md with workflow ids and exits zero", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-skill-check-tests", task.id);
+    const cwd = join("node_modules", ".tmp-trailstep-skill-check-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await createConsumer(cwd);
     const lines: string[] = [];
@@ -53,7 +53,7 @@ describe("skill-check command", () => {
   });
 
   it("prints nothing when every workflow package has SKILL.md", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-stepkit-skill-check-tests", `${task.id}-present`);
+    const cwd = join("node_modules", ".tmp-trailstep-skill-check-tests", `${task.id}-present`);
     await mkdir(cwd, { recursive: true });
     const packageDir = await createConsumer(cwd);
     await writeFile(join(packageDir, "SKILL.md"), "# Workflow skill\n", "utf8");

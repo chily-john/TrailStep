@@ -61,8 +61,8 @@ export type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
-export { TrailStepFailureError } from "./contracts/failures/failure.js";
 export type { Failure } from "./contracts/failures/failure.js";
+export { TrailStepFailureError } from "./contracts/failures/failure.js";
 export type {
   PlainObject,
   Schema,

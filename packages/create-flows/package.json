@@ -5,6 +5,14 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/chily-john/trailstep.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chily-john/trailstep/issues"
+  },
+  "homepage": "https://github.com/chily-john/trailstep#readme",
   "keywords": [
     "trailstep-workflow"
   ],

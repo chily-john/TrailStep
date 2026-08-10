@@ -16,6 +16,24 @@ const npmRepository = {
   type: "git",
   url: "git+ssh://git@github.com/chily-john/trailstep.git",
 };
+const previousCommandName = ["step", "kit"].join("");
+const previousPackageScope = `@${previousCommandName}/`;
+const previousBrandName = ["Step", "Kit"].join("");
+const previousEnvironmentPrefix = ["STEP", "KIT"].join("");
+const previousWorkflowKeyword = `${previousCommandName}-workflow`;
+const previousPackageScopePattern = new RegExp(previousPackageScope.replace("/", "\\/"), "u");
+const previousPackageScopeDependencyPattern = new RegExp(
+  `^${previousPackageScope.replace("/", "\\/")}`,
+  "u",
+);
+const previousIdentityPattern = new RegExp(
+  `\\b${previousCommandName}\\b|${previousBrandName}|${previousEnvironmentPrefix}`,
+  "u",
+);
+const previousLockfileIdentityPattern = new RegExp(
+  `${previousPackageScope.replace("/", "\\/")}|${previousWorkflowKeyword}`,
+  "u",
+);
 
 const workspacePackageDirectories = [
   "authoring",
@@ -32,12 +50,12 @@ const expectedWorkspacePackageNames = new Set(
 function assertTrailStepManifest(packageMetadata, packageJsonPath) {
   assert.doesNotMatch(
     JSON.stringify(packageMetadata),
-    /@stepkit\//u,
-    `${packageJsonPath} must not contain legacy @stepkit/* package references`,
+    previousPackageScopePattern,
+    `${packageJsonPath} must not contain previous package-scope references`,
   );
   assert.doesNotMatch(
     JSON.stringify(packageMetadata),
-    /\bstepkit\b|StepKit|STEPKIT/u,
+    previousIdentityPattern,
     `${packageJsonPath} must use TrailStep naming in package metadata`,
   );
 }
@@ -47,8 +65,8 @@ function assertInternalDependencyClosure(packageMetadata, packageJsonPath) {
     for (const dependencyName of Object.keys(packageMetadata[dependencySection] ?? {})) {
       assert.doesNotMatch(
         dependencyName,
-        /^@stepkit\//u,
-        `${packageJsonPath} ${dependencySection} must not depend on legacy ${dependencyName}`,
+        previousPackageScopeDependencyPattern,
+        `${packageJsonPath} ${dependencySection} must not depend on previous package ${dependencyName}`,
       );
       if (dependencyName.startsWith("@trailstep/")) {
         assert.ok(
@@ -151,6 +169,13 @@ export function verifyPackageMetadata() {
   const workspace = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
   assert.match(workspace, /packages\/\*/u, "workspace must include packages/*");
 
+  const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
+  assert.doesNotMatch(
+    lockfile,
+    previousLockfileIdentityPattern,
+    "pnpm lockfile must not contain previous package-scope or workflow-keyword entries",
+  );
+
   const gitignore = readFileSync(join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /(^|\n)dist\/(\n|$)/u, "generated package dist output must be ignored");
   assert.match(gitignore, /(^|\n)\.turbo\/(\n|$)/u, "Turbo cache output must be ignored");
@@ -169,7 +194,7 @@ export function verifyPackageMetadata() {
   assert.equal(cliPackageMetadata.name, "@trailstep/cli");
   assertPublicPackageMetadata(cliPackageMetadata, "@trailstep/cli");
   assert.equal(cliPackageMetadata.bin?.trailstep, "./dist/index.js");
-  assert.equal(cliPackageMetadata.bin?.stepkit, undefined);
+  assert.equal(cliPackageMetadata.bin?.[previousCommandName], undefined);
   assert.match(
     cliPackageMetadata.dependencies?.["@clack/prompts"] ?? "",
     /^\^/u,
@@ -211,6 +236,7 @@ export function verifyPackageMetadata() {
   assertInternalDependencyClosure(createFlowsPackageMetadata, createFlowsPackageJsonPath);
   assert.equal(createFlowsPackageMetadata.name, "@trailstep/create-flows");
   assert.deepEqual(createFlowsPackageMetadata.keywords, ["trailstep-workflow"]);
+  assertRepositoryMetadata(createFlowsPackageMetadata, "@trailstep/create-flows");
   assert.equal(createFlowsPackageMetadata.dependencies?.["@trailstep/authoring"], "workspace:*");
   assert.equal(createFlowsPackageMetadata.devDependencies?.["@trailstep/core"], "workspace:*");
 

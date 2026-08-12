@@ -2360,6 +2360,166 @@ describe("addCommand", () => {
     expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
   });
 
+  it("headless package add defaults to project and registers all discovered workflows", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const promptCalls: string[] = [];
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--yes"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt) => {
+            promptCalls.push(`select:${prompt}`);
+            return "project";
+          },
+          multiSelect: async (prompt) => {
+            promptCalls.push(`multiSelect:${prompt}`);
+            return ["review", "release"];
+          },
+          text: async (prompt) => {
+            promptCalls.push(`text:${prompt}`);
+            return "";
+          },
+        },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([
+      { command: "npm", args: expect.arrayContaining(["@acme/workflows@latest"]), cwd },
+    ]);
+    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+      workflows?: Record<string, Record<string, unknown>>;
+      workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(Object.keys(config.workflows?.project ?? {})).toEqual(["review", "release"]);
+    expect(config.workflows?.project).toMatchObject({
+      review: "@acme/workflows#review",
+      release: "@acme/workflows#release",
+    });
+    expect(config.workflowMetadata?.project?.review).toMatchObject({
+      kind: "package",
+      packageName: "@acme/workflows",
+      requestedSpec: "@acme/workflows@latest",
+      requestedRange: "latest",
+      installScope: "project",
+      targetRef: "@acme/workflows#review",
+      workflowName: "review",
+      exportName: "reviewWorkflow",
+    });
+    expect(config.workflowMetadata?.project?.release).toMatchObject({
+      kind: "package",
+      packageName: "@acme/workflows",
+      requestedSpec: "@acme/workflows@latest",
+      requestedRange: "latest",
+      installScope: "project",
+      targetRef: "@acme/workflows#release",
+      workflowName: "release",
+      exportName: "releaseWorkflow",
+    });
+    expect(promptCalls).toEqual([]);
+  });
+
+  it("headless package add fails on registration conflicts", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "./existing.mjs" } },
+    });
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    await expect(
+      command.run(command.parseArgs(["add", "@acme/workflows@latest", "--yes"]) as never, {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async () => "project",
+          multiSelect: async () => ["review", "release"],
+          text: async () => "",
+        },
+        packageCommandRunner: async () => {
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      }),
+    ).rejects.toThrow(/conflict|already exists/i);
+
+    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflows?.project?.review).toBe("./existing.mjs");
+    expect(config.workflows?.project?.release).toBeUndefined();
+  });
+
   it("installs an npm package into project scope before discovering and registering workflows", async ({
     task,
   }) => {

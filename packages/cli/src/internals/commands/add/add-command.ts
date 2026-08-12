@@ -99,14 +99,14 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       throw new CliUsageError("Expected add command.");
     }
 
-    const source = argv[1];
-    if (!source) {
+    const parsedInvocation = splitAddSourceAndFlagArgs(argv.slice(1));
+    if (parsedInvocation.source === undefined) {
       throw new CliUsageError(
         "trailstep add requires a workflow file, bundle path, bundle package, npm package spec, or GitHub package spec.",
       );
     }
 
-    const flags = parseFlags(argv.slice(2));
+    const flags = parseFlags(parsedInvocation.flagArgs);
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
@@ -115,7 +115,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     }
 
     return {
-      source,
+      source: parsedInvocation.source,
       ...(scope === undefined ? {} : { scope }),
       ...(flags.namespace === undefined ? {} : { namespace: flags.namespace }),
       ...(flags.name === undefined ? {} : { name: flags.name }),
@@ -152,7 +152,11 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     }
     const registryTargets = attachPackageMetadataToRegistryTargets(
       await validateAndBuildRegistryTargets(
-        { source: preparedSource.source, workflow: args.workflow },
+        {
+          source: preparedSource.source,
+          workflow: args.workflow,
+          selectionPolicy: args.yes ? "all" : "prompt",
+        },
         preparedSource.cwd,
         context,
       ),
@@ -165,7 +169,9 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
-    const namespace = await resolveNamespace(args.namespace, scope, context.prompts);
+    const namespace = await resolveNamespace(args.namespace, scope, context.prompts, {
+      headless: args.yes,
+    });
     assertNamespaceMatchesScope(namespace, scope);
 
     const resolvedArgs = await resolveSkillArgs(args, context.prompts);
@@ -174,18 +180,23 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       name: args.name ?? deriveDefaultWorkflowName(registryTarget.workflow),
     }));
 
+    const registrationConflicts = await findRegistrationConflicts(
+      namespace,
+      registrations,
+      scope,
+      context,
+    );
+    if (args.yes && !args.force && registrationConflicts.length > 0) {
+      throw new CliUsageError(formatHeadlessRegistrationConflictError(registrationConflicts));
+    }
+    const conflictScopeByRegistrationName = new Map(
+      registrationConflicts.map((conflict) => [conflict.registration.name, conflict.existingScope]),
+    );
+
     const successfulRegistrations: AddRegistration[] = [];
     let skippedConflicts = 0;
     for (const registration of registrations) {
-      const existingScope = await findExistingRegistrationScope(
-        namespace,
-        registration.name,
-        scope,
-        {
-          cwd: context.cwd,
-          homeDir: context.homeDir,
-        },
-      );
+      const existingScope = conflictScopeByRegistrationName.get(registration.name);
       if (!args.force && existingScope !== undefined) {
         skippedConflicts += 1;
         context.io.writeError(
@@ -217,10 +228,12 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
-    await promptForUncoveredWorkflowRolesForRegistrations(
-      { scope, registrations: successfulRegistrations },
-      context,
-    );
+    if (!args.yes) {
+      await promptForUncoveredWorkflowRolesForRegistrations(
+        { scope, registrations: successfulRegistrations },
+        context,
+      );
+    }
 
     let skillWarnings = 0;
     for (const registration of successfulRegistrations) {
@@ -253,6 +266,53 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     return 0;
   },
 };
+
+interface SplitAddSourceAndFlagArgsResult {
+  readonly source?: string;
+  readonly flagArgs: readonly string[];
+}
+
+function splitAddSourceAndFlagArgs(argv: readonly string[]): SplitAddSourceAndFlagArgsResult {
+  let source: string | undefined;
+  const flagArgs: string[] = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === undefined) {
+      continue;
+    }
+
+    if (source === undefined && token.startsWith("--")) {
+      flagArgs.push(token);
+      if (isAddOptionWithValue(token)) {
+        const value = argv[index + 1];
+        if (value !== undefined) {
+          flagArgs.push(value);
+          index += 1;
+        }
+      }
+      continue;
+    }
+
+    if (source === undefined) {
+      source = token;
+      continue;
+    }
+
+    flagArgs.push(token);
+  }
+
+  return source === undefined ? { flagArgs } : { source, flagArgs };
+}
+
+function isAddOptionWithValue(option: string): boolean {
+  return (
+    option === "--scope" ||
+    option === "--namespace" ||
+    option === "--name" ||
+    option === "--workflow"
+  );
+}
 
 function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
   const flags: Record<string, string | undefined> = {};
@@ -295,10 +355,49 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
   return flags;
 }
 
+interface RegistrationConflict {
+  readonly namespace: string;
+  readonly registration: AddRegistration;
+  readonly existingScope: WorkflowRegistryScope;
+}
+
+async function findRegistrationConflicts(
+  namespace: string,
+  registrations: readonly AddRegistration[],
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<readonly RegistrationConflict[]> {
+  const conflicts: RegistrationConflict[] = [];
+
+  for (const registration of registrations) {
+    const existingScope = await findExistingRegistrationScope(namespace, registration.name, scope, {
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+    });
+    if (existingScope !== undefined) {
+      conflicts.push({ namespace, registration, existingScope });
+    }
+  }
+
+  return conflicts;
+}
+
+function formatHeadlessRegistrationConflictError(
+  conflicts: readonly RegistrationConflict[],
+): string {
+  const entries = conflicts.map(
+    (conflict) =>
+      `${conflict.namespace}/${conflict.registration.name} already exists in ${conflict.existingScope} config`,
+  );
+  const prefix = conflicts.length === 1 ? "Registration conflict" : "Registration conflicts";
+  return `${prefix}: ${entries.join("; ")}. Use --force to replace existing registrations or remove the conflicts first.`;
+}
+
 async function resolveNamespace(
   explicitNamespace: string | undefined,
   scope: WorkflowRegistryScope,
   prompts: CliCommandContext["prompts"],
+  options: { readonly headless: boolean } = { headless: false },
 ): Promise<string> {
   if (explicitNamespace !== undefined) {
     return explicitNamespace;
@@ -306,7 +405,7 @@ async function resolveNamespace(
   if (scope !== "global") {
     return "project";
   }
-  if (prompts === undefined) {
+  if (options.headless || prompts === undefined) {
     return "global";
   }
 
@@ -710,9 +809,12 @@ interface AddWorkflowCandidate extends AddRegistryTarget {
   readonly sourceKind: "bundle" | "direct";
 }
 
+type AddWorkflowSelectionPolicy = "prompt" | "all";
+
 interface SourceResolutionArgs {
   readonly source: string;
   readonly workflow?: string;
+  readonly selectionPolicy: AddWorkflowSelectionPolicy;
 }
 
 interface PreparedAddSource {
@@ -858,6 +960,10 @@ async function selectAddWorkflowCandidates(
 ): Promise<readonly AddRegistryTarget[]> {
   if (args.workflow !== undefined) {
     return selectCandidatesFromWorkflowFlag(candidates, args.workflow);
+  }
+
+  if (args.selectionPolicy === "all") {
+    return candidates;
   }
 
   if (candidates.length === 1) {

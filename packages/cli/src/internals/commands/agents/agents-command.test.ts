@@ -82,11 +82,19 @@ describe("agentsCommand", () => {
     });
   });
 
-  it("rejects set when required flags or thinking values are invalid", async ({ task }) => {
+  it("routes agents set without --model and writes a provider-default target", async ({ task }) => {
     const cwd = tmpDir(task);
-    const command = resolveCommand(["agents"]);
+    const command = resolveCommand([
+      "agents",
+      "set",
+      "reviewer",
+      "--provider",
+      "claude",
+      "--scope",
+      "project",
+    ]);
 
-    expect(() =>
+    const exitCode = await command.run(
       command.parseArgs([
         "agents",
         "set",
@@ -95,8 +103,62 @@ describe("agentsCommand", () => {
         "claude",
         "--scope",
         "project",
-      ]),
-    ).toThrow(CliUsageError);
+      ]) as never,
+      { cwd, io: { writeLine: () => undefined, writeError: () => undefined } },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      agents: { reviewer: [{ provider: "claude" }] },
+    });
+  });
+
+  it("omits blank set model overrides and provider-default thinking", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const command = resolveCommand([
+      "agents",
+      "set",
+      "reviewer",
+      "--provider",
+      "claude",
+      "--model",
+      "   ",
+      "--thinking",
+      "none",
+      "--scope",
+      "project",
+    ]);
+
+    const exitCode = await command.run(
+      command.parseArgs([
+        "agents",
+        "set",
+        "reviewer",
+        "--provider",
+        "claude",
+        "--model",
+        "   ",
+        "--thinking",
+        "none",
+        "--scope",
+        "project",
+      ]) as never,
+      { cwd, io: { writeLine: () => undefined, writeError: () => undefined } },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      agents: { reviewer: [{ provider: "claude" }] },
+    });
+  });
+
+  it("rejects set when required flags or thinking values are invalid", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const command = resolveCommand(["agents"]);
+
+    expect(() => command.parseArgs(["agents", "set", "reviewer", "--scope", "project"])).toThrow(
+      CliUsageError,
+    );
     expect(() =>
       command.parseArgs([
         "agents",

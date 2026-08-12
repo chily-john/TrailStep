@@ -51,6 +51,28 @@ describe("parseTrailStepConfig", () => {
     });
   });
 
+  it("normalizes empty model override strings to omitted values", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {},
+      agents: {
+        default: [{ provider: "claude", model: "" }],
+      },
+      workflows: {
+        review: {
+          agents: {
+            reviewer: [{ provider: "codex", model: "   " }],
+          },
+        },
+      },
+    });
+
+    expect(parsed.agents.default?.[0]).toEqual({ provider: "claude" });
+    expect(parsed.agents.default?.[0]).not.toHaveProperty("model");
+    expect(parsed.workflows?.review?.agents?.reviewer?.[0]).toEqual({ provider: "codex" });
+    expect(parsed.workflows?.review?.agents?.reviewer?.[0]).not.toHaveProperty("model");
+  });
+
   it("expands agent refs from the top-level reusable agents map", () => {
     const parsed = parseTrailStepConfig({
       version: 1,

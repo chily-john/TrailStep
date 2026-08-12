@@ -38,7 +38,7 @@ type AgentCommandArgs =
       readonly action: "set";
       readonly name: string;
       readonly provider: string;
-      readonly model: string;
+      readonly model?: string;
       readonly thinking?: (typeof THINKING_CHOICES)[number];
       readonly scope: WorkflowRegistryScope;
     }
@@ -108,14 +108,14 @@ function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
     flags.provider,
     "trailstep agents set requires --provider <provider>.",
   );
-  const model = parseRequiredFlag(flags.model, "trailstep agents set requires --model <model>.");
+  const model = parseOptionalTrimmedFlag(flags.model);
   const thinking = parseThinking(flags.thinking);
 
   return {
     action: "set",
     name,
     provider,
-    model,
+    ...(model === undefined ? {} : { model }),
     ...(thinking === undefined ? {} : { thinking }),
     scope,
   };
@@ -167,7 +167,7 @@ function parseFlags(
     }
 
     const value = argv[index + 1];
-    if (!value) {
+    if (value === undefined) {
       throw new CliUsageError(`Missing value for ${option}.`);
     }
 
@@ -188,7 +188,7 @@ async function setAgent(
   agents[args.name] = [
     {
       provider: args.provider,
-      model: args.model,
+      ...(args.model === undefined ? {} : { model: args.model }),
       ...(args.thinking === undefined || args.thinking === "none"
         ? {}
         : { thinking: args.thinking }),
@@ -956,6 +956,14 @@ function parseRequiredFlag(value: string | undefined, message: string): string {
     throw new CliUsageError(message);
   }
   return value;
+}
+
+function parseOptionalTrimmedFlag(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
 }
 
 function parseThinking(value: string | undefined): (typeof THINKING_CHOICES)[number] | undefined {

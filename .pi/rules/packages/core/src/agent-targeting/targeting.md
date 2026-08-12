@@ -25,6 +25,6 @@ Enter here when changing how local `.stepkit/config.json` is parsed or how workf
 - Resolved targets concatenate workflow role mapping, then top-level role-size mapping, then top-level `default`; skip empty mappings and fail only when all are empty.
 - `agents` is shared by working and interactive modes; workflow-specific overrides live under `workflows.<id>.agents`, with workflow settings under `workflows.<id>.settings`.
 - Agent mapping entries are plain arrays; elements may be literal provider targets or `{ ref }` entries that expand from top-level `agents` only.
-- Top-level `agents` keys are reusable mapping names, including role sizes and `default`; thinking values are `low`, `medium`, `high`, `xhigh`, and `max`.
+- Top-level `agents` keys are reusable mapping names, including role sizes and `default`; blank/whitespace `model` values are omitted, and thinking values are `low`, `medium`, `high`, `xhigh`, and `max`.
 - Do not accept legacy `customAgents`, `workingAgents`, or `interactiveAgents` fallbacks.
 - Keep parse diagnostics user-facing because CLI config loading surfaces them directly.

@@ -70,12 +70,14 @@ export function parseTargetArray(
       );
     }
 
+    const model =
+      typeof target.model === "string" ? optionalNonEmptyString(target.model) : undefined;
     const args = parseOptionalStringArray(`${targetPath}.args`, target.args, diagnostics);
 
     return [
       {
         provider: target.provider,
-        ...(typeof target.model === "string" ? { model: target.model } : {}),
+        ...(model === undefined ? {} : { model }),
         ...(typeof target.thinking === "string" &&
         THINKING_LEVELS.has(target.thinking as WorkflowAgentThinking)
           ? { thinking: target.thinking as WorkflowAgentThinking }
@@ -84,4 +86,8 @@ export function parseTargetArray(
       },
     ];
   });
+}
+
+function optionalNonEmptyString(value: string): string | undefined {
+  return value.trim().length === 0 ? undefined : value;
 }

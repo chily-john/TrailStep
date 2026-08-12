@@ -14,6 +14,28 @@ import { geminiProvider } from "./gemini-provider.js";
 // extraction), never a live process. A real `gemini --version` +
 // end-to-end smoke test remains required before this adapter is trusted in
 // production.
+describe("geminiProvider.spec", () => {
+  it("exposes Gemini provider spec with thinking unavailable", () => {
+    expect(geminiProvider.spec).toMatchObject({
+      id: "gemini",
+      displayName: "Gemini",
+      model: { supported: true, flag: "-m" },
+      thinking: { supported: false },
+      working: {
+        command: "gemini",
+        prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+        baseArgs: ["-p", "@{{promptFile}}", "--yolo", "--output-format", "json"],
+        output: {
+          style: "stdout-json-envelope",
+          parsing: { resultField: "response" },
+        },
+      },
+      interactive: { supported: true, command: "gemini", modelFlag: "-m" },
+    });
+    expect(geminiProvider.spec?.thinking).toEqual({ supported: false });
+  });
+});
+
 describe("geminiProvider.runWorking", () => {
   it("builds -p @<promptFile> --yolo -m <model> --output-format json and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-gemini-provider-"));

@@ -234,6 +234,7 @@ describe("runWorkingAgentCommand", () => {
     let receivedRequest: ProviderWorkingRequest | undefined;
     const fakeClaudeProvider: ProviderAdapter = {
       id: "claude",
+      spec: originalClaudeProvider.spec,
       async runWorking(request) {
         receivedRequest = request;
         await writeFile(request.outputFile, JSON.stringify({ answer: "provider default" }), "utf8");

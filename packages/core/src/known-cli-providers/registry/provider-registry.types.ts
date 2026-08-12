@@ -176,7 +176,7 @@ export interface ProviderWorkingRepairRequest {
  */
 export interface ProviderAdapter {
   readonly id: string;
-  readonly spec?: ProviderSpec;
+  readonly spec: ProviderSpec;
   /** Non-interactive invocation: writes `request.outputFile` itself before resolving. */
   runWorking(request: ProviderWorkingRequest, runner?: ProviderWorkingRunner): Promise<void>;
   /**

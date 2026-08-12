@@ -39,7 +39,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 
 - `agent-config/agent-entry-items-flow.ts`: Change when replacing, adding, removing, reordering, or editing literal agent entry items.
 - `agent-config/agent-setup-wizard.ts`: Change when default/named agent setup, custom provider insertion, or configured-agent detection changes.
-- `agent-config/configure-target-flow.ts`: Change when provider, model, thinking, or custom-provider target prompts change.
+- `agent-config/configure-target-flow.ts`: Change when provider, model, thinking, or custom-provider target prompts, args, or support metadata change.
 - `agent-config/pi-model-discovery.ts`: Change when Pi `--list-models` model override discovery parsing or timeouts change.
 - `agent-config/save-confirm-flow.ts`: Change when save/discard choices for named agents or workflow role overrides change.
 - `command-registry.ts`: Change when registering a new top-level command; current explicit commands are `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `runs`, `retry`, `cancel`, `doctor`, `update`, and `skill-check`, with other argv falling through to `run`.
@@ -70,5 +70,5 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
 - Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
-- Literal agent target prompts offer provider-default/manual model overrides plus provider-discovered choices when registry metadata exists; omit `model` or `thinking` when the default option is selected, and skip thinking when the provider does not support it.
+- Literal agent target prompts offer provider-default/manual model overrides plus provider-discovered choices when registry metadata exists; custom providers collect binary, prompt-file/output-file style, working/interactive args, interactive capability, and model/thinking support metadata; omit `model` or `thinking` when the default option is selected and skip unsupported override prompts.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

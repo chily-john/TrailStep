@@ -44,6 +44,25 @@ function scriptedPrompts(
   };
 }
 
+const CUSTOM_PROVIDER_DEFAULT_SETUP = [
+  "custom",
+  "local-agent",
+  "agent-bin",
+  "Prompt file path ({{promptFile}})",
+  "Output file path ({{outputFile}})",
+  "no",
+  "no",
+  "no",
+  "",
+] as const;
+
+const CUSTOM_PROVIDER_DEFAULT_CONFIG = {
+  binary: "agent-bin",
+  args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+  model: { supported: false },
+  thinking: { supported: false },
+} as const;
+
 describe("agentsCommand", () => {
   it("routes agents set and replaces the selected project agent with one literal target", async ({
     task,
@@ -206,6 +225,56 @@ describe("agentsCommand", () => {
     expect(selections.some((entry) => entry.choices.includes("+ Create new agent"))).toBe(false);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude" }] },
+    });
+  });
+
+  it("first-agent setup wizard writes custom provider config from agents command", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const selections: { readonly prompt: string; readonly choices: readonly string[] }[] = [];
+    const command = resolveCommand(["agents"]);
+
+    const exitCode = await command.run(command.parseArgs(["agents"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: scriptedPrompts(
+        [
+          "project",
+          "custom",
+          "local-agent",
+          "agent-bin",
+          "Prompt file path ({{promptFile}})",
+          "Output file path ({{outputFile}})",
+          "no",
+          "no",
+          "no",
+          "",
+        ],
+        selections,
+      ),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(selections.map((entry) => entry.prompt)).toEqual([
+      "Scope",
+      "Provider",
+      "Prompt input style",
+      "Output style",
+      "Custom provider supports interactive steps?",
+      "Custom provider supports model overrides?",
+      "Custom provider supports thinking overrides?",
+    ]);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: {
+        "local-agent": {
+          binary: "agent-bin",
+          args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+          model: { supported: false },
+          thinking: { supported: false },
+        },
+      },
+      agents: { default: [{ provider: "local-agent" }] },
     });
   });
 
@@ -411,6 +480,38 @@ describe("agentsCommand", () => {
       ),
     });
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({ agents: {} });
+  });
+
+  it("persists custom provider config when editing a named-agent item to custom", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
+    });
+    const command = resolveCommand(["agents"]);
+
+    await command.run(command.parseArgs(["agents"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: scriptedPrompts(
+        [
+          "project",
+          "reviewer — one-off claude/sonnet",
+          "Edit",
+          "Edit item 1 — one-off claude/sonnet",
+          ...CUSTOM_PROVIDER_DEFAULT_SETUP,
+          "Done",
+          "Save to original",
+        ],
+        [],
+      ),
+    });
+
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: { "local-agent": CUSTOM_PROVIDER_DEFAULT_CONFIG },
+      agents: { reviewer: [{ provider: "local-agent" }] },
+    });
   });
 
   it("blocks interactive named-agent delete when a workflow role still refers to it", async ({
@@ -669,6 +770,52 @@ describe("agentsCommand", () => {
     });
   });
 
+  it("persists custom provider config when editing an inline workflow role item to custom", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await mkdir(resolve(cwd, "workflows"), { recursive: true });
+    await writeFile(
+      resolve(cwd, "workflows", "release.mjs"),
+      "export default { id: 'release', agents: { reviewer: { size: 'medium' } }, start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
+      workflows: {
+        project: { release: "./workflows/release.mjs" },
+        release: { agents: { reviewer: [{ provider: "claude", model: "haiku" }] } },
+      },
+    });
+    const command = resolveCommand(["agents"]);
+
+    await command.run(command.parseArgs(["agents"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: scriptedPrompts(
+        [
+          "project",
+          "workflow release reviewer — one-off claude/haiku",
+          "Edit inline one-off",
+          "Edit item 1 — one-off claude/haiku",
+          ...CUSTOM_PROVIDER_DEFAULT_SETUP,
+          "Done",
+          "Save to original (update one-off in place)",
+        ],
+        [],
+      ),
+    });
+
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: { "local-agent": CUSTOM_PROVIDER_DEFAULT_CONFIG },
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
+      workflows: {
+        project: { release: "./workflows/release.mjs" },
+        release: { agents: { reviewer: [{ provider: "local-agent" }] } },
+      },
+    });
+  });
+
   it("adds a fallback ref item to an inline workflow role one-off via the items-list flow", async ({
     task,
   }) => {
@@ -895,6 +1042,41 @@ describe("agentsCommand", () => {
     });
   });
 
+  it("persists custom provider config when adding a custom item to a named-agent entry", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
+    });
+    const command = resolveCommand(["agents"]);
+
+    await command.run(command.parseArgs(["agents"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: scriptedPrompts(
+        [
+          "project",
+          "reviewer — one-off claude/sonnet",
+          "Edit",
+          "Add item",
+          "Create new",
+          ...CUSTOM_PROVIDER_DEFAULT_SETUP,
+          "Done",
+          "Save to original",
+        ],
+        [],
+      ),
+    });
+
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: { "local-agent": CUSTOM_PROVIDER_DEFAULT_CONFIG },
+      agents: {
+        reviewer: [{ provider: "claude", model: "sonnet" }, { provider: "local-agent" }],
+      },
+    });
+  });
+
   it("reorders items in a multi-item named-agent entry", async ({ task }) => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".trailstep", "config.json"), {
@@ -924,6 +1106,47 @@ describe("agentsCommand", () => {
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toMatchObject({
       agents: {
         chain: [{ ref: "base" }, { provider: "claude", model: "sonnet" }],
+      },
+    });
+  });
+
+  it("persists custom provider config when drilling into and editing a ref item", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      agents: {
+        chain: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
+        base: [{ provider: "gemini", model: "pro" }],
+      },
+    });
+    const command = resolveCommand(["agents"]);
+
+    await command.run(command.parseArgs(["agents"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: scriptedPrompts(
+        [
+          "project",
+          "chain — one-off claude/sonnet",
+          "Edit",
+          "Edit item 2 — ref base",
+          "Edit item 1 — one-off gemini/pro",
+          ...CUSTOM_PROVIDER_DEFAULT_SETUP,
+          "Done",
+          "Save to original",
+          "Done",
+          "Save to original",
+        ],
+        [],
+      ),
+    });
+
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: { "local-agent": CUSTOM_PROVIDER_DEFAULT_CONFIG },
+      agents: {
+        chain: [{ provider: "claude", model: "sonnet" }, { ref: "base" }],
+        base: [{ provider: "local-agent" }],
       },
     });
   });

@@ -4,6 +4,9 @@ import {
   providerRegistry,
   type TrailStepAgentTarget,
   type TrailStepCustomProviderConfig,
+  type TrailStepCustomProviderModelOverrideSupport,
+  type TrailStepCustomProviderThinkingOverrideSupport,
+  type WorkflowAgentThinking,
 } from "@trailstep/core";
 
 import {
@@ -24,6 +27,14 @@ const GENERIC_THINKING_OVERRIDE_CHOICES = [
   PROVIDER_DEFAULT_CHOICE,
   ...GENERIC_THINKING_LEVEL_CHOICES,
 ] as const;
+const PROMPT_FILE_STYLE = "Prompt file path ({{promptFile}})";
+const OUTPUT_FILE_STYLE = "Output file path ({{outputFile}})";
+const WORKING_ARGS_PROMPT =
+  "Working/print-mode args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{outputFile}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";
+const INTERACTIVE_ARGS_PROMPT =
+  "Interactive args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{prompt}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";
+const SUPPORTED_THINKING_LEVELS_TEXT_PROMPT =
+  "Supported thinking levels (comma-separated: low, medium, high, xhigh, max)";
 
 export interface ConfigureLiteralAgentTargetOptions {
   readonly prompts: TrailStepCliPrompts;
@@ -60,23 +71,10 @@ export async function configureLiteralAgentTarget(
     io: options.io,
     packageCommandRunner: options.packageCommandRunner,
   });
-  const modelSelection = await options.prompts.select("Model override", modelChoices);
-  if (!modelChoices.includes(modelSelection)) {
-    throw new CliUsageError(`Invalid model override selection: ${modelSelection}`);
-  }
-  const model = await modelOverrideForSelection(modelSelection, options.prompts);
+  const model = await promptModelOverride(modelChoices, options.prompts);
 
   const thinkingChoices = thinkingOverrideChoicesForProvider(providerSelection, customProvider);
-  let thinkingSelection: string = PROVIDER_DEFAULT_CHOICE;
-  if (thinkingChoices.length > 0) {
-    thinkingSelection = await options.prompts.select(
-      "Reasoning/thinking override",
-      thinkingChoices,
-    );
-    if (!thinkingChoices.includes(thinkingSelection)) {
-      throw new CliUsageError(`Invalid thinking override selection: ${thinkingSelection}`);
-    }
-  }
+  const thinkingSelection = await promptThinkingOverride(thinkingChoices, options.prompts);
 
   const target: TrailStepAgentTarget = {
     provider,
@@ -108,7 +106,7 @@ async function modelOverrideChoicesForProvider({
   packageCommandRunner,
 }: ModelOverrideChoicesOptions): Promise<readonly string[]> {
   if (customProvider !== undefined) {
-    return MODEL_OVERRIDE_CHOICES;
+    return customProvider.config.model?.supported === true ? MODEL_OVERRIDE_CHOICES : [];
   }
 
   const discovery = modelDiscoverySpecForProvider(providerSelection);
@@ -167,6 +165,21 @@ function discoveredModelChoices(models: readonly string[]): readonly string[] {
   );
 }
 
+async function promptModelOverride(
+  modelChoices: readonly string[],
+  prompts: TrailStepCliPrompts,
+): Promise<string> {
+  if (modelChoices.length === 0) {
+    return "";
+  }
+
+  const modelSelection = await prompts.select("Model override", modelChoices);
+  if (!modelChoices.includes(modelSelection)) {
+    throw new CliUsageError(`Invalid model override selection: ${modelSelection}`);
+  }
+  return await modelOverrideForSelection(modelSelection, prompts);
+}
+
 async function modelOverrideForSelection(
   modelSelection: string,
   prompts: TrailStepCliPrompts,
@@ -185,7 +198,8 @@ function thinkingOverrideChoicesForProvider(
   customProvider: ConfiguredCustomProvider | undefined,
 ): readonly string[] {
   if (customProvider !== undefined) {
-    return GENERIC_THINKING_OVERRIDE_CHOICES;
+    const thinking = customProvider.config.thinking;
+    return thinking?.supported === true ? [PROVIDER_DEFAULT_CHOICE, ...thinking.levels] : [];
   }
   if (!Object.hasOwn(providerRegistry, providerSelection)) {
     return GENERIC_THINKING_OVERRIDE_CHOICES;
@@ -197,6 +211,21 @@ function thinkingOverrideChoicesForProvider(
   }
 
   return [PROVIDER_DEFAULT_CHOICE, ...thinkingSupport.levels];
+}
+
+async function promptThinkingOverride(
+  thinkingChoices: readonly string[],
+  prompts: TrailStepCliPrompts,
+): Promise<string> {
+  if (thinkingChoices.length === 0) {
+    return PROVIDER_DEFAULT_CHOICE;
+  }
+
+  const thinkingSelection = await prompts.select("Reasoning/thinking override", thinkingChoices);
+  if (!thinkingChoices.includes(thinkingSelection)) {
+    throw new CliUsageError(`Invalid thinking override selection: ${thinkingSelection}`);
+  }
+  return thinkingSelection;
 }
 
 async function promptCustomProvider(
@@ -212,5 +241,203 @@ async function promptCustomProvider(
     throw new CliUsageError("Custom provider binary is required.");
   }
 
-  return { name, config: { binary } };
+  await promptSingleSupportedChoice({
+    prompts,
+    label: "Prompt input style",
+    choice: PROMPT_FILE_STYLE,
+    errorMessage: "Custom provider prompt input style is not supported.",
+  });
+  await promptSingleSupportedChoice({
+    prompts,
+    label: "Output style",
+    choice: OUTPUT_FILE_STYLE,
+    errorMessage: "Custom provider output style is not supported.",
+  });
+
+  const interactiveSupported = await promptYesNo(
+    prompts,
+    "Custom provider supports interactive steps?",
+  );
+  const model = await promptCustomProviderModelSupport(prompts);
+  const thinking = await promptCustomProviderThinkingSupport(prompts);
+  const workingArgs = await promptCustomProviderArgs({
+    prompts,
+    label: WORKING_ARGS_PROMPT,
+    kind: "Working/print-mode args",
+    defaults: defaultWorkingArgs({ model, thinking }),
+  });
+  const interactiveArgs = interactiveSupported
+    ? await promptCustomProviderArgs({
+        prompts,
+        label: INTERACTIVE_ARGS_PROMPT,
+        kind: "Interactive args",
+        defaults: defaultInteractiveArgs({ model, thinking }),
+      })
+    : undefined;
+
+  return {
+    name,
+    config: {
+      binary,
+      args: workingArgs,
+      ...(interactiveArgs === undefined ? {} : { interactiveArgs }),
+      model,
+      thinking,
+    },
+  };
+}
+
+async function promptSingleSupportedChoice(options: {
+  readonly prompts: TrailStepCliPrompts;
+  readonly label: string;
+  readonly choice: string;
+  readonly errorMessage: string;
+}): Promise<void> {
+  const selection = await options.prompts.select(options.label, [options.choice]);
+  if (selection !== options.choice) {
+    throw new CliUsageError(options.errorMessage);
+  }
+}
+
+async function promptYesNo(prompts: TrailStepCliPrompts, label: string): Promise<boolean> {
+  if (prompts.confirm !== undefined) {
+    return await prompts.confirm(label);
+  }
+
+  const selection = await prompts.select(label, ["no", "yes"]);
+  if (selection !== "no" && selection !== "yes") {
+    throw new CliUsageError(`Invalid yes/no selection for ${label}: ${selection}`);
+  }
+  return selection === "yes";
+}
+
+async function promptCustomProviderModelSupport(
+  prompts: TrailStepCliPrompts,
+): Promise<TrailStepCustomProviderModelOverrideSupport> {
+  const supported = await promptYesNo(prompts, "Custom provider supports model overrides?");
+  return supported ? { supported: true } : { supported: false };
+}
+
+async function promptCustomProviderThinkingSupport(
+  prompts: TrailStepCliPrompts,
+): Promise<TrailStepCustomProviderThinkingOverrideSupport> {
+  const supported = await promptYesNo(prompts, "Custom provider supports thinking overrides?");
+  if (!supported) {
+    return { supported: false };
+  }
+
+  return { supported: true, levels: await promptSupportedThinkingLevels(prompts) };
+}
+
+async function promptSupportedThinkingLevels(
+  prompts: TrailStepCliPrompts,
+): Promise<readonly WorkflowAgentThinking[]> {
+  const rawLevels =
+    prompts.multiSelect === undefined
+      ? parseThinkingLevelText(await prompts.text(SUPPORTED_THINKING_LEVELS_TEXT_PROMPT))
+      : await prompts.multiSelect("Supported thinking levels", GENERIC_THINKING_LEVEL_CHOICES);
+  const levels = normalizeThinkingLevels(rawLevels);
+  if (levels.length === 0) {
+    throw new CliUsageError("Custom provider thinking support requires at least one level.");
+  }
+  return levels;
+}
+
+function parseThinkingLevelText(value: string): readonly string[] {
+  return value
+    .split(",")
+    .map((level) => level.trim())
+    .filter((level) => level.length > 0);
+}
+
+function normalizeThinkingLevels(levels: readonly string[]): readonly WorkflowAgentThinking[] {
+  const selected = new Set(levels);
+  const invalid = [...selected].filter(
+    (level) =>
+      !GENERIC_THINKING_LEVEL_CHOICES.includes(
+        level as (typeof GENERIC_THINKING_LEVEL_CHOICES)[number],
+      ),
+  );
+  if (invalid.length > 0) {
+    throw new CliUsageError(
+      `Custom provider thinking levels must be one or more of low, medium, high, xhigh, or max: ${invalid.join(
+        ", ",
+      )}`,
+    );
+  }
+
+  return GENERIC_THINKING_LEVEL_CHOICES.filter((level) => selected.has(level));
+}
+
+async function promptCustomProviderArgs(options: {
+  readonly prompts: TrailStepCliPrompts;
+  readonly label: string;
+  readonly kind: string;
+  readonly defaults: readonly string[];
+}): Promise<readonly string[]> {
+  const raw = (await options.prompts.text(options.label)).trim();
+  if (raw.length === 0) {
+    return options.defaults;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new CliUsageError(
+      `${options.kind} must be a JSON array of strings: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (!Array.isArray(parsed) || parsed.some((arg) => typeof arg !== "string")) {
+    throw new CliUsageError(`${options.kind} must be a JSON array of strings.`);
+  }
+
+  return [...parsed];
+}
+
+function defaultWorkingArgs(options: {
+  readonly model: TrailStepCustomProviderModelOverrideSupport;
+  readonly thinking: TrailStepCustomProviderThinkingOverrideSupport;
+}): readonly string[] {
+  return [
+    "--prompt-file",
+    "{{promptFile}}",
+    "--output-file",
+    "{{outputFile}}",
+    ...optionalOverrideArgs({ supported: options.model.supported, flag: "--model", name: "model" }),
+    ...optionalOverrideArgs({
+      supported: options.thinking.supported,
+      flag: "--thinking",
+      name: "thinking",
+    }),
+  ];
+}
+
+function defaultInteractiveArgs(options: {
+  readonly model: TrailStepCustomProviderModelOverrideSupport;
+  readonly thinking: TrailStepCustomProviderThinkingOverrideSupport;
+}): readonly string[] {
+  return [
+    "--prompt-file",
+    "{{promptFile}}",
+    ...optionalOverrideArgs({ supported: options.model.supported, flag: "--model", name: "model" }),
+    ...optionalOverrideArgs({
+      supported: options.thinking.supported,
+      flag: "--thinking",
+      name: "thinking",
+    }),
+  ];
+}
+
+function optionalOverrideArgs(options: {
+  readonly supported: boolean;
+  readonly flag: string;
+  readonly name: "model" | "thinking";
+}): readonly string[] {
+  if (!options.supported) {
+    return [];
+  }
+
+  return [`{{#${options.name}}}`, options.flag, `{{${options.name}}}`, `{{/${options.name}}}`];
 }

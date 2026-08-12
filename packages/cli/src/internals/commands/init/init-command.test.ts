@@ -11,6 +11,11 @@ async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
+const WORKING_ARGS_PROMPT =
+  "Working/print-mode args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{outputFile}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";
+const INTERACTIVE_ARGS_PROMPT =
+  "Interactive args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{prompt}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";
+
 describe("initCommand", () => {
   it("uses the shared provider-default-first agent setup flow", async ({ task }) => {
     const cwd = join(
@@ -116,6 +121,123 @@ describe("initCommand", () => {
     });
   });
 
+  it("init writes improved custom provider config from shared setup", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project"]);
+
+    const exitCode = await command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        async text(prompt) {
+          if (prompt === "Custom provider name") {
+            return "local-agent";
+          }
+          if (prompt === "Custom provider binary") {
+            return "agent-bin";
+          }
+          if (prompt === WORKING_ARGS_PROMPT) {
+            return "";
+          }
+          if (prompt === INTERACTIVE_ARGS_PROMPT) {
+            return "";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+        async select(prompt, choices) {
+          if (prompt === "Provider") {
+            expect(choices).toContain("custom");
+            return "custom";
+          }
+          if (prompt === "Prompt input style") {
+            expect(choices).toEqual(["Prompt file path ({{promptFile}})"]);
+            return "Prompt file path ({{promptFile}})";
+          }
+          if (prompt === "Output style") {
+            expect(choices).toEqual(["Output file path ({{outputFile}})"]);
+            return "Output file path ({{outputFile}})";
+          }
+          if (prompt === "Model override") {
+            expect(choices).toEqual(["Use provider default", "Type manually"]);
+            return "Use provider default";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            expect(choices).toEqual(["Use provider default", "low", "high"]);
+            return "Use provider default";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        async multiSelect(prompt, choices) {
+          if (prompt === "Supported thinking levels") {
+            expect(choices).toEqual(["low", "medium", "high", "xhigh", "max"]);
+            return ["low", "high"];
+          }
+          throw new Error(`Unexpected multiSelect prompt: ${prompt}`);
+        },
+        async confirm(prompt) {
+          if (prompt === "Custom provider supports interactive steps?") {
+            return true;
+          }
+          if (prompt === "Custom provider supports model overrides?") {
+            return true;
+          }
+          if (prompt === "Custom provider supports thinking overrides?") {
+            return true;
+          }
+          if (prompt === "Configure another agent?") {
+            return false;
+          }
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
+            return false;
+          }
+          throw new Error(`Unexpected confirm prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: {
+        "local-agent": {
+          binary: "agent-bin",
+          args: [
+            "--prompt-file",
+            "{{promptFile}}",
+            "--output-file",
+            "{{outputFile}}",
+            "{{#model}}",
+            "--model",
+            "{{model}}",
+            "{{/model}}",
+            "{{#thinking}}",
+            "--thinking",
+            "{{thinking}}",
+            "{{/thinking}}",
+          ],
+          interactiveArgs: [
+            "--prompt-file",
+            "{{promptFile}}",
+            "{{#model}}",
+            "--model",
+            "{{model}}",
+            "{{/model}}",
+            "{{#thinking}}",
+            "--thinking",
+            "{{thinking}}",
+            "{{/thinking}}",
+          ],
+          model: { supported: true },
+          thinking: { supported: true, levels: ["low", "high"] },
+        },
+      },
+      agents: { default: [{ provider: "local-agent" }] },
+    });
+  });
+
   it("routes init and writes a default literal target to the selected project config", async ({
     task,
   }) => {
@@ -185,10 +307,11 @@ describe("initCommand", () => {
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init"]);
-    const textAnswers = ["opus", "reviewer", "local-agent", "agent-bin"];
+    const textAnswers = ["opus", "reviewer", "local-agent", "agent-bin", ""];
     const providerAnswers = ["claude", "custom"];
-    const modelOverrideAnswers = ["Type manually", "Use provider default"];
-    const confirmAnswers = [true, false];
+    const modelOverrideAnswers = ["Type manually"];
+    const configureAnotherAnswers = [true, false];
+    let currentProvider = "";
 
     const exitCode = await command.run(command.parseArgs(["init"]) as never, {
       cwd,
@@ -200,6 +323,7 @@ describe("initCommand", () => {
             "Agent name",
             "Custom provider name",
             "Custom provider binary",
+            WORKING_ARGS_PROMPT,
           ]).toContain(prompt);
           return textAnswers.shift() ?? "";
         },
@@ -209,13 +333,24 @@ describe("initCommand", () => {
             return "local";
           }
           if (prompt === "Provider" && choices.includes("custom")) {
-            return providerAnswers.shift() ?? "claude";
+            currentProvider = providerAnswers.shift() ?? "claude";
+            return currentProvider;
+          }
+          if (prompt === "Prompt input style") {
+            expect(choices).toEqual(["Prompt file path ({{promptFile}})"]);
+            return "Prompt file path ({{promptFile}})";
+          }
+          if (prompt === "Output style") {
+            expect(choices).toEqual(["Output file path ({{outputFile}})"]);
+            return "Output file path ({{outputFile}})";
           }
           if (prompt === "Model override") {
+            expect(currentProvider).not.toBe("custom");
             expect(choices).toEqual(["Use provider default", "Type manually"]);
             return modelOverrideAnswers.shift() ?? "Use provider default";
           }
           if (prompt === "Reasoning/thinking override") {
+            expect(currentProvider).not.toBe("custom");
             expect(choices[0]).toBe("Use provider default");
             return "Use provider default";
           }
@@ -223,7 +358,16 @@ describe("initCommand", () => {
         },
         async confirm(prompt) {
           if (prompt === "Configure another agent?") {
-            return confirmAnswers.shift() ?? false;
+            return configureAnotherAnswers.shift() ?? false;
+          }
+          if (prompt === "Custom provider supports interactive steps?") {
+            return false;
+          }
+          if (prompt === "Custom provider supports model overrides?") {
+            return false;
+          }
+          if (prompt === "Custom provider supports thinking overrides?") {
+            return false;
           }
           if (prompt === "Install the TrailStep usage/authoring skill?") {
             return false;
@@ -235,7 +379,14 @@ describe("initCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(await readJson(resolve(cwd, ".trailstep", "config-local.json"))).toEqual({
-      customProviders: { "local-agent": { binary: "agent-bin" } },
+      customProviders: {
+        "local-agent": {
+          binary: "agent-bin",
+          args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+          model: { supported: false },
+          thinking: { supported: false },
+        },
+      },
       agents: {
         default: [{ provider: "claude", model: "opus" }],
         reviewer: [{ provider: "local-agent" }],

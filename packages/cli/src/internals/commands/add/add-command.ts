@@ -26,7 +26,7 @@ import {
   installNpmWorkflowPackage,
   WorkflowPackageInstallError,
 } from "../../workflow-packages/npm-package-installer.js";
-import { parseNpmPackageRef } from "../../workflow-packages/package-ref.js";
+import { parseWorkflowPackageRef } from "../../workflow-packages/package-ref.js";
 import {
   assertNamespaceMatchesScope,
   configPathForScope,
@@ -102,7 +102,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     const source = argv[1];
     if (!source) {
       throw new CliUsageError(
-        "trailstep add requires a workflow file, bundle path, bundle package, or npm package spec.",
+        "trailstep add requires a workflow file, bundle path, bundle package, npm package spec, or GitHub package spec.",
       );
     }
 
@@ -726,7 +726,7 @@ async function prepareAddSource(
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
 ): Promise<PreparedAddSource> {
-  const packageRef = parseNpmPackageRef(source);
+  const packageRef = parseWorkflowPackageRef(source);
   if (packageRef === undefined) {
     return { source, cwd: context.cwd };
   }
@@ -739,7 +739,11 @@ async function prepareAddSource(
     packageCommandRunner: context.packageCommandRunner,
   });
   context.io.writeLine(`Installed ${packageRef.requestedSpec} in ${scope} scope.`);
-  return { source: packageRef.packageName, cwd: installedPackage.installRoot, installedPackage };
+  return {
+    source: installedPackage.packageName,
+    cwd: installedPackage.installRoot,
+    installedPackage,
+  };
 }
 
 function attachPackageMetadataToRegistryTargets(
@@ -780,6 +784,7 @@ function createPackageRegistryMetadata(
     ...(installedPackage.resolvedVersion === undefined
       ? {}
       : { resolvedVersion: installedPackage.resolvedVersion }),
+    ...(installedPackage.githubRef === undefined ? {} : { githubRef: installedPackage.githubRef }),
   };
 }
 

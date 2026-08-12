@@ -2426,6 +2426,87 @@ describe("addCommand", () => {
     ).resolves.toMatchObject({ id: "project/review" });
   });
 
+  it("installs explicit github package refs and records github metadata", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const command = resolveCommand(["add", "github:user/repo"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "github:user/repo", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests[0]).toMatchObject({ command: "npm", cwd });
+    expect(installRequests[0]?.args).toContain("github:user/repo");
+    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+      workflows?: Record<string, Record<string, unknown>>;
+      workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflows?.project?.review).toBe("@acme/workflows#review");
+    expect(config.workflowMetadata?.project?.review).toMatchObject({
+      kind: "package",
+      sourceType: "github",
+      packageName: "@acme/workflows",
+      requestedSpec: "github:user/repo",
+      githubRef: "user/repo",
+      installScope: "project",
+      targetRef: "@acme/workflows#review",
+      workflowName: "review",
+      exportName: "reviewWorkflow",
+    });
+    await expect(
+      resolveWorkflowReference("project/review", { cwd, homeDir }),
+    ).resolves.toMatchObject({ id: "project/review" });
+  });
+
+  it("rejects implicit github shorthand as unsupported", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["add", "user/repo"]);
+
+    await expect(
+      command.run(command.parseArgs(["add", "user/repo", "--scope", "project"]) as never, {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).rejects.toThrow(/github:user\/repo|unsupported GitHub shorthand/i);
+  });
+
   it("installs global packages into the user TrailStep package store outside a Node project", async ({
     task,
   }) => {

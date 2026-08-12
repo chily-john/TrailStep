@@ -87,9 +87,20 @@ export {
 } from "./known-cli-providers/registry/provider-registry.js";
 export type {
   ProviderAdapter,
+  ProviderInteractiveInvocationSpec,
   ProviderInteractiveRequest,
+  ProviderModelOverrideSupport,
+  ProviderOutputParsingMetadata,
+  ProviderOutputSpec,
+  ProviderOutputStyle,
+  ProviderPromptFileReferenceStyle,
+  ProviderPromptInputSpec,
+  ProviderSpec,
+  ProviderThinkingOverrideSupport,
+  ProviderWorkingInvocationSpec,
   ProviderWorkingProcessRequest,
   ProviderWorkingProcessResult,
+  ProviderWorkingRepairInvocationSpec,
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "./known-cli-providers/registry/provider-registry.types.js";

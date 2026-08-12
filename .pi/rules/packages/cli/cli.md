@@ -2,7 +2,7 @@
 kind: rules
 paths:
   - packages/cli/
-summary: `@trailstep/cli` package for workflow discovery, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning and target-version deprecation preflight, agent/config initialization/loading, interactive continuation, JSON input loading, retry, and local workflow execution.
+summary: `@trailstep/cli` package for workflow discovery, workflow package installation, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning and target-version deprecation preflight, agent/config initialization/loading, interactive continuation, JSON input loading, retry, and local workflow execution.
 triggers:
   - '@trailstep/cli'
   - CLI package
@@ -14,11 +14,11 @@ triggers:
 
 # packages/cli/
 
-Enter here for user-facing command behavior, executable packaging, workflow package discovery, workflow package skill checks, or local run orchestration. The CLI is intentionally a thin shell around discovery/config/input loading and `@trailstep/core` execution.
+Enter here for user-facing command behavior, executable packaging, workflow package discovery/installation, workflow package skill checks, or local run orchestration. The CLI is intentionally a thin shell around discovery/config/input loading and `@trailstep/core` execution.
 
 ## Areas
 
-- `src/`: Enter when changing the CLI entrypoint, command registry, command parsing/output, discovery, agent-config initialization/helpers, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning/target-version deprecation preflight, interactive continuation, config loading, input loading, retry handling, or tests.
+- `src/`: Enter when changing the CLI entrypoint, command registry, command parsing/output, discovery, agent-config initialization/helpers, workflow package installation, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning/target-version deprecation preflight, interactive continuation, config loading, input loading, retry handling, or tests.
 - `package.json`: Enter when `bin`, exports, package metadata, dependencies, or build scripts for `@trailstep/cli` change.
 - `README.md`: Enter when publish-facing command usage guidance changes.
 
@@ -33,7 +33,7 @@ Enter here for user-facing command behavior, executable packaging, workflow pack
 - `.trailstep/config-local.json` is an optional, gitignored local project-scope override merged after project and global config; agent entries merge by name, `workflows` merges one level deeper by namespace bucket, and other top-level keys are replaced by later scope. There is no separate global-local override.
 - `trailstep init [--scope <local|project|global>]` interactively writes literal agent config entries; it starts with `default`, can add named agents/custom providers, and prompts for scope when omitted.
 - `trailstep add --scope local` registers into `.trailstep/config-local.json` instead of the shared `.trailstep/config.json`; use it for machine-specific agent targets or workflow registrations that should not be committed.
-- `trailstep add` registers direct workflow files/exports or selected bundle workflows into local/project/global config and can distribute generated workflow skills with `--project-skill` or `--user-skill`. `--scope`, `--namespace`, and `--name` are all optional: scope always prompts (single-select, no silent default) when omitted; multi-workflow sources prompt for one or more workflows; namespace defaults to `"project"` for local/project scope or `"global"` for global scope; name defaults to the workflow's own `id`. Namespace `"project"`/`"global"` are scope-reserved — using either with a mismatched scope is rejected because the entry would be unresolvable.
+- `trailstep add` registers direct workflow files/exports, selected bundle workflows, or versioned npm package specs into local/project/global config and can distribute generated workflow skills with `--project-skill` or `--user-skill`. `--scope`, `--namespace`, and `--name` are all optional: scope prompts (single-select) when omitted unless `--yes` uses project scope; multi-workflow sources prompt for one or more workflows; namespace defaults to `"project"` for local/project scope or `"global"` for global scope; name defaults to the workflow's own `id`. Namespace `"project"`/`"global"` are scope-reserved — using either with a mismatched scope is rejected because the entry would be unresolvable.
 - `trailstep remove <namespace>/<name>` deletes a registration, searching local, project, then global config unless `--scope` narrows it; it errors instead of guessing when a ref matches more than one scope.
 - Published `@trailstep/cli` keeps `@trailstep/core` as both a `workspace:*` build dependency and a versioned peer dependency.
 - Starting a run may omit `workflowRunName` and use generated names; persisted-failure manual retry is handled by `trailstep retry`, not `run --resume`; automatic retry is core-owned and may run before terminal persistence, while provider CLI `--resume` is separate provider repair.

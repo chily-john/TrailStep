@@ -22,13 +22,20 @@ import {
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
 import {
+  type InstalledNpmWorkflowPackage,
+  installNpmWorkflowPackage,
+  WorkflowPackageInstallError,
+} from "../../workflow-packages/npm-package-installer.js";
+import { parseNpmPackageRef } from "../../workflow-packages/package-ref.js";
+import {
   assertNamespaceMatchesScope,
   configPathForScope,
   findExistingRegistrationScope,
   readRawTrailStepConfigFile,
-  toMutableWorkflowRegistry,
+  type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryScope,
   writeRawTrailStepConfigFile,
+  writeWorkflowRegistryEntries,
 } from "../../workflow-registry/workflow-registry.js";
 import {
   type BundleWorkflowSpecifier,
@@ -60,6 +67,7 @@ interface AddCommandArgs {
   readonly userSkill: boolean;
   readonly projectSkillExplicit: boolean;
   readonly userSkillExplicit: boolean;
+  readonly yes: boolean;
 }
 
 interface ResolvedAddCommandArgs {
@@ -94,7 +102,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     const source = argv[1];
     if (!source) {
       throw new CliUsageError(
-        "trailstep add requires a workflow file, bundle path, or bundle package.",
+        "trailstep add requires a workflow file, bundle path, bundle package, or npm package spec.",
       );
     }
 
@@ -117,22 +125,38 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       userSkill: flags["user-skill"] === "true",
       projectSkillExplicit: flags["project-skill"] === "true",
       userSkillExplicit: flags["user-skill"] === "true",
+      yes: flags.yes === "true",
     };
   },
   async run(args: AddCommandArgs, context: CliCommandContext): Promise<number> {
     const scope =
       args.scope ??
-      (await promptSelect(
-        SCOPE_PROMPT_LABEL,
-        ["local", "project", "global"] as const,
-        context.prompts,
-        "trailstep add requires --scope <local|project|global>.",
-      ));
+      (args.yes
+        ? "project"
+        : await promptSelect(
+            SCOPE_PROMPT_LABEL,
+            ["local", "project", "global"] as const,
+            context.prompts,
+            "trailstep add requires --scope <local|project|global>.",
+          ));
 
-    const registryTargets = await validateAndBuildRegistryTargets(
-      { source: args.source, workflow: args.workflow },
-      context.cwd,
-      context,
+    let preparedSource: PreparedAddSource;
+    try {
+      preparedSource = await prepareAddSource(args.source, scope, context);
+    } catch (error) {
+      if (error instanceof WorkflowPackageInstallError) {
+        context.io.writeError(error.message);
+        return 1;
+      }
+      throw error;
+    }
+    const registryTargets = attachPackageMetadataToRegistryTargets(
+      await validateAndBuildRegistryTargets(
+        { source: preparedSource.source, workflow: args.workflow },
+        preparedSource.cwd,
+        context,
+      ),
+      preparedSource.installedPackage,
     );
 
     if (args.name !== undefined && registryTargets.length > 1) {
@@ -172,22 +196,19 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       successfulRegistrations.push(registration);
     }
 
-    const configPath = configPathForScope(scope, context);
-    const config = await readRawTrailStepConfigFile(configPath);
-    const workflows = toMutableWorkflowRegistry(config.workflows);
-    const namespaceBucket = workflows[namespace] ?? {};
-
     if (successfulRegistrations.length > 0) {
-      workflows[namespace] = {
-        ...namespaceBucket,
-        ...Object.fromEntries(
-          successfulRegistrations.map((registration) => [
-            registration.name,
-            registration.registryTarget.targetRef,
-          ]),
-        ),
-      };
-      await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
+      await writeWorkflowRegistryEntries(
+        scope,
+        successfulRegistrations.map((registration) => ({
+          namespace,
+          name: registration.name,
+          targetRef: registration.registryTarget.targetRef,
+          ...(registration.registryTarget.metadata === undefined
+            ? {}
+            : { metadata: registration.registryTarget.metadata }),
+        })),
+        context,
+      );
     }
 
     for (const registration of successfulRegistrations) {
@@ -240,6 +261,11 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
     const option = argv[index];
     if (option === "--force") {
       flags.force = "true";
+      continue;
+    }
+
+    if (option === "--yes") {
+      flags.yes = "true";
       continue;
     }
 
@@ -330,7 +356,7 @@ async function resolveSkillArgs(
   prompts: CliCommandContext["prompts"],
 ): Promise<ResolvedSkillArgs> {
   const promptSkillChoices =
-    prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
+    !args.yes && prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
 
   if (!promptSkillChoices) {
     return { projectSkill: args.projectSkill, userSkill: args.userSkill };
@@ -675,6 +701,8 @@ interface AddRegistryTarget {
   readonly targetRef: string;
   readonly workflow?: WorkflowSkillMetadata;
   readonly bundleSpecifier?: BundleWorkflowSpecifier;
+  readonly bundleExportName?: string;
+  readonly metadata?: WorkflowPackageRegistryMetadata;
 }
 
 interface AddWorkflowCandidate extends AddRegistryTarget {
@@ -685,6 +713,74 @@ interface AddWorkflowCandidate extends AddRegistryTarget {
 interface SourceResolutionArgs {
   readonly source: string;
   readonly workflow?: string;
+}
+
+interface PreparedAddSource {
+  readonly source: string;
+  readonly cwd: string;
+  readonly installedPackage?: InstalledNpmWorkflowPackage;
+}
+
+async function prepareAddSource(
+  source: string,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<PreparedAddSource> {
+  const packageRef = parseNpmPackageRef(source);
+  if (packageRef === undefined) {
+    return { source, cwd: context.cwd };
+  }
+
+  const installedPackage = await installNpmWorkflowPackage({
+    packageRef,
+    scope,
+    cwd: context.cwd,
+    homeDir: context.homeDir,
+    packageCommandRunner: context.packageCommandRunner,
+  });
+  context.io.writeLine(`Installed ${packageRef.requestedSpec} in ${scope} scope.`);
+  return { source: packageRef.packageName, cwd: installedPackage.installRoot, installedPackage };
+}
+
+function attachPackageMetadataToRegistryTargets(
+  targets: readonly AddRegistryTarget[],
+  installedPackage: InstalledNpmWorkflowPackage | undefined,
+): readonly AddRegistryTarget[] {
+  if (installedPackage === undefined) {
+    return targets;
+  }
+
+  return targets.map((target) => ({
+    ...target,
+    metadata: createPackageRegistryMetadata(target, installedPackage),
+  }));
+}
+
+function createPackageRegistryMetadata(
+  target: AddRegistryTarget,
+  installedPackage: InstalledNpmWorkflowPackage,
+): WorkflowPackageRegistryMetadata {
+  const workflowName = target.bundleSpecifier?.workflowName ?? target.workflow?.id;
+  if (workflowName === undefined) {
+    throw new WorkflowResolutionError(
+      `Unable to determine package workflow metadata for ${target.targetRef}.`,
+    );
+  }
+
+  return {
+    kind: "package",
+    sourceType: installedPackage.sourceType,
+    packageName: installedPackage.packageName,
+    requestedSpec: installedPackage.requestedSpec,
+    requestedRange: installedPackage.requestedRange,
+    installScope: installedPackage.installScope,
+    targetRef: target.targetRef,
+    workflowName,
+    exportName: target.bundleExportName ?? workflowName,
+    ...(installedPackage.resolvedVersion === undefined
+      ? {}
+      : { resolvedVersion: installedPackage.resolvedVersion }),
+  };
 }
 
 async function validateAndBuildRegistryTargets(
@@ -727,6 +823,7 @@ async function listBundleAddWorkflowCandidates(
       targetRef: `${source}#${workflowName}`,
       workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
       bundleSpecifier: specifier,
+      bundleExportName: bundleWorkflow.workflowRef.exportName,
     });
   }
 

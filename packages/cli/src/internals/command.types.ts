@@ -4,7 +4,7 @@ import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skill
 
 export const usageText = [
   "Usage:",
-  "  trailstep add <workflow-file-or-bundle> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force]",
+  "  trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes]",
   "  trailstep remove <namespace>/<name> [--scope <local|project|global>]",
   "  trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
   "  trailstep agents",
@@ -24,7 +24,7 @@ export const usageText = [
   "  trailstep retry <workflow-ref> <runName>",
   "  trailstep runs",
   "",
-  "trailstep add defaults: scope prompts interactively when omitted (no default); namespace",
+  "trailstep add defaults: scope prompts interactively when omitted (or uses project with --yes); namespace",
   'defaults to "project" for --scope project/local, or to "global" for --scope global',
   "unless you opt into a custom one; name defaults to the workflow's own id.",
   "For bundle packages with multiple workflows, --workflow accepts one name, a comma-separated",

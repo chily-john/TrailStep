@@ -2,7 +2,7 @@
 kind: rules
 paths:
   - packages/cli/src/internals/
-summary: Internal command registry, command implementations, discovery, package-manager/npm-registry/installed-version helpers, deprecation-scan helpers, agent-config initialization/editing helpers, config loading, input loading, interactive continuation, configured runs-root resolution, doctor deprecation scanning, update command self-update planning, retry command wiring, runs command listing, skill checks, workflow registration, workflow skill generation/distribution, registered workflow refs, agent ref maintenance, workflow resolution, and workflow-reference parsing for the CLI.
+summary: Internal command registry, command implementations, discovery, workflow package ref/install helpers, package-manager/npm-registry/installed-version helpers, deprecation-scan helpers, agent-config initialization/editing helpers, config loading, input loading, interactive continuation, configured runs-root resolution, doctor deprecation scanning, update command self-update planning, retry command wiring, runs command listing, skill checks, workflow registration, workflow package metadata, workflow skill generation/distribution, registered workflow refs, agent ref maintenance, workflow resolution, and workflow-reference parsing for the CLI.
 triggers:
   - CLI internals
   - command registry
@@ -31,7 +31,8 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `package-manager/`: Enter when changing package-manager detection, install command execution helpers, package.json dependency rewriting, installed TrailStep package version resolution, or npm registry metadata fetching.
 - `prompts/`: Enter when changing the shared `promptText`/`promptSelect`/`promptMultiSelect`/`promptYesNo` interactive-prompt helpers used by `add`, `remove`, and `workflows`.
 - `workflow-reference/`: Enter when changing `<package:workflowExport>` or `<package-or-path#workflowName>` parsing rules.
-- `workflow-registry/`: Enter when changing shared config-file read/write/enumerate primitives (`configPathForScope`, raw read/write, delete-entry, cross-scope duplicate lookup, the reserved-namespace and reserved-character guards) used by `add`, `remove`, and `workflows`.
+- `workflow-registry/`: Enter when changing shared config-file read/write/enumerate primitives (`configPathForScope`, raw read/write, delete-entry, package metadata writes, cross-scope duplicate lookup, the reserved-namespace and reserved-character guards) used by `add`, `remove`, and `workflows`.
+- `workflow-packages/`: Enter when changing npm package spec parsing or scoped package installation used before `trailstep add` bundle discovery.
 - `workflow-resolution/`: Enter when changing run-command resolution between discovered workflow ids, project/global-registered config refs, bundle manifest refs, and direct workflow source references.
 - `workflow-skills/`: Enter when changing generated workflow skill naming, content, project skill file writing, leftover generated-skill warnings, or `skills` CLI distribution.
 
@@ -41,6 +42,8 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `agent-config/save-confirm-flow.ts`: Change when save/discard choices for named agents or workflow role overrides change.
 - `command-registry.ts`: Change when registering a new top-level command; current explicit commands are `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `runs`, `retry`, `cancel`, `doctor`, `update`, and `skill-check`, with other argv falling through to `run`.
 - `command.types.ts`: Change when command context, usage text, command interface, prompt text/select/multi-select/confirm injection, env injection, home-dir injection, skills CLI injection, run-name injection, package command runner injection, or deprecation manifest injection changes.
+- `workflow-packages/package-ref.ts`: Change when npm package spec detection for `trailstep add` changes.
+- `workflow-packages/npm-package-installer.ts`: Change when `trailstep add` package install roots, package.json bootstrapping, npm install invocation, or installed manifest handling changes.
 - `runs-root.ts`: Change when `TRAILSTEP_RUNS_ROOT` or default `.trailstep/runs` resolution for run, runs, or retry changes.
 - `package-manager/package-manager.ts`: Change when lockfile/packageManager detection or detected install command execution changes.
 - `package-manager/npm-registry.ts`: Change when `npm view` metadata fetching or registry-error handling changes.
@@ -67,4 +70,5 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
 - Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
+- Use `writeWorkflowRegistryEntries` for registration writes that must keep `workflowMetadata` synchronized with `workflows`.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

@@ -51,6 +51,28 @@ describe("parseTrailStepConfig", () => {
     });
   });
 
+  it("parses custom provider capability fields", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {
+        local: {
+          binary: "local-agent",
+          model: { supported: true, flag: "--model" },
+          thinking: { supported: true, flag: "--thinking", levels: ["low", "high"] },
+        },
+      },
+      agents: {
+        default: [{ provider: "local" }],
+      },
+    });
+
+    expect(parsed.customProviders.local).toEqual({
+      binary: "local-agent",
+      model: { supported: true, flag: "--model" },
+      thinking: { supported: true, flag: "--thinking", levels: ["low", "high"] },
+    });
+  });
+
   it("normalizes empty model override strings to omitted values", () => {
     const parsed = parseTrailStepConfig({
       version: 1,

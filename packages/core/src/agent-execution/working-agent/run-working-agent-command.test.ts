@@ -228,6 +228,75 @@ describe("runWorkingAgentCommand", () => {
     });
   });
 
+  it("runs custom working conditional args without empty model or thinking overrides", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-conditional-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-conditional-args-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do(done)(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "provider defaults" },
+      runName: "working-agent-conditional-args-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {
+          worker: {
+            binary: "worker-agent",
+            args: [
+              "--prompt-file",
+              "{{promptFile}}",
+              "--output-file",
+              "{{outputFile}}",
+              "{{#model}}",
+              "--model",
+              "{{model}}",
+              "{{/model}}",
+              "{{#thinking}}",
+              "--thinking",
+              "{{thinking}}",
+              "{{/thinking}}",
+            ],
+          },
+        },
+        agents: { medium: [{ provider: "worker" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        await writeFile(request.outputFile, JSON.stringify({ answer: "provider default" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(requests[0]?.args).toEqual([
+      "--prompt-file",
+      requests[0]?.promptFile,
+      "--output-file",
+      requests[0]?.outputFile,
+    ]);
+    expect(requests[0]?.args).not.toContain("--model");
+    expect(requests[0]?.args).not.toContain("");
+    expect(requests[0]?.args).not.toContain("--thinking");
+  });
+
   it("does not pass an empty model override to built-in provider invocation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-empty-model-"));
     const originalClaudeProvider = providerRegistry.claude;

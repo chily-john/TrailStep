@@ -51,6 +51,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   return runCustomWorkingProvider({
     config: options.config,
     step: options.step,
+    role: options.role,
     cwd: options.cwd,
     runner: options.runner,
     target: options.target,

@@ -20,6 +20,7 @@ import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
 } from "../../runtime/run-workflow/run-workflow.types.js";
+import { renderCustomProviderArgs } from "../custom-provider/render-custom-provider-args.js";
 
 export async function runInteractiveAgentCommand(options: {
   readonly config: TrailStepConfig;
@@ -131,12 +132,23 @@ async function runInteractiveAgentTarget(options: {
     });
   }
 
-  const args = await substitutePromptPlaceholders({
+  const thinking = options.target.thinking ?? options.role.thinking;
+  const args = renderCustomProviderArgs({
     argv: options.target.args ?? agentConfig.interactiveArgs,
-    prompt,
-    promptFile: files.promptFile,
-    model: options.target.model,
+    values: {
+      prompt,
+      promptFile: files.promptFile,
+      ...(options.target.model === undefined ? {} : { model: options.target.model }),
+      ...(thinking === undefined ? {} : { thinking }),
+    },
+    errorCode: "interactive_command_invalid",
+    commandDescription: "Interactive agent command",
   });
+
+  if (args.includes(files.promptFile)) {
+    await mkdir(dirname(files.promptFile), { recursive: true });
+    await writeFile(files.promptFile, prompt, "utf8");
+  }
 
   return await runProcessUntilExitOrCompletion({
     stepId: options.stepId,
@@ -331,45 +343,6 @@ function exampleJsonObject(schema: Record<string, unknown>): Record<string, unkn
       return [key, "string"];
     }),
   );
-}
-
-async function substitutePromptPlaceholders(options: {
-  readonly argv: readonly string[];
-  readonly prompt: string;
-  readonly promptFile: string;
-  readonly model?: string;
-}): Promise<string[]> {
-  let needsPromptFile = false;
-  const substituted = options.argv.map((arg) => {
-    if (arg === "{{prompt}}") {
-      return options.prompt;
-    }
-
-    if (arg === "{{promptFile}}") {
-      needsPromptFile = true;
-      return options.promptFile;
-    }
-
-    if (arg === "{{model}}") {
-      return options.model ?? "";
-    }
-
-    if (arg.includes("{{prompt}}") || arg.includes("{{promptFile}}") || arg.includes("{{model}}")) {
-      throw new TrailStepFailureError({
-        code: "interactive_command_invalid",
-        message: "Interactive prompt placeholders must be whole argv values.",
-      });
-    }
-
-    return arg;
-  });
-
-  if (needsPromptFile) {
-    await mkdir(dirname(options.promptFile), { recursive: true });
-    await writeFile(options.promptFile, options.prompt, "utf8");
-  }
-
-  return substituted;
 }
 
 const spawnInteractiveProcess: InteractiveProcessRunner = async ({

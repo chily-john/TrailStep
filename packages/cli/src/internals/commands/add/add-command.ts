@@ -100,6 +100,11 @@ const EXISTING_PACKAGE_PROMPT_CHOICES = [
   "Reinstall/upgrade",
   "Cancel",
 ] as const;
+const REGISTRATION_CONFLICT_PROMPT_CHOICES = [
+  "Replace existing registration",
+  "Skip this workflow",
+  "Cancel add",
+] as const;
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -186,7 +191,6 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     });
     assertNamespaceMatchesScope(namespace, scope);
 
-    const resolvedArgs = await resolveSkillArgs(args, context.prompts);
     const registrations = registryTargets.map((registryTarget) => ({
       registryTarget,
       name: args.name ?? deriveDefaultWorkflowName(registryTarget.workflow),
@@ -198,26 +202,44 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       scope,
       context,
     );
-    if (args.yes && !args.force && registrationConflicts.length > 0) {
-      throw new CliUsageError(formatHeadlessRegistrationConflictError(registrationConflicts));
+    const conflictResolution = await resolveRegistrationConflictActions({
+      conflicts: registrationConflicts,
+      force: args.force,
+      headless: args.yes,
+      context,
+    });
+    if (conflictResolution.status === "cancelled") {
+      context.io.writeLine("Canceled.");
+      return 0;
     }
-    const conflictScopeByRegistrationName = new Map(
-      registrationConflicts.map((conflict) => [conflict.registration.name, conflict.existingScope]),
+    const conflictActionByRegistrationName = new Map(
+      conflictResolution.actions.map((entry) => [
+        entry.conflict.registration.name,
+        {
+          action: entry.action,
+          existingScope: entry.conflict.existingScope,
+        },
+      ]),
     );
 
     const successfulRegistrations: AddRegistration[] = [];
     let skippedConflicts = 0;
     for (const registration of registrations) {
-      const existingScope = conflictScopeByRegistrationName.get(registration.name);
-      if (!args.force && existingScope !== undefined) {
+      const conflictAction = conflictActionByRegistrationName.get(registration.name);
+      if (conflictAction?.action === "skip") {
         skippedConflicts += 1;
         context.io.writeError(
-          `Warning: skipped ${namespace}/${registration.name} because it already exists in ${existingScope} config. Use --force to replace it.`,
+          `Warning: skipped ${namespace}/${registration.name} because it already exists in ${conflictAction.existingScope} config. Use --force to replace it.`,
         );
         continue;
       }
       successfulRegistrations.push(registration);
     }
+
+    const resolvedArgs =
+      successfulRegistrations.length === 0
+        ? { projectSkill: false, userSkill: false }
+        : await resolveSkillArgs(args, context.prompts);
 
     if (successfulRegistrations.length > 0) {
       await writeWorkflowRegistryEntries(
@@ -269,7 +291,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       }
     }
 
-    if (registrations.length > 1 || skippedConflicts > 0) {
+    if (registrations.length > 1 || skippedConflicts > 0 || registrationConflicts.length > 0) {
       context.io.writeLine(
         `Summary: registered ${successfulRegistrations.length}, skipped conflicts ${skippedConflicts}, skill warnings ${skillWarnings}.`,
       );
@@ -403,6 +425,76 @@ function formatHeadlessRegistrationConflictError(
   );
   const prefix = conflicts.length === 1 ? "Registration conflict" : "Registration conflicts";
   return `${prefix}: ${entries.join("; ")}. Use --force to replace existing registrations or remove the conflicts first.`;
+}
+
+type RegistrationConflictAction = "replace" | "skip";
+
+interface ResolvedRegistrationConflictAction {
+  readonly conflict: RegistrationConflict;
+  readonly action: RegistrationConflictAction;
+}
+
+type ResolveRegistrationConflictActionsResult =
+  | {
+      readonly status: "ready";
+      readonly actions: readonly ResolvedRegistrationConflictAction[];
+    }
+  | { readonly status: "cancelled" };
+
+interface ResolveRegistrationConflictActionsOptions {
+  readonly conflicts: readonly RegistrationConflict[];
+  readonly force: boolean;
+  readonly headless: boolean;
+  readonly context: CliCommandContext;
+}
+
+async function resolveRegistrationConflictActions({
+  conflicts,
+  force,
+  headless,
+  context,
+}: ResolveRegistrationConflictActionsOptions): Promise<ResolveRegistrationConflictActionsResult> {
+  if (conflicts.length === 0) {
+    return { status: "ready", actions: [] };
+  }
+  if (force) {
+    return {
+      status: "ready",
+      actions: conflicts.map((conflict) => ({ conflict, action: "replace" })),
+    };
+  }
+  if (headless) {
+    throw new CliUsageError(formatHeadlessRegistrationConflictError(conflicts));
+  }
+  if (context.prompts === undefined) {
+    return {
+      status: "ready",
+      actions: conflicts.map((conflict) => ({ conflict, action: "skip" })),
+    };
+  }
+
+  const actions: ResolvedRegistrationConflictAction[] = [];
+  for (const conflict of conflicts) {
+    const decision = await promptSelect(
+      registrationConflictPrompt(conflict),
+      REGISTRATION_CONFLICT_PROMPT_CHOICES,
+      context.prompts,
+      `${conflict.namespace}/${conflict.registration.name} already exists in ${conflict.existingScope} config. Run interactively to choose replace, skip, or cancel.`,
+    );
+    if (decision === "Cancel add") {
+      return { status: "cancelled" };
+    }
+    actions.push({
+      conflict,
+      action: decision === "Replace existing registration" ? "replace" : "skip",
+    });
+  }
+
+  return { status: "ready", actions };
+}
+
+function registrationConflictPrompt(conflict: RegistrationConflict): string {
+  return `${conflict.namespace}/${conflict.registration.name} already exists in ${conflict.existingScope} config. What should TrailStep do?`;
 }
 
 async function resolveNamespace(

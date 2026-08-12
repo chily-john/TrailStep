@@ -848,6 +848,7 @@ describe("addCommand", () => {
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
 
+    const homeDir = join(cwd, "home");
     const prompts: string[] = [];
     const command = resolveCommand([
       "add",
@@ -872,6 +873,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
@@ -942,6 +944,7 @@ describe("addCommand", () => {
       "utf8",
     );
 
+    const homeDir = join(cwd, "home");
     const prompts: string[] = [];
     const command = resolveCommand(["add", "./workflows"]);
     const exitCode = await command.run(
@@ -957,6 +960,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
@@ -1022,6 +1026,7 @@ describe("addCommand", () => {
       "utf8",
     );
 
+    const homeDir = join(cwd, "home");
     const prompts: string[] = [];
     const command = resolveCommand(["add", "./workflows"]);
     const exitCode = await command.run(
@@ -1037,11 +1042,22 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               return "no";
+            }
+            if (
+              prompt === "acme/alpha already exists in project config. What should TrailStep do?"
+            ) {
+              expect(choices).toEqual([
+                "Replace existing registration",
+                "Skip this workflow",
+                "Cancel add",
+              ]);
+              return "Skip this workflow";
             }
             prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (medium) — Review code") {
@@ -1099,6 +1115,7 @@ describe("addCommand", () => {
       "utf8",
     );
 
+    const homeDir = join(cwd, "home");
     const prompts: string[] = [];
     const command = resolveCommand(["add", "./workflows"]);
     const exitCode = await command.run(
@@ -1114,6 +1131,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
@@ -1631,6 +1649,9 @@ describe("addCommand", () => {
       {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
+        skillsCliResolver: async () => {
+          throw new Error("Could not resolve skills CLI.");
+        },
       },
     );
 
@@ -1697,6 +1718,9 @@ describe("addCommand", () => {
       {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
+        skillsCliResolver: async () => {
+          throw new Error("Could not resolve skills CLI.");
+        },
       },
     );
 
@@ -2304,6 +2328,9 @@ describe("addCommand", () => {
       {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
+        skillsCliResolver: async () => {
+          throw new Error("Could not resolve skills CLI.");
+        },
       },
     );
 
@@ -2518,6 +2545,215 @@ describe("addCommand", () => {
     };
     expect(config.workflows?.project?.review).toBe("./existing.mjs");
     expect(config.workflows?.project?.release).toBeUndefined();
+  });
+
+  it("prompts to skip or replace selected package workflow conflicts interactively", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: {
+          review: "./existing-review.mjs",
+          release: "./existing-release.mjs",
+        },
+      },
+    });
+
+    const conflictPrompts: Array<{
+      readonly prompt: string;
+      readonly choices: readonly string[];
+    }> = [];
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            if (
+              prompt ===
+              "project/review already exists in project config. What should TrailStep do?"
+            ) {
+              conflictPrompts.push({ prompt, choices });
+              expect(choices).toEqual([
+                "Replace existing registration",
+                "Skip this workflow",
+                "Cancel add",
+              ]);
+              return "Skip this workflow";
+            }
+            if (
+              prompt ===
+              "project/release already exists in project config. What should TrailStep do?"
+            ) {
+              conflictPrompts.push({ prompt, choices });
+              expect(choices).toEqual([
+                "Replace existing registration",
+                "Skip this workflow",
+                "Cancel add",
+              ]);
+              return "Replace existing registration";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Bundle workflow");
+            expect(choices).toEqual(["Select all", "review", "release"]);
+            return ["review", "release"];
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async () => {
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(conflictPrompts.map((entry) => entry.prompt)).toEqual([
+      "project/review already exists in project config. What should TrailStep do?",
+      "project/release already exists in project config. What should TrailStep do?",
+    ]);
+    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+      workflows?: Record<string, Record<string, unknown>>;
+      workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflows?.project).toMatchObject({
+      review: "./existing-review.mjs",
+      release: "@acme/workflows#release",
+    });
+    expect(config.workflowMetadata?.project?.release).toMatchObject({
+      kind: "package",
+      packageName: "@acme/workflows",
+      requestedSpec: "@acme/workflows@latest",
+      requestedRange: "latest",
+      installScope: "project",
+      targetRef: "@acme/workflows#release",
+      workflowName: "release",
+      exportName: "releaseWorkflow",
+    });
+    expect(errors).toContain(
+      "Warning: skipped project/review because it already exists in project config. Use --force to replace it.",
+    );
+    expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
+  });
+
+  it("interactive conflict cancel writes no selected package registrations", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(configPath, {
+      workflows: { project: { review: "./existing.mjs" } },
+    });
+    const beforeConfig = await readFile(configPath, "utf8");
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            if (
+              prompt ===
+              "project/review already exists in project config. What should TrailStep do?"
+            ) {
+              expect(choices).toEqual([
+                "Replace existing registration",
+                "Skip this workflow",
+                "Cancel add",
+              ]);
+              return "Cancel add";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Bundle workflow");
+            expect(choices).toEqual(["Select all", "review", "release"]);
+            return ["review", "release"];
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async () => {
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    await expect(readFile(configPath, "utf8")).resolves.toBe(beforeConfig);
   });
 
   it("installs an npm package into project scope before discovering and registering workflows", async ({

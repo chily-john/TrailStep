@@ -9,6 +9,10 @@ import {
   blockDeleteWhenAgentReferrersExist,
   renameAgentRefs,
 } from "../../agent-config/agent-referrers.js";
+import {
+  hasConfiguredAgentEntries,
+  runAgentSetupWizard,
+} from "../../agent-config/agent-setup-wizard.js";
 import { configureLiteralAgentTarget } from "../../agent-config/configure-target-flow.js";
 import {
   type AgentConfigSaveContext,
@@ -245,6 +249,20 @@ async function runInteractiveAgents(context: CliCommandContext): Promise<number>
 
   const scopeLabel = await context.prompts.select("Scope", INTERACTIVE_SCOPES);
   const scope = scopeForInteractiveLabel(scopeLabel);
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  if (!hasConfiguredAgentEntries(config)) {
+    const nextConfig = await runAgentSetupWizard({
+      config,
+      agentName: "default",
+      prompts: context.prompts,
+      providerChoices: PROVIDER_CHOICES,
+    });
+    await writeRawTrailStepConfigFile(configPath, nextConfig);
+    context.io.writeLine(`Wrote agent default to ${configPath}.`);
+    return 0;
+  }
+
   const rows = await buildInteractiveRows(scope, context);
   const selected = await context.prompts.select(`${scopeLabel} agents`, [
     ...rows.map((row) => row.label),

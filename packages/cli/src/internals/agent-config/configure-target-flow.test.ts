@@ -38,15 +38,41 @@ function fakePrompts(
 }
 
 describe("configureLiteralAgentTarget", () => {
+  it("omits model and thinking overrides when provider defaults are selected", async () => {
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          { label: "Provider", choices: ["claude", "custom"], answer: "claude" },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Use provider default",
+          },
+          {
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+            answer: "Use provider default",
+          },
+        ]),
+        providerChoices: ["claude"],
+      }),
+    ).resolves.toEqual({ target: { provider: "claude" } });
+  });
+
   it("prompts for a built-in provider, model, and thinking level", async () => {
     await expect(
       configureLiteralAgentTarget({
         prompts: fakePrompts([
           { label: "Provider", choices: ["claude", "codex", "custom"], answer: "claude" },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Type manually",
+          },
           { label: "Model", answer: "sonnet" },
           {
-            label: "Thinking",
-            choices: ["none", "low", "medium", "high", "xhigh", "max"],
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
             answer: "high",
           },
         ]),
@@ -62,11 +88,16 @@ describe("configureLiteralAgentTarget", () => {
           { label: "Provider", choices: ["claude", "custom"], answer: "custom" },
           { label: "Custom provider name", answer: "local-agent" },
           { label: "Custom provider binary", answer: "agent-bin" },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Type manually",
+          },
           { label: "Model", answer: "" },
           {
-            label: "Thinking",
-            choices: ["none", "low", "medium", "high", "xhigh", "max"],
-            answer: "none",
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+            answer: "Use provider default",
           },
         ]),
         providerChoices: ["claude"],

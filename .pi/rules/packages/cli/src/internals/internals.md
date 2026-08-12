@@ -23,7 +23,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 
 ## Subdirectories
 
-- `agent-config/`: Enter when changing shared flows for literal agent target prompts, agent entry item editing, save confirmation, config-scope paths, or rename/delete referrer handling.
+- `agent-config/`: Enter when changing shared flows for literal agent target prompts, first-agent setup, agent entry item editing, save confirmation, config-scope paths, or rename/delete referrer handling.
 - `commands/`: Enter when changing `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `run`, `runs`, `retry`, `cancel`, `doctor`, `update`, or `skill-check` command behavior and command-specific argument parsing.
 - `deprecation-scan/`: Enter when changing update preflight discovery, scanning, or formatting for TrailStep deprecated symbols in workflow source files.
 - `config/`: Enter when changing optional `.trailstep/config.json`/`.trailstep/config-local.json` loading, merge precedence, and CLI-facing config errors.
@@ -38,6 +38,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 ## Files
 
 - `agent-config/agent-entry-items-flow.ts`: Change when replacing, adding, removing, reordering, or editing literal agent entry items.
+- `agent-config/agent-setup-wizard.ts`: Change when default/named agent setup, custom provider insertion, or configured-agent detection changes.
 - `agent-config/save-confirm-flow.ts`: Change when save/discard choices for named agents or workflow role overrides change.
 - `command-registry.ts`: Change when registering a new top-level command; current explicit commands are `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `runs`, `retry`, `cancel`, `doctor`, `update`, and `skill-check`, with other argv falling through to `run`.
 - `command.types.ts`: Change when command context, usage text, command interface, prompt text/select/multi-select/confirm injection, env injection, home-dir injection, skills CLI injection, run-name injection, package command runner injection, or deprecation manifest injection changes.
@@ -67,4 +68,5 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
 - Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
+- Literal agent target prompts offer provider-default model/thinking overrides; omit `model` or `thinking` when the default option is selected.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

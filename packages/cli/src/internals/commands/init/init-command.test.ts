@@ -12,6 +12,61 @@ async function readJson(path: string): Promise<unknown> {
 }
 
 describe("initCommand", () => {
+  it("uses the shared provider-default-first agent setup flow", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project"]);
+    const selections: { readonly prompt: string; readonly choices: readonly string[] }[] = [];
+
+    const exitCode = await command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        async text(prompt) {
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+        async select(prompt, choices) {
+          selections.push({ prompt, choices });
+          if (prompt === "Provider") {
+            expect(choices).toContain("claude");
+            return "claude";
+          }
+          if (prompt === "Model override") {
+            expect(choices[0]).toBe("Use provider default");
+            return "Use provider default";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            expect(choices[0]).toBe("Use provider default");
+            return "Use provider default";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        async confirm(prompt) {
+          if (prompt === "Configure another agent?") {
+            return false;
+          }
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
+            return false;
+          }
+          throw new Error(`Unexpected confirm prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(selections.map((entry) => entry.prompt)).toEqual([
+      "Provider",
+      "Model override",
+      "Reasoning/thinking override",
+    ]);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      agents: { default: [{ provider: "claude" }] },
+    });
+  });
+
   it("routes init and writes a default literal target to the selected project config", async ({
     task,
   }) => {
@@ -37,9 +92,20 @@ describe("initCommand", () => {
             expect(choices).toContain("claude");
             return "claude";
           }
-          if (prompt === "Thinking") {
-            expect(choices).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
-            return "none";
+          if (prompt === "Model override") {
+            expect(choices).toEqual(["Use provider default", "Type manually"]);
+            return "Type manually";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            expect(choices).toEqual([
+              "Use provider default",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+            ]);
+            return "Use provider default";
           }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
@@ -70,7 +136,9 @@ describe("initCommand", () => {
       `${task.id}-${randomUUID()}`,
     );
     const command = resolveCommand(["init"]);
-    const textAnswers = ["opus", "reviewer", "local-agent", "agent-bin", ""];
+    const textAnswers = ["opus", "reviewer", "local-agent", "agent-bin"];
+    const providerAnswers = ["claude", "custom"];
+    const modelOverrideAnswers = ["Type manually", "Use provider default"];
     const confirmAnswers = [true, false];
 
     const exitCode = await command.run(command.parseArgs(["init"]) as never, {
@@ -92,10 +160,15 @@ describe("initCommand", () => {
             return "local";
           }
           if (prompt === "Provider" && choices.includes("custom")) {
-            return textAnswers.length === 5 ? "claude" : "custom";
+            return providerAnswers.shift() ?? "claude";
           }
-          if (prompt === "Thinking") {
-            return "none";
+          if (prompt === "Model override") {
+            expect(choices).toEqual(["Use provider default", "Type manually"]);
+            return modelOverrideAnswers.shift() ?? "Use provider default";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            expect(choices[0]).toBe("Use provider default");
+            return "Use provider default";
           }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
@@ -147,8 +220,11 @@ describe("initCommand", () => {
           if (prompt === "Provider") {
             return "claude";
           }
-          if (prompt === "Thinking") {
-            return "none";
+          if (prompt === "Model override") {
+            return "Type manually";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            return "Use provider default";
           }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
@@ -203,8 +279,11 @@ describe("initCommand", () => {
             if (prompt === "Provider") {
               return "claude";
             }
-            if (prompt === "Thinking") {
-              return "none";
+            if (prompt === "Model override") {
+              return "Type manually";
+            }
+            if (prompt === "Reasoning/thinking override") {
+              return "Use provider default";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -288,9 +367,20 @@ describe("initCommand", () => {
               expect(choices).toContain("claude");
               return "claude";
             }
-            if (prompt === "Thinking") {
-              expect(choices).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
-              return "none";
+            if (prompt === "Model override") {
+              expect(choices).toEqual(["Use provider default", "Type manually"]);
+              return "Type manually";
+            }
+            if (prompt === "Reasoning/thinking override") {
+              expect(choices).toEqual([
+                "Use provider default",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+              ]);
+              return "Use provider default";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -356,8 +446,11 @@ describe("initCommand", () => {
             if (prompt === "Provider") {
               return "claude";
             }
-            if (prompt === "Thinking") {
-              return "none";
+            if (prompt === "Model override") {
+              return "Type manually";
+            }
+            if (prompt === "Reasoning/thinking override") {
+              return "Use provider default";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -406,8 +499,11 @@ describe("initCommand", () => {
             if (prompt === "Provider") {
               return "claude";
             }
-            if (prompt === "Thinking") {
-              return "none";
+            if (prompt === "Model override") {
+              return "Type manually";
+            }
+            if (prompt === "Reasoning/thinking override") {
+              return "Use provider default";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },

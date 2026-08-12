@@ -44,8 +44,8 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `command.types.ts`: Change when command context, usage text, command interface, prompt text/select/multi-select/confirm injection, env injection, home-dir injection, skills CLI injection, run-name injection, package command runner injection, or deprecation manifest injection changes.
 - `workflow-packages/package-ref.ts`: Change when npm/GitHub package spec detection or GitHub shorthand rejection for `trailstep add` changes.
 - `workflow-packages/install-root.ts`: Change when local/project vs global workflow-package install roots or npm save args change.
-- `workflow-packages/npm-package-installer.ts`: Change when `trailstep add` package install roots, package.json bootstrapping, npm install invocation, GitHub installed-package identification, or installed manifest handling changes.
-- `workflow-registry/workflow-registry.ts`: Change when raw registry reads/writes/enumeration, metadata-aware single-entry lookup, duplicate-scope lookup, delete/move metadata sync, or registration validation changes.
+- `workflow-packages/npm-package-installer.ts`: Change when `trailstep add` package install roots, package.json bootstrapping, npm install invocation, GitHub installed-package identification, installed manifest handling, or TrailStep-installed ownership metadata changes.
+- `workflow-registry/workflow-registry.ts`: Change when raw registry reads/writes/enumeration, metadata-aware single-entry lookup, duplicate-scope lookup, delete/move metadata sync, package install-ownership metadata validation, or registration validation changes.
 - `workflow-resolution/workflow-resolution.ts`: Change when registered/discovered/bundle/direct resolution order, registry metadata install-root selection, or registered-ref recursion changes.
 - `runs-root.ts`: Change when `TRAILSTEP_RUNS_ROOT` or default `.trailstep/runs` resolution for run, runs, or retry changes.
 - `package-manager/package-manager.ts`: Change when lockfile/packageManager detection or detected install command execution changes.
@@ -73,7 +73,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
 - Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
-- Workflow npm/GitHub package installs use the command cwd with `--save-dev` for local/project scopes and `~/.trailstep/packages` with `--save` for global scope; GitHub refs must be explicit `github:<owner>/<repo>` refs.
+- Workflow npm/GitHub package installs use the command cwd with `--save-dev` for local/project scopes and `~/.trailstep/packages` with `--save` for global scope; CLI-run installs record `installOwnership: "trailstep-installed"`, reused existing npm packages record `"reused-existing"`, and GitHub refs must be explicit `github:<owner>/<repo>` refs.
 - Registered package workflow resolution uses `workflowMetadata.installScope` to resolve package/bundle targets from the same install root used at add time.
 - Use `writeWorkflowRegistryEntries` for registration writes and config-level delete/move helpers for removals or renames that must keep `workflowMetadata` synchronized with `workflows`.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

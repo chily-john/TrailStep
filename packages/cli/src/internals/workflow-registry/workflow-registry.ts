@@ -96,6 +96,7 @@ export function deleteWorkflowRegistryEntry(
 }
 
 export type WorkflowPackageSourceType = "npm" | "github";
+export type WorkflowPackageInstallOwnership = "trailstep-installed" | "reused-existing" | "unknown";
 
 export interface WorkflowPackageRegistryMetadata {
   readonly kind: "package";
@@ -109,6 +110,7 @@ export interface WorkflowPackageRegistryMetadata {
   readonly exportName: string;
   readonly resolvedVersion?: string;
   readonly githubRef?: string;
+  readonly installOwnership?: WorkflowPackageInstallOwnership;
 }
 
 export interface WorkflowRegistryWriteEntry {
@@ -411,12 +413,24 @@ function isWorkflowPackageRegistryMetadata(
     typeof value.workflowName === "string" &&
     typeof value.exportName === "string" &&
     isOptionalString(value.resolvedVersion) &&
-    isOptionalString(value.githubRef)
+    isOptionalString(value.githubRef) &&
+    isOptionalWorkflowPackageInstallOwnership(value.installOwnership)
   );
 }
 
 function isWorkflowPackageSourceType(value: unknown): value is WorkflowPackageSourceType {
   return value === "npm" || value === "github";
+}
+
+function isOptionalWorkflowPackageInstallOwnership(
+  value: unknown,
+): value is WorkflowPackageInstallOwnership | undefined {
+  return (
+    value === undefined ||
+    value === "trailstep-installed" ||
+    value === "reused-existing" ||
+    value === "unknown"
+  );
 }
 
 function isWorkflowRegistryScope(value: unknown): value is WorkflowRegistryScope {

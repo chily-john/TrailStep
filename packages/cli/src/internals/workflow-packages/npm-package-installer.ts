@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { PackageCommandRunner } from "../command.types.js";
 import { defaultPackageCommandRunner } from "../package-manager/package-manager.js";
 import type {
+  WorkflowPackageInstallOwnership,
   WorkflowRegistryContext,
   WorkflowRegistryScope,
 } from "../workflow-registry/workflow-registry.js";
@@ -23,6 +24,7 @@ export interface InstalledNpmWorkflowPackage {
   readonly installRoot: string;
   readonly resolvedVersion?: string;
   readonly githubRef?: string;
+  readonly installOwnership?: WorkflowPackageInstallOwnership;
 }
 
 export interface InstallNpmWorkflowPackageOptions extends WorkflowRegistryContext {
@@ -95,6 +97,7 @@ export async function installNpmWorkflowPackage({
       ? { resolvedVersion: installedManifest.version }
       : {}),
     ...(packageRef.sourceType === "github" ? { githubRef: packageRef.githubRef } : {}),
+    installOwnership: "trailstep-installed",
   };
 }
 

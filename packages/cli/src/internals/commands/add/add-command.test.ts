@@ -2580,13 +2580,14 @@ describe("addCommand", () => {
       requestedSpec: "@acme/workflows@latest",
       requestedRange: "latest",
       installScope: "project",
+      installOwnership: "trailstep-installed",
     });
     await expect(
       resolveWorkflowReference("project/review", { cwd, homeDir }),
     ).resolves.toMatchObject({ id: "project/review" });
   });
 
-  it("prompts to reuse an already installed workflow package", async ({ task }) => {
+  it("reports existing package version and records reused ownership metadata", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-add-command-tests",
@@ -2608,6 +2609,7 @@ describe("addCommand", () => {
       "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
       "utf8",
     );
+    const lines: string[] = [];
     const selectPrompts: string[] = [];
     const installRequests: Array<{
       readonly command: string;
@@ -2621,7 +2623,7 @@ describe("addCommand", () => {
       {
         cwd,
         homeDir,
-        io: { writeLine: () => undefined, writeError: () => undefined },
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
             selectPrompts.push(prompt);
@@ -2649,14 +2651,104 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
+    expect(lines).toContain("Package @acme/workflows@1.2.3 is already installed in project scope.");
+    expect(lines).toContain("Source type: npm");
+    expect(lines).toContain("Requested spec: @acme/workflows@latest");
+    expect(lines).toContain(`Install root: ${cwd}`);
     expect(selectPrompts).toContain(
       "Package @acme/workflows is already installed in project scope. What should TrailStep do?",
     );
     expect(installRequests).toEqual([]);
     const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
       workflows?: Record<string, Record<string, unknown>>;
+      workflowMetadata?: Record<string, Record<string, unknown>>;
     };
     expect(config.workflows?.project?.review).toBe("@acme/workflows#review");
+    expect(config.workflowMetadata?.project?.review).toMatchObject({
+      installOwnership: "reused-existing",
+    });
+  });
+
+  it("reinstalling an already installed package records TrailStep-installed ownership", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+      "utf8",
+    );
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (
+              prompt ===
+              "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
+            ) {
+              expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
+              return "Reinstall/upgrade";
+            }
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "2.0.0",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+          });
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([
+      { command: "npm", args: expect.arrayContaining(["@acme/workflows@latest"]), cwd },
+    ]);
+    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+      workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.review).toMatchObject({
+      installOwnership: "trailstep-installed",
+      resolvedVersion: "2.0.0",
+    });
   });
 
   it("cancels without registration when existing package prompt selects cancel", async ({

@@ -918,6 +918,7 @@ async function ensureNpmWorkflowPackageAvailable({
       return ensurePackageAvailableResult("reuse", existingPackage);
     }
 
+    writeExistingPackageSummary(existingPackage, packageRef, scope, context);
     const action = await promptSelect(
       existingPackagePrompt(existingPackage.packageName, scope),
       EXISTING_PACKAGE_PROMPT_CHOICES,
@@ -1005,7 +1006,24 @@ async function readExistingInstalledNpmWorkflowPackage(
     installScope: scope,
     installRoot,
     ...(typeof resolvedVersion === "string" ? { resolvedVersion } : {}),
+    installOwnership: "reused-existing",
   };
+}
+
+function writeExistingPackageSummary(
+  installedPackage: InstalledNpmWorkflowPackage,
+  packageRef: ParsedWorkflowPackageRef,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): void {
+  const versionSuffix =
+    installedPackage.resolvedVersion === undefined ? "" : `@${installedPackage.resolvedVersion}`;
+  context.io.writeLine(
+    `Package ${installedPackage.packageName}${versionSuffix} is already installed in ${scope} scope.`,
+  );
+  context.io.writeLine(`Source type: ${installedPackage.sourceType}`);
+  context.io.writeLine(`Requested spec: ${packageRef.requestedSpec}`);
+  context.io.writeLine(`Install root: ${installedPackage.installRoot}`);
 }
 
 function existingPackagePrompt(packageName: string, scope: WorkflowRegistryScope): string {
@@ -1051,6 +1069,9 @@ function createPackageRegistryMetadata(
       ? {}
       : { resolvedVersion: installedPackage.resolvedVersion }),
     ...(installedPackage.githubRef === undefined ? {} : { githubRef: installedPackage.githubRef }),
+    ...(installedPackage.installOwnership === undefined
+      ? {}
+      : { installOwnership: installedPackage.installOwnership }),
   };
 }
 

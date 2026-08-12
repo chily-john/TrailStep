@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { PackageCommandRunner } from "../command.types.js";
@@ -8,6 +7,10 @@ import type {
   WorkflowRegistryContext,
   WorkflowRegistryScope,
 } from "../workflow-registry/workflow-registry.js";
+import {
+  workflowPackageInstallRootForScope,
+  workflowPackageInstallSaveArgsForScope,
+} from "./install-root.js";
 import type { ParsedNpmPackageRef } from "./package-ref.js";
 
 export interface InstalledNpmWorkflowPackage {
@@ -40,12 +43,12 @@ export async function installNpmWorkflowPackage({
   homeDir,
   packageCommandRunner = defaultPackageCommandRunner,
 }: InstallNpmWorkflowPackageOptions): Promise<InstalledNpmWorkflowPackage> {
-  const installRoot = installRootForScope(scope, { cwd, homeDir });
+  const installRoot = workflowPackageInstallRootForScope(scope, { cwd, homeDir });
   await ensurePackageJsonExists(installRoot);
 
   const installResult = await packageCommandRunner({
     command: "npm",
-    args: ["install", "--save-dev", packageRef.requestedSpec],
+    args: ["install", ...workflowPackageInstallSaveArgsForScope(scope), packageRef.requestedSpec],
     cwd: installRoot,
   });
   if (installResult.exitCode !== 0) {
@@ -71,16 +74,6 @@ export async function installNpmWorkflowPackage({
       ? { resolvedVersion: installedManifest.version }
       : {}),
   };
-}
-
-function installRootForScope(
-  scope: WorkflowRegistryScope,
-  context: WorkflowRegistryContext,
-): string {
-  if (scope === "global") {
-    return join(context.homeDir ?? homedir(), ".trailstep", "packages");
-  }
-  return context.cwd;
 }
 
 async function ensurePackageJsonExists(installRoot: string): Promise<void> {

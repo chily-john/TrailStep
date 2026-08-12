@@ -2426,6 +2426,84 @@ describe("addCommand", () => {
     ).resolves.toMatchObject({ id: "project/review" });
   });
 
+  it("installs global packages into the user TrailStep package store outside a Node project", async ({
+    task,
+  }) => {
+    const root = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const cwd = join(root, "outside-node-project");
+    const homeDir = join(root, "home");
+    const packageStore = join(homeDir, ".trailstep", "packages");
+    const packageDir = join(packageStore, "node_modules", "@acme", "workflows");
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+    await mkdir(cwd, { recursive: true });
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "global"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          await expect(readJson(join(packageStore, "package.json"))).resolves.toMatchObject({});
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([
+      {
+        command: "npm",
+        args: expect.arrayContaining(["@acme/workflows@latest"]),
+        cwd: packageStore,
+      },
+    ]);
+    expect(installRequests[0]?.args).toContain("--save");
+    expect(installRequests[0]?.args).not.toContain("--save-dev");
+    await expect(stat(join(cwd, "package.json"))).rejects.toThrow();
+    expect(await readJson(join(homeDir, ".trailstep", "config.json"))).toMatchObject({
+      workflows: { global: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        global: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "global",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          },
+        },
+      },
+    });
+  });
+
   it("adds a selected installed package bundle workflow by package ref", async ({ task }) => {
     const cwd = join(
       "node_modules",

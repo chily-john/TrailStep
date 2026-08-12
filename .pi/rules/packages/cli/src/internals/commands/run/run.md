@@ -33,6 +33,7 @@ Enter here when changing `trailstep <package:workflowExport|registeredRef|packag
 - Run artifacts use `TRAILSTEP_RUNS_ROOT` when set, otherwise the cwd `.trailstep/runs` default; do not honor migrated runs-root env names.
 - Omitting `workflowRunName` generates a slugged run name from the workflow export, timestamp, and random suffix.
 - Registered workflow refs come from project/local `.trailstep/config*.json` and global `~/.trailstep/config.json` `workflows`; use `namespace/name`, with `project` then `global` entries also invokable unqualified.
+- Package-backed registered refs use `workflowMetadata.installScope`; global packages are imported from `~/.trailstep/packages`, not the command cwd.
 - Bundle refs use `package-or-path#workflowName` and load `trailstep.workflows` manifest targets.
 - Direct workflow source refs may be relative or absolute `.ts`, `.mts`, `.js`, or `.mjs` files, extensionless paths, directories with index candidates, or include `#export`; `.tsx` is unsupported.
 - Direct workflow sources without `#export` must expose exactly one valid workflow export; use `path#exportName` to select one workflow or bulk add to register multiple workflows.

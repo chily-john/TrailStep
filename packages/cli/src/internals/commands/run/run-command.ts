@@ -19,7 +19,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
   async run(args: RunCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
     const input = await loadJsonInput(args.input, cwd);
-    const trailstepConfig = await loadTrailStepConfig(cwd);
+    const trailstepConfig = await loadTrailStepConfig(cwd, { homeDir: context.homeDir });
     const resolvedWorkflow = await resolveWorkflowReference(args.workflowId, {
       cwd,
       homeDir: context.homeDir,

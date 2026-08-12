@@ -169,6 +169,33 @@ export async function listRegisteredWorkflowEntries(
  * otherwise silently shadow the other once merged. For "global" scope only that file is
  * checked, since it is never merged with anything.
  */
+export async function findRegisteredWorkflowEntryInScopes(
+  namespace: string,
+  name: string,
+  scopes: readonly WorkflowRegistryScope[],
+  context: WorkflowRegistryContext,
+): Promise<RegisteredWorkflowEntry | undefined> {
+  for (const scope of scopes) {
+    const path = configPathForScope(scope, context);
+    const config = await readRawTrailStepConfigFile(path);
+    const targetRef = toMutableWorkflowRegistry(config.workflows)[namespace]?.[name];
+    if (typeof targetRef !== "string") {
+      continue;
+    }
+
+    const packageMetadata = readWorkflowPackageMetadata(
+      toMutableWorkflowMetadataRegistry(config.workflowMetadata),
+      namespace,
+      name,
+    );
+    return packageMetadata === undefined
+      ? { scope, namespace, name, targetRef }
+      : { scope, namespace, name, targetRef, packageMetadata };
+  }
+
+  return undefined;
+}
+
 export async function writeWorkflowRegistryEntries(
   scope: WorkflowRegistryScope,
   entries: readonly WorkflowRegistryWriteEntry[],

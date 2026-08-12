@@ -5,6 +5,7 @@ import type { Workflow } from "@trailstep/core";
 
 import { loadTrailStepProjectConfig, loadTrailStepUserWorkflowRegistry } from "../config/config.js";
 import { discoverWorkflows } from "../discovery/discovery.js";
+import { workflowPackageInstallRootForMetadata } from "../workflow-packages/install-root.js";
 import {
   parseBundleWorkflowId,
   parseWorkflowId,
@@ -13,6 +14,11 @@ import type {
   BundleWorkflowReference,
   WorkflowReference,
 } from "../workflow-reference/workflow-reference.types.js";
+import {
+  findRegisteredWorkflowEntryInScopes,
+  type WorkflowPackageRegistryMetadata,
+  type WorkflowRegistryScope,
+} from "../workflow-registry/workflow-registry.js";
 import { hasBundleWorkflowManifest, loadBundleWorkflow } from "./bundle-resolver.js";
 import { loadDirectWorkflowFile } from "./direct-file-resolver.js";
 import { WorkflowResolutionError } from "./workflow-resolution-error.js";
@@ -133,13 +139,15 @@ async function resolveRegisteredWorkflowReference(
     return undefined;
   }
 
-  const { workflowRegistry: projectRegistry } = await loadTrailStepProjectConfig(options.cwd);
   const homeDir = options.homeDir ?? homedir();
+  const { workflowRegistry: projectRegistry } = await loadTrailStepProjectConfig(options.cwd, {
+    homeDir,
+  });
   const userRegistry = await loadTrailStepUserWorkflowRegistry(homeDir);
   const registeredRef = parseRegisteredWorkflowRef(rawRef);
 
   if (registeredRef) {
-    const match = findNamespacedRegistryTarget(registeredRef, {
+    const match = await findNamespacedRegistryTarget(registeredRef, {
       projectRegistry,
       userRegistry,
       cwd: options.cwd,
@@ -156,10 +164,10 @@ async function resolveRegisteredWorkflowReference(
       throw new WorkflowResolutionError(`Registered workflow not found for ref: ${rawRef}`);
     }
 
-    return resolveRegistryTarget(rawRef, match.targetRef, options, resolvingRefs);
+    return resolveRegistryTarget(rawRef, match, options, resolvingRefs);
   }
 
-  const match = findUnqualifiedRegistryTarget(rawRef, {
+  const match = await findUnqualifiedRegistryTarget(rawRef, {
     projectRegistry,
     userRegistry,
     cwd: options.cwd,
@@ -170,7 +178,7 @@ async function resolveRegisteredWorkflowReference(
     return undefined;
   }
 
-  return resolveRegistryTarget(match.canonicalRef, match.targetRef, options, resolvingRefs);
+  return resolveRegistryTarget(match.canonicalRef, match, options, resolvingRefs);
 }
 
 type WorkflowRegistry = Readonly<Record<string, Readonly<Record<string, string>>>>;
@@ -182,15 +190,19 @@ interface RegistryLookupOptions {
   readonly homeDir: string;
 }
 
+const PROJECT_REGISTRY_SCOPES: readonly WorkflowRegistryScope[] = ["local", "project"];
+const GLOBAL_REGISTRY_SCOPES: readonly WorkflowRegistryScope[] = ["global"];
+
 interface RegistryTargetMatch {
   readonly canonicalRef: string;
   readonly targetRef: string;
+  readonly packageMetadata?: WorkflowPackageRegistryMetadata;
 }
 
-function findNamespacedRegistryTarget(
+async function findNamespacedRegistryTarget(
   registeredRef: { readonly namespace: string; readonly name: string },
   options: RegistryLookupOptions,
-): RegistryTargetMatch | { readonly targetRef: undefined } | undefined {
+): Promise<RegistryTargetMatch | { readonly targetRef: undefined } | undefined> {
   const source = registrySourceForNamespace(registeredRef.namespace, options);
   if (source === undefined) {
     return undefined;
@@ -201,29 +213,54 @@ function findNamespacedRegistryTarget(
     return { targetRef: undefined };
   }
 
+  const entry = await findRegisteredWorkflowEntryInScopes(
+    registeredRef.namespace,
+    registeredRef.name,
+    source.scopes,
+    options,
+  );
+  const packageMetadata = entry?.packageMetadata;
+
   return {
     canonicalRef: `${registeredRef.namespace}/${registeredRef.name}`,
-    targetRef: normalizeRegistryTargetRef(targetRef, source.baseDir),
+    targetRef: normalizeRegistryTargetRef(entry?.targetRef ?? targetRef, source.baseDir),
+    ...(packageMetadata === undefined ? {} : { packageMetadata }),
   };
 }
 
-function findUnqualifiedRegistryTarget(
+async function findUnqualifiedRegistryTarget(
   name: string,
   options: RegistryLookupOptions,
-): RegistryTargetMatch | undefined {
+): Promise<RegistryTargetMatch | undefined> {
   const projectTargetRef = options.projectRegistry.project?.[name];
   if (projectTargetRef !== undefined) {
+    const entry = await findRegisteredWorkflowEntryInScopes(
+      "project",
+      name,
+      PROJECT_REGISTRY_SCOPES,
+      options,
+    );
+    const packageMetadata = entry?.packageMetadata;
     return {
       canonicalRef: `project/${name}`,
-      targetRef: normalizeRegistryTargetRef(projectTargetRef, options.cwd),
+      targetRef: normalizeRegistryTargetRef(entry?.targetRef ?? projectTargetRef, options.cwd),
+      ...(packageMetadata === undefined ? {} : { packageMetadata }),
     };
   }
 
   const userTargetRef = options.userRegistry.global?.[name];
   if (userTargetRef !== undefined) {
+    const entry = await findRegisteredWorkflowEntryInScopes(
+      "global",
+      name,
+      GLOBAL_REGISTRY_SCOPES,
+      options,
+    );
+    const packageMetadata = entry?.packageMetadata;
     return {
       canonicalRef: `global/${name}`,
-      targetRef: normalizeRegistryTargetRef(userTargetRef, options.homeDir),
+      targetRef: normalizeRegistryTargetRef(entry?.targetRef ?? userTargetRef, options.homeDir),
+      ...(packageMetadata === undefined ? {} : { packageMetadata }),
     };
   }
 
@@ -233,25 +270,47 @@ function findUnqualifiedRegistryTarget(
 function registrySourceForNamespace(
   namespace: string,
   options: RegistryLookupOptions,
-): { readonly registry: WorkflowRegistry; readonly baseDir: string } | undefined {
+):
+  | {
+      readonly registry: WorkflowRegistry;
+      readonly baseDir: string;
+      readonly scopes: readonly WorkflowRegistryScope[];
+    }
+  | undefined {
   if (namespace === "project") {
     return options.projectRegistry.project === undefined
       ? undefined
-      : { registry: options.projectRegistry, baseDir: options.cwd };
+      : {
+          registry: options.projectRegistry,
+          baseDir: options.cwd,
+          scopes: PROJECT_REGISTRY_SCOPES,
+        };
   }
 
   if (namespace === "global") {
     return options.userRegistry.global === undefined
       ? undefined
-      : { registry: options.userRegistry, baseDir: options.homeDir };
+      : {
+          registry: options.userRegistry,
+          baseDir: options.homeDir,
+          scopes: GLOBAL_REGISTRY_SCOPES,
+        };
   }
 
   if (options.projectRegistry[namespace] !== undefined) {
-    return { registry: options.projectRegistry, baseDir: options.cwd };
+    return {
+      registry: options.projectRegistry,
+      baseDir: options.cwd,
+      scopes: PROJECT_REGISTRY_SCOPES,
+    };
   }
 
   if (options.userRegistry[namespace] !== undefined) {
-    return { registry: options.userRegistry, baseDir: options.homeDir };
+    return {
+      registry: options.userRegistry,
+      baseDir: options.homeDir,
+      scopes: GLOBAL_REGISTRY_SCOPES,
+    };
   }
 
   return undefined;
@@ -275,7 +334,7 @@ function normalizeRegistryTargetRef(targetRef: string, baseDir: string): string 
 
 async function resolveRegistryTarget(
   requestedRef: string,
-  targetRef: string,
+  match: RegistryTargetMatch,
   options: ResolveWorkflowReferenceOptions,
   resolvingRefs: Set<string>,
 ): Promise<ResolvedWorkflowReference> {
@@ -286,16 +345,38 @@ async function resolveRegistryTarget(
   }
 
   resolvingRefs.add(requestedRef);
-  const resolvedTarget = await resolveWorkflowReferenceInternal(targetRef, options, resolvingRefs);
+  const targetOptions = resolveOptionsForRegistryTarget(match, options);
+  const resolvedTarget = await resolveWorkflowReferenceInternal(
+    match.targetRef,
+    targetOptions,
+    resolvingRefs,
+  );
   resolvingRefs.delete(requestedRef);
 
   if (!resolvedTarget) {
     throw new WorkflowResolutionError(
-      `Registered workflow target not found for ref: ${requestedRef} -> ${targetRef}`,
+      `Registered workflow target not found for ref: ${requestedRef} -> ${match.targetRef}`,
     );
   }
 
   return { ...resolvedTarget, id: requestedRef };
+}
+
+function resolveOptionsForRegistryTarget(
+  match: RegistryTargetMatch,
+  options: ResolveWorkflowReferenceOptions,
+): ResolveWorkflowReferenceOptions {
+  if (match.packageMetadata === undefined) {
+    return options;
+  }
+
+  return {
+    ...options,
+    cwd: workflowPackageInstallRootForMetadata(match.packageMetadata, {
+      cwd: options.cwd,
+      homeDir: options.homeDir,
+    }),
+  };
 }
 
 function parseRegisteredWorkflowRef(

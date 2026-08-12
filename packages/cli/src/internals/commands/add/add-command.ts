@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   providerRegistry,
@@ -21,12 +21,16 @@ import {
   promptText,
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
+import { workflowPackageInstallRootForScope } from "../../workflow-packages/install-root.js";
 import {
   type InstalledNpmWorkflowPackage,
   installNpmWorkflowPackage,
   WorkflowPackageInstallError,
 } from "../../workflow-packages/npm-package-installer.js";
-import { parseWorkflowPackageRef } from "../../workflow-packages/package-ref.js";
+import {
+  type ParsedWorkflowPackageRef,
+  parseWorkflowPackageRef,
+} from "../../workflow-packages/package-ref.js";
 import {
   assertNamespaceMatchesScope,
   configPathForScope,
@@ -91,6 +95,11 @@ const SCOPE_PROMPT_LABEL =
   "project = shared with your team, global = global across all your projects)";
 const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
 const SELECT_ALL_WORKFLOWS_CHOICE = "Select all";
+const EXISTING_PACKAGE_PROMPT_CHOICES = [
+  "Reuse installed package",
+  "Reinstall/upgrade",
+  "Cancel",
+] as const;
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -142,13 +151,16 @@ export const addCommand: CliCommand<AddCommandArgs> = {
 
     let preparedSource: PreparedAddSource;
     try {
-      preparedSource = await prepareAddSource(args.source, scope, context);
+      preparedSource = await prepareAddSource(args.source, scope, context, { headless: args.yes });
     } catch (error) {
       if (error instanceof WorkflowPackageInstallError) {
         context.io.writeError(error.message);
         return 1;
       }
       throw error;
+    }
+    if (preparedSource.status === "cancelled") {
+      return 0;
     }
     const registryTargets = attachPackageMetadataToRegistryTargets(
       await validateAndBuildRegistryTargets(
@@ -817,35 +829,187 @@ interface SourceResolutionArgs {
   readonly selectionPolicy: AddWorkflowSelectionPolicy;
 }
 
-interface PreparedAddSource {
-  readonly source: string;
-  readonly cwd: string;
-  readonly installedPackage?: InstalledNpmWorkflowPackage;
+type PreparedAddSource =
+  | {
+      readonly status: "ready";
+      readonly source: string;
+      readonly cwd: string;
+      readonly installedPackage?: InstalledNpmWorkflowPackage;
+    }
+  | { readonly status: "cancelled" };
+
+interface PrepareAddSourceOptions {
+  readonly headless: boolean;
 }
 
 async function prepareAddSource(
   source: string,
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
+  options: PrepareAddSourceOptions,
 ): Promise<PreparedAddSource> {
   const packageRef = parseWorkflowPackageRef(source);
   if (packageRef === undefined) {
-    return { source, cwd: context.cwd };
+    return { status: "ready", source, cwd: context.cwd };
   }
 
-  const installedPackage = await installNpmWorkflowPackage({
+  const availablePackage = await ensureNpmWorkflowPackageAvailable({
     packageRef,
     scope,
-    cwd: context.cwd,
-    homeDir: context.homeDir,
-    packageCommandRunner: context.packageCommandRunner,
+    context,
+    headless: options.headless,
   });
-  context.io.writeLine(`Installed ${packageRef.requestedSpec} in ${scope} scope.`);
+  if (availablePackage.installAction === "cancel") {
+    context.io.writeLine("Canceled.");
+    return { status: "cancelled" };
+  }
+  if (availablePackage.installAction === "install") {
+    context.io.writeLine(`Installed ${packageRef.requestedSpec} in ${scope} scope.`);
+  } else {
+    context.io.writeLine(`Using installed ${availablePackage.packageName} in ${scope} scope.`);
+  }
   return {
-    source: installedPackage.packageName,
-    cwd: installedPackage.installRoot,
-    installedPackage,
+    status: "ready",
+    source: availablePackage.installedPackage.packageName,
+    cwd: availablePackage.installedPackage.installRoot,
+    installedPackage: availablePackage.installedPackage,
   };
+}
+
+type EnsurePackageInstallAction = "reuse" | "install" | "cancel";
+
+interface EnsureNpmWorkflowPackageAvailableOptions {
+  readonly packageRef: ParsedWorkflowPackageRef;
+  readonly scope: WorkflowRegistryScope;
+  readonly context: CliCommandContext;
+  readonly headless: boolean;
+}
+
+type EnsureNpmWorkflowPackageAvailableResult =
+  | {
+      readonly installAction: Exclude<EnsurePackageInstallAction, "cancel">;
+      readonly installRoot: string;
+      readonly packageName: string;
+      readonly installedPackage: InstalledNpmWorkflowPackage;
+      readonly resolvedVersion?: string;
+    }
+  | {
+      readonly installAction: "cancel";
+      readonly installRoot: string;
+      readonly packageName: string;
+      readonly resolvedVersion?: string;
+    };
+
+async function ensureNpmWorkflowPackageAvailable({
+  packageRef,
+  scope,
+  context,
+  headless,
+}: EnsureNpmWorkflowPackageAvailableOptions): Promise<EnsureNpmWorkflowPackageAvailableResult> {
+  const installRoot = workflowPackageInstallRootForScope(scope, context);
+  const existingPackage = await readExistingInstalledNpmWorkflowPackage(
+    packageRef,
+    scope,
+    installRoot,
+  );
+
+  if (existingPackage !== undefined) {
+    if (headless) {
+      return ensurePackageAvailableResult("reuse", existingPackage);
+    }
+
+    const action = await promptSelect(
+      existingPackagePrompt(existingPackage.packageName, scope),
+      EXISTING_PACKAGE_PROMPT_CHOICES,
+      context.prompts,
+      `Package ${existingPackage.packageName} is already installed in ${scope} scope. Run interactively to choose reuse, reinstall/upgrade, or cancel.`,
+    );
+    if (action === "Cancel") {
+      return {
+        installAction: "cancel",
+        installRoot,
+        packageName: existingPackage.packageName,
+        ...(existingPackage.resolvedVersion === undefined
+          ? {}
+          : { resolvedVersion: existingPackage.resolvedVersion }),
+      };
+    }
+    if (action === "Reuse installed package") {
+      return ensurePackageAvailableResult("reuse", existingPackage);
+    }
+  }
+
+  return ensurePackageAvailableResult(
+    "install",
+    await installNpmWorkflowPackage({
+      packageRef,
+      scope,
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+      packageCommandRunner: context.packageCommandRunner,
+    }),
+  );
+}
+
+function ensurePackageAvailableResult(
+  installAction: "reuse" | "install",
+  installedPackage: InstalledNpmWorkflowPackage,
+): EnsureNpmWorkflowPackageAvailableResult {
+  return {
+    installAction,
+    installRoot: installedPackage.installRoot,
+    packageName: installedPackage.packageName,
+    installedPackage,
+    ...(installedPackage.resolvedVersion === undefined
+      ? {}
+      : { resolvedVersion: installedPackage.resolvedVersion }),
+  };
+}
+
+async function readExistingInstalledNpmWorkflowPackage(
+  packageRef: ParsedWorkflowPackageRef,
+  scope: WorkflowRegistryScope,
+  installRoot: string,
+): Promise<InstalledNpmWorkflowPackage | undefined> {
+  if (packageRef.sourceType !== "npm") {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      await readFile(
+        join(installRoot, "node_modules", ...packageRef.packageName.split("/"), "package.json"),
+        "utf8",
+      ),
+    ) as unknown;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+
+  const manifest = isRecord(parsed) ? parsed : {};
+  const manifestPackageName = manifest.name;
+  const packageName =
+    typeof manifestPackageName === "string" && manifestPackageName.trim().length > 0
+      ? manifestPackageName
+      : packageRef.packageName;
+  const resolvedVersion = manifest.version;
+  return {
+    sourceType: "npm",
+    packageName,
+    requestedSpec: packageRef.requestedSpec,
+    requestedRange: packageRef.requestedRange,
+    installScope: scope,
+    installRoot,
+    ...(typeof resolvedVersion === "string" ? { resolvedVersion } : {}),
+  };
+}
+
+function existingPackagePrompt(packageName: string, scope: WorkflowRegistryScope): string {
+  return `Package ${packageName} is already installed in ${scope} scope. What should TrailStep do?`;
 }
 
 function attachPackageMetadataToRegistryTargets(
@@ -1094,6 +1258,10 @@ function toMutableRecord(value: unknown): Record<string, unknown> {
     return {};
   }
   return { ...value };
+}
+
+function isNodeError(error: unknown): error is { readonly code: string } {
+  return typeof error === "object" && error !== null && "code" in error;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

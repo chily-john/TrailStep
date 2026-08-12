@@ -2586,6 +2586,134 @@ describe("addCommand", () => {
     ).resolves.toMatchObject({ id: "project/review" });
   });
 
+  it("prompts to reuse an already installed workflow package", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+      "utf8",
+    );
+    const selectPrompts: string[] = [];
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            selectPrompts.push(prompt);
+            if (
+              prompt ===
+              "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
+            ) {
+              expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
+              return "Reuse installed package";
+            }
+            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(selectPrompts).toContain(
+      "Package @acme/workflows is already installed in project scope. What should TrailStep do?",
+    );
+    expect(installRequests).toEqual([]);
+    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflows?.project?.review).toBe("@acme/workflows#review");
+  });
+
+  it("cancels without registration when existing package prompt selects cancel", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+      "utf8",
+    );
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        prompts: {
+          select: async (prompt) => {
+            if (
+              prompt ===
+              "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
+            ) {
+              return "Cancel";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    await expect(readJson(configPath)).rejects.toThrow();
+  });
+
   it("installs explicit github package refs and records github metadata", async ({ task }) => {
     const cwd = join(
       "node_modules",

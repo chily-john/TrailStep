@@ -64,6 +64,9 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       agentName: "default",
       prompts: context.prompts,
       providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
     });
 
     while (await shouldConfigureAnotherAgent(context)) {
@@ -78,6 +81,9 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         agentName: name,
         prompts: context.prompts,
         providerChoices: PROVIDER_CHOICES,
+        cwd: context.cwd,
+        io: context.io,
+        packageCommandRunner: context.packageCommandRunner,
       });
     }
 

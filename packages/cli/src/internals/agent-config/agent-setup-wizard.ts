@@ -1,4 +1,8 @@
-import type { TrailStepCliPrompts } from "../command.types.js";
+import type {
+  PackageCommandRunner,
+  TrailStepCliIo,
+  TrailStepCliPrompts,
+} from "../command.types.js";
 import { addAgentEntryItem, readAgentEntryItems } from "./agent-entry-items-flow.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
 
@@ -7,6 +11,9 @@ export interface AgentSetupWizardOptions {
   readonly agentName: string;
   readonly prompts: TrailStepCliPrompts;
   readonly providerChoices: readonly string[];
+  readonly cwd?: string;
+  readonly io?: TrailStepCliIo;
+  readonly packageCommandRunner?: PackageCommandRunner;
 }
 
 export async function runAgentSetupWizard(
@@ -15,6 +22,9 @@ export async function runAgentSetupWizard(
   const configured = await configureLiteralAgentTarget({
     prompts: options.prompts,
     providerChoices: options.providerChoices,
+    cwd: options.cwd,
+    io: options.io,
+    packageCommandRunner: options.packageCommandRunner,
   });
 
   const agents = toMutableRecord(options.config.agents);

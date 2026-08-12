@@ -89,6 +89,8 @@ export type {
   ProviderAdapter,
   ProviderInteractiveInvocationSpec,
   ProviderInteractiveRequest,
+  ProviderModelDiscoveryOutputParser,
+  ProviderModelDiscoverySpec,
   ProviderModelOverrideSupport,
   ProviderOutputParsingMetadata,
   ProviderOutputSpec,

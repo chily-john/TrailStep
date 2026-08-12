@@ -257,6 +257,9 @@ async function runInteractiveAgents(context: CliCommandContext): Promise<number>
       agentName: "default",
       prompts: context.prompts,
       providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
     });
     await writeRawTrailStepConfigFile(configPath, nextConfig);
     context.io.writeLine(`Wrote agent default to ${configPath}.`);
@@ -364,6 +367,9 @@ async function createNamedAgent(
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
   const outcome = await confirmAgentConfigSave({
     context: { kind: "named-agent-create", name },
@@ -531,6 +537,9 @@ async function setWorkflowRoleToNamedAgent(
     const configured = await configureLiteralAgentTarget({
       prompts: context.prompts,
       providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
     });
     const outcome = await confirmAgentConfigSave({
       context: saveConfirmContextForWorkflowRole(row),
@@ -565,6 +574,9 @@ async function setWorkflowRoleToInline(
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
   const outcome = await confirmAgentConfigSave({
     context: saveConfirmContextForWorkflowRole(row),
@@ -705,6 +717,9 @@ async function editNamedAgentEntry(
       const configured = await configureLiteralAgentTarget({
         prompts: context.prompts,
         providerChoices: PROVIDER_CHOICES,
+        cwd: context.cwd,
+        io: context.io,
+        packageCommandRunner: context.packageCommandRunner,
       });
       return [{ ...configured.target }];
     }
@@ -754,6 +769,9 @@ async function editNamedAgentEntry(
     const configured = await configureLiteralAgentTarget({
       prompts: context.prompts,
       providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
     });
     current = editAgentEntryItem(current, itemIndex, { ...configured.target });
   }
@@ -775,6 +793,9 @@ async function addItemToEntry(
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
   return addAgentEntryItem(entry, { ...configured.target });
 }

@@ -76,10 +76,19 @@ export interface ProviderOutputSpec {
   readonly parsing?: ProviderOutputParsingMetadata;
 }
 
+export type ProviderModelDiscoveryOutputParser = "pi-list-models-table";
+
+export interface ProviderModelDiscoverySpec {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly outputParser: ProviderModelDiscoveryOutputParser;
+}
+
 export type ProviderModelOverrideSupport =
   | {
       readonly supported: true;
       readonly flag: string;
+      readonly discovery?: ProviderModelDiscoverySpec;
     }
   | {
       readonly supported: false;

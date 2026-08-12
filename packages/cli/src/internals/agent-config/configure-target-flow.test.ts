@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { TrailStepCliPrompts } from "../command.types.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
@@ -116,6 +116,78 @@ describe("configureLiteralAgentTarget", () => {
         providerChoices: ["gemini"],
       }),
     ).resolves.toEqual({ target: { provider: "gemini" } });
+  });
+
+  it("offers discovered Pi models in the model override prompt", async () => {
+    const packageCommands: unknown[] = [];
+
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          { label: "Provider", choices: ["pi", "custom"], answer: "pi" },
+          {
+            label: "Model override",
+            choices: [
+              "Use provider default",
+              "anthropic/claude-sonnet-4-5",
+              "openai/gpt-5",
+              "Type manually",
+            ],
+            answer: "anthropic/claude-sonnet-4-5",
+          },
+          {
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+            answer: "Use provider default",
+          },
+        ]),
+        providerChoices: ["pi"],
+        cwd: "/project",
+        io: { writeLine: vi.fn(), writeError: vi.fn() },
+        packageCommandRunner: async (request) => {
+          packageCommands.push(request);
+          return {
+            exitCode: 0,
+            stdout: ["provider   model", "anthropic  claude-sonnet-4-5", "openai     gpt-5"].join(
+              "\n",
+            ),
+          };
+        },
+      }),
+    ).resolves.toEqual({ target: { provider: "pi", model: "anthropic/claude-sonnet-4-5" } });
+    expect(packageCommands).toEqual([{ command: "pi", args: ["--list-models"], cwd: "/project" }]);
+  });
+
+  it("warns and falls back when Pi model discovery fails", async () => {
+    const writeError = vi.fn();
+
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          { label: "Provider", choices: ["pi", "custom"], answer: "pi" },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Use provider default",
+          },
+          {
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+            answer: "Use provider default",
+          },
+        ]),
+        providerChoices: ["pi"],
+        cwd: "/project",
+        io: { writeLine: vi.fn(), writeError },
+        packageCommandRunner: async () => ({
+          exitCode: 1,
+          stderr: "pi unavailable",
+        }),
+      }),
+    ).resolves.toEqual({ target: { provider: "pi" } });
+    expect(writeError).toHaveBeenCalledWith(
+      "Warning: Could not discover Pi models; continuing with manual model entry.",
+    );
   });
 
   it("creates a custom provider when requested", async () => {

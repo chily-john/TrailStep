@@ -49,7 +49,15 @@ const PI_STDOUT_FALLBACK_TAIL_CHARS = 128_000;
 const PI_SPEC: ProviderSpec = {
   id: "pi",
   displayName: "Pi",
-  model: { supported: true, flag: "--model" },
+  model: {
+    supported: true,
+    flag: "--model",
+    discovery: {
+      command: PI_BINARY,
+      args: ["--list-models"],
+      outputParser: "pi-list-models-table",
+    },
+  },
   thinking: {
     supported: true,
     flag: "--thinking",

@@ -31,7 +31,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `package-manager/`: Enter when changing package-manager detection, install command execution helpers, package.json dependency rewriting, installed TrailStep package version resolution, or npm registry metadata fetching.
 - `prompts/`: Enter when changing the shared `promptText`/`promptSelect`/`promptMultiSelect`/`promptYesNo` interactive-prompt helpers used by `add`, `remove`, and `workflows`.
 - `workflow-reference/`: Enter when changing `<package:workflowExport>` or `<package-or-path#workflowName>` parsing rules.
-- `workflow-registry/`: Enter when changing shared config-file read/write/enumerate primitives (`configPathForScope`, raw read/write, delete-entry, package metadata writes, cross-scope duplicate lookup, the reserved-namespace and reserved-character guards) used by `add`, `remove`, and `workflows`.
+- `workflow-registry/`: Enter when changing shared config-file read/write/enumerate primitives (`configPathForScope`, raw read/write, package-metadata-aware list/write/delete/move helpers, cross-scope duplicate lookup, the reserved-namespace and reserved-character guards) used by `add`, `remove`, and `workflows`.
 - `workflow-packages/`: Enter when changing npm package spec parsing or scoped package installation used before `trailstep add` bundle discovery.
 - `workflow-resolution/`: Enter when changing run-command resolution between discovered workflow ids, project/global-registered config refs, bundle manifest refs, and direct workflow source references.
 - `workflow-skills/`: Enter when changing generated workflow skill naming, content, project skill file writing, leftover generated-skill warnings, or `skills` CLI distribution.
@@ -70,5 +70,5 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
 - Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
-- Use `writeWorkflowRegistryEntries` for registration writes that must keep `workflowMetadata` synchronized with `workflows`.
+- Use `writeWorkflowRegistryEntries` for registration writes and config-level delete/move helpers for removals or renames that must keep `workflowMetadata` synchronized with `workflows`.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

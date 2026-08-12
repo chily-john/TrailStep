@@ -158,6 +158,76 @@ describe("listRegisteredWorkflowEntries", () => {
     expect(entries).toHaveLength(3);
   });
 
+  it("enumerates package metadata without dropping legacy string registrations", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: {
+          legacy: "./workflows/legacy.mjs",
+          review: "@acme/workflows#review",
+        },
+      },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+            resolvedVersion: "1.2.3",
+          },
+        },
+      },
+    });
+
+    const entries = await listRegisteredWorkflowEntries({ cwd, homeDir: tmpDir(task) });
+
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        namespace: "project",
+        name: "legacy",
+        targetRef: "./workflows/legacy.mjs",
+        packageMetadata: undefined,
+      }),
+    );
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        namespace: "project",
+        name: "review",
+        targetRef: "@acme/workflows#review",
+        packageMetadata: expect.objectContaining({ packageName: "@acme/workflows" }),
+      }),
+    );
+    expect(entries).toHaveLength(2);
+  });
+
+  it("ignores malformed package metadata while preserving its string registration", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: { project: { review: { kind: "package" } } },
+    });
+
+    await expect(listRegisteredWorkflowEntries({ cwd, homeDir: tmpDir(task) })).resolves.toEqual([
+      {
+        scope: "project",
+        namespace: "project",
+        name: "review",
+        targetRef: "@acme/workflows#review",
+        packageMetadata: undefined,
+      },
+    ]);
+  });
+
   it("returns an empty list when no config files exist", async ({ task }) => {
     const cwd = tmpDir(task);
     await expect(listRegisteredWorkflowEntries({ cwd, homeDir: tmpDir(task) })).resolves.toEqual(

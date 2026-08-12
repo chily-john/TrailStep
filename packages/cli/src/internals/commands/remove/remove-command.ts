@@ -2,7 +2,7 @@ import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import {
   configPathForScope,
-  deleteWorkflowRegistryEntry,
+  deleteWorkflowRegistryEntryFromConfig,
   readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
   type WorkflowRegistryScope,
@@ -75,12 +75,10 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
     const [scope] = matches as [WorkflowRegistryScope];
     const path = configPathForScope(scope, context);
     const config = await readRawTrailStepConfigFile(path);
-    const workflows = deleteWorkflowRegistryEntry(
-      toMutableWorkflowRegistry(config.workflows),
-      parsed.namespace,
-      parsed.name,
+    await writeRawTrailStepConfigFile(
+      path,
+      deleteWorkflowRegistryEntryFromConfig(config, parsed.namespace, parsed.name),
     );
-    await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
     context.io.writeLine(`Removed ${args.ref} from ${scope} config.`);
 

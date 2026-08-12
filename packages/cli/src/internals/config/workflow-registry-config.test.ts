@@ -74,6 +74,50 @@ describe("workflow registry project config", () => {
     });
   });
 
+  it("ignores registry metadata while parsing core agent config", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeConfig(cwd, {
+      version: 1,
+      agents: {
+        reviewer: [{ provider: "claude" }],
+      },
+      workflows: {
+        project: {
+          review: "@acme/workflows#review",
+        },
+      },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+          },
+        },
+      },
+    });
+
+    await expect(loadTrailStepProjectConfig(cwd)).resolves.toMatchObject({
+      workflowRegistry: {
+        project: {
+          review: "@acme/workflows#review",
+        },
+      },
+      trailstepConfig: {
+        agents: {
+          reviewer: [{ provider: "claude" }],
+        },
+      },
+    });
+  });
+
   it("merges global, project, and local run config with agents replaced by entry name", async ({
     task,
   }) => {

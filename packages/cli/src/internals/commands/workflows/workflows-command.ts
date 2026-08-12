@@ -6,12 +6,12 @@ import {
   assertNamespaceMatchesScope,
   assertValidRegistrationName,
   configPathForScope,
-  deleteWorkflowRegistryEntry,
+  deleteWorkflowRegistryEntryFromConfig,
   findExistingRegistrationScope,
   listRegisteredWorkflowEntries,
+  moveWorkflowRegistryEntryInConfig,
   type RegisteredWorkflowEntry,
   readRawTrailStepConfigFile,
-  toMutableWorkflowRegistry,
   type WorkflowRegistryContext,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
@@ -196,12 +196,10 @@ async function removeSelectedEntry(
 
   const path = configPathForScope(selected.scope, registryContext);
   const config = await readRawTrailStepConfigFile(path);
-  const workflows = deleteWorkflowRegistryEntry(
-    toMutableWorkflowRegistry(config.workflows),
-    selected.namespace,
-    selected.name,
+  await writeRawTrailStepConfigFile(
+    path,
+    deleteWorkflowRegistryEntryFromConfig(config, selected.namespace, selected.name),
   );
-  await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
   context.io.writeLine(
     `Removed ${selected.namespace}/${selected.name} from ${selected.scope} config.`,
@@ -274,10 +272,17 @@ async function applyRename(
 
   const path = configPathForScope(selected.scope, context);
   const config = await readRawTrailStepConfigFile(path);
-  let workflows = toMutableWorkflowRegistry(config.workflows);
-  workflows = deleteWorkflowRegistryEntry(workflows, selected.namespace, selected.name);
-  workflows[newNamespace] = { ...workflows[newNamespace], [newName]: selected.targetRef };
-  await writeRawTrailStepConfigFile(path, { ...config, workflows });
+  await writeRawTrailStepConfigFile(
+    path,
+    moveWorkflowRegistryEntryInConfig(
+      config,
+      selected.namespace,
+      selected.name,
+      newNamespace,
+      newName,
+      selected.targetRef,
+    ),
+  );
 
   context.io.writeLine(
     `Renamed ${selected.scope}: ${selected.namespace}/${selected.name} -> ${newNamespace}/${newName}`,

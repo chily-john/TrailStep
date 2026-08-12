@@ -226,6 +226,127 @@ describe("workflowsCommand", () => {
     expect(config).toEqual({ workflows: { project: { reviewed: "./review.mjs" } } });
   });
 
+  it("renames package-backed workflow metadata with the selected registration", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Name: review" : "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async (prompt) => {
+          if (prompt === "New name") {
+            return "renamed";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      readonly workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.renamed).toMatchObject({
+      packageName: "@acme/workflows",
+    });
+    expect(config.workflowMetadata?.project?.review).toBeUndefined();
+  });
+
+  it("removes package-backed workflow metadata with the selected registration", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: { review: "@acme/workflows#review", scratch: "./scratch.mjs" },
+      },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let workflowListVisits = 0;
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            workflowListVisits += 1;
+            return workflowListVisits === 1
+              ? (choices[0] as string)
+              : "project: project/scratch -> ./scratch.mjs";
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "yes";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      readonly workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.review).toBeUndefined();
+  });
+
   it("removes a selected workflow after confirmation and returns to the list", async ({ task }) => {
     const cwd = tmpDir(task);
     await writeJson(join(cwd, ".trailstep", "config.json"), {

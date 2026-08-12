@@ -38,6 +38,36 @@ describe("removeCommand", () => {
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
   });
 
+  it("removes package metadata with the registration", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+          },
+        },
+      },
+    });
+
+    const command = resolveCommand(["remove", "project/review"]);
+    await command.run(command.parseArgs(["remove", "project/review"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
+  });
+
   it("removes the entry but keeps sibling entries in the same namespace bucket", async ({
     task,
   }) => {

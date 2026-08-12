@@ -23,6 +23,22 @@ describe("usageText", () => {
     );
   });
 
+  it("documents optional model override semantics for agents set", () => {
+    expect(usageText).toContain(
+      "trailstep agents set <name> --provider <provider> [--model <model>]",
+    );
+    expect(usageText).toContain("provider defaults");
+    expect(usageText).toContain("model override");
+    expect(usageText).toContain("reasoning/thinking override");
+    expect(usageText).toContain("Use provider default");
+  });
+
+  it("documents custom provider optional override placeholders", () => {
+    expect(usageText).toContain("{{thinking}}");
+    expect(usageText).toContain("{{#model}}");
+    expect(usageText).toContain("{{#thinking}}");
+  });
+
   it("documents direct source workflow refs and bulk add selection syntax", () => {
     expect(usageText).toContain("./workflow.ts#reviewWorkflow");
     expect(usageText).toContain("./workflows#takeItAway");

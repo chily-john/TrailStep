@@ -503,6 +503,9 @@ async function promptForWorkflowRoleMapping(
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
   await writeNamedAgent(
     options.scope,

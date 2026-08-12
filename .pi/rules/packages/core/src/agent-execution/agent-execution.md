@@ -18,6 +18,7 @@ Enter here when changing how a prompted step is dispatched after the continuatio
 ## Subdirectories
 
 - `adapter-agent/`: Enter when changing custom adapter invocation, submit-output tool behavior, adapter prompt messages, or adapter output failure handling.
+- `custom-provider/`: Enter when changing shared argv template rendering for working and interactive custom providers.
 - `working-agent/`: Enter when changing non-interactive command/provider execution, prompt/output file layout, target fallback behavior, output parsing, raw-text document capture, or structured-output validation. Helpers are grouped by `artifacts/`, `prompts/`, `output/`, and `targets/`.
 - `interactive-agent/`: Enter when changing inherited-stdio human handoff, interactive prompt construction, provider target routing, process completion/cancellation, command placeholders, one-off continue Skill prompting, or interactive protocol handoff.
 
@@ -25,7 +26,7 @@ Enter here when changing how a prompted step is dispatched after the continuatio
 
 - A prompted step must reference a workflow-level `agent` role; working steps must declare `outputShape`, while interactive steps without one use the default session-file shape.
 - Missing `.trailstep/config.json` is allowed only until a prompted configured-agent step needs it and no adapter is supplied.
-- Working custom providers use `args` with `{{promptFile}}`, `{{outputFile}}`, and `{{model}}`; interactive custom providers require `interactiveArgs` with `{{promptFile}}`, `{{prompt}}`, and `{{model}}`. Placeholders must be whole argv values.
+- Working custom providers use `args` with `{{promptFile}}`, `{{outputFile}}`, and optional `{{model}}`/`{{thinking}}`; interactive custom providers require `interactiveArgs` with `{{promptFile}}` or `{{prompt}}` plus optional `{{model}}`/`{{thinking}}`. Placeholders and `{{#model}}`/`{{#thinking}}` conditional blocks must be whole argv values; guard optional placeholders when absent.
 - Interactive agents complete through the runtime-owned file-based protocol written under the step artifacts; keep `TRAILSTEP_INTERACTIVE_FILE` available to spawned processes, instruct handoff prompts to run `trailstep continue`, require `interactive.json` to be marked completed, and route explicit `outputShape` sessions through schema-validated JSON output.
 - Interactive custom commands write `prompt.txt` only when `{{promptFile}}` is used; built-in providers always receive the prompt and system prompt file.
 - Interactive provider processes inherit defined process environment values, with `TRAILSTEP_INTERACTIVE_FILE` set to the session protocol file.

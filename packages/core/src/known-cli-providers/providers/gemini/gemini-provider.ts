@@ -10,6 +10,7 @@ import { extractEnvelopeOutput, extractEnvelopeText } from "../../envelopes/enve
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
+  ProviderSpec,
   ProviderWorkingProcessResult,
   ProviderWorkingRequest,
   ProviderWorkingRunner,
@@ -27,6 +28,23 @@ const GEMINI_BINARY = "gemini";
  * `gemini --version` + end-to-end smoke test is run.
  */
 const GEMINI_RESULT_FIELD = "response";
+
+const GEMINI_SPEC: ProviderSpec = {
+  id: "gemini",
+  displayName: "Gemini",
+  model: { supported: true, flag: "-m" },
+  thinking: { supported: false },
+  working: {
+    command: GEMINI_BINARY,
+    prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+    baseArgs: ["-p", "@{{promptFile}}", "--yolo", "--output-format", "json"],
+    output: {
+      style: "stdout-json-envelope",
+      parsing: { resultField: GEMINI_RESULT_FIELD },
+    },
+  },
+  interactive: { supported: true, command: GEMINI_BINARY, modelFlag: "-m" },
+};
 
 async function runWorking(
   request: ProviderWorkingRequest,
@@ -216,6 +234,7 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
 
 export const geminiProvider: ProviderAdapter = {
   id: "gemini",
+  spec: GEMINI_SPEC,
   runWorking,
   runInteractive,
 };

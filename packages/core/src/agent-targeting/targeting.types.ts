@@ -2,10 +2,32 @@ import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types
 import type { RetryPolicyInput } from "../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../runtime/timeout/timeout-policy.js";
 
+export type TrailStepCustomProviderModelOverrideSupport =
+  | {
+      readonly supported: true;
+      readonly flag?: string;
+    }
+  | {
+      readonly supported: false;
+    };
+
+export type TrailStepCustomProviderThinkingOverrideSupport =
+  | {
+      readonly supported: true;
+      readonly flag?: string;
+      readonly levels: readonly WorkflowAgentThinking[];
+    }
+  | {
+      readonly supported: false;
+      readonly levels?: readonly [];
+    };
+
 export interface TrailStepCustomProviderConfig {
   readonly binary: string;
   readonly args?: readonly string[];
   readonly interactiveArgs?: readonly string[];
+  readonly model?: TrailStepCustomProviderModelOverrideSupport;
+  readonly thinking?: TrailStepCustomProviderThinkingOverrideSupport;
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
 }

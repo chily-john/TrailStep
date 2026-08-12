@@ -25,8 +25,9 @@ export interface TrailStepProjectConfig {
  */
 export async function loadTrailStepConfig(
   cwd = process.cwd(),
+  options: LoadTrailStepProjectConfigOptions = {},
 ): Promise<TrailStepConfig | undefined> {
-  return (await loadTrailStepProjectConfig(cwd)).trailstepConfig;
+  return (await loadTrailStepProjectConfig(cwd, options)).trailstepConfig;
 }
 
 export interface LoadTrailStepProjectConfigOptions {

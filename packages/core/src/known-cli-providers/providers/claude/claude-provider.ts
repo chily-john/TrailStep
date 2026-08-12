@@ -15,6 +15,7 @@ import {
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
+  ProviderSpec,
   ProviderWorkingProcessResult,
   ProviderWorkingRepairRequest,
   ProviderWorkingRequest,
@@ -23,6 +24,42 @@ import type {
 import { promptFileReference } from "../prompt-file-reference.js";
 
 const CLAUDE_BINARY = "claude";
+const CLAUDE_RESULT_FIELD = "result";
+
+const CLAUDE_SPEC: ProviderSpec = {
+  id: "claude",
+  displayName: "Claude",
+  model: { supported: true, flag: "--model" },
+  thinking: {
+    supported: true,
+    flag: "--effort",
+    levels: ["low", "medium", "high", "xhigh", "max"],
+  },
+  working: {
+    command: CLAUDE_BINARY,
+    prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+    baseArgs: [
+      "-p",
+      "@{{promptFile}}",
+      "--output-format",
+      "json",
+      "--dangerously-skip-permissions",
+    ],
+    output: {
+      style: "stdout-json-envelope",
+      parsing: { resultField: CLAUDE_RESULT_FIELD },
+    },
+    repair: { supported: true, resumeFlag: "--resume", promptDelivery: "stdin" },
+  },
+  interactive: {
+    supported: true,
+    command: CLAUDE_BINARY,
+    requiresSystemPromptFile: true,
+    systemPromptFileFlag: "--append-system-prompt-file",
+    modelFlag: "--model",
+    permissionBypassFlag: "--dangerously-skip-permissions",
+  },
+};
 
 async function runWorking(
   request: ProviderWorkingRequest,
@@ -84,7 +121,7 @@ function extractFailureContext(rawStdout: string): {
   const metadata = extractEnvelopeMetadata(rawStdout, { harnessDurationMs: 0 });
   let rawResultText: string | undefined;
   try {
-    rawResultText = extractEnvelopeText(rawStdout, { resultField: "result" });
+    rawResultText = extractEnvelopeText(rawStdout, { resultField: CLAUDE_RESULT_FIELD });
   } catch {
     rawResultText = undefined;
   }
@@ -108,7 +145,7 @@ async function writeCapturedOutput(options: {
   if (options.captureMode === "raw-text") {
     let text: string;
     try {
-      text = extractEnvelopeText(options.stdout, { resultField: "result" });
+      text = extractEnvelopeText(options.stdout, { resultField: CLAUDE_RESULT_FIELD });
     } catch (error) {
       throw new TrailStepFailureError({
         code: "agent_provider_output_invalid",
@@ -124,7 +161,7 @@ async function writeCapturedOutput(options: {
   } else {
     let output: PlainObject;
     try {
-      output = extractEnvelopeOutput(options.stdout, { resultField: "result" });
+      output = extractEnvelopeOutput(options.stdout, { resultField: CLAUDE_RESULT_FIELD });
     } catch (error) {
       throw new TrailStepFailureError({
         code: "agent_provider_output_invalid",
@@ -391,6 +428,7 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
 
 export const claudeProvider: ProviderAdapter = {
   id: "claude",
+  spec: CLAUDE_SPEC,
   runWorking,
   repairOutput,
   runInteractive,

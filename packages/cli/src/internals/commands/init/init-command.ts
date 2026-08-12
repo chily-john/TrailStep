@@ -1,10 +1,6 @@
 import { providerRegistry } from "@trailstep/core";
 
-import {
-  addAgentEntryItem,
-  readAgentEntryItems,
-} from "../../agent-config/agent-entry-items-flow.js";
-import { configureLiteralAgentTarget } from "../../agent-config/configure-target-flow.js";
+import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
@@ -63,7 +59,15 @@ export const initCommand: CliCommand<InitCommandArgs> = {
 
     const configPath = configPathForScope(scope, context);
     const config = await readRawTrailStepConfigFile(configPath);
-    let nextConfig = await addConfiguredAgentEntry(config, "default", context);
+    let nextConfig = await runAgentSetupWizard({
+      config,
+      agentName: "default",
+      prompts: context.prompts,
+      providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
+    });
 
     while (await shouldConfigureAnotherAgent(context)) {
       const name = await promptText(
@@ -72,7 +76,15 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         context.prompts,
         "trailstep init requires an agent name.",
       );
-      nextConfig = await addConfiguredAgentEntry(nextConfig, name, context);
+      nextConfig = await runAgentSetupWizard({
+        config: nextConfig,
+        agentName: name,
+        prompts: context.prompts,
+        providerChoices: PROVIDER_CHOICES,
+        cwd: context.cwd,
+        io: context.io,
+        packageCommandRunner: context.packageCommandRunner,
+      });
     }
 
     await writeRawTrailStepConfigFile(configPath, nextConfig);
@@ -167,33 +179,6 @@ async function installTrailStepSkillOrThrow(
   }
 }
 
-async function addConfiguredAgentEntry(
-  config: Record<string, unknown>,
-  name: string,
-  context: CliCommandContext,
-): Promise<Record<string, unknown>> {
-  if (context.prompts === undefined) {
-    throw new CliUsageError("trailstep init requires prompts to configure an agent target.");
-  }
-
-  const configured = await configureLiteralAgentTarget({
-    prompts: context.prompts,
-    providerChoices: PROVIDER_CHOICES,
-  });
-
-  const agents = toMutableRecord(config.agents);
-  const existingItems = readAgentEntryItems(agents[name]);
-  agents[name] = addAgentEntryItem(existingItems, { ...configured.target });
-
-  if (configured.customProvider === undefined) {
-    return { ...config, agents };
-  }
-
-  const customProviders = toMutableRecord(config.customProviders);
-  customProviders[configured.customProvider.name] = { ...configured.customProvider.config };
-  return { ...config, customProviders, agents };
-}
-
 async function shouldConfigureAnotherAgent(context: CliCommandContext): Promise<boolean> {
   if (context.prompts === undefined) {
     return false;
@@ -209,15 +194,4 @@ async function shouldConfigureAnotherAgent(context: CliCommandContext): Promise<
       "trailstep init requires a yes/no answer.",
     )) === "yes"
   );
-}
-
-function toMutableRecord(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) {
-    return {};
-  }
-  return { ...value };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

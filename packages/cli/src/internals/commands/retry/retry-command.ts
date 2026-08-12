@@ -33,7 +33,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
       throw error;
     }
-    const trailstepConfig = await loadTrailStepConfig(cwd);
+    const trailstepConfig = await loadTrailStepConfig(cwd, { homeDir: context.homeDir });
     const resolvedWorkflow = await resolveWorkflowReference(retryTarget.workflowId, {
       cwd,
       homeDir: context.homeDir,

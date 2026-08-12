@@ -51,6 +51,50 @@ describe("parseTrailStepConfig", () => {
     });
   });
 
+  it("parses custom provider capability fields", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {
+        local: {
+          binary: "local-agent",
+          model: { supported: true, flag: "--model" },
+          thinking: { supported: true, flag: "--thinking", levels: ["low", "high"] },
+        },
+      },
+      agents: {
+        default: [{ provider: "local" }],
+      },
+    });
+
+    expect(parsed.customProviders.local).toEqual({
+      binary: "local-agent",
+      model: { supported: true, flag: "--model" },
+      thinking: { supported: true, flag: "--thinking", levels: ["low", "high"] },
+    });
+  });
+
+  it("normalizes empty model override strings to omitted values", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {},
+      agents: {
+        default: [{ provider: "claude", model: "" }],
+      },
+      workflows: {
+        review: {
+          agents: {
+            reviewer: [{ provider: "codex", model: "   " }],
+          },
+        },
+      },
+    });
+
+    expect(parsed.agents.default?.[0]).toEqual({ provider: "claude" });
+    expect(parsed.agents.default?.[0]).not.toHaveProperty("model");
+    expect(parsed.workflows?.review?.agents?.reviewer?.[0]).toEqual({ provider: "codex" });
+    expect(parsed.workflows?.review?.agents?.reviewer?.[0]).not.toHaveProperty("model");
+  });
+
   it("expands agent refs from the top-level reusable agents map", () => {
     const parsed = parseTrailStepConfig({
       version: 1,

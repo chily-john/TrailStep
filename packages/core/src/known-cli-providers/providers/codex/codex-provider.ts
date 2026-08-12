@@ -7,6 +7,7 @@ import type {
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
+  ProviderSpec,
   ProviderWorkingProcessResult,
   ProviderWorkingRequest,
   ProviderWorkingRunner,
@@ -24,7 +25,32 @@ const CODEX_BINARY = "codex";
  * TrailStep's `"max"` to a Codex reasoning level, so an unsupported tier is a
  * hard configuration error rather than a silent clamp/guess.
  */
-const SUPPORTED_CODEX_THINKING = new Set(["low", "medium", "high", "xhigh"]);
+const CODEX_THINKING_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+const SUPPORTED_CODEX_THINKING = new Set<string>(CODEX_THINKING_LEVELS);
+
+const CODEX_SPEC: ProviderSpec = {
+  id: "codex",
+  displayName: "Codex",
+  model: { supported: true, flag: "-m" },
+  thinking: {
+    supported: true,
+    flag: "-c model_reasoning_effort",
+    levels: CODEX_THINKING_LEVELS,
+  },
+  working: {
+    command: CODEX_BINARY,
+    prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+    baseArgs: [
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-o",
+      "{{outputFile}}",
+      "@{{promptFile}}",
+    ],
+    output: { style: "provider-output-file" },
+  },
+  interactive: { supported: true, command: CODEX_BINARY, modelFlag: "--model" },
+};
 
 /**
  * Unlike `claudeProvider.runWorking`, this never captures or parses stdout
@@ -181,6 +207,7 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
 
 export const codexProvider: ProviderAdapter = {
   id: "codex",
+  spec: CODEX_SPEC,
   runWorking,
   runInteractive,
 };

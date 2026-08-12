@@ -67,6 +67,55 @@ describe("initCommand", () => {
     });
   });
 
+  it("init uses provider-aware thinking choices from shared setup", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project"]);
+
+    const exitCode = await command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+      cwd,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        async text(prompt) {
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+        async select(prompt, choices) {
+          if (prompt === "Provider") {
+            expect(choices).toContain("codex");
+            return "codex";
+          }
+          if (prompt === "Model override") {
+            expect(choices).toEqual(["Use provider default", "Type manually"]);
+            return "Use provider default";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            expect(choices).toEqual(["Use provider default", "low", "medium", "high", "xhigh"]);
+            expect(choices).not.toContain("max");
+            return "xhigh";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        async confirm(prompt) {
+          if (prompt === "Configure another agent?") {
+            return false;
+          }
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
+            return false;
+          }
+          throw new Error(`Unexpected confirm prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      agents: { default: [{ provider: "codex", thinking: "xhigh" }] },
+    });
+  });
+
   it("routes init and writes a default literal target to the selected project config", async ({
     task,
   }) => {

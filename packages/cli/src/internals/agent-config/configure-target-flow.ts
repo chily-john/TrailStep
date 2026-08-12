@@ -1,12 +1,20 @@
-import type { TrailStepAgentTarget, TrailStepCustomProviderConfig } from "@trailstep/core";
+import {
+  type ProviderRegistryKey,
+  providerRegistry,
+  type TrailStepAgentTarget,
+  type TrailStepCustomProviderConfig,
+} from "@trailstep/core";
 
 import { CliUsageError, type TrailStepCliPrompts } from "../command.types.js";
 
 const PROVIDER_DEFAULT_CHOICE = "Use provider default";
 const TYPE_MANUALLY_CHOICE = "Type manually";
 const MODEL_OVERRIDE_CHOICES = [PROVIDER_DEFAULT_CHOICE, TYPE_MANUALLY_CHOICE] as const;
-const THINKING_LEVEL_CHOICES = ["low", "medium", "high", "xhigh", "max"] as const;
-const THINKING_OVERRIDE_CHOICES = [PROVIDER_DEFAULT_CHOICE, ...THINKING_LEVEL_CHOICES] as const;
+const GENERIC_THINKING_LEVEL_CHOICES = ["low", "medium", "high", "xhigh", "max"] as const;
+const GENERIC_THINKING_OVERRIDE_CHOICES = [
+  PROVIDER_DEFAULT_CHOICE,
+  ...GENERIC_THINKING_LEVEL_CHOICES,
+] as const;
 
 export interface ConfigureLiteralAgentTargetOptions {
   readonly prompts: TrailStepCliPrompts;
@@ -40,16 +48,16 @@ export async function configureLiteralAgentTarget(
   const model =
     modelSelection === TYPE_MANUALLY_CHOICE ? (await options.prompts.text("Model")).trim() : "";
 
-  const thinkingSelection = await options.prompts.select(
-    "Reasoning/thinking override",
-    THINKING_OVERRIDE_CHOICES,
-  );
-  if (
-    !THINKING_OVERRIDE_CHOICES.includes(
-      thinkingSelection as (typeof THINKING_OVERRIDE_CHOICES)[number],
-    )
-  ) {
-    throw new CliUsageError(`Invalid thinking override selection: ${thinkingSelection}`);
+  const thinkingChoices = thinkingOverrideChoicesForProvider(providerSelection, customProvider);
+  let thinkingSelection: string = PROVIDER_DEFAULT_CHOICE;
+  if (thinkingChoices.length > 0) {
+    thinkingSelection = await options.prompts.select(
+      "Reasoning/thinking override",
+      thinkingChoices,
+    );
+    if (!thinkingChoices.includes(thinkingSelection)) {
+      throw new CliUsageError(`Invalid thinking override selection: ${thinkingSelection}`);
+    }
   }
 
   const target: TrailStepAgentTarget = {
@@ -64,6 +72,25 @@ export async function configureLiteralAgentTarget(
     target,
     ...(customProvider === undefined ? {} : { customProvider }),
   };
+}
+
+function thinkingOverrideChoicesForProvider(
+  providerSelection: string,
+  customProvider: ConfiguredCustomProvider | undefined,
+): readonly string[] {
+  if (customProvider !== undefined) {
+    return GENERIC_THINKING_OVERRIDE_CHOICES;
+  }
+  if (!Object.hasOwn(providerRegistry, providerSelection)) {
+    return GENERIC_THINKING_OVERRIDE_CHOICES;
+  }
+
+  const thinkingSupport = providerRegistry[providerSelection as ProviderRegistryKey].spec.thinking;
+  if (!thinkingSupport.supported) {
+    return [];
+  }
+
+  return [PROVIDER_DEFAULT_CHOICE, ...thinkingSupport.levels];
 }
 
 async function promptCustomProvider(

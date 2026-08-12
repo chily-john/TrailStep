@@ -618,7 +618,6 @@ describe("agentsCommand", () => {
           "gemini",
           "Type manually",
           "pro",
-          "Use provider default",
           "Done",
           "Save to original (update one-off in place)",
         ],

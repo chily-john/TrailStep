@@ -81,6 +81,43 @@ describe("configureLiteralAgentTarget", () => {
     ).resolves.toEqual({ target: { provider: "claude", model: "sonnet", thinking: "high" } });
   });
 
+  it("filters thinking override choices by provider spec", async () => {
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          { label: "Provider", choices: ["codex", "custom"], answer: "codex" },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Use provider default",
+          },
+          {
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh"],
+            answer: "xhigh",
+          },
+        ]),
+        providerChoices: ["codex"],
+      }),
+    ).resolves.toEqual({ target: { provider: "codex", thinking: "xhigh" } });
+  });
+
+  it("skips thinking override for Gemini", async () => {
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          { label: "Provider", choices: ["gemini", "custom"], answer: "gemini" },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Use provider default",
+          },
+        ]),
+        providerChoices: ["gemini"],
+      }),
+    ).resolves.toEqual({ target: { provider: "gemini" } });
+  });
+
   it("creates a custom provider when requested", async () => {
     await expect(
       configureLiteralAgentTarget({

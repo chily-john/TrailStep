@@ -68,5 +68,5 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
 - Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
-- Literal agent target prompts offer provider-default model/thinking overrides; omit `model` or `thinking` when the default option is selected.
+- Literal agent target prompts offer provider-default model overrides and provider-registry-aware thinking overrides; omit `model` or `thinking` when the default option is selected, and skip thinking when the provider does not support it.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

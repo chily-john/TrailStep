@@ -199,6 +199,7 @@ describe("main", () => {
       main({
         argv: ["@acme/trailstep-workflows:reviewFeature", "run-001", "--input", '{"ok":true}'],
         cwd,
+        homeDir: join(cwd, "home"),
         io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
         workingAgentProcessRunner: async (request) => {
           requests.push(request);

@@ -871,6 +871,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir: join(cwd, "home"),
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
@@ -956,6 +957,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir: join(cwd, "home"),
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
@@ -1036,6 +1038,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir: join(cwd, "home"),
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
@@ -1113,6 +1116,7 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir: join(cwd, "home"),
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {

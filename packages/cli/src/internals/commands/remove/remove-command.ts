@@ -7,10 +7,13 @@ import {
   type RegisteredWorkflowEntry,
   readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
-  type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryScope,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
+import {
+  cleanupRemovedWorkflowPackageInstall,
+  reportRemovedWorkflowPackageInstallCleanup,
+} from "../../workflow-packages/package-uninstall.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 
 interface RemoveCommandArgs {
@@ -85,11 +88,20 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
     );
 
     context.io.writeLine(`Removed ${args.ref} from ${scope} config.`);
-    await writePackagePreservationNotice(selectedEntry?.packageMetadata, context);
+    const cleanupResult =
+      selectedEntry === undefined
+        ? ({ status: "none" } as const)
+        : await cleanupRemovedWorkflowPackageInstall({
+            removedEntry: selectedEntry,
+            cwd: context.cwd,
+            homeDir: context.homeDir,
+            packageCommandRunner: context.packageCommandRunner,
+          });
+    reportRemovedWorkflowPackageInstallCleanup(cleanupResult, context.io);
 
     await warnIfGeneratedSkillDirectoryExists(context, parsed.namespace, parsed.name);
 
-    return 0;
+    return cleanupResult.status === "failed" ? 1 : 0;
   },
 };
 
@@ -103,54 +115,6 @@ async function findRegisteredEntry(
   return entries.find(
     (entry) => entry.scope === scope && entry.namespace === namespace && entry.name === name,
   );
-}
-
-async function writePackagePreservationNotice(
-  metadata: WorkflowPackageRegistryMetadata | undefined,
-  context: CliCommandContext,
-): Promise<void> {
-  if (metadata === undefined) {
-    return;
-  }
-
-  const remainingEntries = await listRegisteredWorkflowEntries(context);
-  const remainingPackageRefs = remainingEntries
-    .filter((entry) =>
-      entry.packageMetadata === undefined
-        ? false
-        : isSameWorkflowPackage(entry.packageMetadata, metadata),
-    )
-    .map(formatRegisteredWorkflowRef);
-
-  if (remainingPackageRefs.length > 0) {
-    context.io.writeLine(
-      `Package install for ${metadata.packageName} was preserved because it is still used by ${remainingPackageRefs.join(", ")}.`,
-    );
-    return;
-  }
-
-  const ownership = metadata.installOwnership ?? "unknown";
-  if (ownership !== "trailstep-installed") {
-    context.io.writeLine(
-      `Package install for ${metadata.packageName} was preserved because it is not owned by TrailStep (installOwnership: ${ownership}).`,
-    );
-  }
-}
-
-function isSameWorkflowPackage(
-  candidate: WorkflowPackageRegistryMetadata,
-  removed: WorkflowPackageRegistryMetadata,
-): boolean {
-  return (
-    candidate.sourceType === removed.sourceType &&
-    candidate.packageName === removed.packageName &&
-    candidate.installScope === removed.installScope &&
-    candidate.githubRef === removed.githubRef
-  );
-}
-
-function formatRegisteredWorkflowRef(entry: RegisteredWorkflowEntry): string {
-  return `${entry.namespace}/${entry.name}`;
 }
 
 function parseFlags(argv: readonly string[]): Record<string, string | undefined> {

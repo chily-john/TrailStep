@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -239,6 +239,134 @@ describe("removeCommand", () => {
     expect(lines).toEqual([
       "Removed project/review from project config.",
       "Package install for @acme/workflows was preserved because it is not owned by TrailStep (installOwnership: unknown).",
+    ]);
+  });
+
+  it("uninstalls the last TrailStep-owned project package after removing registration", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const packageCommandCalls: unknown[] = [];
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      devDependencies: { "@acme/workflows": "latest" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+
+    const command = resolveCommand(["remove", "project/review"]);
+    const lines: string[] = [];
+    const exitCode = await command.run(command.parseArgs(["remove", "project/review"]) as never, {
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageCommandCalls.push(request);
+        await rm(packageDir, { recursive: true, force: true });
+        await writeJson(join(cwd, "package.json"), { name: "consumer", devDependencies: {} });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
+    expect(packageCommandCalls).toEqual([
+      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+    ]);
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(lines).toEqual([
+      "Removed project/review from project config.",
+      "Package cleanup: uninstalled @acme/workflows from project scope.",
+    ]);
+  });
+
+  it("uninstalls the last TrailStep-owned global package from the global package store", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const homeDir = tmpDir(task);
+    const packageStore = join(homeDir, ".trailstep", "packages");
+    const packageDir = join(packageStore, "node_modules", "@acme", "workflows");
+    const packageCommandCalls: unknown[] = [];
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(packageStore, "package.json"), {
+      dependencies: { "@acme/workflows": "latest" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
+      workflows: { global: { deploy: "@acme/workflows#deploy" } },
+      workflowMetadata: {
+        global: {
+          deploy: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "global",
+            targetRef: "@acme/workflows#deploy",
+            workflowName: "deploy",
+            exportName: "deploy",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+
+    const command = resolveCommand(["remove", "global/deploy"]);
+    const lines: string[] = [];
+    const exitCode = await command.run(command.parseArgs(["remove", "global/deploy"]) as never, {
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageCommandCalls.push(request);
+        await rm(packageDir, { recursive: true, force: true });
+        await writeJson(join(packageStore, "package.json"), { dependencies: {} });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(homeDir, ".trailstep", "config.json"))).toEqual({
+      workflows: {},
+    });
+    expect(packageCommandCalls).toEqual([
+      {
+        command: "npm",
+        args: ["uninstall", "--save", "@acme/workflows"],
+        cwd: packageStore,
+      },
+    ]);
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(lines).toEqual([
+      "Removed global/deploy from global config.",
+      "Package cleanup: uninstalled @acme/workflows from global scope.",
     ]);
   });
 

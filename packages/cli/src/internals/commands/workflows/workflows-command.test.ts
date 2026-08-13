@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -524,6 +524,90 @@ describe("workflowsCommand", () => {
       readonly workflowMetadata?: Record<string, Record<string, unknown>>;
     };
     expect(config.workflowMetadata?.project?.review).toBeUndefined();
+  });
+
+  it("interactive remove uninstalls orphaned TrailStep-owned package after confirmation", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const packageCommandCalls: unknown[] = [];
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      devDependencies: { "@acme/workflows": "latest" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: { review: "@acme/workflows#review", scratch: "./scratch.mjs" },
+      },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+
+    const lines: string[] = [];
+    let workflowListVisits = 0;
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageCommandCalls.push(request);
+        await rm(packageDir, { recursive: true, force: true });
+        await writeJson(join(cwd, "package.json"), { name: "consumer", devDependencies: {} });
+        return { exitCode: 0 };
+      },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            workflowListVisits += 1;
+            return workflowListVisits === 1
+              ? "project: project/review -> @acme/workflows#review (sourceType: npm, packageName: @acme/workflows, requestedSpec: @acme/workflows@latest, installScope: project, installOwnership: trailstep-installed)"
+              : "project: project/scratch -> ./scratch.mjs";
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "yes";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      workflows: { project: { scratch: "./scratch.mjs" } },
+    });
+    expect(packageCommandCalls).toEqual([
+      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+    ]);
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(lines).toContain("Package cleanup: uninstalled @acme/workflows from project scope.");
   });
 
   it("removes a selected workflow after confirmation and returns to the list", async ({ task }) => {

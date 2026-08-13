@@ -15,6 +15,10 @@ import {
   type WorkflowRegistryContext,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
+import {
+  cleanupRemovedWorkflowPackageInstall,
+  reportRemovedWorkflowPackageInstallCleanup,
+} from "../../workflow-packages/package-uninstall.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 import type { WorkflowSkillMetadata } from "../../workflow-skills/workflow-skill-content.js";
@@ -259,6 +263,15 @@ async function removeSelectedEntry(
 
   context.io.writeLine(
     `Removed ${selected.namespace}/${selected.name} from ${selected.scope} config.`,
+  );
+  reportRemovedWorkflowPackageInstallCleanup(
+    await cleanupRemovedWorkflowPackageInstall({
+      removedEntry: selected,
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+      packageCommandRunner: context.packageCommandRunner,
+    }),
+    context.io,
   );
   await warnIfGeneratedSkillDirectoryExists(context, selected.namespace, selected.name);
   return true;

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { main } from "../../../index.js";
 import { resolveCommand } from "../../command-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 
@@ -2385,6 +2386,131 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
+  });
+
+  it("rolls back a fresh package install when package discovery fails", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const exitCode = await main({
+      argv: ["add", "@acme/workflows@latest", "--scope", "project"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: async (request) => {
+        installRequests.push(request);
+        await writeJson(join(cwd, "package.json"), {
+          devDependencies: { "@acme/workflows": "latest" },
+        });
+        await writeFile(join(cwd, "package-lock.json"), "lockfile\n", "utf8");
+        await mkdir(packageDir, { recursive: true });
+        await writeJson(join(packageDir, "package.json"), {
+          name: "@acme/workflows",
+          version: "1.2.3",
+          type: "module",
+          exports: { "./package.json": "./package.json" },
+        });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(installRequests).toEqual([
+      { command: "npm", args: expect.arrayContaining(["@acme/workflows@latest"]), cwd },
+    ]);
+    expect(errors.join("\n")).toMatch(
+      /Missing trailstep\.workflows manifest metadata in bundle package: @acme\/workflows/,
+    );
+    expect([...lines, ...errors].join("\n")).toMatch(
+      /Cleanup: rolled back package install for @acme\/workflows in project scope\./,
+    );
+    await expect(stat(resolve(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(cwd, "package.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(cwd, "package-lock.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("preserves a reused package when discovery fails", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+    });
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const exitCode = await main({
+      argv: ["add", "@acme/workflows@latest", "--scope", "project"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (
+            prompt ===
+            "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
+          ) {
+            expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
+            return "Reuse installed package";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async (prompt) => {
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+      },
+      packageCommandRunner: async (request) => {
+        installRequests.push(request);
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(installRequests).toEqual([]);
+    expect(errors.join("\n")).toMatch(
+      /Missing trailstep\.workflows manifest metadata in bundle package: @acme\/workflows/,
+    );
+    expect([...lines, ...errors].join("\n")).toMatch(
+      /Cleanup: preserved existing package @acme\/workflows in project scope; no package install rollback was run\./,
+    );
+    await expect(readJson(join(packageDir, "package.json"))).resolves.toMatchObject({
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await expect(stat(resolve(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("headless package add defaults to project and registers all discovered workflows", async ({

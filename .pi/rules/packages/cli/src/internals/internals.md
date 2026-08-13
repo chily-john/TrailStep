@@ -71,7 +71,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Deprecation scan target collection includes direct-file workflow refs for workflow-source scans (doctor/self-update preflight) but skips them for workflow-package update scans.
 - Workflow-package update scans check every workflow source in a targeted bundle package, not only the selected registered workflow.
 - Deprecation scanner findings only consider named imports from `@trailstep/core` and `@trailstep/authoring`.
-- Deprecation scan targets reuse discovery and bundle-manifest resolution helpers; skip unreadable or malformed package targets.
+- Deprecation scan targets use workflowMetadata install roots for registered package-backed refs, reuse discovery and bundle-manifest resolution helpers, and skip unreadable or malformed package targets.
 - Route run, runs, and retry artifact lookup through `runs-root.ts` so `TRAILSTEP_RUNS_ROOT` can centralize run directories outside the command cwd.
 - Workflow npm/GitHub package installs use the command cwd with `--save-dev` for local/project scopes and `~/.trailstep/packages` with `--save` for global scope; CLI-run installs record `installOwnership: "trailstep-installed"`, reused existing npm packages record `"reused-existing"`, and GitHub refs must be explicit `github:<owner>/<repo>` refs.
 - Registered package workflow resolution uses `workflowMetadata.installScope` to resolve package/bundle targets from the same install root used at add time.

@@ -9,8 +9,12 @@ import {
   resolveInstalledPackageManifest,
   resolvePackageEntryFilePath,
 } from "../discovery/discovery.js";
+import { workflowPackageInstallRootForMetadata } from "../workflow-packages/install-root.js";
 import { parseBundleWorkflowId } from "../workflow-reference/workflow-reference.js";
-import { listRegisteredWorkflowEntries } from "../workflow-registry/workflow-registry.js";
+import {
+  listRegisteredWorkflowEntries,
+  type WorkflowPackageRegistryMetadata,
+} from "../workflow-registry/workflow-registry.js";
 import {
   parseManifestTarget,
   readBundleWorkflowManifest,
@@ -45,8 +49,10 @@ export async function resolveDeprecationScanTargets({
     await addSourceFilesForTarget(sourceFiles, {
       targetRef: entry.targetRef,
       workflowName: entry.name,
+      packageMetadata: entry.packageMetadata,
       baseDir: baseDirForRegistryScope(entry.scope, cwd, homeDir),
       cwd,
+      homeDir,
       packageNames,
       scanMode,
     });
@@ -67,8 +73,10 @@ export async function resolveDeprecationScanTargets({
 interface AddSourceFilesForTargetOptions {
   readonly targetRef: string;
   readonly workflowName: string;
+  readonly packageMetadata?: WorkflowPackageRegistryMetadata;
   readonly baseDir: string;
   readonly cwd: string;
+  readonly homeDir?: string;
   readonly packageNames?: readonly string[];
   readonly scanMode: DeprecationScanMode;
 }
@@ -77,6 +85,16 @@ async function addSourceFilesForTarget(
   sourceFiles: Set<string>,
   options: AddSourceFilesForTargetOptions,
 ): Promise<void> {
+  if (options.packageMetadata !== undefined) {
+    await addSourceFilesForPackageMetadata(sourceFiles, options.packageMetadata, {
+      cwd: options.cwd,
+      homeDir: options.homeDir,
+      packageNames: options.packageNames,
+      scanMode: options.scanMode,
+    });
+    return;
+  }
+
   const normalizedTargetRef = normalizeRegistryTargetRef(options.targetRef, options.baseDir);
   const target = parseRegisteredPackageTarget(normalizedTargetRef, options.workflowName);
   if (target !== undefined) {
@@ -97,6 +115,33 @@ async function addSourceFilesForTarget(
   if (directSourceFile !== undefined && options.scanMode === "workflow-source") {
     sourceFiles.add(directSourceFile);
   }
+}
+
+async function addSourceFilesForPackageMetadata(
+  sourceFiles: Set<string>,
+  metadata: WorkflowPackageRegistryMetadata,
+  options: {
+    readonly cwd: string;
+    readonly homeDir?: string;
+    readonly packageNames?: readonly string[];
+    readonly scanMode: DeprecationScanMode;
+  },
+): Promise<void> {
+  if (options.packageNames && !options.packageNames.includes(metadata.packageName)) {
+    return;
+  }
+
+  const installRoot = workflowPackageInstallRootForMetadata(metadata, {
+    cwd: options.cwd,
+    homeDir: options.homeDir,
+  });
+  await addPackageSourceFile(
+    sourceFiles,
+    metadata.packageName,
+    metadata.workflowName,
+    installRoot,
+    options.scanMode,
+  );
 }
 
 function baseDirForRegistryScope(
@@ -157,10 +202,10 @@ async function addPackageSourceFile(
   sourceFiles: Set<string>,
   packageName: string,
   workflowName: string | undefined,
-  cwd: string,
+  packageRoot: string,
   scanMode: DeprecationScanMode,
 ): Promise<void> {
-  const manifest = await resolvePackageManifest(packageName, cwd);
+  const manifest = await resolvePackageManifest(packageName, packageRoot);
   if (manifest === undefined) {
     return;
   }

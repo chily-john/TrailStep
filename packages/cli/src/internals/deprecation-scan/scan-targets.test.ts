@@ -110,6 +110,79 @@ describe("resolveDeprecationScanTargets", () => {
     expect(targets).toEqual([{ sourceFile: resolve(bundleDir, "dist/release.mjs") }]);
   });
 
+  it("resolves global package-backed scan targets from workflow metadata install root", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task, "global-package-cwd");
+    const homeDir = tmpDir(task, "global-package-home");
+    const packageDir = join(
+      homeDir,
+      ".trailstep",
+      "packages",
+      "node_modules",
+      "@acme",
+      "workflows",
+    );
+
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
+      workflows: { global: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        global: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@^1.2.3",
+            requestedRange: "^1.2.3",
+            installScope: "global",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          },
+        },
+      },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      trailstep: {
+        workflows: {
+          review: "./dist/review.mjs#reviewWorkflow",
+        },
+      },
+    });
+
+    const targets = await resolveDeprecationScanTargets({ cwd, homeDir });
+
+    expect(targets).toEqual([{ sourceFile: resolve(packageDir, "dist/review.mjs") }]);
+  });
+
+  it("skips unreadable package-backed metadata targets without crashing", async ({ task }) => {
+    const cwd = tmpDir(task, "missing-package-cwd");
+    const homeDir = tmpDir(task, "missing-package-home");
+
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
+      workflows: { global: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        global: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@^1.2.3",
+            requestedRange: "^1.2.3",
+            installScope: "global",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          },
+        },
+      },
+    });
+
+    await expect(resolveDeprecationScanTargets({ cwd, homeDir })).resolves.toEqual([]);
+  });
+
   it("resolves registered local bundle package workflow source through its manifest", async ({
     task,
   }) => {

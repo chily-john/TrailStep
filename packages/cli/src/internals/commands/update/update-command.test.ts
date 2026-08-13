@@ -615,6 +615,144 @@ describe("updateCommand", () => {
     expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
   });
 
+  it("applies workflow package updates in project and global install roots", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const homeDir = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-home`);
+    const globalInstallRoot = join(homeDir, ".trailstep", "packages");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(globalInstallRoot, { recursive: true });
+    await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
+    await writeFile(join(globalInstallRoot, "package-lock.json"), "", "utf8");
+    const projectPackageJsonPath = join(cwd, "package.json");
+    const globalPackageJsonPath = join(globalInstallRoot, "package.json");
+    await writeFile(
+      projectPackageJsonPath,
+      `${JSON.stringify(
+        {
+          dependencies: {
+            "@acme/project-workflows": "^1.0.0",
+            "@acme/untouched-project": "^9.0.0",
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(
+      globalPackageJsonPath,
+      `${JSON.stringify(
+        {
+          dependencies: {
+            "@acme/global-workflows": "~2.0.0",
+            "@acme/untouched-global": "~8.0.0",
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/project-workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              packageName: "@acme/project-workflows",
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
+    await writeFile(
+      join(homeDir, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { global: { review: "@acme/global-workflows#review" } },
+        workflowMetadata: {
+          global: {
+            review: workflowPackageMetadata({
+              installScope: "global",
+              packageName: "@acme/global-workflows",
+              requestedRange: "~2.0.0",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await mkdir(join(cwd, "node_modules", "@acme", "project-workflows"), { recursive: true });
+    await writeFile(
+      join(cwd, "node_modules", "@acme", "project-workflows", "package.json"),
+      JSON.stringify({ name: "@acme/project-workflows", version: "1.0.0" }),
+      "utf8",
+    );
+    await mkdir(join(globalInstallRoot, "node_modules", "@acme", "global-workflows"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(globalInstallRoot, "node_modules", "@acme", "global-workflows", "package.json"),
+      JSON.stringify({ name: "@acme/global-workflows", version: "2.0.0" }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+    const viewedCwds: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        viewedCwds.push(request.cwd);
+        const packageName = String(request.args[1]).replace(/@\*$/u, "");
+        const versions: Record<string, readonly string[]> = {
+          "@acme/project-workflows": ["1.0.0", "1.1.0"],
+          "@acme/global-workflows": ["2.0.0", "2.1.0"],
+        };
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify((versions[packageName] ?? []).map((version) => ({ version }))),
+        };
+      },
+    });
+
+    const projectPackageJson = JSON.parse(await readFile(projectPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    const globalPackageJson = JSON.parse(await readFile(globalPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(`@acme/project-workflows (project install root: ${cwd})`);
+    expect(lines.join("\n")).toContain(
+      `@acme/global-workflows (global install root: ${globalInstallRoot})`,
+    );
+    expect(projectPackageJson.dependencies["@acme/project-workflows"]).toBe("^1.1.0");
+    expect(projectPackageJson.dependencies["@acme/untouched-project"]).toBe("^9.0.0");
+    expect(projectPackageJson.dependencies["@acme/global-workflows"]).toBeUndefined();
+    expect(globalPackageJson.dependencies["@acme/global-workflows"]).toBe("~2.1.0");
+    expect(globalPackageJson.dependencies["@acme/untouched-global"]).toBe("~8.0.0");
+    expect(globalPackageJson.dependencies["@acme/project-workflows"]).toBeUndefined();
+    expect(viewedCwds).toEqual([cwd, globalInstallRoot]);
+    expect(installRequests).toEqual([
+      { command: "pnpm", args: ["install"], cwd },
+      { command: "npm", args: ["install"], cwd: globalInstallRoot },
+    ]);
+  });
+
   it("applies self and workflow package updates together for --all --assume-yes", async ({
     task,
   }) => {
@@ -729,7 +867,11 @@ describe("updateCommand", () => {
   it("prints default npm warning before running install when no package manager is detected", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-update-command-tests",
+      `${task.id}-no-package-manager`,
+    );
     await mkdir(cwd, { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -925,6 +1067,7 @@ describe("updateCommand", () => {
 
     expect(exitCode).toBe(1);
     expect(errors.join("\n")).toContain("Install failed with exit code 7");
+    expect(errors.join("\n")).toContain(cwd);
     expect(errors.join("\n")).toContain("lockfile conflict");
     expect(lines.join("\n")).not.toMatch(/update complete/i);
   });

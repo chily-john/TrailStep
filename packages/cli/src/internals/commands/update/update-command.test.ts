@@ -472,6 +472,140 @@ describe("updateCommand", () => {
     expect(forceLines.join("\n")).toContain("Planned workflow package updates:");
   });
 
+  it("blocks global workflow package update when another workflow in the package has a blocking finding", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const homeDir = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-home`);
+    const globalInstallRoot = join(homeDir, ".trailstep", "packages");
+    const packageDir = join(globalInstallRoot, "node_modules", "@acme", "global-workflows");
+    const globalPackageJsonPath = join(globalInstallRoot, "package.json");
+    const cwdPackageJsonPath = join(cwd, "package.json");
+    await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    await writeFile(join(globalInstallRoot, "package-lock.json"), "", "utf8");
+    await writeFile(
+      cwdPackageJsonPath,
+      JSON.stringify({ dependencies: { "@trailstep/authoring": "1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "node_modules", "@trailstep", "authoring", "package.json"),
+      JSON.stringify({ name: "@trailstep/authoring", version: "1.0.0" }),
+      "utf8",
+    );
+    await writeFile(
+      globalPackageJsonPath,
+      JSON.stringify({ dependencies: { "@acme/global-workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(homeDir, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { global: { review: "@acme/global-workflows#review" } },
+        workflowMetadata: {
+          global: {
+            review: workflowPackageMetadata({
+              installScope: "global",
+              packageName: "@acme/global-workflows",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/global-workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            review: "./dist/review.mjs#reviewWorkflow",
+            cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "dist", "review.mjs"),
+      "export const review = {};\n",
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "dist", "cleanup.mjs"),
+      "import { removedStep } from '@trailstep/authoring';\nexport const cleanup = {};\n",
+      "utf8",
+    );
+    const originalGlobalPackageJson = await readFile(globalPackageJsonPath, "utf8");
+    const originalCwdPackageJson = await readFile(cwdPackageJsonPath, "utf8");
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+    const packageCommandRunner = async (request: {
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }) => {
+      if (request.args[0] === "install") {
+        installRequests.push(request);
+        return { exitCode: 0 };
+      }
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]),
+      };
+    };
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const blockedExitCode = await main({
+      argv: ["update", "--workflow=global/review", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner,
+      deprecationManifest: [removedAuthoringSymbol],
+    });
+
+    const blockedOutput = lines.join("\n");
+    const normalizedBlockedOutput = blockedOutput.replace(/\\/gu, "/");
+    const expectedCleanupSource = join(packageDir, "dist", "cleanup.mjs").replace(/\\/gu, "/");
+    expect(blockedExitCode).toBe(1);
+    expect(normalizedBlockedOutput).toContain(expectedCleanupSource);
+    expect(blockedOutput).toContain("@trailstep/authoring/removedStep");
+    expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
+    expect(await readFile(globalPackageJsonPath, "utf8")).toBe(originalGlobalPackageJson);
+    expect(await readFile(cwdPackageJsonPath, "utf8")).toBe(originalCwdPackageJson);
+    expect(installRequests).toEqual([]);
+
+    const forceLines: string[] = [];
+    const forceExitCode = await main({
+      argv: ["update", "--workflow=global/review", "--assume-yes", "--force"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => forceLines.push(line), writeError: () => undefined },
+      packageCommandRunner,
+      deprecationManifest: [removedAuthoringSymbol],
+    });
+
+    const globalPackageJson = JSON.parse(await readFile(globalPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(forceExitCode).toBe(0);
+    expect(forceLines.join("\n")).toMatch(/Warning: --force/);
+    expect(forceLines.join("\n")).toContain(
+      `@acme/global-workflows (global install root: ${globalInstallRoot})`,
+    );
+    expect(globalPackageJson.dependencies["@acme/global-workflows"]).toBe("^1.1.0");
+    expect(await readFile(cwdPackageJsonPath, "utf8")).toBe(originalCwdPackageJson);
+    expect(installRequests).toEqual([
+      { command: "npm", args: ["install"], cwd: globalInstallRoot },
+    ]);
+  });
+
   it("uses target TrailStep versions during self-update preflight", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");

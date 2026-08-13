@@ -78,9 +78,7 @@ export const workflowsCommand: CliCommand<WorkflowsCommandArgs> = {
         }
       }
 
-      const labels = entries.map(
-        (entry) => `${entry.scope}: ${entry.namespace}/${entry.name} -> ${entry.targetRef}`,
-      );
+      const labels = entries.map((entry) => `${entry.scope}: ${formatRegisteredEntry(entry)}`);
       const selectedLabel = await promptSelect(
         "Select a workflow to edit",
         labels,
@@ -110,8 +108,62 @@ function printScopeGroup(
   }
   context.io.writeLine(`${heading}:`);
   for (const entry of entries) {
-    context.io.writeLine(`  ${entry.namespace}/${entry.name} -> ${entry.targetRef}`);
+    context.io.writeLine(`  ${formatRegisteredEntry(entry)}`);
   }
+}
+
+function formatRegisteredEntry(entry: RegisteredWorkflowEntry): string {
+  const base = `${entry.namespace}/${entry.name} -> ${entry.targetRef}`;
+  const packageSummary = formatPackageMetadataSummary(entry);
+  return packageSummary === undefined ? base : `${base} (${packageSummary})`;
+}
+
+function formatPackageMetadataSummary(entry: RegisteredWorkflowEntry): string | undefined {
+  const metadata = packageMetadataForDisplay(entry);
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  const parts = [
+    `sourceType: ${metadata.sourceType}`,
+    `packageName: ${metadata.packageName}`,
+    `requestedSpec: ${metadata.requestedSpec}`,
+    `installScope: ${metadata.installScope}`,
+  ];
+  if (metadata.installOwnership !== undefined) {
+    parts.push(`installOwnership: ${metadata.installOwnership}`);
+  }
+  if (metadata.sourceType === "github" && metadata.githubRef !== undefined) {
+    parts.push(`githubRef: ${metadata.githubRef}`);
+  }
+  return parts.join(", ");
+}
+
+function packageMetadataForDisplay(
+  entry: RegisteredWorkflowEntry,
+): RegisteredWorkflowEntry["packageMetadata"] {
+  const metadata = entry.packageMetadata;
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  if (metadata.targetRef !== entry.targetRef || metadata.installScope !== entry.scope) {
+    return undefined;
+  }
+
+  const requiredTextFields = [
+    metadata.packageName,
+    metadata.requestedSpec,
+    metadata.requestedRange,
+    metadata.targetRef,
+    metadata.workflowName,
+    metadata.exportName,
+  ];
+  if (requiredTextFields.some((value) => value.trim().length === 0)) {
+    return undefined;
+  }
+
+  return metadata;
 }
 
 async function runEntryFlow(
@@ -123,6 +175,10 @@ async function runEntryFlow(
 
   for (;;) {
     context.io.writeLine(selected.targetRef);
+    const packageSummary = formatPackageMetadataSummary(selected);
+    if (packageSummary !== undefined) {
+      context.io.writeLine(packageSummary);
+    }
     context.io.writeLine(dim(await describeWorkflow(selected, context)));
     context.io.writeLine("");
 
@@ -288,10 +344,18 @@ async function applyRename(
     `Renamed ${selected.scope}: ${selected.namespace}/${selected.name} -> ${newNamespace}/${newName}`,
   );
 
-  return {
-    scope: selected.scope,
-    namespace: newNamespace,
-    name: newName,
-    targetRef: selected.targetRef,
-  };
+  return selected.packageMetadata === undefined
+    ? {
+        scope: selected.scope,
+        namespace: newNamespace,
+        name: newName,
+        targetRef: selected.targetRef,
+      }
+    : {
+        scope: selected.scope,
+        namespace: newNamespace,
+        name: newName,
+        targetRef: selected.targetRef,
+        packageMetadata: selected.packageMetadata,
+      };
 }

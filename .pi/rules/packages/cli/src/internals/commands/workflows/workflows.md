@@ -16,6 +16,7 @@ Enter here when changing `stepkit workflows` behavior. The command always runs t
 ## Rules
 
 - Keep list output machine-readable and stable unless README/tests change with it.
+- Package-backed registrations show package metadata summaries in the grouped list, selection labels, and detail page; keep metadata intact after namespace/name edits.
 - Do not duplicate discovery filtering rules here; update `internals/discovery` for package/workflow selection behavior.
 - Do not duplicate registry read/write logic here; update `../../workflow-registry/workflow-registry.js` for metadata-aware enumeration, delete, move/rename, or duplicate-detection behavior shared with `add`/`remove`.
 - Scope cannot be changed from this flow (only namespace/name within the existing scope) — remove and re-add to move a registration across scopes.

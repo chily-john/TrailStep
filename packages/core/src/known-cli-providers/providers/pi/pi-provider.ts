@@ -12,6 +12,7 @@ import { resolveCliCommandForSpawn } from "../../process/resolve-cli-command.js"
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
+  ProviderSpec,
   ProviderWorkingProcessResult,
   ProviderWorkingRequest,
   ProviderWorkingRunner,
@@ -44,6 +45,35 @@ const PI_BINARY = "pi";
  */
 const PI_RESULT_FIELD = "message";
 const PI_STDOUT_FALLBACK_TAIL_CHARS = 128_000;
+
+const PI_SPEC: ProviderSpec = {
+  id: "pi",
+  displayName: "Pi",
+  model: {
+    supported: true,
+    flag: "--model",
+    discovery: {
+      command: PI_BINARY,
+      args: ["--list-models"],
+      outputParser: "pi-list-models-table",
+    },
+  },
+  thinking: {
+    supported: true,
+    flag: "--thinking",
+    levels: ["low", "medium", "high", "xhigh", "max"],
+  },
+  working: {
+    command: PI_BINARY,
+    prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+    baseArgs: ["-p", "@{{promptFile}}", "--mode", "json"],
+    output: {
+      style: "stdout-jsonl-transcript",
+      parsing: { resultField: PI_RESULT_FIELD },
+    },
+  },
+  interactive: { supported: true, command: PI_BINARY, modelFlag: "--model" },
+};
 
 async function runWorking(
   request: ProviderWorkingRequest,
@@ -306,6 +336,7 @@ function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
 
 export const piProvider: ProviderAdapter = {
   id: "pi",
+  spec: PI_SPEC,
   runWorking,
   runInteractive,
 };

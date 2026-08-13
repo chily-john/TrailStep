@@ -23,7 +23,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 
 ## Subdirectories
 
-- `agent-config/`: Enter when changing shared flows for literal agent target prompts, agent entry item editing, save confirmation, config-scope paths, or rename/delete referrer handling.
+- `agent-config/`: Enter when changing shared flows for literal agent target prompts, first-agent setup, agent entry item editing, save confirmation, config-scope paths, or rename/delete referrer handling.
 - `commands/`: Enter when changing `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `run`, `runs`, `retry`, `cancel`, `doctor`, `update`, or `skill-check` command behavior and command-specific argument parsing.
 - `deprecation-scan/`: Enter when changing update preflight discovery, scanning, or formatting for TrailStep deprecated symbols in workflow source files.
 - `config/`: Enter when changing optional `.trailstep/config.json`/`.trailstep/config-local.json` loading, merge precedence, and CLI-facing config errors.
@@ -39,6 +39,9 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 ## Files
 
 - `agent-config/agent-entry-items-flow.ts`: Change when replacing, adding, removing, reordering, or editing literal agent entry items.
+- `agent-config/agent-setup-wizard.ts`: Change when default/named agent setup, custom provider insertion, or configured-agent detection changes.
+- `agent-config/configure-target-flow.ts`: Change when provider, model, thinking, or custom-provider target prompts, args, or support metadata change.
+- `agent-config/pi-model-discovery.ts`: Change when Pi `--list-models` model override discovery parsing or timeouts change.
 - `agent-config/save-confirm-flow.ts`: Change when save/discard choices for named agents or workflow role overrides change.
 - `command-registry.ts`: Change when registering a new top-level command; current explicit commands are `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `runs`, `retry`, `cancel`, `doctor`, `update`, and `skill-check`, with other argv falling through to `run`.
 - `command.types.ts`: Change when command context, usage text, command interface, prompt text/select/multi-select/confirm injection, env injection, home-dir injection, skills CLI injection, run-name injection, package command runner injection, or deprecation manifest injection changes.
@@ -77,4 +80,5 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - Workflow npm/GitHub package installs use the command cwd with `--save-dev` for local/project scopes and `~/.trailstep/packages` with `--save` for global scope; CLI-run installs record `installOwnership: "trailstep-installed"`, reused existing npm packages record `"reused-existing"`, and GitHub refs must be explicit `github:<owner>/<repo>` refs.
 - Registered package workflow resolution uses `workflowMetadata.installScope` to resolve package/bundle targets from the same install root used at add time.
 - Use `writeWorkflowRegistryEntries` for registration writes and config-level delete/move helpers for removals or renames that must keep `workflowMetadata` synchronized with `workflows`.
+- Literal agent target prompts offer provider-default/manual model overrides plus provider-discovered choices when registry metadata exists; custom providers collect binary, prompt-file/output-file style, working/interactive args, interactive capability, and model/thinking support metadata; omit `model` or `thinking` when the default option is selected and skip unsupported override prompts.
 - Keep errors intended for users as `CliUsageError`, `CliInputError`, `CliConfigError`, or `WorkflowResolutionError` so `main()` can return exit code `1` cleanly.

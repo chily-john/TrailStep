@@ -12,6 +12,42 @@ import { claudeProvider } from "./claude-provider.js";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
+describe("claudeProvider.spec", () => {
+  it("exposes a standardized Claude provider spec", () => {
+    expect(claudeProvider.spec).toMatchObject({
+      id: "claude",
+      displayName: "Claude",
+      model: { supported: true, flag: "--model" },
+      thinking: {
+        supported: true,
+        flag: "--effort",
+        levels: ["low", "medium", "high", "xhigh", "max"],
+      },
+      working: {
+        command: "claude",
+        prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+        baseArgs: [
+          "-p",
+          "@{{promptFile}}",
+          "--output-format",
+          "json",
+          "--dangerously-skip-permissions",
+        ],
+        output: {
+          style: "stdout-json-envelope",
+          parsing: { resultField: "result" },
+        },
+      },
+      interactive: {
+        supported: true,
+        command: "claude",
+        requiresSystemPromptFile: true,
+        systemPromptFileFlag: "--append-system-prompt-file",
+      },
+    });
+  });
+});
+
 describe("claudeProvider.runWorking", () => {
   it("builds -p @<promptFile> --output-format json --dangerously-skip-permissions --model <model> --effort <level> and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-claude-provider-"));

@@ -51,6 +51,97 @@ export type ProviderWorkingRunner = (
   request: ProviderWorkingProcessRequest,
 ) => ProviderWorkingProcessResult | Promise<ProviderWorkingProcessResult>;
 
+export type ProviderPromptFileReferenceStyle = "at-prefixed-argument";
+
+export type ProviderPromptInputSpec =
+  | {
+      readonly kind: "prompt-file";
+      readonly reference: ProviderPromptFileReferenceStyle;
+    }
+  | {
+      readonly kind: "inline-prompt";
+    };
+
+export type ProviderOutputStyle =
+  | "stdout-json-envelope"
+  | "stdout-jsonl-transcript"
+  | "provider-output-file";
+
+export interface ProviderOutputParsingMetadata {
+  readonly resultField?: string;
+}
+
+export interface ProviderOutputSpec {
+  readonly style: ProviderOutputStyle;
+  readonly parsing?: ProviderOutputParsingMetadata;
+}
+
+export type ProviderModelDiscoveryOutputParser = "pi-list-models-table";
+
+export interface ProviderModelDiscoverySpec {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly outputParser: ProviderModelDiscoveryOutputParser;
+}
+
+export type ProviderModelOverrideSupport =
+  | {
+      readonly supported: true;
+      readonly flag: string;
+      readonly discovery?: ProviderModelDiscoverySpec;
+    }
+  | {
+      readonly supported: false;
+    };
+
+export type ProviderThinkingOverrideSupport =
+  | {
+      readonly supported: true;
+      readonly flag: string;
+      readonly levels: readonly WorkflowAgentThinking[];
+    }
+  | {
+      readonly supported: false;
+      readonly levels?: readonly [];
+    };
+
+export interface ProviderWorkingRepairInvocationSpec {
+  readonly supported: boolean;
+  readonly resumeFlag?: string;
+  readonly promptDelivery?: "stdin" | "prompt-file";
+}
+
+export interface ProviderWorkingInvocationSpec {
+  readonly command: string;
+  readonly prompt: ProviderPromptInputSpec;
+  readonly baseArgs: readonly string[];
+  readonly output: ProviderOutputSpec;
+  readonly repair?: ProviderWorkingRepairInvocationSpec;
+}
+
+export type ProviderInteractiveInvocationSpec =
+  | {
+      readonly supported: true;
+      readonly command: string;
+      readonly requiresSystemPromptFile?: boolean;
+      readonly systemPromptFileFlag?: string;
+      readonly modelFlag?: string;
+      readonly permissionBypassFlag?: string;
+    }
+  | {
+      readonly supported: false;
+      readonly reason?: string;
+    };
+
+export interface ProviderSpec {
+  readonly id: string;
+  readonly displayName: string;
+  readonly model: ProviderModelOverrideSupport;
+  readonly thinking: ProviderThinkingOverrideSupport;
+  readonly working: ProviderWorkingInvocationSpec;
+  readonly interactive: ProviderInteractiveInvocationSpec;
+}
+
 /** Request shape for a built-in provider's interactive (human-in-the-loop) invocation. */
 export interface ProviderInteractiveRequest {
   readonly prompt: string;
@@ -94,6 +185,7 @@ export interface ProviderWorkingRepairRequest {
  */
 export interface ProviderAdapter {
   readonly id: string;
+  readonly spec: ProviderSpec;
   /** Non-interactive invocation: writes `request.outputFile` itself before resolving. */
   runWorking(request: ProviderWorkingRequest, runner?: ProviderWorkingRunner): Promise<void>;
   /**

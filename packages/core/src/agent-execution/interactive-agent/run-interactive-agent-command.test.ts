@@ -499,6 +499,71 @@ describe("continuation interactive agent roles", () => {
     expect(prompt).toContain("session-description.md in the current directory.");
   });
 
+  it("renders custom interactive conditional model and thinking args", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-thinking-"));
+    const workflow: Workflow<{ task: string }, { exitCode: number }> = {
+      id: "interactive-thinking-workflow",
+      inputShape: { task: "string" },
+      outputShape: { exitCode: "number" },
+      agents: { implementor: { size: "small" } },
+      start(input) {
+        return step({ id: "discuss" })
+          .prompt(({ input }) => `Discuss ${input.task}.`, {
+            output: { exitCode: "number" },
+            agent: "implementor",
+            mode: "interactive",
+          })
+          .do(done)(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "template args" },
+      runName: "interactive-thinking-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: {
+          terminalAgent: {
+            binary: "terminal-agent",
+            interactiveArgs: [
+              "--prompt",
+              "{{prompt}}",
+              "{{#model}}",
+              "--model",
+              "{{model}}",
+              "{{/model}}",
+              "{{#thinking}}",
+              "--thinking",
+              "{{thinking}}",
+              "{{/thinking}}",
+            ],
+          },
+        },
+        agents: { small: [{ provider: "terminalAgent", model: "fast", thinking: "high" }] },
+      },
+      processRunner: async (call) => {
+        expect(call.args).toEqual([
+          "--prompt",
+          expect.stringContaining("## Original prompt\nDiscuss template args."),
+          "--model",
+          "fast",
+          "--thinking",
+          "high",
+        ]);
+        await completeInteractive(call, { exitCode: 0 });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ exitCode: 0 });
+  });
+
   it("does not write a prompt file when the interactive command receives the prompt directly", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-direct-prompt-"));
     const workflow: Workflow<{ task: string }, { sessionFile: string }> = {

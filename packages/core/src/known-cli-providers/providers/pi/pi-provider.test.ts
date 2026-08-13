@@ -8,6 +8,31 @@ import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
 import { createPiJsonStreamStdoutCollector, piProvider } from "./pi-provider.js";
 
+describe("piProvider.spec", () => {
+  it("exposes Pi provider spec for JSONL transcript output", () => {
+    expect(piProvider.spec).toMatchObject({
+      id: "pi",
+      displayName: "Pi",
+      model: { supported: true, flag: "--model" },
+      thinking: {
+        supported: true,
+        flag: "--thinking",
+        levels: ["low", "medium", "high", "xhigh", "max"],
+      },
+      working: {
+        command: "pi",
+        prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+        baseArgs: ["-p", "@{{promptFile}}", "--mode", "json"],
+        output: {
+          style: "stdout-jsonl-transcript",
+          parsing: { resultField: "message" },
+        },
+      },
+      interactive: { supported: true, command: "pi", modelFlag: "--model" },
+    });
+  });
+});
+
 describe("piProvider.runWorking", () => {
   it("builds -p --model <pattern> --thinking <level> @<promptFile> --mode json and writes outputFile", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-pi-provider-"));

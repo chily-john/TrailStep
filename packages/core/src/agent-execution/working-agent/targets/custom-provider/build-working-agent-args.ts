@@ -1,10 +1,12 @@
-import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
+import type { WorkflowAgentThinking } from "../../../../contracts/agents/agent-role.types.js";
+import { renderCustomProviderArgs } from "../../../custom-provider/render-custom-provider-args.js";
 
 export function buildWorkingAgentArgs(options: {
   readonly argv: readonly string[] | undefined;
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
+  readonly thinking?: WorkflowAgentThinking;
 }): string[] {
   if (!options.argv) {
     return [
@@ -16,26 +18,15 @@ export function buildWorkingAgentArgs(options: {
     ];
   }
 
-  return options.argv.map((arg) => {
-    switch (arg) {
-      case "{{promptFile}}":
-        return options.promptFile;
-      case "{{outputFile}}":
-        return options.outputFile;
-      case "{{model}}":
-        return options.model ?? "";
-      default:
-        if (
-          arg.includes("{{promptFile}}") ||
-          arg.includes("{{outputFile}}") ||
-          arg.includes("{{model}}")
-        ) {
-          throw new TrailStepFailureError({
-            code: "agent_provider_invalid",
-            message: "Working agent command placeholders must be whole argv values.",
-          });
-        }
-        return arg;
-    }
+  return renderCustomProviderArgs({
+    argv: options.argv,
+    values: {
+      promptFile: options.promptFile,
+      outputFile: options.outputFile,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.thinking === undefined ? {} : { thinking: options.thinking }),
+    },
+    errorCode: "agent_provider_invalid",
+    commandDescription: "Working agent command",
   });
 }

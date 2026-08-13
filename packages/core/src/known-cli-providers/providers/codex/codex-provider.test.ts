@@ -8,6 +8,38 @@ import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { ProviderWorkingProcessRequest } from "../../registry/provider-registry.types.js";
 import { codexProvider } from "./codex-provider.js";
 
+describe("codexProvider.spec", () => {
+  it("exposes Codex provider spec without max thinking", () => {
+    expect(codexProvider.spec).toMatchObject({
+      id: "codex",
+      displayName: "Codex",
+      model: { supported: true, flag: "-m" },
+      thinking: {
+        supported: true,
+        flag: "-c model_reasoning_effort",
+        levels: ["low", "medium", "high", "xhigh"],
+      },
+      working: {
+        command: "codex",
+        prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+        baseArgs: [
+          "exec",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "-o",
+          "{{outputFile}}",
+          "@{{promptFile}}",
+        ],
+        output: { style: "provider-output-file" },
+      },
+      interactive: { supported: true, command: "codex", modelFlag: "--model" },
+    });
+    expect(codexProvider.spec?.thinking.supported).toBe(true);
+    if (codexProvider.spec?.thinking.supported) {
+      expect(codexProvider.spec.thinking.levels).toEqual(["low", "medium", "high", "xhigh"]);
+    }
+  });
+});
+
 describe("codexProvider.runWorking", () => {
   it('builds exec --dangerously-bypass-approvals-and-sandbox -m <model> -c model_reasoning_effort="<level>" -o <outputFile> @<promptFile> and never touches envelope parsing', async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-codex-provider-"));

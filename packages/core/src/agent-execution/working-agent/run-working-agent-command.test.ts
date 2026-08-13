@@ -14,7 +14,12 @@ import {
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../index.js";
-import type { ProviderWorkingProcessRequest } from "../../known-cli-providers/registry/provider-registry.types.js";
+import { providerRegistry } from "../../known-cli-providers/registry/provider-registry.js";
+import type {
+  ProviderAdapter,
+  ProviderWorkingProcessRequest,
+  ProviderWorkingRequest,
+} from "../../known-cli-providers/registry/provider-registry.types.js";
 import { createRunDirectory } from "../../runtime/artifacts/run-storage.js";
 import { createRunContext } from "../../runtime/run-context/create-run-context.js";
 import { runContextStorage } from "../../runtime/run-context/run-context-storage.js";
@@ -221,6 +226,133 @@ describe("runWorkingAgentCommand", () => {
         },
       ],
     });
+  });
+
+  it("runs custom working conditional args without empty model or thinking overrides", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-conditional-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-conditional-args-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do(done)(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "provider defaults" },
+      runName: "working-agent-conditional-args-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {
+          worker: {
+            binary: "worker-agent",
+            args: [
+              "--prompt-file",
+              "{{promptFile}}",
+              "--output-file",
+              "{{outputFile}}",
+              "{{#model}}",
+              "--model",
+              "{{model}}",
+              "{{/model}}",
+              "{{#thinking}}",
+              "--thinking",
+              "{{thinking}}",
+              "{{/thinking}}",
+            ],
+          },
+        },
+        agents: { medium: [{ provider: "worker" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        await writeFile(request.outputFile, JSON.stringify({ answer: "provider default" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(requests[0]?.args).toEqual([
+      "--prompt-file",
+      requests[0]?.promptFile,
+      "--output-file",
+      requests[0]?.outputFile,
+    ]);
+    expect(requests[0]?.args).not.toContain("--model");
+    expect(requests[0]?.args).not.toContain("");
+    expect(requests[0]?.args).not.toContain("--thinking");
+  });
+
+  it("does not pass an empty model override to built-in provider invocation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-empty-model-"));
+    const originalClaudeProvider = providerRegistry.claude;
+    let receivedRequest: ProviderWorkingRequest | undefined;
+    const fakeClaudeProvider: ProviderAdapter = {
+      id: "claude",
+      spec: originalClaudeProvider.spec,
+      async runWorking(request) {
+        receivedRequest = request;
+        await writeFile(request.outputFile, JSON.stringify({ answer: "provider default" }), "utf8");
+      },
+      async runInteractive() {
+        return { exitCode: 0 };
+      },
+    };
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-empty-model-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    providerRegistry.claude = fakeClaudeProvider;
+    try {
+      const result = await runWorkflow({
+        workflow,
+        input: { task: "provider default" },
+        runName: "working-agent-empty-model-run",
+        cwd,
+        trailstepConfig: {
+          version: 1,
+          customProviders: {},
+          agents: { medium: [{ provider: "claude", model: "" }] },
+        },
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error(result.failure.message);
+      }
+      if (receivedRequest === undefined) {
+        throw new Error("Expected fake claude provider to receive a working request.");
+      }
+      expect("model" in receivedRequest).toBe(false);
+    } finally {
+      providerRegistry.claude = originalClaudeProvider;
+    }
   });
 });
 

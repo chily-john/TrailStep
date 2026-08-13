@@ -3,6 +3,7 @@ import type {
   TrailStepConfig,
 } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
+import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import type {
@@ -17,6 +18,7 @@ import { spawnWorkingAgentProcess } from "./spawn-working-agent-process.js";
 export async function runCustomWorkingProvider<TOutput extends PlainObject>(options: {
   readonly config: TrailStepConfig;
   readonly step: AgentStepRequestConfig<PlainObject, TOutput>;
+  readonly role: WorkflowAgentRole;
   readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly target: TrailStepAgentTarget;
@@ -32,11 +34,13 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
     });
   }
 
+  const thinking = options.target.thinking ?? options.role.thinking;
   const args = buildWorkingAgentArgs({
     argv: options.target.args ?? agentConfig.args,
     promptFile: options.files.promptFile,
     outputFile: options.files.outputFile,
     model: options.target.model,
+    thinking,
   });
 
   let result: WorkingAgentProcessResult;

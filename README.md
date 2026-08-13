@@ -20,6 +20,16 @@ Workspace packages not published in the initial public set:
 
 Run `trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]` to create configuration. Use `--install-skill` to install the packaged usage skill, or `--no-install-skill` to skip it. There is no npm postinstall prompt.
 
+Configure agents with the canonical `trailstep agents` editor, or set one directly:
+
+```bash
+trailstep agents set default --provider pi [--model <model>] [--thinking <level>] --scope project
+```
+
+`--model` is a model override and `--thinking` is a reasoning/thinking override. Omit either one to use provider defaults; interactive prompts label that choice `Use provider default`. Thinking availability is provider-aware: Pi and Claude expose TrailStep-supported levels, Codex has no `max` tier, and Gemini thinking support is not configured until a confirmed flag exists. Pi model discovery is best-effort and only offers discovered choices when available; TrailStep does not maintain a hardcoded model catalog.
+
+Custom provider args can use `{{promptFile}}`, `{{outputFile}}`, `{{model}}`, and `{{thinking}}`; interactive args may also use `{{prompt}}` for inline prompt input. Guard optional overrides with `{{#model}} ... {{/model}}` and `{{#thinking}} ... {{/thinking}}` so provider defaults omit those argv values cleanly.
+
 Workflows use JSON object inputs. Reference forms:
 
 - Direct refs: `trailstep ./workflows/review.ts#review --input-file input.json`

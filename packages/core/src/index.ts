@@ -6,6 +6,8 @@ export type {
   TrailStepAgentTarget,
   TrailStepConfig,
   TrailStepCustomProviderConfig,
+  TrailStepCustomProviderModelOverrideSupport,
+  TrailStepCustomProviderThinkingOverrideSupport,
   TrailStepSettings,
   TrailStepWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
@@ -87,9 +89,22 @@ export {
 } from "./known-cli-providers/registry/provider-registry.js";
 export type {
   ProviderAdapter,
+  ProviderInteractiveInvocationSpec,
   ProviderInteractiveRequest,
+  ProviderModelDiscoveryOutputParser,
+  ProviderModelDiscoverySpec,
+  ProviderModelOverrideSupport,
+  ProviderOutputParsingMetadata,
+  ProviderOutputSpec,
+  ProviderOutputStyle,
+  ProviderPromptFileReferenceStyle,
+  ProviderPromptInputSpec,
+  ProviderSpec,
+  ProviderThinkingOverrideSupport,
+  ProviderWorkingInvocationSpec,
   ProviderWorkingProcessRequest,
   ProviderWorkingProcessResult,
+  ProviderWorkingRepairInvocationSpec,
   ProviderWorkingRequest,
   ProviderWorkingRunner,
 } from "./known-cli-providers/registry/provider-registry.types.js";

@@ -9,7 +9,14 @@ import {
   blockDeleteWhenAgentReferrersExist,
   renameAgentRefs,
 } from "../../agent-config/agent-referrers.js";
-import { configureLiteralAgentTarget } from "../../agent-config/configure-target-flow.js";
+import {
+  hasConfiguredAgentEntries,
+  runAgentSetupWizard,
+} from "../../agent-config/agent-setup-wizard.js";
+import {
+  type ConfiguredCustomProvider,
+  configureLiteralAgentTarget,
+} from "../../agent-config/configure-target-flow.js";
 import {
   type AgentConfigSaveContext,
   confirmAgentConfigSave,
@@ -29,12 +36,17 @@ const THINKING_CHOICES = ["none", "low", "medium", "high", "xhigh", "max"] as co
 
 type AgentEntryItems = readonly Record<string, unknown>[];
 
+interface AgentEntryEditResult {
+  readonly entry: AgentEntryItems;
+  readonly customProviders: readonly ConfiguredCustomProvider[];
+}
+
 type AgentCommandArgs =
   | {
       readonly action: "set";
       readonly name: string;
       readonly provider: string;
-      readonly model: string;
+      readonly model?: string;
       readonly thinking?: (typeof THINKING_CHOICES)[number];
       readonly scope: WorkflowRegistryScope;
     }
@@ -104,14 +116,14 @@ function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
     flags.provider,
     "trailstep agents set requires --provider <provider>.",
   );
-  const model = parseRequiredFlag(flags.model, "trailstep agents set requires --model <model>.");
+  const model = parseOptionalTrimmedFlag(flags.model);
   const thinking = parseThinking(flags.thinking);
 
   return {
     action: "set",
     name,
     provider,
-    model,
+    ...(model === undefined ? {} : { model }),
     ...(thinking === undefined ? {} : { thinking }),
     scope,
   };
@@ -163,7 +175,7 @@ function parseFlags(
     }
 
     const value = argv[index + 1];
-    if (!value) {
+    if (value === undefined) {
       throw new CliUsageError(`Missing value for ${option}.`);
     }
 
@@ -184,7 +196,7 @@ async function setAgent(
   agents[args.name] = [
     {
       provider: args.provider,
-      model: args.model,
+      ...(args.model === undefined ? {} : { model: args.model }),
       ...(args.thinking === undefined || args.thinking === "none"
         ? {}
         : { thinking: args.thinking }),
@@ -245,6 +257,23 @@ async function runInteractiveAgents(context: CliCommandContext): Promise<number>
 
   const scopeLabel = await context.prompts.select("Scope", INTERACTIVE_SCOPES);
   const scope = scopeForInteractiveLabel(scopeLabel);
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  if (!hasConfiguredAgentEntries(config)) {
+    const nextConfig = await runAgentSetupWizard({
+      config,
+      agentName: "default",
+      prompts: context.prompts,
+      providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
+    });
+    await writeRawTrailStepConfigFile(configPath, nextConfig);
+    context.io.writeLine(`Wrote agent default to ${configPath}.`);
+    return 0;
+  }
+
   const rows = await buildInteractiveRows(scope, context);
   const selected = await context.prompts.select(`${scopeLabel} agents`, [
     ...rows.map((row) => row.label),
@@ -346,6 +375,9 @@ async function createNamedAgent(
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
   const outcome = await confirmAgentConfigSave({
     context: { kind: "named-agent-create", name },
@@ -354,7 +386,13 @@ async function createNamedAgent(
   if (outcome !== "save-as-new-permanent-agent") {
     return;
   }
-  await writeNamedAgent(scope, name, [{ ...configured.target }], context);
+  await writeNamedAgent(
+    scope,
+    name,
+    [{ ...configured.target }],
+    context,
+    configured.customProvider,
+  );
 }
 
 async function editNamedAgent(
@@ -376,17 +414,29 @@ async function editNamedAgent(
   }
   if (action === "Edit") {
     const existingEntry = await readNamedAgentEntry(scope, row.name, context);
-    const nextEntry = await editNamedAgentEntry(existingEntry, scope, context);
+    const nextConfigured = await editNamedAgentEntry(existingEntry, scope, context);
     const outcome = await confirmAgentConfigSave({
       context: { kind: "named-agent-edit", name: row.name },
       prompts: context.prompts,
     });
     if (outcome === "save-original") {
-      await writeNamedAgent(scope, row.name, nextEntry, context);
+      await writeNamedAgent(
+        scope,
+        row.name,
+        nextConfigured.entry,
+        context,
+        nextConfigured.customProviders,
+      );
     } else if (outcome === "create-new-agent") {
       const newName = (await context.prompts.text("New agent name")).trim();
       assertAgentName(newName, "New agent name is required.");
-      await writeNamedAgent(scope, newName, nextEntry, context);
+      await writeNamedAgent(
+        scope,
+        newName,
+        nextConfigured.entry,
+        context,
+        nextConfigured.customProviders,
+      );
     }
     return;
   }
@@ -513,6 +563,9 @@ async function setWorkflowRoleToNamedAgent(
     const configured = await configureLiteralAgentTarget({
       prompts: context.prompts,
       providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
     });
     const outcome = await confirmAgentConfigSave({
       context: saveConfirmContextForWorkflowRole(row),
@@ -521,7 +574,13 @@ async function setWorkflowRoleToNamedAgent(
     if (outcome === "discard") {
       return;
     }
-    await writeNamedAgent(scope, name, [{ ...configured.target }], context);
+    await writeNamedAgent(
+      scope,
+      name,
+      [{ ...configured.target }],
+      context,
+      configured.customProvider,
+    );
     await writeWorkflowRole(scope, row, [{ ref: name }], context);
     return;
   }
@@ -547,6 +606,9 @@ async function setWorkflowRoleToInline(
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
   const outcome = await confirmAgentConfigSave({
     context: saveConfirmContextForWorkflowRole(row),
@@ -557,11 +619,23 @@ async function setWorkflowRoleToInline(
     outcome === "save-as-one-off" ||
     outcome === "detach-one-off"
   ) {
-    await writeWorkflowRole(scope, row, [{ ...configured.target }], context);
+    await writeWorkflowRole(
+      scope,
+      row,
+      [{ ...configured.target }],
+      context,
+      configured.customProvider,
+    );
   } else if (outcome === "create-new-agent" || outcome === "save-as-new-permanent-agent") {
     const name = (await context.prompts.text("New agent name")).trim();
     assertAgentName(name, "New agent name is required.");
-    await writeNamedAgent(scope, name, [{ ...configured.target }], context);
+    await writeNamedAgent(
+      scope,
+      name,
+      [{ ...configured.target }],
+      context,
+      configured.customProvider,
+    );
     await writeWorkflowRole(scope, row, [{ ref: name }], context);
   }
 }
@@ -575,7 +649,7 @@ async function editWorkflowRoleInline(
     throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
   const existingEntry = await readWorkflowRoleEntry(scope, row, context);
-  const nextEntry = await editNamedAgentEntry(existingEntry, scope, context);
+  const nextConfigured = await editNamedAgentEntry(existingEntry, scope, context);
   const outcome = await confirmAgentConfigSave({
     context: saveConfirmContextForWorkflowRole(row),
     prompts: context.prompts,
@@ -585,11 +659,23 @@ async function editWorkflowRoleInline(
     outcome === "save-as-one-off" ||
     outcome === "detach-one-off"
   ) {
-    await writeWorkflowRole(scope, row, nextEntry, context);
+    await writeWorkflowRole(
+      scope,
+      row,
+      nextConfigured.entry,
+      context,
+      nextConfigured.customProviders,
+    );
   } else if (outcome === "create-new-agent" || outcome === "save-as-new-permanent-agent") {
     const name = (await context.prompts.text("New agent name")).trim();
     assertAgentName(name, "New agent name is required.");
-    await writeNamedAgent(scope, name, nextEntry, context);
+    await writeNamedAgent(
+      scope,
+      name,
+      nextConfigured.entry,
+      context,
+      nextConfigured.customProviders,
+    );
     await writeWorkflowRole(scope, row, [{ ref: name }], context);
   }
 }
@@ -651,14 +737,20 @@ async function editReferencedNamedAgent(
     prompts: context.prompts,
   });
   if (outcome === "save-original") {
-    await writeNamedAgent(targetScope, row.ref, configured, context);
+    await writeNamedAgent(
+      targetScope,
+      row.ref,
+      configured.entry,
+      context,
+      configured.customProviders,
+    );
   } else if (outcome === "create-new-agent") {
     const name = (await context.prompts.text("New agent name")).trim();
     assertAgentName(name, "New agent name is required.");
-    await writeNamedAgent(scope, name, configured, context);
+    await writeNamedAgent(scope, name, configured.entry, context, configured.customProviders);
     await writeWorkflowRole(scope, row, [{ ref: name }], context);
   } else if (outcome === "detach-one-off") {
-    await writeWorkflowRole(scope, row, configured, context);
+    await writeWorkflowRole(scope, row, configured.entry, context, configured.customProviders);
   }
 }
 
@@ -675,20 +767,27 @@ async function editNamedAgentEntry(
   entry: AgentEntryItems,
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
-): Promise<AgentEntryItems> {
+): Promise<AgentEntryEditResult> {
   if (context.prompts === undefined) {
     throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
 
   let current = entry;
+  const customProviders: ConfiguredCustomProvider[] = [];
   for (;;) {
     const items = current;
     if (items.length === 0) {
       const configured = await configureLiteralAgentTarget({
         prompts: context.prompts,
         providerChoices: PROVIDER_CHOICES,
+        cwd: context.cwd,
+        io: context.io,
+        packageCommandRunner: context.packageCommandRunner,
       });
-      return [{ ...configured.target }];
+      return {
+        entry: [{ ...configured.target }],
+        customProviders: customProviderList(configured.customProvider),
+      };
     }
 
     const choices = [
@@ -703,10 +802,12 @@ async function editNamedAgentEntry(
     ];
     const action = await context.prompts.select("Manage agent entry items", choices);
     if (action === "Done") {
-      return current;
+      return { entry: current, customProviders };
     }
     if (action === "Add item") {
-      current = await addItemToEntry(current, context);
+      const next = await addItemToEntry(current, context);
+      current = next.entry;
+      customProviders.push(...next.customProviders);
       continue;
     }
 
@@ -736,15 +837,19 @@ async function editNamedAgentEntry(
     const configured = await configureLiteralAgentTarget({
       prompts: context.prompts,
       providerChoices: PROVIDER_CHOICES,
+      cwd: context.cwd,
+      io: context.io,
+      packageCommandRunner: context.packageCommandRunner,
     });
     current = editAgentEntryItem(current, itemIndex, { ...configured.target });
+    customProviders.push(...customProviderList(configured.customProvider));
   }
 }
 
 async function addItemToEntry(
   entry: AgentEntryItems,
   context: CliCommandContext,
-): Promise<AgentEntryItems> {
+): Promise<AgentEntryEditResult> {
   if (context.prompts === undefined) {
     throw new CliUsageError("trailstep agents requires prompts for interactive mode.");
   }
@@ -752,13 +857,19 @@ async function addItemToEntry(
   if (choice === "Pick existing agent") {
     const names = await listNamedAgentChoices(context);
     const ref = await context.prompts.select("Named agent", names);
-    return addAgentEntryItem(entry, { ref });
+    return { entry: addAgentEntryItem(entry, { ref }), customProviders: [] };
   }
   const configured = await configureLiteralAgentTarget({
     prompts: context.prompts,
     providerChoices: PROVIDER_CHOICES,
+    cwd: context.cwd,
+    io: context.io,
+    packageCommandRunner: context.packageCommandRunner,
   });
-  return addAgentEntryItem(entry, { ...configured.target });
+  return {
+    entry: addAgentEntryItem(entry, { ...configured.target }),
+    customProviders: customProviderList(configured.customProvider),
+  };
 }
 
 async function editRefItemInPlace(
@@ -779,13 +890,25 @@ async function editRefItemInPlace(
     prompts: context.prompts,
   });
   if (outcome === "save-original") {
-    await writeNamedAgent(targetScope, ref, nextRefEntry, context);
+    await writeNamedAgent(
+      targetScope,
+      ref,
+      nextRefEntry.entry,
+      context,
+      nextRefEntry.customProviders,
+    );
     return entry;
   }
   if (outcome === "create-new-agent") {
     const newName = (await context.prompts.text("New agent name")).trim();
     assertAgentName(newName, "New agent name is required.");
-    await writeNamedAgent(scope, newName, nextRefEntry, context);
+    await writeNamedAgent(
+      scope,
+      newName,
+      nextRefEntry.entry,
+      context,
+      nextRefEntry.customProviders,
+    );
     return editAgentEntryItem(entry, itemIndex, { ref: newName });
   }
   return entry;
@@ -836,12 +959,16 @@ async function writeNamedAgent(
   name: string,
   entry: AgentEntryItems,
   context: CliCommandContext,
+  customProviders?: ConfiguredCustomProvider | readonly ConfiguredCustomProvider[],
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
   const config = await readRawTrailStepConfigFile(configPath);
   const agents = toMutableRecord(config.agents);
   agents[name] = entry;
-  await writeRawTrailStepConfigFile(configPath, { ...config, agents });
+  await writeRawTrailStepConfigFile(
+    configPath,
+    withConfiguredCustomProviders({ ...config, agents }, customProviders),
+  );
   context.io.writeLine(`Wrote agent ${name} to ${configPath}.`);
 }
 
@@ -850,6 +977,7 @@ async function writeWorkflowRole(
   row: InteractiveWorkflowRoleRow,
   entry: AgentEntryItems,
   context: CliCommandContext,
+  customProviders?: ConfiguredCustomProvider | readonly ConfiguredCustomProvider[],
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
   const config = await readRawTrailStepConfigFile(configPath);
@@ -858,8 +986,38 @@ async function writeWorkflowRole(
   const workflowAgents = toMutableRecord(workflowConfig.agents);
   workflowAgents[row.roleName] = entry;
   workflows[row.workflowId] = { ...workflowConfig, agents: workflowAgents };
-  await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
+  await writeRawTrailStepConfigFile(
+    configPath,
+    withConfiguredCustomProviders({ ...config, workflows }, customProviders),
+  );
   context.io.writeLine(`Wrote workflow ${row.workflowId} role ${row.roleName} to ${configPath}.`);
+}
+
+function customProviderList(
+  customProvider: ConfiguredCustomProvider | undefined,
+): readonly ConfiguredCustomProvider[] {
+  return customProvider === undefined ? [] : [customProvider];
+}
+
+function withConfiguredCustomProviders(
+  config: Record<string, unknown>,
+  customProvidersInput: ConfiguredCustomProvider | readonly ConfiguredCustomProvider[] | undefined,
+): Record<string, unknown> {
+  const providers: readonly ConfiguredCustomProvider[] =
+    customProvidersInput === undefined
+      ? []
+      : Array.isArray(customProvidersInput)
+        ? customProvidersInput
+        : [customProvidersInput];
+  if (providers.length === 0) {
+    return config;
+  }
+
+  const customProviders = toMutableRecord(config.customProviders);
+  for (const customProvider of providers) {
+    customProviders[customProvider.name] = { ...customProvider.config };
+  }
+  return { ...config, customProviders };
 }
 
 function agentItemSummary(item: Record<string, unknown>): string {
@@ -938,6 +1096,14 @@ function parseRequiredFlag(value: string | undefined, message: string): string {
     throw new CliUsageError(message);
   }
   return value;
+}
+
+function parseOptionalTrimmedFlag(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
 }
 
 function parseThinking(value: string | undefined): (typeof THINKING_CHOICES)[number] | undefined {

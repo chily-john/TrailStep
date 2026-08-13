@@ -66,7 +66,15 @@ function isFlattenedAgentMappings(value: unknown): value is TrailStepConfig["age
 function isFlattenedAgentTarget(
   value: unknown,
 ): value is TrailStepConfig["agents"][string][number] {
-  return isPlainRecord(value) && typeof value.provider === "string";
+  if (!isPlainRecord(value) || typeof value.provider !== "string") {
+    return false;
+  }
+
+  if (value.model !== undefined) {
+    return typeof value.model === "string" && value.model.trim().length > 0;
+  }
+
+  return true;
 }
 
 function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -176,10 +176,11 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     try {
       registrationPlan = await buildAddRegistrationPlan({ args, scope, preparedSource, context });
     } catch (error) {
-      await reportPackageAddPreparationFailureCleanup(preparedSource, context);
+      await reportPackageAddInstallCleanup(preparedSource, context);
       throw error;
     }
     if (registrationPlan.status === "cancelled") {
+      await reportPackageAddInstallCleanup(preparedSource, context);
       return 0;
     }
 
@@ -205,6 +206,8 @@ export const addCommand: CliCommand<AddCommandArgs> = {
         })),
         context,
       );
+    } else {
+      await reportPackageAddInstallCleanup(preparedSource, context);
     }
 
     for (const registration of successfulRegistrations) {
@@ -290,6 +293,11 @@ async function buildAddRegistrationPlan({
     preparedSource.installedPackage,
   );
 
+  if (registryTargets.length === 0) {
+    context.io.writeLine("Canceled.");
+    return { status: "cancelled" };
+  }
+
   if (args.name !== undefined && registryTargets.length > 1) {
     throw new CliUsageError("trailstep add --name can only be used when registering one workflow.");
   }
@@ -360,7 +368,7 @@ async function buildAddRegistrationPlan({
   };
 }
 
-async function reportPackageAddPreparationFailureCleanup(
+async function reportPackageAddInstallCleanup(
   preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
   context: CliCommandContext,
 ): Promise<void> {

@@ -2802,7 +2802,7 @@ describe("addCommand", () => {
     expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
   });
 
-  it("interactive conflict cancel writes no selected package registrations", async ({ task }) => {
+  it("cleans up a fresh package install when conflict resolution cancels add", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-add-command-tests",
@@ -2816,6 +2816,8 @@ describe("addCommand", () => {
       workflows: { project: { review: "./existing.mjs" } },
     });
     const beforeConfig = await readFile(configPath, "utf8");
+    const lines: string[] = [];
+    const errors: string[] = [];
 
     const command = resolveCommand(["add", "@acme/workflows@latest"]);
     const exitCode = await command.run(
@@ -2823,12 +2825,9 @@ describe("addCommand", () => {
       {
         cwd,
         homeDir,
-        io: { writeLine: () => undefined, writeError: () => undefined },
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
         prompts: {
           select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (
               prompt ===
               "project/review already exists in project config. What should TrailStep do?"
@@ -2852,6 +2851,10 @@ describe("addCommand", () => {
           },
         },
         packageCommandRunner: async () => {
+          await writeJson(join(cwd, "package.json"), {
+            devDependencies: { "@acme/workflows": "latest" },
+          });
+          await writeFile(join(cwd, "package-lock.json"), "lockfile\n", "utf8");
           await mkdir(packageDir, { recursive: true });
           await writeJson(join(packageDir, "package.json"), {
             name: "@acme/workflows",
@@ -2880,6 +2883,206 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     await expect(readFile(configPath, "utf8")).resolves.toBe(beforeConfig);
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(cwd, "package.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(cwd, "package-lock.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect([...lines, ...errors].join("\n")).toMatch(
+      /Cleanup: rolled back package install for @acme\/workflows in project scope\./,
+    );
+  });
+
+  it("cleans up a fresh package install when every selected package workflow is skipped", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(configPath, {
+      workflows: {
+        project: {
+          review: "./existing-review.mjs",
+          release: "./existing-release.mjs",
+        },
+      },
+    });
+    const beforeConfig = await readFile(configPath, "utf8");
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (
+              prompt ===
+                "project/review already exists in project config. What should TrailStep do?" ||
+              prompt ===
+                "project/release already exists in project config. What should TrailStep do?"
+            ) {
+              expect(choices).toEqual([
+                "Replace existing registration",
+                "Skip this workflow",
+                "Cancel add",
+              ]);
+              return "Skip this workflow";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Bundle workflow");
+            expect(choices).toEqual(["Select all", "review", "release"]);
+            return ["review", "release"];
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async () => {
+          await writeJson(join(cwd, "package.json"), {
+            devDependencies: { "@acme/workflows": "latest" },
+          });
+          await writeFile(join(cwd, "package-lock.json"), "lockfile\n", "utf8");
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    await expect(readFile(configPath, "utf8")).resolves.toBe(beforeConfig);
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(cwd, "package.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(cwd, "package-lock.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        "Warning: skipped project/review because it already exists in project config. Use --force to replace it.",
+        "Warning: skipped project/release because it already exists in project config. Use --force to replace it.",
+      ]),
+    );
+    expect(lines).toContain("Summary: registered 0, skipped conflicts 2, skill warnings 0.");
+    expect([...lines, ...errors].join("\n")).toMatch(
+      /Cleanup: rolled back package install for @acme\/workflows in project scope\./,
+    );
+  });
+
+  it("preserves a reused package when selection is cancelled", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+      trailstep: {
+        workflows: {
+          review: "./index.mjs#reviewWorkflow",
+          release: "./index.mjs#releaseWorkflow",
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      [
+        "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+        "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (
+              prompt ===
+              "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
+            ) {
+              expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
+              return "Reuse installed package";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          multiSelect: async (prompt, choices) => {
+            expect(prompt).toBe("Bundle workflow");
+            expect(choices).toEqual(["Select all", "review", "release"]);
+            return [];
+          },
+          text: async (prompt) => {
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+        },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([]);
+    await expect(readJson(join(packageDir, "package.json"))).resolves.toMatchObject({
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await expect(readJson(configPath)).rejects.toThrow();
+    expect([...lines, ...errors].join("\n")).toMatch(
+      /Cleanup: preserved existing package @acme\/workflows in project scope; no package install rollback was run\./,
+    );
   });
 
   it("installs an npm package into project scope before discovering and registering workflows", async ({

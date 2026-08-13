@@ -1326,7 +1326,7 @@ describe("updateCommand", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(errors.join("\n")).toMatch(/--assume-yes or an interactive confirm prompt/i);
+    expect(errors.join("\n")).toMatch(/--yes, --assume-yes, or an interactive confirm prompt/i);
     expect(await readFile(packageJsonPath, "utf8")).toBe(original);
   });
 

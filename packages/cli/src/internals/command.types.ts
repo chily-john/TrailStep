@@ -19,7 +19,7 @@ export const usageText = [
   "  trailstep continue --json '<json>'",
   "  trailstep cancel [--reason '<text>']",
   "  trailstep doctor",
-  "  trailstep update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]",
+  "  trailstep update [--all | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
   "  trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
   "  trailstep retry <workflow-ref> <runName>",
   "  trailstep runs",

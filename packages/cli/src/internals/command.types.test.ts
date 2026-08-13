@@ -8,7 +8,7 @@ import type {
 import { usageText } from "./command.types.js";
 
 describe("usageText", () => {
-  it("documents workflow skill distribution flags, add dry-run, init scope, and agents management", () => {
+  it("documents workflow skill distribution flags, add dry-run, init scope, agents management, and update confirmation", () => {
     expect(usageText).toContain("--project-skill");
     expect(usageText).toContain("--user-skill");
     expect(usageText).toContain("--dry-run");
@@ -20,7 +20,7 @@ describe("usageText", () => {
     expect(usageText).toContain("trailstep agents rename <old> <new>");
     expect(usageText).toContain("trailstep doctor");
     expect(usageText).toContain(
-      "trailstep update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]",
+      "trailstep update [--all | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
     );
   });
 

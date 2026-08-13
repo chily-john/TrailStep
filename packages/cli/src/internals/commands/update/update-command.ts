@@ -316,7 +316,7 @@ async function confirmUpdate(
   }
   if (!context.prompts?.confirm) {
     throw new CliUsageError(
-      "Update requires --assume-yes or an interactive confirm prompt before writing.",
+      "Update requires --yes, --assume-yes, or an interactive confirm prompt before writing.",
     );
   }
   return context.prompts.confirm("Apply package updates and run install?");

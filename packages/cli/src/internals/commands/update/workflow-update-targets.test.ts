@@ -412,6 +412,49 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     expect(viewedPackages).toEqual([]);
   });
 
+  it("skips GitHub package metadata as an unsupported source type without npm view calls", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            ...workflowPackageMetadata({
+              installScope: "project",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+            sourceType: "github",
+            requestedSpec: "github:acme/workflows",
+            requestedRange: "acme/workflows",
+            githubRef: "acme/workflows",
+          },
+        },
+      },
+    });
+    const { runner, viewedPackages } = createPackageCommandRunner({
+      "@acme/workflows": ["1.0.0", "1.1.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(plan.targets).toEqual([]);
+    expect(plan.skips).toEqual([
+      {
+        registeredRef: "project/review",
+        reason: "unsupported-source-type",
+        message: "Skipped project/review: GitHub workflow package updates are not supported yet.",
+      },
+    ]);
+    expect(viewedPackages).toEqual([]);
+  });
+
   it("errors on ambiguous bare workflow names", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, ".trailstep", "config.json"), {

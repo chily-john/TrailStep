@@ -47,7 +47,7 @@ export interface WorkflowPackageUpdateSkip {
   readonly registeredRef: string;
   readonly reason:
     | "local-file-source"
-    | "github-source"
+    | "unsupported-source-type"
     | "stale-package-metadata"
     | "missing-package-metadata";
   readonly message: string;
@@ -177,7 +177,7 @@ function resolveWorkflowPackageTargetForEntry(
         kind: "skip",
         skip: {
           registeredRef: context.registeredRef,
-          reason: "github-source",
+          reason: "unsupported-source-type",
           message: `Skipped ${context.registeredRef}: GitHub workflow package updates are not supported yet.`,
         },
       };

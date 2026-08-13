@@ -2,7 +2,7 @@
 kind: rules
 paths:
   - packages/cli/src/internals/
-summary: Internal command registry, command implementations, discovery, workflow package ref/install helpers, package-manager/npm-registry/installed-version helpers, deprecation-scan helpers, agent-config initialization/editing helpers, config loading, input loading, interactive continuation, configured runs-root resolution, doctor deprecation scanning, update command self-update planning, retry command wiring, runs command listing, skill checks, workflow registration, workflow package metadata, workflow skill generation/distribution, registered workflow refs, agent ref maintenance, workflow resolution, and workflow-reference parsing for the CLI.
+summary: Internal command registry, command implementations, discovery, workflow package ref/install/uninstall helpers, package-manager/npm-registry/installed-version helpers, deprecation-scan helpers, agent-config initialization/editing helpers, config loading, input loading, interactive continuation, configured runs-root resolution, doctor deprecation scanning, update command self-update planning, retry command wiring, runs command listing, skill checks, workflow registration, workflow package metadata, workflow skill generation/distribution, registered workflow refs, agent ref maintenance, workflow resolution, and workflow-reference parsing for the CLI.
 triggers:
   - CLI internals
   - command registry
@@ -32,7 +32,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `prompts/`: Enter when changing the shared `promptText`/`promptSelect`/`promptMultiSelect`/`promptYesNo` interactive-prompt helpers used by `add`, `remove`, and `workflows`.
 - `workflow-reference/`: Enter when changing `<package:workflowExport>` or `<package-or-path#workflowName>` parsing rules.
 - `workflow-registry/`: Enter when changing shared config-file read/write/enumerate primitives (`configPathForScope`, raw read/write, package-metadata-aware list/write/delete/move/lookup helpers, cross-scope duplicate lookup, the reserved-namespace and reserved-character guards) used by `add`, `remove`, `run`, and `workflows`.
-- `workflow-packages/`: Enter when changing npm/GitHub package spec parsing, scope-aware install roots/save args, or scoped package installation used before `trailstep add` bundle discovery.
+- `workflow-packages/`: Enter when changing npm/GitHub package spec parsing, scope-aware install roots/save args, scoped package installation used before `trailstep add` bundle discovery, or package cleanup after `trailstep remove`.
 - `workflow-resolution/`: Enter when changing run-command resolution between discovered workflow ids, project/global-registered config refs, package-metadata install roots, bundle manifest refs, and direct workflow source references.
 - `workflow-skills/`: Enter when changing generated workflow skill naming, content, project skill file writing, leftover generated-skill warnings, or `skills` CLI distribution.
 
@@ -45,6 +45,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `workflow-packages/package-ref.ts`: Change when npm/GitHub package spec detection or GitHub shorthand rejection for `trailstep add` changes.
 - `workflow-packages/install-root.ts`: Change when local/project vs global workflow-package install roots or npm save args change.
 - `workflow-packages/npm-package-installer.ts`: Change when `trailstep add` package install roots, package.json bootstrapping, npm install invocation, GitHub installed-package identification, installed manifest handling, or TrailStep-installed ownership metadata changes.
+- `workflow-packages/package-uninstall.ts`: Change when `trailstep remove` package uninstall, preservation, failure reporting, or package-command invocation changes.
 - `workflow-registry/workflow-registry.ts`: Change when raw registry reads/writes/enumeration, metadata-aware single-entry lookup, duplicate-scope lookup, delete/move metadata sync, package install-ownership metadata validation, or registration validation changes.
 - `workflow-resolution/workflow-resolution.ts`: Change when registered/discovered/bundle/direct resolution order, registry metadata install-root selection, or registered-ref recursion changes.
 - `runs-root.ts`: Change when `TRAILSTEP_RUNS_ROOT` or default `.trailstep/runs` resolution for run, runs, or retry changes.

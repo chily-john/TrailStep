@@ -68,6 +68,52 @@ describe("removeCommand", () => {
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
   });
 
+  it("preserves package install when package metadata is stale or mismatched", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const packageCommandCalls: unknown[] = [];
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "global",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+
+    const command = resolveCommand(["remove", "project/review"]);
+    const lines: string[] = [];
+    const exitCode = await command.run(command.parseArgs(["remove", "project/review"]) as never, {
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageCommandCalls.push(request);
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
+    await expect(stat(packageDir)).resolves.toBeTruthy();
+    expect(packageCommandCalls).toEqual([]);
+    expect(lines).toEqual([
+      "Removed project/review from project config.",
+      "Package install for @acme/workflows was preserved because package cleanup was skipped: package metadata is stale, incomplete, or does not match the removed registration.",
+    ]);
+  });
+
   it("preserves package install when removing one of multiple package-backed registrations", async ({
     task,
   }) => {
@@ -151,7 +197,9 @@ describe("removeCommand", () => {
     ]);
   });
 
-  it("does not uninstall a reused package when removing its last registration", async ({ task }) => {
+  it("does not uninstall a reused package when removing its last registration", async ({
+    task,
+  }) => {
     const cwd = tmpDir(task);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     const packageCommandCalls: unknown[] = [];
@@ -367,6 +415,65 @@ describe("removeCommand", () => {
     expect(lines).toEqual([
       "Removed global/deploy from global config.",
       "Package cleanup: uninstalled @acme/workflows from global scope.",
+    ]);
+  });
+
+  it("returns nonzero and reports manual cleanup when orphan uninstall fails", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const packageCommandCalls: unknown[] = [];
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      devDependencies: { "@acme/workflows": "latest" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+
+    const command = resolveCommand(["remove", "project/review"]);
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const exitCode = await command.run(command.parseArgs(["remove", "project/review"]) as never, {
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: async (request) => {
+        packageCommandCalls.push(request);
+        return { exitCode: 19, stderr: "EACCES: permission denied" };
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
+    expect(packageCommandCalls).toEqual([
+      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+    ]);
+    await expect(stat(packageDir)).resolves.toBeTruthy();
+    expect(lines).toEqual(["Removed project/review from project config."]);
+    expect(lines).not.toContain("Package cleanup: uninstalled @acme/workflows from project scope.");
+    expect(errors).toEqual([
+      `Package cleanup failed for @acme/workflows in project scope at ${cwd}: npm uninstall failed with exit code 19\nstderr:\nEACCES: permission denied`,
+      `Registration was removed, but package cleanup for @acme/workflows needs manual attention in ${cwd}.`,
     ]);
   });
 

@@ -59,11 +59,15 @@ export async function cleanupRemovedWorkflowPackageInstall({
     return { status: "none" };
   }
 
-  if (metadata.targetRef !== removedEntry.targetRef || metadata.installScope !== removedEntry.scope) {
+  if (
+    metadata.targetRef !== removedEntry.targetRef ||
+    metadata.installScope !== removedEntry.scope
+  ) {
     return {
       status: "preserved",
       packageName: metadata.packageName,
-      reason: "package metadata does not match the removed registration",
+      reason:
+        "package cleanup was skipped: package metadata is stale, incomplete, or does not match the removed registration",
     };
   }
 
@@ -119,7 +123,9 @@ export async function cleanupRemovedWorkflowPackageInstall({
       installScope: metadata.installScope,
       installRoot,
       exitCode: result.exitCode,
-      ...(result.stderr === undefined || result.stderr.length === 0 ? {} : { stderr: result.stderr }),
+      ...(result.stderr === undefined || result.stderr.length === 0
+        ? {}
+        : { stderr: result.stderr }),
     };
   }
 
@@ -158,7 +164,9 @@ export function reportRemovedWorkflowPackageInstallCleanup(
   }
 
   if (result.status === "preserved") {
-    io.writeLine(`Package install for ${result.packageName} was preserved because ${result.reason}.`);
+    io.writeLine(
+      `Package install for ${result.packageName} was preserved because ${result.reason}.`,
+    );
     return;
   }
 
@@ -182,12 +190,14 @@ function formatPackageCleanupFailure(
     result.exitCode === undefined
       ? undefined
       : `npm uninstall failed with exit code ${result.exitCode}`,
-    result.stderr,
+    result.stderr === undefined || result.stderr.length === 0
+      ? undefined
+      : `stderr:\n${result.stderr.trimEnd()}`,
     result.errorMessage,
   ].filter((part): part is string => part !== undefined && part.length > 0);
 
   const suffix = details.length === 0 ? "unknown error" : details.join("\n");
-  return `Package cleanup failed for ${result.packageName} in ${result.installScope} scope: ${suffix}`;
+  return `Package cleanup failed for ${result.packageName} in ${result.installScope} scope at ${result.installRoot}: ${suffix}`;
 }
 
 function isSameWorkflowPackage(

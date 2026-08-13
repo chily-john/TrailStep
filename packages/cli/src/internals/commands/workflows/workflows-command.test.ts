@@ -577,7 +577,7 @@ describe("workflowsCommand", () => {
         return { exitCode: 0 };
       },
       prompts: {
-        select: async (prompt, choices) => {
+        select: async (prompt, _choices) => {
           if (prompt === "Select a workflow to edit") {
             workflowListVisits += 1;
             return workflowListVisits === 1

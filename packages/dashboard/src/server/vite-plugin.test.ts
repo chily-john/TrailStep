@@ -33,10 +33,14 @@ function createResponse() {
   };
 }
 
+type InstalledMiddleware = (
+  request: unknown,
+  response: unknown,
+  next: () => void,
+) => void | Promise<void>;
+
 function installMiddleware(cwd: string) {
-  let middleware:
-    | ((request: any, response: any, next: () => void) => void | Promise<void>)
-    | undefined;
+  let middleware: InstalledMiddleware | undefined;
   const plugin = trailstepDashboardPlugin({ cwd });
   const configureServer = plugin.configureServer;
   const server = {

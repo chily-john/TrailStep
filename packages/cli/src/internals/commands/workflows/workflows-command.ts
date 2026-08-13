@@ -3,6 +3,10 @@ import { CliUsageError } from "../../command.types.js";
 import { discoverWorkflows } from "../../discovery/discovery.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import {
+  cleanupRemovedWorkflowPackageInstall,
+  reportRemovedWorkflowPackageInstallCleanup,
+} from "../../workflow-packages/package-uninstall.js";
+import {
   assertNamespaceMatchesScope,
   assertValidRegistrationName,
   configPathForScope,
@@ -15,10 +19,6 @@ import {
   type WorkflowRegistryContext,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
-import {
-  cleanupRemovedWorkflowPackageInstall,
-  reportRemovedWorkflowPackageInstallCleanup,
-} from "../../workflow-packages/package-uninstall.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 import type { WorkflowSkillMetadata } from "../../workflow-skills/workflow-skill-content.js";

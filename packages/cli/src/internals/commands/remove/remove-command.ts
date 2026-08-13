@@ -1,6 +1,10 @@
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import {
+  cleanupRemovedWorkflowPackageInstall,
+  reportRemovedWorkflowPackageInstallCleanup,
+} from "../../workflow-packages/package-uninstall.js";
+import {
   configPathForScope,
   deleteWorkflowRegistryEntryFromConfig,
   listRegisteredWorkflowEntries,
@@ -10,10 +14,6 @@ import {
   type WorkflowRegistryScope,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
-import {
-  cleanupRemovedWorkflowPackageInstall,
-  reportRemovedWorkflowPackageInstallCleanup,
-} from "../../workflow-packages/package-uninstall.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
 
 interface RemoveCommandArgs {

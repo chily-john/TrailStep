@@ -114,15 +114,17 @@ describe("addCommand", () => {
     await expect(stat(resolve(cwd, "pnpm-lock.yaml"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    await expect(stat(resolve(cwd, "node_modules", "@acme", "workflows"))).rejects.toMatchObject(
-      { code: "ENOENT" },
-    );
+    await expect(stat(resolve(cwd, "node_modules", "@acme", "workflows"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await expect(stat(resolve(homeDir, ".trailstep", "packages"))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
 
-  it("reports blocking conflicts in package dry-run yes mode without mutation", async ({ task }) => {
+  it("reports blocking conflicts in package dry-run yes mode without mutation", async ({
+    task,
+  }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-add-command-tests",

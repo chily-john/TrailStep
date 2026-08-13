@@ -531,11 +531,7 @@ describe("updateCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      join(packageDir, "dist", "review.mjs"),
-      "export const review = {};\n",
-      "utf8",
-    );
+    await writeFile(join(packageDir, "dist", "review.mjs"), "export const review = {};\n", "utf8");
     await writeFile(
       join(packageDir, "dist", "cleanup.mjs"),
       "import { removedStep } from '@trailstep/authoring';\nexport const cleanup = {};\n",

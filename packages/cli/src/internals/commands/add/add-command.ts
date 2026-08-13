@@ -327,10 +327,7 @@ async function runPackageAddDryRun(
   return 0;
 }
 
-function reportDryRunUndiscoveredSkillPlan(
-  args: AddCommandArgs,
-  context: CliCommandContext,
-): void {
+function reportDryRunUndiscoveredSkillPlan(args: AddCommandArgs, context: CliCommandContext): void {
   if (!args.projectSkill && !args.userSkill) {
     return;
   }

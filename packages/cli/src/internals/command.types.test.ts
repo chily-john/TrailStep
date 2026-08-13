@@ -32,6 +32,22 @@ describe("usageText", () => {
     expect(usageText).toContain("--workflow '*'");
   });
 
+  it("documents workflow package lifecycle commands and safety flags", () => {
+    expect(usageText).toContain("Package-backed workflow lifecycle:");
+    expect(usageText).toContain(
+      "trailstep add accepts versioned npm package specs and github:<owner>/<repo> package specs",
+    );
+    expect(usageText).toContain("uninstalls only orphaned TrailStep-owned package installs");
+    expect(usageText).toContain("trailstep update --workflows");
+    expect(usageText).toContain("trailstep update --workflow <name>");
+    expect(usageText).toContain("trailstep update --all");
+    expect(usageText).toContain(
+      "Updates prompt before writing unless --yes or --assume-yes is passed",
+    );
+    expect(usageText).toContain("local-file refs are skipped");
+    expect(usageText).toContain("GitHub-sourced workflow package updates are not supported yet");
+  });
+
   it("allows CLI prompts to expose multiSelect choices", async () => {
     const prompts: TrailStepCliPrompts = {
       text: async () => "",

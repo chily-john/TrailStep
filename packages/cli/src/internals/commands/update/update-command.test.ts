@@ -5,6 +5,34 @@ import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
 
+function workflowPackageMetadata({
+  installScope = "project",
+  packageName = "@acme/workflows",
+  requestedRange = "^1.0.0",
+  targetRef,
+  workflowName,
+  exportName = workflowName,
+}: {
+  readonly installScope?: "project" | "global";
+  readonly packageName?: string;
+  readonly requestedRange?: string;
+  readonly targetRef?: string;
+  readonly workflowName: string;
+  readonly exportName?: string;
+}): Record<string, unknown> {
+  return {
+    kind: "package",
+    sourceType: "npm",
+    packageName,
+    requestedSpec: `${packageName}@${requestedRange}`,
+    requestedRange,
+    installScope,
+    targetRef: targetRef ?? `${packageName}#${workflowName}`,
+    workflowName,
+    exportName,
+  };
+}
+
 describe("updateCommand", () => {
   it("blocks TrailStep self-updates on removed-symbol findings before package.json mutation", async ({
     task,
@@ -314,6 +342,14 @@ describe("updateCommand", () => {
             release: "@acme/workflows#release",
           },
         },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
       }),
       "utf8",
     );
@@ -362,7 +398,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
     await writeFile(
@@ -424,6 +470,136 @@ describe("updateCommand", () => {
     expect(forceExitCode).toBe(0);
     expect(forceLines.join("\n")).toMatch(/Warning: --force/);
     expect(forceLines.join("\n")).toContain("Planned workflow package updates:");
+  });
+
+  it("blocks global workflow package update when another workflow in the package has a blocking finding", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const homeDir = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-home`);
+    const globalInstallRoot = join(homeDir, ".trailstep", "packages");
+    const packageDir = join(globalInstallRoot, "node_modules", "@acme", "global-workflows");
+    const globalPackageJsonPath = join(globalInstallRoot, "package.json");
+    const cwdPackageJsonPath = join(cwd, "package.json");
+    await mkdir(join(cwd, "node_modules", "@trailstep", "authoring"), { recursive: true });
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    await writeFile(join(globalInstallRoot, "package-lock.json"), "", "utf8");
+    await writeFile(
+      cwdPackageJsonPath,
+      JSON.stringify({ dependencies: { "@trailstep/authoring": "1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "node_modules", "@trailstep", "authoring", "package.json"),
+      JSON.stringify({ name: "@trailstep/authoring", version: "1.0.0" }),
+      "utf8",
+    );
+    await writeFile(
+      globalPackageJsonPath,
+      JSON.stringify({ dependencies: { "@acme/global-workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(homeDir, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { global: { review: "@acme/global-workflows#review" } },
+        workflowMetadata: {
+          global: {
+            review: workflowPackageMetadata({
+              installScope: "global",
+              packageName: "@acme/global-workflows",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/global-workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            review: "./dist/review.mjs#reviewWorkflow",
+            cleanup: "./dist/cleanup.mjs#cleanupWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(join(packageDir, "dist", "review.mjs"), "export const review = {};\n", "utf8");
+    await writeFile(
+      join(packageDir, "dist", "cleanup.mjs"),
+      "import { removedStep } from '@trailstep/authoring';\nexport const cleanup = {};\n",
+      "utf8",
+    );
+    const originalGlobalPackageJson = await readFile(globalPackageJsonPath, "utf8");
+    const originalCwdPackageJson = await readFile(cwdPackageJsonPath, "utf8");
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+    const packageCommandRunner = async (request: {
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }) => {
+      if (request.args[0] === "install") {
+        installRequests.push(request);
+        return { exitCode: 0 };
+      }
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]),
+      };
+    };
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const blockedExitCode = await main({
+      argv: ["update", "--workflow=global/review", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner,
+      deprecationManifest: [removedAuthoringSymbol],
+    });
+
+    const blockedOutput = lines.join("\n");
+    const normalizedBlockedOutput = blockedOutput.replace(/\\/gu, "/");
+    const expectedCleanupSource = join(packageDir, "dist", "cleanup.mjs").replace(/\\/gu, "/");
+    expect(blockedExitCode).toBe(1);
+    expect(normalizedBlockedOutput).toContain(expectedCleanupSource);
+    expect(blockedOutput).toContain("@trailstep/authoring/removedStep");
+    expect(errors.join("\n")).toMatch(/blocking deprecation findings/i);
+    expect(await readFile(globalPackageJsonPath, "utf8")).toBe(originalGlobalPackageJson);
+    expect(await readFile(cwdPackageJsonPath, "utf8")).toBe(originalCwdPackageJson);
+    expect(installRequests).toEqual([]);
+
+    const forceLines: string[] = [];
+    const forceExitCode = await main({
+      argv: ["update", "--workflow=global/review", "--assume-yes", "--force"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => forceLines.push(line), writeError: () => undefined },
+      packageCommandRunner,
+      deprecationManifest: [removedAuthoringSymbol],
+    });
+
+    const globalPackageJson = JSON.parse(await readFile(globalPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(forceExitCode).toBe(0);
+    expect(forceLines.join("\n")).toMatch(/Warning: --force/);
+    expect(forceLines.join("\n")).toContain(
+      `@acme/global-workflows (global install root: ${globalInstallRoot})`,
+    );
+    expect(globalPackageJson.dependencies["@acme/global-workflows"]).toBe("^1.1.0");
+    expect(await readFile(cwdPackageJsonPath, "utf8")).toBe(originalCwdPackageJson);
+    expect(installRequests).toEqual([
+      { command: "npm", args: ["install"], cwd: globalInstallRoot },
+    ]);
   });
 
   it("uses target TrailStep versions during self-update preflight", async ({ task }) => {
@@ -507,7 +683,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
     await writeFile(
@@ -559,6 +745,331 @@ describe("updateCommand", () => {
     expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
   });
 
+  it("applies workflow package updates in project and global install roots", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const homeDir = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-home`);
+    const globalInstallRoot = join(homeDir, ".trailstep", "packages");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(globalInstallRoot, { recursive: true });
+    await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
+    await writeFile(join(globalInstallRoot, "package-lock.json"), "", "utf8");
+    const projectPackageJsonPath = join(cwd, "package.json");
+    const globalPackageJsonPath = join(globalInstallRoot, "package.json");
+    await writeFile(
+      projectPackageJsonPath,
+      `${JSON.stringify(
+        {
+          dependencies: {
+            "@acme/project-workflows": "^1.0.0",
+            "@acme/untouched-project": "^9.0.0",
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(
+      globalPackageJsonPath,
+      `${JSON.stringify(
+        {
+          dependencies: {
+            "@acme/global-workflows": "~2.0.0",
+            "@acme/untouched-global": "~8.0.0",
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/project-workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              packageName: "@acme/project-workflows",
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
+    await writeFile(
+      join(homeDir, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { global: { review: "@acme/global-workflows#review" } },
+        workflowMetadata: {
+          global: {
+            review: workflowPackageMetadata({
+              installScope: "global",
+              packageName: "@acme/global-workflows",
+              requestedRange: "~2.0.0",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await mkdir(join(cwd, "node_modules", "@acme", "project-workflows"), { recursive: true });
+    await writeFile(
+      join(cwd, "node_modules", "@acme", "project-workflows", "package.json"),
+      JSON.stringify({ name: "@acme/project-workflows", version: "1.0.0" }),
+      "utf8",
+    );
+    await mkdir(join(globalInstallRoot, "node_modules", "@acme", "global-workflows"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(globalInstallRoot, "node_modules", "@acme", "global-workflows", "package.json"),
+      JSON.stringify({ name: "@acme/global-workflows", version: "2.0.0" }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+    const viewedCwds: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        viewedCwds.push(request.cwd);
+        const packageName = String(request.args[1]).replace(/@\*$/u, "");
+        const versions: Record<string, readonly string[]> = {
+          "@acme/project-workflows": ["1.0.0", "1.1.0"],
+          "@acme/global-workflows": ["2.0.0", "2.1.0"],
+        };
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify((versions[packageName] ?? []).map((version) => ({ version }))),
+        };
+      },
+    });
+
+    const projectPackageJson = JSON.parse(await readFile(projectPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    const globalPackageJson = JSON.parse(await readFile(globalPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(`@acme/project-workflows (project install root: ${cwd})`);
+    expect(lines.join("\n")).toContain(
+      `@acme/global-workflows (global install root: ${globalInstallRoot})`,
+    );
+    expect(projectPackageJson.dependencies["@acme/project-workflows"]).toBe("^1.1.0");
+    expect(projectPackageJson.dependencies["@acme/untouched-project"]).toBe("^9.0.0");
+    expect(projectPackageJson.dependencies["@acme/global-workflows"]).toBeUndefined();
+    expect(globalPackageJson.dependencies["@acme/global-workflows"]).toBe("~2.1.0");
+    expect(globalPackageJson.dependencies["@acme/untouched-global"]).toBe("~8.0.0");
+    expect(globalPackageJson.dependencies["@acme/project-workflows"]).toBeUndefined();
+    expect(viewedCwds).toEqual([cwd, globalInstallRoot]);
+    expect(installRequests).toEqual([
+      { command: "pnpm", args: ["install"], cwd },
+      { command: "npm", args: ["install"], cwd: globalInstallRoot },
+    ]);
+  });
+
+  it("updates only the selected global workflow package root", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const homeDir = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-home`);
+    const globalInstallRoot = join(homeDir, ".trailstep", "packages");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
+    await mkdir(globalInstallRoot, { recursive: true });
+    await writeFile(join(cwd, "pnpm-lock.yaml"), "", "utf8");
+    await writeFile(join(globalInstallRoot, "package-lock.json"), "", "utf8");
+    const projectPackageJsonPath = join(cwd, "package.json");
+    const globalPackageJsonPath = join(globalInstallRoot, "package.json");
+    await writeFile(
+      projectPackageJsonPath,
+      `${JSON.stringify({ dependencies: { "@acme/project-workflows": "^1.0.0" } }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      globalPackageJsonPath,
+      `${JSON.stringify({ dependencies: { "@acme/global-workflows": "^2.0.0" } }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { review: "@acme/project-workflows#review" } },
+        workflowMetadata: {
+          project: {
+            review: workflowPackageMetadata({
+              packageName: "@acme/project-workflows",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(homeDir, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { global: { review: "@acme/global-workflows#review" } },
+        workflowMetadata: {
+          global: {
+            review: workflowPackageMetadata({
+              installScope: "global",
+              packageName: "@acme/global-workflows",
+              requestedRange: "^2.0.0",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    const originalProjectPackageJson = await readFile(projectPackageJsonPath, "utf8");
+    const lines: string[] = [];
+    const viewedCwds: string[] = [];
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflow=global/review", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        viewedCwds.push(request.cwd);
+        const packageName = String(request.args[1]).replace(/@\*$/u, "");
+        const versions: Record<string, readonly string[]> = {
+          "@acme/project-workflows": ["1.0.0", "1.1.0"],
+          "@acme/global-workflows": ["2.0.0", "2.1.0"],
+        };
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify((versions[packageName] ?? []).map((version) => ({ version }))),
+        };
+      },
+    });
+
+    const globalPackageJson = JSON.parse(await readFile(globalPackageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(
+      `@acme/global-workflows (global install root: ${globalInstallRoot})`,
+    );
+    expect(lines.join("\n")).not.toContain("@acme/project-workflows");
+    expect(await readFile(projectPackageJsonPath, "utf8")).toBe(originalProjectPackageJson);
+    expect(globalPackageJson.dependencies["@acme/global-workflows"]).toBe("^2.1.0");
+    expect(viewedCwds).toEqual([globalInstallRoot]);
+    expect(installRequests).toEqual([
+      { command: "npm", args: ["install"], cwd: globalInstallRoot },
+    ]);
+  });
+
+  it("prints no workflow package updates when package ranges are already current", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    const packageJsonPath = join(cwd, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.1.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              requestedRange: "^1.1.0",
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    const originalPackageJson = await readFile(packageJsonPath, "utf8");
+    const lines: string[] = [];
+    const installRequests: unknown[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "1.1.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("No workflow package updates are available.");
+    expect(lines.join("\n")).not.toMatch(/update complete/i);
+    expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
+    expect(installRequests).toEqual([]);
+  });
+
+  it("skips package-looking registrations without package metadata safely", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    const packageJsonPath = join(cwd, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({ workflows: { project: { review: "@acme/workflows#review" } } }),
+      "utf8",
+    );
+    const originalPackageJson = await readFile(packageJsonPath, "utf8");
+    const lines: string[] = [];
+    const packageRequests: unknown[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageRequests.push(request);
+        return { exitCode: 1, stderr: "should not inspect metadata-less workflow packages" };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain(
+      "Skipped project/review: workflow package metadata is missing; re-add the workflow before updating this package.",
+    );
+    expect(lines).toContain("No workflow package updates are available.");
+    expect(await readFile(packageJsonPath, "utf8")).toBe(originalPackageJson);
+    expect(packageRequests).toEqual([]);
+  });
+
   it("applies self and workflow package updates together for --all --assume-yes", async ({
     task,
   }) => {
@@ -583,7 +1094,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
     const lines: string[] = [];
@@ -627,7 +1148,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
 
@@ -653,7 +1184,11 @@ describe("updateCommand", () => {
   it("prints default npm warning before running install when no package manager is detected", async ({
     task,
   }) => {
-    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-update-command-tests",
+      `${task.id}-no-package-manager`,
+    );
     await mkdir(cwd, { recursive: true });
     await writeFile(
       join(cwd, "package.json"),
@@ -787,7 +1322,7 @@ describe("updateCommand", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(errors.join("\n")).toMatch(/--assume-yes or an interactive confirm prompt/i);
+    expect(errors.join("\n")).toMatch(/--yes, --assume-yes, or an interactive confirm prompt/i);
     expect(await readFile(packageJsonPath, "utf8")).toBe(original);
   });
 
@@ -849,6 +1384,7 @@ describe("updateCommand", () => {
 
     expect(exitCode).toBe(1);
     expect(errors.join("\n")).toContain("Install failed with exit code 7");
+    expect(errors.join("\n")).toContain(cwd);
     expect(errors.join("\n")).toContain("lockfile conflict");
     expect(lines.join("\n")).not.toMatch(/update complete/i);
   });

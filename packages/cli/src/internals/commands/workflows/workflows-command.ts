@@ -3,15 +3,19 @@ import { CliUsageError } from "../../command.types.js";
 import { discoverWorkflows } from "../../discovery/discovery.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import {
+  cleanupRemovedWorkflowPackageInstall,
+  reportRemovedWorkflowPackageInstallCleanup,
+} from "../../workflow-packages/package-uninstall.js";
+import {
   assertNamespaceMatchesScope,
   assertValidRegistrationName,
   configPathForScope,
-  deleteWorkflowRegistryEntry,
+  deleteWorkflowRegistryEntryFromConfig,
   findExistingRegistrationScope,
   listRegisteredWorkflowEntries,
+  moveWorkflowRegistryEntryInConfig,
   type RegisteredWorkflowEntry,
   readRawTrailStepConfigFile,
-  toMutableWorkflowRegistry,
   type WorkflowRegistryContext,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
@@ -78,9 +82,7 @@ export const workflowsCommand: CliCommand<WorkflowsCommandArgs> = {
         }
       }
 
-      const labels = entries.map(
-        (entry) => `${entry.scope}: ${entry.namespace}/${entry.name} -> ${entry.targetRef}`,
-      );
+      const labels = entries.map((entry) => `${entry.scope}: ${formatRegisteredEntry(entry)}`);
       const selectedLabel = await promptSelect(
         "Select a workflow to edit",
         labels,
@@ -110,8 +112,62 @@ function printScopeGroup(
   }
   context.io.writeLine(`${heading}:`);
   for (const entry of entries) {
-    context.io.writeLine(`  ${entry.namespace}/${entry.name} -> ${entry.targetRef}`);
+    context.io.writeLine(`  ${formatRegisteredEntry(entry)}`);
   }
+}
+
+function formatRegisteredEntry(entry: RegisteredWorkflowEntry): string {
+  const base = `${entry.namespace}/${entry.name} -> ${entry.targetRef}`;
+  const packageSummary = formatPackageMetadataSummary(entry);
+  return packageSummary === undefined ? base : `${base} (${packageSummary})`;
+}
+
+function formatPackageMetadataSummary(entry: RegisteredWorkflowEntry): string | undefined {
+  const metadata = packageMetadataForDisplay(entry);
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  const parts = [
+    `sourceType: ${metadata.sourceType}`,
+    `packageName: ${metadata.packageName}`,
+    `requestedSpec: ${metadata.requestedSpec}`,
+    `installScope: ${metadata.installScope}`,
+  ];
+  if (metadata.installOwnership !== undefined) {
+    parts.push(`installOwnership: ${metadata.installOwnership}`);
+  }
+  if (metadata.sourceType === "github" && metadata.githubRef !== undefined) {
+    parts.push(`githubRef: ${metadata.githubRef}`);
+  }
+  return parts.join(", ");
+}
+
+function packageMetadataForDisplay(
+  entry: RegisteredWorkflowEntry,
+): RegisteredWorkflowEntry["packageMetadata"] {
+  const metadata = entry.packageMetadata;
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  if (metadata.targetRef !== entry.targetRef || metadata.installScope !== entry.scope) {
+    return undefined;
+  }
+
+  const requiredTextFields = [
+    metadata.packageName,
+    metadata.requestedSpec,
+    metadata.requestedRange,
+    metadata.targetRef,
+    metadata.workflowName,
+    metadata.exportName,
+  ];
+  if (requiredTextFields.some((value) => value.trim().length === 0)) {
+    return undefined;
+  }
+
+  return metadata;
 }
 
 async function runEntryFlow(
@@ -123,6 +179,10 @@ async function runEntryFlow(
 
   for (;;) {
     context.io.writeLine(selected.targetRef);
+    const packageSummary = formatPackageMetadataSummary(selected);
+    if (packageSummary !== undefined) {
+      context.io.writeLine(packageSummary);
+    }
     context.io.writeLine(dim(await describeWorkflow(selected, context)));
     context.io.writeLine("");
 
@@ -196,15 +256,22 @@ async function removeSelectedEntry(
 
   const path = configPathForScope(selected.scope, registryContext);
   const config = await readRawTrailStepConfigFile(path);
-  const workflows = deleteWorkflowRegistryEntry(
-    toMutableWorkflowRegistry(config.workflows),
-    selected.namespace,
-    selected.name,
+  await writeRawTrailStepConfigFile(
+    path,
+    deleteWorkflowRegistryEntryFromConfig(config, selected.namespace, selected.name),
   );
-  await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
   context.io.writeLine(
     `Removed ${selected.namespace}/${selected.name} from ${selected.scope} config.`,
+  );
+  reportRemovedWorkflowPackageInstallCleanup(
+    await cleanupRemovedWorkflowPackageInstall({
+      removedEntry: selected,
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+      packageCommandRunner: context.packageCommandRunner,
+    }),
+    context.io,
   );
   await warnIfGeneratedSkillDirectoryExists(context, selected.namespace, selected.name);
   return true;
@@ -274,19 +341,34 @@ async function applyRename(
 
   const path = configPathForScope(selected.scope, context);
   const config = await readRawTrailStepConfigFile(path);
-  let workflows = toMutableWorkflowRegistry(config.workflows);
-  workflows = deleteWorkflowRegistryEntry(workflows, selected.namespace, selected.name);
-  workflows[newNamespace] = { ...workflows[newNamespace], [newName]: selected.targetRef };
-  await writeRawTrailStepConfigFile(path, { ...config, workflows });
+  await writeRawTrailStepConfigFile(
+    path,
+    moveWorkflowRegistryEntryInConfig(
+      config,
+      selected.namespace,
+      selected.name,
+      newNamespace,
+      newName,
+      selected.targetRef,
+    ),
+  );
 
   context.io.writeLine(
     `Renamed ${selected.scope}: ${selected.namespace}/${selected.name} -> ${newNamespace}/${newName}`,
   );
 
-  return {
-    scope: selected.scope,
-    namespace: newNamespace,
-    name: newName,
-    targetRef: selected.targetRef,
-  };
+  return selected.packageMetadata === undefined
+    ? {
+        scope: selected.scope,
+        namespace: newNamespace,
+        name: newName,
+        targetRef: selected.targetRef,
+      }
+    : {
+        scope: selected.scope,
+        namespace: newNamespace,
+        name: newName,
+        targetRef: selected.targetRef,
+        packageMetadata: selected.packageMetadata,
+      };
 }

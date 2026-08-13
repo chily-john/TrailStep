@@ -163,6 +163,83 @@ describe("doctor command", () => {
     expect(errors).toEqual(["Doctor found deprecation warnings."]);
   });
 
+  it("scans deprecations in a global package-backed workflow", async ({ task }) => {
+    const cwd = tmpDir(task, "global-package-backed");
+    const homeDir = tmpDir(task, "global-package-backed-home");
+    const packageDir = join(
+      homeDir,
+      ".trailstep",
+      "packages",
+      "node_modules",
+      "@acme",
+      "workflows",
+    );
+    await writeJson(join(cwd, "package.json"), {
+      dependencies: { "@trailstep/core": "1.0.0" },
+    });
+    await writeJson(join(cwd, "node_modules", "@trailstep", "core", "package.json"), {
+      name: "@trailstep/core",
+      version: "1.0.0",
+    });
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
+      workflows: { global: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        global: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@^1.2.3",
+            requestedRange: "^1.2.3",
+            installScope: "global",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          },
+        },
+      },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      trailstep: {
+        workflows: {
+          review: "./dist/review.mjs#reviewWorkflow",
+        },
+      },
+    });
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    await writeFile(
+      join(packageDir, "dist", "review.mjs"),
+      "import { oldStep } from '@trailstep/core';\nexport const review = oldStep;\n",
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["doctor"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      deprecationManifest: [
+        {
+          packageName: "@trailstep/core",
+          symbol: "oldStep",
+          deprecatedSince: "1.0.0",
+          message: "oldStep is deprecated.",
+        },
+      ],
+    });
+
+    expect(exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("warning @trailstep/core/oldStep");
+    expect(lines.join("\n")).toContain(
+      ".trailstep/packages/node_modules/@acme/workflows/dist/review.mjs",
+    );
+    expect(errors).toEqual(["Doctor found deprecation warnings."]);
+  });
+
   it("prints clean output and exits zero when no findings exist", async ({ task }) => {
     const cwd = tmpDir(task, "clean-registered");
     await writeJson(join(cwd, "package.json"), {

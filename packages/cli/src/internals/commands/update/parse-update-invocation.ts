@@ -19,7 +19,7 @@ export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArg
       continue;
     }
 
-    if (arg === "--assume-yes") {
+    if (arg === "--yes" || arg === "--assume-yes") {
       assumeYes = true;
       continue;
     }

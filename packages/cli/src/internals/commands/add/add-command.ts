@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   providerRegistry,
@@ -21,14 +21,30 @@ import {
   promptText,
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
+import { workflowPackageInstallRootForScope } from "../../workflow-packages/install-root.js";
+import {
+  type InstalledNpmWorkflowPackage,
+  installNpmWorkflowPackage,
+  WorkflowPackageInstallError,
+} from "../../workflow-packages/npm-package-installer.js";
+import {
+  createWorkflowPackageInstallSnapshot,
+  rollbackWorkflowPackageInstall,
+  type WorkflowPackageInstallSnapshot,
+} from "../../workflow-packages/package-install-rollback.js";
+import {
+  type ParsedWorkflowPackageRef,
+  parseWorkflowPackageRef,
+} from "../../workflow-packages/package-ref.js";
 import {
   assertNamespaceMatchesScope,
   configPathForScope,
   findExistingRegistrationScope,
   readRawTrailStepConfigFile,
-  toMutableWorkflowRegistry,
+  type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryScope,
   writeRawTrailStepConfigFile,
+  writeWorkflowRegistryEntries,
 } from "../../workflow-registry/workflow-registry.js";
 import {
   type BundleWorkflowSpecifier,
@@ -60,6 +76,8 @@ interface AddCommandArgs {
   readonly userSkill: boolean;
   readonly projectSkillExplicit: boolean;
   readonly userSkillExplicit: boolean;
+  readonly yes: boolean;
+  readonly dryRun: boolean;
 }
 
 interface ResolvedAddCommandArgs {
@@ -83,6 +101,16 @@ const SCOPE_PROMPT_LABEL =
   "project = shared with your team, global = global across all your projects)";
 const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
 const SELECT_ALL_WORKFLOWS_CHOICE = "Select all";
+const EXISTING_PACKAGE_PROMPT_CHOICES = [
+  "Reuse installed package",
+  "Reinstall/upgrade",
+  "Cancel",
+] as const;
+const REGISTRATION_CONFLICT_PROMPT_CHOICES = [
+  "Replace existing registration",
+  "Skip this workflow",
+  "Cancel add",
+] as const;
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -91,14 +119,14 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       throw new CliUsageError("Expected add command.");
     }
 
-    const source = argv[1];
-    if (!source) {
+    const parsedInvocation = splitAddSourceAndFlagArgs(argv.slice(1));
+    if (parsedInvocation.source === undefined) {
       throw new CliUsageError(
-        "trailstep add requires a workflow file, bundle path, or bundle package.",
+        "trailstep add requires a workflow file, bundle path, bundle package, npm package spec, or GitHub package spec.",
       );
     }
 
-    const flags = parseFlags(argv.slice(2));
+    const flags = parseFlags(parsedInvocation.flagArgs);
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
@@ -107,7 +135,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     }
 
     return {
-      source,
+      source: parsedInvocation.source,
       ...(scope === undefined ? {} : { scope }),
       ...(flags.namespace === undefined ? {} : { namespace: flags.namespace }),
       ...(flags.name === undefined ? {} : { name: flags.name }),
@@ -117,77 +145,75 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       userSkill: flags["user-skill"] === "true",
       projectSkillExplicit: flags["project-skill"] === "true",
       userSkillExplicit: flags["user-skill"] === "true",
+      yes: flags.yes === "true",
+      dryRun: flags["dry-run"] === "true",
     };
   },
   async run(args: AddCommandArgs, context: CliCommandContext): Promise<number> {
     const scope =
       args.scope ??
-      (await promptSelect(
-        SCOPE_PROMPT_LABEL,
-        ["local", "project", "global"] as const,
-        context.prompts,
-        "trailstep add requires --scope <local|project|global>.",
-      ));
+      (args.yes
+        ? "project"
+        : await promptSelect(
+            SCOPE_PROMPT_LABEL,
+            ["local", "project", "global"] as const,
+            context.prompts,
+            "trailstep add requires --scope <local|project|global>.",
+          ));
 
-    const registryTargets = await validateAndBuildRegistryTargets(
-      { source: args.source, workflow: args.workflow },
-      context.cwd,
-      context,
-    );
-
-    if (args.name !== undefined && registryTargets.length > 1) {
-      throw new CliUsageError(
-        "trailstep add --name can only be used when registering one workflow.",
-      );
+    if (args.dryRun) {
+      return runPackageAddDryRun(args, scope, context);
     }
 
-    const namespace = await resolveNamespace(args.namespace, scope, context.prompts);
-    assertNamespaceMatchesScope(namespace, scope);
-
-    const resolvedArgs = await resolveSkillArgs(args, context.prompts);
-    const registrations = registryTargets.map((registryTarget) => ({
-      registryTarget,
-      name: args.name ?? deriveDefaultWorkflowName(registryTarget.workflow),
-    }));
-
-    const successfulRegistrations: AddRegistration[] = [];
-    let skippedConflicts = 0;
-    for (const registration of registrations) {
-      const existingScope = await findExistingRegistrationScope(
-        namespace,
-        registration.name,
-        scope,
-        {
-          cwd: context.cwd,
-          homeDir: context.homeDir,
-        },
-      );
-      if (!args.force && existingScope !== undefined) {
-        skippedConflicts += 1;
-        context.io.writeError(
-          `Warning: skipped ${namespace}/${registration.name} because it already exists in ${existingScope} config. Use --force to replace it.`,
-        );
-        continue;
+    let preparedSource: PreparedAddSource;
+    try {
+      preparedSource = await prepareAddSource(args.source, scope, context, { headless: args.yes });
+    } catch (error) {
+      if (error instanceof WorkflowPackageInstallError) {
+        context.io.writeError(error.message);
+        return 1;
       }
-      successfulRegistrations.push(registration);
+      throw error;
+    }
+    if (preparedSource.status === "cancelled") {
+      return 0;
+    }
+    let registrationPlan: AddRegistrationPlan;
+    try {
+      registrationPlan = await buildAddRegistrationPlan({ args, scope, preparedSource, context });
+    } catch (error) {
+      await reportPackageAddInstallCleanup(preparedSource, context);
+      throw error;
+    }
+    if (registrationPlan.status === "cancelled") {
+      await reportPackageAddInstallCleanup(preparedSource, context);
+      return 0;
     }
 
-    const configPath = configPathForScope(scope, context);
-    const config = await readRawTrailStepConfigFile(configPath);
-    const workflows = toMutableWorkflowRegistry(config.workflows);
-    const namespaceBucket = workflows[namespace] ?? {};
+    const {
+      namespace,
+      registrations,
+      registrationConflicts,
+      successfulRegistrations,
+      skippedConflicts,
+      resolvedArgs,
+    } = registrationPlan;
 
     if (successfulRegistrations.length > 0) {
-      workflows[namespace] = {
-        ...namespaceBucket,
-        ...Object.fromEntries(
-          successfulRegistrations.map((registration) => [
-            registration.name,
-            registration.registryTarget.targetRef,
-          ]),
-        ),
-      };
-      await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
+      await writeWorkflowRegistryEntries(
+        scope,
+        successfulRegistrations.map((registration) => ({
+          namespace,
+          name: registration.name,
+          targetRef: registration.registryTarget.targetRef,
+          ...(registration.registryTarget.metadata === undefined
+            ? {}
+            : { metadata: registration.registryTarget.metadata }),
+        })),
+        context,
+      );
+    } else {
+      await reportPackageAddInstallCleanup(preparedSource, context);
     }
 
     for (const registration of successfulRegistrations) {
@@ -196,10 +222,12 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
-    await promptForUncoveredWorkflowRolesForRegistrations(
-      { scope, registrations: successfulRegistrations },
-      context,
-    );
+    if (!args.yes) {
+      await promptForUncoveredWorkflowRolesForRegistrations(
+        { scope, registrations: successfulRegistrations },
+        context,
+      );
+    }
 
     let skillWarnings = 0;
     for (const registration of successfulRegistrations) {
@@ -223,7 +251,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       }
     }
 
-    if (registrations.length > 1 || skippedConflicts > 0) {
+    if (registrations.length > 1 || skippedConflicts > 0 || registrationConflicts.length > 0) {
       context.io.writeLine(
         `Summary: registered ${successfulRegistrations.length}, skipped conflicts ${skippedConflicts}, skill warnings ${skillWarnings}.`,
       );
@@ -233,6 +261,312 @@ export const addCommand: CliCommand<AddCommandArgs> = {
   },
 };
 
+async function runPackageAddDryRun(
+  args: AddCommandArgs,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<number> {
+  const packageRef = parseWorkflowPackageRef(args.source);
+  if (packageRef === undefined) {
+    throw new CliUsageError(
+      "trailstep add --dry-run is package-backed only; direct workflow files/directories and local bundle refs are not supported in dry-run yet.",
+    );
+  }
+
+  const installRoot = workflowPackageInstallRootForScope(scope, context);
+  const existingPackage = await readExistingInstalledNpmWorkflowPackage(
+    packageRef,
+    scope,
+    installRoot,
+  );
+
+  context.io.writeLine("Dry run: package-backed add plan.");
+  context.io.writeLine(`Scope: ${scope}`);
+  context.io.writeLine(`Source type: ${packageRef.sourceType}`);
+  context.io.writeLine(`Requested spec: ${packageRef.requestedSpec}`);
+  if (packageRef.sourceType === "npm") {
+    context.io.writeLine(`Package: ${packageRef.packageName}`);
+  } else {
+    context.io.writeLine(`GitHub ref: ${packageRef.githubRef}`);
+  }
+  context.io.writeLine(`Install root: ${installRoot}`);
+
+  if (existingPackage === undefined) {
+    context.io.writeLine(`Would install ${packageRef.requestedSpec} into ${installRoot}.`);
+    context.io.writeLine(
+      "Workflow discovery: skipped because dry-run will not install packages. Run without --dry-run to discover workflows and register them.",
+    );
+    reportDryRunUndiscoveredSkillPlan(args, context);
+    return 0;
+  }
+
+  const versionSuffix =
+    existingPackage.resolvedVersion === undefined ? "" : `@${existingPackage.resolvedVersion}`;
+  context.io.writeLine(
+    `Would reuse installed ${existingPackage.packageName}${versionSuffix} in ${scope} scope.`,
+  );
+  context.io.writeLine("Workflow discovery: reading existing installed package.");
+
+  const registrationPlan = await buildAddRegistrationPlan({
+    args,
+    scope,
+    preparedSource: {
+      status: "ready",
+      source: existingPackage.packageName,
+      cwd: existingPackage.installRoot,
+      installedPackage: existingPackage,
+    },
+    context,
+  });
+  if (registrationPlan.status === "cancelled") {
+    context.io.writeLine("Dry run: canceled.");
+    return 0;
+  }
+
+  reportDryRunRegistrationPlan(registrationPlan, scope, context);
+  return 0;
+}
+
+function reportDryRunUndiscoveredSkillPlan(args: AddCommandArgs, context: CliCommandContext): void {
+  if (!args.projectSkill && !args.userSkill) {
+    return;
+  }
+
+  context.io.writeLine(
+    "Skills: requested skill writes/distribution would be planned after workflows are discovered; no skill files or distribution commands were run.",
+  );
+}
+
+function reportDryRunRegistrationPlan(
+  registrationPlan: Extract<AddRegistrationPlan, { readonly status: "ready" }>,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): void {
+  if (registrationPlan.successfulRegistrations.length === 0) {
+    context.io.writeLine("Dry run: no registrations would be written.");
+  }
+
+  for (const registration of registrationPlan.successfulRegistrations) {
+    context.io.writeLine(
+      `Would register ${registrationPlan.namespace}/${registration.name} -> ${registration.registryTarget.targetRef} in ${scope} config.`,
+    );
+  }
+
+  if (registrationPlan.resolvedArgs.projectSkill || registrationPlan.resolvedArgs.userSkill) {
+    for (const registration of registrationPlan.successfulRegistrations) {
+      const skillName = workflowSkillName(registrationPlan.namespace, registration.name);
+      context.io.writeLine(
+        `Would write workflow skill ${skillName} for ${registrationPlan.namespace}/${registration.name}.`,
+      );
+      if (registrationPlan.resolvedArgs.projectSkill) {
+        context.io.writeLine(`Would distribute workflow skill ${skillName} to project skills.`);
+      }
+      if (registrationPlan.resolvedArgs.userSkill) {
+        context.io.writeLine(`Would distribute workflow skill ${skillName} to user skills.`);
+      }
+    }
+  }
+
+  if (
+    registrationPlan.registrations.length > 1 ||
+    registrationPlan.skippedConflicts > 0 ||
+    registrationPlan.registrationConflicts.length > 0
+  ) {
+    context.io.writeLine(
+      `Dry run summary: would register ${registrationPlan.successfulRegistrations.length}, skipped conflicts ${registrationPlan.skippedConflicts}.`,
+    );
+  }
+}
+
+type AddRegistrationPlan =
+  | {
+      readonly status: "ready";
+      readonly namespace: string;
+      readonly registrations: readonly AddRegistration[];
+      readonly registrationConflicts: readonly RegistrationConflict[];
+      readonly successfulRegistrations: readonly AddRegistration[];
+      readonly skippedConflicts: number;
+      readonly resolvedArgs: ResolvedSkillArgs;
+    }
+  | { readonly status: "cancelled" };
+
+interface BuildAddRegistrationPlanOptions {
+  readonly args: AddCommandArgs;
+  readonly scope: WorkflowRegistryScope;
+  readonly preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>;
+  readonly context: CliCommandContext;
+}
+
+async function buildAddRegistrationPlan({
+  args,
+  scope,
+  preparedSource,
+  context,
+}: BuildAddRegistrationPlanOptions): Promise<AddRegistrationPlan> {
+  const registryTargets = attachPackageMetadataToRegistryTargets(
+    await validateAndBuildRegistryTargets(
+      {
+        source: preparedSource.source,
+        workflow: args.workflow,
+        selectionPolicy: args.yes ? "all" : "prompt",
+      },
+      preparedSource.cwd,
+      context,
+    ),
+    preparedSource.installedPackage,
+  );
+
+  if (registryTargets.length === 0) {
+    context.io.writeLine("Canceled.");
+    return { status: "cancelled" };
+  }
+
+  if (args.name !== undefined && registryTargets.length > 1) {
+    throw new CliUsageError("trailstep add --name can only be used when registering one workflow.");
+  }
+
+  const namespace = await resolveNamespace(args.namespace, scope, context.prompts, {
+    headless: args.yes,
+  });
+  assertNamespaceMatchesScope(namespace, scope);
+
+  const registrations = registryTargets.map((registryTarget) => ({
+    registryTarget,
+    name: args.name ?? deriveDefaultWorkflowName(registryTarget.workflow),
+  }));
+
+  const registrationConflicts = await findRegistrationConflicts(
+    namespace,
+    registrations,
+    scope,
+    context,
+  );
+  const conflictResolution = await resolveRegistrationConflictActions({
+    conflicts: registrationConflicts,
+    force: args.force,
+    headless: args.yes,
+    context,
+  });
+  if (conflictResolution.status === "cancelled") {
+    context.io.writeLine("Canceled.");
+    return { status: "cancelled" };
+  }
+  const conflictActionByRegistrationName = new Map(
+    conflictResolution.actions.map((entry) => [
+      entry.conflict.registration.name,
+      {
+        action: entry.action,
+        existingScope: entry.conflict.existingScope,
+      },
+    ]),
+  );
+
+  const successfulRegistrations: AddRegistration[] = [];
+  let skippedConflicts = 0;
+  for (const registration of registrations) {
+    const conflictAction = conflictActionByRegistrationName.get(registration.name);
+    if (conflictAction?.action === "skip") {
+      skippedConflicts += 1;
+      context.io.writeError(
+        `Warning: skipped ${namespace}/${registration.name} because it already exists in ${conflictAction.existingScope} config. Use --force to replace it.`,
+      );
+      continue;
+    }
+    successfulRegistrations.push(registration);
+  }
+
+  const resolvedArgs =
+    successfulRegistrations.length === 0
+      ? { projectSkill: false, userSkill: false }
+      : args.dryRun
+        ? { projectSkill: args.projectSkill, userSkill: args.userSkill }
+        : await resolveSkillArgs(args, context.prompts);
+
+  return {
+    status: "ready",
+    namespace,
+    registrations,
+    registrationConflicts,
+    successfulRegistrations,
+    skippedConflicts,
+    resolvedArgs,
+  };
+}
+
+async function reportPackageAddInstallCleanup(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+  context: CliCommandContext,
+): Promise<void> {
+  if (preparedSource.installedPackage === undefined) {
+    return;
+  }
+
+  if (preparedSource.installSnapshot === undefined) {
+    context.io.writeError(
+      `Cleanup: preserved existing package ${preparedSource.installedPackage.packageName} in ${preparedSource.installedPackage.installScope} scope; no package install rollback was run.`,
+    );
+    return;
+  }
+
+  try {
+    await rollbackWorkflowPackageInstall(preparedSource.installSnapshot);
+    context.io.writeError(
+      `Cleanup: rolled back package install for ${preparedSource.installedPackage.packageName} in ${preparedSource.installedPackage.installScope} scope.`,
+    );
+  } catch (cleanupError) {
+    context.io.writeError(
+      `Cleanup failed for package ${preparedSource.installedPackage.packageName} in ${preparedSource.installedPackage.installScope} scope: ${cleanupError instanceof Error ? cleanupError.message : "unknown error"}`,
+    );
+  }
+}
+
+interface SplitAddSourceAndFlagArgsResult {
+  readonly source?: string;
+  readonly flagArgs: readonly string[];
+}
+
+function splitAddSourceAndFlagArgs(argv: readonly string[]): SplitAddSourceAndFlagArgsResult {
+  let source: string | undefined;
+  const flagArgs: string[] = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === undefined) {
+      continue;
+    }
+
+    if (source === undefined && token.startsWith("--")) {
+      flagArgs.push(token);
+      if (isAddOptionWithValue(token)) {
+        const value = argv[index + 1];
+        if (value !== undefined) {
+          flagArgs.push(value);
+          index += 1;
+        }
+      }
+      continue;
+    }
+
+    if (source === undefined) {
+      source = token;
+      continue;
+    }
+
+    flagArgs.push(token);
+  }
+
+  return source === undefined ? { flagArgs } : { source, flagArgs };
+}
+
+function isAddOptionWithValue(option: string): boolean {
+  return (
+    option === "--scope" ||
+    option === "--namespace" ||
+    option === "--name" ||
+    option === "--workflow"
+  );
+}
+
 function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
   const flags: Record<string, string | undefined> = {};
 
@@ -240,6 +574,16 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
     const option = argv[index];
     if (option === "--force") {
       flags.force = "true";
+      continue;
+    }
+
+    if (option === "--yes") {
+      flags.yes = "true";
+      continue;
+    }
+
+    if (option === "--dry-run") {
+      flags["dry-run"] = "true";
       continue;
     }
 
@@ -269,10 +613,119 @@ function parseFlags(argv: readonly string[]): Record<string, string | undefined>
   return flags;
 }
 
+interface RegistrationConflict {
+  readonly namespace: string;
+  readonly registration: AddRegistration;
+  readonly existingScope: WorkflowRegistryScope;
+}
+
+async function findRegistrationConflicts(
+  namespace: string,
+  registrations: readonly AddRegistration[],
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<readonly RegistrationConflict[]> {
+  const conflicts: RegistrationConflict[] = [];
+
+  for (const registration of registrations) {
+    const existingScope = await findExistingRegistrationScope(namespace, registration.name, scope, {
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+    });
+    if (existingScope !== undefined) {
+      conflicts.push({ namespace, registration, existingScope });
+    }
+  }
+
+  return conflicts;
+}
+
+function formatHeadlessRegistrationConflictError(
+  conflicts: readonly RegistrationConflict[],
+): string {
+  const entries = conflicts.map(
+    (conflict) =>
+      `${conflict.namespace}/${conflict.registration.name} already exists in ${conflict.existingScope} config`,
+  );
+  const prefix = conflicts.length === 1 ? "Registration conflict" : "Registration conflicts";
+  return `${prefix}: ${entries.join("; ")}. Use --force to replace existing registrations or remove the conflicts first.`;
+}
+
+type RegistrationConflictAction = "replace" | "skip";
+
+interface ResolvedRegistrationConflictAction {
+  readonly conflict: RegistrationConflict;
+  readonly action: RegistrationConflictAction;
+}
+
+type ResolveRegistrationConflictActionsResult =
+  | {
+      readonly status: "ready";
+      readonly actions: readonly ResolvedRegistrationConflictAction[];
+    }
+  | { readonly status: "cancelled" };
+
+interface ResolveRegistrationConflictActionsOptions {
+  readonly conflicts: readonly RegistrationConflict[];
+  readonly force: boolean;
+  readonly headless: boolean;
+  readonly context: CliCommandContext;
+}
+
+async function resolveRegistrationConflictActions({
+  conflicts,
+  force,
+  headless,
+  context,
+}: ResolveRegistrationConflictActionsOptions): Promise<ResolveRegistrationConflictActionsResult> {
+  if (conflicts.length === 0) {
+    return { status: "ready", actions: [] };
+  }
+  if (force) {
+    return {
+      status: "ready",
+      actions: conflicts.map((conflict) => ({ conflict, action: "replace" })),
+    };
+  }
+  if (headless) {
+    throw new CliUsageError(formatHeadlessRegistrationConflictError(conflicts));
+  }
+  if (context.prompts === undefined) {
+    return {
+      status: "ready",
+      actions: conflicts.map((conflict) => ({ conflict, action: "skip" })),
+    };
+  }
+
+  const actions: ResolvedRegistrationConflictAction[] = [];
+  for (const conflict of conflicts) {
+    const decision = await promptSelect(
+      registrationConflictPrompt(conflict),
+      REGISTRATION_CONFLICT_PROMPT_CHOICES,
+      context.prompts,
+      `${conflict.namespace}/${conflict.registration.name} already exists in ${conflict.existingScope} config. Run interactively to choose replace, skip, or cancel.`,
+    );
+    if (decision === "Cancel add") {
+      return { status: "cancelled" };
+    }
+    actions.push({
+      conflict,
+      action: decision === "Replace existing registration" ? "replace" : "skip",
+    });
+  }
+
+  return { status: "ready", actions };
+}
+
+function registrationConflictPrompt(conflict: RegistrationConflict): string {
+  return `${conflict.namespace}/${conflict.registration.name} already exists in ${conflict.existingScope} config. What should TrailStep do?`;
+}
+
 async function resolveNamespace(
   explicitNamespace: string | undefined,
   scope: WorkflowRegistryScope,
   prompts: CliCommandContext["prompts"],
+  options: { readonly headless: boolean } = { headless: false },
 ): Promise<string> {
   if (explicitNamespace !== undefined) {
     return explicitNamespace;
@@ -280,7 +733,7 @@ async function resolveNamespace(
   if (scope !== "global") {
     return "project";
   }
-  if (prompts === undefined) {
+  if (options.headless || prompts === undefined) {
     return "global";
   }
 
@@ -330,7 +783,7 @@ async function resolveSkillArgs(
   prompts: CliCommandContext["prompts"],
 ): Promise<ResolvedSkillArgs> {
   const promptSkillChoices =
-    prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
+    !args.yes && prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
 
   if (!promptSkillChoices) {
     return { projectSkill: args.projectSkill, userSkill: args.userSkill };
@@ -678,6 +1131,8 @@ interface AddRegistryTarget {
   readonly targetRef: string;
   readonly workflow?: WorkflowSkillMetadata;
   readonly bundleSpecifier?: BundleWorkflowSpecifier;
+  readonly bundleExportName?: string;
+  readonly metadata?: WorkflowPackageRegistryMetadata;
 }
 
 interface AddWorkflowCandidate extends AddRegistryTarget {
@@ -685,9 +1140,270 @@ interface AddWorkflowCandidate extends AddRegistryTarget {
   readonly sourceKind: "bundle" | "direct";
 }
 
+type AddWorkflowSelectionPolicy = "prompt" | "all";
+
 interface SourceResolutionArgs {
   readonly source: string;
   readonly workflow?: string;
+  readonly selectionPolicy: AddWorkflowSelectionPolicy;
+}
+
+type PreparedAddSource =
+  | {
+      readonly status: "ready";
+      readonly source: string;
+      readonly cwd: string;
+      readonly installedPackage?: InstalledNpmWorkflowPackage;
+      readonly installSnapshot?: WorkflowPackageInstallSnapshot;
+    }
+  | { readonly status: "cancelled" };
+
+interface PrepareAddSourceOptions {
+  readonly headless: boolean;
+}
+
+async function prepareAddSource(
+  source: string,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+  options: PrepareAddSourceOptions,
+): Promise<PreparedAddSource> {
+  const packageRef = parseWorkflowPackageRef(source);
+  if (packageRef === undefined) {
+    return { status: "ready", source, cwd: context.cwd };
+  }
+
+  const availablePackage = await ensureNpmWorkflowPackageAvailable({
+    packageRef,
+    scope,
+    context,
+    headless: options.headless,
+  });
+  if (availablePackage.installAction === "cancel") {
+    context.io.writeLine("Canceled.");
+    return { status: "cancelled" };
+  }
+  if (availablePackage.installAction === "install") {
+    context.io.writeLine(`Installed ${packageRef.requestedSpec} in ${scope} scope.`);
+  } else {
+    context.io.writeLine(`Using installed ${availablePackage.packageName} in ${scope} scope.`);
+  }
+  return {
+    status: "ready",
+    source: availablePackage.installedPackage.packageName,
+    cwd: availablePackage.installedPackage.installRoot,
+    installedPackage: availablePackage.installedPackage,
+    ...(availablePackage.installSnapshot === undefined
+      ? {}
+      : { installSnapshot: availablePackage.installSnapshot }),
+  };
+}
+
+type EnsurePackageInstallAction = "reuse" | "install" | "cancel";
+
+interface EnsureNpmWorkflowPackageAvailableOptions {
+  readonly packageRef: ParsedWorkflowPackageRef;
+  readonly scope: WorkflowRegistryScope;
+  readonly context: CliCommandContext;
+  readonly headless: boolean;
+}
+
+type EnsureNpmWorkflowPackageAvailableResult =
+  | {
+      readonly installAction: Exclude<EnsurePackageInstallAction, "cancel">;
+      readonly installRoot: string;
+      readonly packageName: string;
+      readonly installedPackage: InstalledNpmWorkflowPackage;
+      readonly resolvedVersion?: string;
+      readonly installSnapshot?: WorkflowPackageInstallSnapshot;
+    }
+  | {
+      readonly installAction: "cancel";
+      readonly installRoot: string;
+      readonly packageName: string;
+      readonly resolvedVersion?: string;
+    };
+
+async function ensureNpmWorkflowPackageAvailable({
+  packageRef,
+  scope,
+  context,
+  headless,
+}: EnsureNpmWorkflowPackageAvailableOptions): Promise<EnsureNpmWorkflowPackageAvailableResult> {
+  const installRoot = workflowPackageInstallRootForScope(scope, context);
+  const existingPackage = await readExistingInstalledNpmWorkflowPackage(
+    packageRef,
+    scope,
+    installRoot,
+  );
+
+  if (existingPackage !== undefined) {
+    if (headless) {
+      return ensurePackageAvailableResult("reuse", existingPackage);
+    }
+
+    writeExistingPackageSummary(existingPackage, packageRef, scope, context);
+    const action = await promptSelect(
+      existingPackagePrompt(existingPackage.packageName, scope),
+      EXISTING_PACKAGE_PROMPT_CHOICES,
+      context.prompts,
+      `Package ${existingPackage.packageName} is already installed in ${scope} scope. Run interactively to choose reuse, reinstall/upgrade, or cancel.`,
+    );
+    if (action === "Cancel") {
+      return {
+        installAction: "cancel",
+        installRoot,
+        packageName: existingPackage.packageName,
+        ...(existingPackage.resolvedVersion === undefined
+          ? {}
+          : { resolvedVersion: existingPackage.resolvedVersion }),
+      };
+    }
+    if (action === "Reuse installed package") {
+      return ensurePackageAvailableResult("reuse", existingPackage);
+    }
+  }
+
+  const installSnapshot = await createWorkflowPackageInstallSnapshot({
+    installRoot,
+    ...(packageRef.sourceType === "npm" ? { packageName: packageRef.packageName } : {}),
+  });
+  return ensurePackageAvailableResult(
+    "install",
+    await installNpmWorkflowPackage({
+      packageRef,
+      scope,
+      cwd: context.cwd,
+      homeDir: context.homeDir,
+      packageCommandRunner: context.packageCommandRunner,
+    }),
+    installSnapshot,
+  );
+}
+
+function ensurePackageAvailableResult(
+  installAction: "reuse" | "install",
+  installedPackage: InstalledNpmWorkflowPackage,
+  installSnapshot?: WorkflowPackageInstallSnapshot,
+): EnsureNpmWorkflowPackageAvailableResult {
+  return {
+    installAction,
+    installRoot: installedPackage.installRoot,
+    packageName: installedPackage.packageName,
+    installedPackage,
+    ...(installedPackage.resolvedVersion === undefined
+      ? {}
+      : { resolvedVersion: installedPackage.resolvedVersion }),
+    ...(installSnapshot === undefined ? {} : { installSnapshot }),
+  };
+}
+
+async function readExistingInstalledNpmWorkflowPackage(
+  packageRef: ParsedWorkflowPackageRef,
+  scope: WorkflowRegistryScope,
+  installRoot: string,
+): Promise<InstalledNpmWorkflowPackage | undefined> {
+  if (packageRef.sourceType !== "npm") {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      await readFile(
+        join(installRoot, "node_modules", ...packageRef.packageName.split("/"), "package.json"),
+        "utf8",
+      ),
+    ) as unknown;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+
+  const manifest = isRecord(parsed) ? parsed : {};
+  const manifestPackageName = manifest.name;
+  const packageName =
+    typeof manifestPackageName === "string" && manifestPackageName.trim().length > 0
+      ? manifestPackageName
+      : packageRef.packageName;
+  const resolvedVersion = manifest.version;
+  return {
+    sourceType: "npm",
+    packageName,
+    requestedSpec: packageRef.requestedSpec,
+    requestedRange: packageRef.requestedRange,
+    installScope: scope,
+    installRoot,
+    ...(typeof resolvedVersion === "string" ? { resolvedVersion } : {}),
+    installOwnership: "reused-existing",
+  };
+}
+
+function writeExistingPackageSummary(
+  installedPackage: InstalledNpmWorkflowPackage,
+  packageRef: ParsedWorkflowPackageRef,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): void {
+  const versionSuffix =
+    installedPackage.resolvedVersion === undefined ? "" : `@${installedPackage.resolvedVersion}`;
+  context.io.writeLine(
+    `Package ${installedPackage.packageName}${versionSuffix} is already installed in ${scope} scope.`,
+  );
+  context.io.writeLine(`Source type: ${installedPackage.sourceType}`);
+  context.io.writeLine(`Requested spec: ${packageRef.requestedSpec}`);
+  context.io.writeLine(`Install root: ${installedPackage.installRoot}`);
+}
+
+function existingPackagePrompt(packageName: string, scope: WorkflowRegistryScope): string {
+  return `Package ${packageName} is already installed in ${scope} scope. What should TrailStep do?`;
+}
+
+function attachPackageMetadataToRegistryTargets(
+  targets: readonly AddRegistryTarget[],
+  installedPackage: InstalledNpmWorkflowPackage | undefined,
+): readonly AddRegistryTarget[] {
+  if (installedPackage === undefined) {
+    return targets;
+  }
+
+  return targets.map((target) => ({
+    ...target,
+    metadata: createPackageRegistryMetadata(target, installedPackage),
+  }));
+}
+
+function createPackageRegistryMetadata(
+  target: AddRegistryTarget,
+  installedPackage: InstalledNpmWorkflowPackage,
+): WorkflowPackageRegistryMetadata {
+  const workflowName = target.bundleSpecifier?.workflowName ?? target.workflow?.id;
+  if (workflowName === undefined) {
+    throw new WorkflowResolutionError(
+      `Unable to determine package workflow metadata for ${target.targetRef}.`,
+    );
+  }
+
+  return {
+    kind: "package",
+    sourceType: installedPackage.sourceType,
+    packageName: installedPackage.packageName,
+    requestedSpec: installedPackage.requestedSpec,
+    requestedRange: installedPackage.requestedRange,
+    installScope: installedPackage.installScope,
+    targetRef: target.targetRef,
+    workflowName,
+    exportName: target.bundleExportName ?? workflowName,
+    ...(installedPackage.resolvedVersion === undefined
+      ? {}
+      : { resolvedVersion: installedPackage.resolvedVersion }),
+    ...(installedPackage.githubRef === undefined ? {} : { githubRef: installedPackage.githubRef }),
+    ...(installedPackage.installOwnership === undefined
+      ? {}
+      : { installOwnership: installedPackage.installOwnership }),
+  };
 }
 
 async function validateAndBuildRegistryTargets(
@@ -730,6 +1446,7 @@ async function listBundleAddWorkflowCandidates(
       targetRef: `${source}#${workflowName}`,
       workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
       bundleSpecifier: specifier,
+      bundleExportName: bundleWorkflow.workflowRef.exportName,
     });
   }
 
@@ -759,6 +1476,10 @@ async function selectAddWorkflowCandidates(
 ): Promise<readonly AddRegistryTarget[]> {
   if (args.workflow !== undefined) {
     return selectCandidatesFromWorkflowFlag(candidates, args.workflow);
+  }
+
+  if (args.selectionPolicy === "all") {
+    return candidates;
   }
 
   if (candidates.length === 1) {
@@ -889,6 +1610,10 @@ function toMutableRecord(value: unknown): Record<string, unknown> {
     return {};
   }
   return { ...value };
+}
+
+function isNodeError(error: unknown): error is { readonly code: string } {
+  return typeof error === "object" && error !== null && "code" in error;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

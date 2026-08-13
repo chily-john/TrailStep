@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -140,6 +140,185 @@ describe("workflowsCommand", () => {
     ]);
   });
 
+  it("prints package metadata for project package-backed registrations", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@^1.2.0",
+            requestedRange: "^1.2.0",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let choicesAtPrompt: readonly string[] = [];
+    await expect(
+      workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+        cwd,
+        homeDir: tmpDir(task),
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Select a workflow to edit") {
+              choicesAtPrompt = choices;
+              throw new Error("stop after workflow selection prompt");
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt.");
+          },
+        },
+      }),
+    ).rejects.toThrow("stop after workflow selection prompt");
+
+    const projectLine =
+      lines.find((line) => line.includes("project/review -> @acme/workflows#review")) ?? "";
+    expect(projectLine).toContain("sourceType: npm");
+    expect(projectLine).toContain("packageName: @acme/workflows");
+    expect(projectLine).toContain("requestedSpec: @acme/workflows@^1.2.0");
+    expect(projectLine).toContain("installScope: project");
+    expect(projectLine).toContain("installOwnership: trailstep-installed");
+
+    const promptLabel =
+      choicesAtPrompt.find((choice) =>
+        choice.includes("project/review -> @acme/workflows#review"),
+      ) ?? "";
+    expect(promptLabel).toContain("sourceType: npm");
+    expect(promptLabel).toContain("packageName: @acme/workflows");
+  });
+
+  it("prints package metadata for global package-backed registrations", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const homeDir = tmpDir(task);
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
+      workflows: { global: { deploy: "@acme/workflows#deploy" } },
+      workflowMetadata: {
+        global: {
+          deploy: {
+            kind: "package",
+            sourceType: "github",
+            packageName: "@acme/workflows",
+            requestedSpec: "github:acme/workflows",
+            requestedRange: "github:acme/workflows",
+            installScope: "global",
+            targetRef: "@acme/workflows#deploy",
+            workflowName: "deploy",
+            exportName: "deployWorkflow",
+            githubRef: "acme/workflows",
+            installOwnership: "reused-existing",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let choicesAtPrompt: readonly string[] = [];
+    await expect(
+      workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+        cwd,
+        homeDir,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+        prompts: {
+          select: async (prompt, choices) => {
+            if (prompt === "Select a workflow to edit") {
+              choicesAtPrompt = choices;
+              throw new Error("stop after workflow selection prompt");
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          text: async () => {
+            throw new Error("Unexpected text prompt.");
+          },
+        },
+      }),
+    ).rejects.toThrow("stop after workflow selection prompt");
+
+    const globalLine =
+      lines.find((line) => line.includes("global/deploy -> @acme/workflows#deploy")) ?? "";
+    expect(globalLine).toContain("sourceType: github");
+    expect(globalLine).toContain("packageName: @acme/workflows");
+    expect(globalLine).toContain("requestedSpec: github:acme/workflows");
+    expect(globalLine).toContain("installScope: global");
+    expect(globalLine).toContain("installOwnership: reused-existing");
+    expect(globalLine).toContain("githubRef: acme/workflows");
+
+    const promptLabel =
+      choicesAtPrompt.find((choice) =>
+        choice.includes("global/deploy -> @acme/workflows#deploy"),
+      ) ?? "";
+    expect(promptLabel).toContain("sourceType: github");
+    expect(promptLabel).toContain("installScope: global");
+  });
+
+  it("falls back to simple target refs when package metadata target is stale", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@^1.2.0",
+            requestedRange: "^1.2.0",
+            installScope: "project",
+            targetRef: "@acme/workflows#old-review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    const lines: string[] = [];
+    let choicesAtPrompt: readonly string[] = [];
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            choicesAtPrompt = choices;
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            return "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(choicesAtPrompt).toEqual(["project: project/review -> @acme/workflows#review"]);
+    expect(lines).toContain("  project/review -> @acme/workflows#review");
+    expect(lines).toContain("@acme/workflows#review");
+    expect(lines.some((line) => line.includes("sourceType: npm"))).toBe(false);
+    expect(lines.some((line) => line.includes("@acme/workflows#old-review"))).toBe(false);
+  });
+
   it("drills into a workflow, edits its namespace, then returns to page B", async ({ task }) => {
     const cwd = tmpDir(task);
     await writeJson(join(cwd, ".trailstep", "config.json"), {
@@ -224,6 +403,211 @@ describe("workflowsCommand", () => {
       await readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
     ) as unknown;
     expect(config).toEqual({ workflows: { project: { reviewed: "./review.mjs" } } });
+  });
+
+  it("renames package-backed workflow metadata with the selected registration", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            return choices[0] as string;
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Name: review" : "Exit";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async (prompt) => {
+          if (prompt === "New name") {
+            return "renamed";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      readonly workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.renamed).toMatchObject({
+      packageName: "@acme/workflows",
+    });
+    expect(config.workflowMetadata?.project?.review).toBeUndefined();
+  });
+
+  it("removes package-backed workflow metadata with the selected registration", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: { review: "@acme/workflows#review", scratch: "./scratch.mjs" },
+      },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+          },
+        },
+      },
+    });
+    await writeJson(join(cwd, "package.json"), { name: "consumer" });
+
+    let workflowListVisits = 0;
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        select: async (prompt, choices) => {
+          if (prompt === "Select a workflow to edit") {
+            workflowListVisits += 1;
+            return workflowListVisits === 1
+              ? (choices[0] as string)
+              : "project: project/scratch -> ./scratch.mjs";
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "yes";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      readonly workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.review).toBeUndefined();
+  });
+
+  it("interactive remove uninstalls orphaned TrailStep-owned package after confirmation", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const packageCommandCalls: unknown[] = [];
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      devDependencies: { "@acme/workflows": "latest" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: { review: "@acme/workflows#review", scratch: "./scratch.mjs" },
+      },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@latest",
+            requestedRange: "latest",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "review",
+            installOwnership: "trailstep-installed",
+          },
+        },
+      },
+    });
+
+    const lines: string[] = [];
+    let workflowListVisits = 0;
+    let actionMenuVisits = 0;
+    const exitCode = await workflowsCommand.run(workflowsCommand.parseArgs(["workflows"]), {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageCommandCalls.push(request);
+        await rm(packageDir, { recursive: true, force: true });
+        await writeJson(join(cwd, "package.json"), { name: "consumer", devDependencies: {} });
+        return { exitCode: 0 };
+      },
+      prompts: {
+        select: async (prompt, _choices) => {
+          if (prompt === "Select a workflow to edit") {
+            workflowListVisits += 1;
+            return workflowListVisits === 1
+              ? "project: project/review -> @acme/workflows#review (sourceType: npm, packageName: @acme/workflows, requestedSpec: @acme/workflows@latest, installScope: project, installOwnership: trailstep-installed)"
+              : "project: project/scratch -> ./scratch.mjs";
+          }
+          if (prompt === "Select an action") {
+            actionMenuVisits += 1;
+            return actionMenuVisits === 1 ? "Remove" : "Exit";
+          }
+          if (prompt === "Remove project: project/review? This cannot be undone.") {
+            return "yes";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        text: async () => {
+          throw new Error("Unexpected text prompt.");
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      workflows: { project: { scratch: "./scratch.mjs" } },
+    });
+    expect(packageCommandCalls).toEqual([
+      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+    ]);
+    await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(lines).toContain("Package cleanup: uninstalled @acme/workflows from project scope.");
   });
 
   it("removes a selected workflow after confirmation and returns to the list", async ({ task }) => {

@@ -165,6 +165,64 @@ async function writeBundleWorkflowPackage(cwd: string): Promise<void> {
   );
 }
 
+async function writeGlobalBundleWorkflowPackage(homeDir: string): Promise<void> {
+  const packageStore = join(homeDir, ".trailstep", "packages");
+  const packageDir = join(packageStore, "node_modules", "@acme", "workflows");
+  await mkdir(packageDir, { recursive: true });
+  await writeJson(join(packageStore, "package.json"), {
+    dependencies: { "@acme/workflows": "1.2.3" },
+  });
+  await writeJson(join(homeDir, ".trailstep", "config.json"), {
+    workflows: {
+      global: {
+        review: "@acme/workflows#review",
+      },
+    },
+    workflowMetadata: {
+      global: {
+        review: {
+          kind: "package",
+          sourceType: "npm",
+          packageName: "@acme/workflows",
+          requestedSpec: "@acme/workflows@latest",
+          requestedRange: "latest",
+          installScope: "global",
+          targetRef: "@acme/workflows#review",
+          workflowName: "review",
+          exportName: "reviewWorkflow",
+          resolvedVersion: "1.2.3",
+        },
+      },
+    },
+  });
+  await writeJson(join(packageDir, "package.json"), {
+    name: "@acme/workflows",
+    version: "1.2.3",
+    type: "module",
+    trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+  });
+  await writeFile(
+    join(packageDir, "index.mjs"),
+    `import { done, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value, label) => {
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value;
+        throw new Error(label + ' must be an object');
+      },
+    };
+    export const reviewWorkflow = {
+      id: 'reviewWorkflow',
+      input: schema,
+      output: schema,
+      start: (input) => step({ id: 'prepare' })
+        .do((stepInput) => done({ ...stepInput, globalPackageSelected: true }))(input),
+    };`,
+    "utf8",
+  );
+}
+
 async function writeWorkflowPackage(cwd: string): Promise<void> {
   const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
   await mkdir(packageDir, { recursive: true });
@@ -396,6 +454,31 @@ describe("run command", () => {
     ).resolves.toContain('"userSelected":true');
     expect(projectLines.join("\n")).toContain("project/review");
     expect(userLines.join("\n")).toContain("global/review");
+  });
+
+  it("runs a global package-backed workflow from the managed global package store", async ({
+    task,
+  }) => {
+    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    const cwd = join(root, "outside-node-project");
+    const homeDir = join(root, "home");
+    await rm(root, { recursive: true, force: true });
+    await mkdir(cwd, { recursive: true });
+    await writeGlobalBundleWorkflowPackage(homeDir);
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["global/review", "global-run", "--input", "{}"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Workflow completed");
+    await expect(
+      readFile(join(cwd, ".trailstep", "runs", "global-run", "events.jsonl"), "utf8"),
+    ).resolves.toContain('"globalPackageSelected":true');
   });
 
   it("runs a workflow from scoped package bundle manifest metadata", async ({ task }) => {

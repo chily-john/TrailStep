@@ -1,8 +1,14 @@
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import {
+  cleanupRemovedWorkflowPackageInstall,
+  reportRemovedWorkflowPackageInstallCleanup,
+} from "../../workflow-packages/package-uninstall.js";
+import {
   configPathForScope,
-  deleteWorkflowRegistryEntry,
+  deleteWorkflowRegistryEntryFromConfig,
+  listRegisteredWorkflowEntries,
+  type RegisteredWorkflowEntry,
   readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
   type WorkflowRegistryScope,
@@ -73,22 +79,43 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
     }
 
     const [scope] = matches as [WorkflowRegistryScope];
+    const selectedEntry = await findRegisteredEntry(scope, parsed.namespace, parsed.name, context);
     const path = configPathForScope(scope, context);
     const config = await readRawTrailStepConfigFile(path);
-    const workflows = deleteWorkflowRegistryEntry(
-      toMutableWorkflowRegistry(config.workflows),
-      parsed.namespace,
-      parsed.name,
+    await writeRawTrailStepConfigFile(
+      path,
+      deleteWorkflowRegistryEntryFromConfig(config, parsed.namespace, parsed.name),
     );
-    await writeRawTrailStepConfigFile(path, { ...config, workflows });
 
     context.io.writeLine(`Removed ${args.ref} from ${scope} config.`);
+    const cleanupResult =
+      selectedEntry === undefined
+        ? ({ status: "none" } as const)
+        : await cleanupRemovedWorkflowPackageInstall({
+            removedEntry: selectedEntry,
+            cwd: context.cwd,
+            homeDir: context.homeDir,
+            packageCommandRunner: context.packageCommandRunner,
+          });
+    reportRemovedWorkflowPackageInstallCleanup(cleanupResult, context.io);
 
     await warnIfGeneratedSkillDirectoryExists(context, parsed.namespace, parsed.name);
 
-    return 0;
+    return cleanupResult.status === "failed" ? 1 : 0;
   },
 };
+
+async function findRegisteredEntry(
+  scope: WorkflowRegistryScope,
+  namespace: string,
+  name: string,
+  context: CliCommandContext,
+): Promise<RegisteredWorkflowEntry | undefined> {
+  const entries = await listRegisteredWorkflowEntries(context);
+  return entries.find(
+    (entry) => entry.scope === scope && entry.namespace === namespace && entry.name === name,
+  );
+}
 
 function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
   const flags: Record<string, string | undefined> = {};

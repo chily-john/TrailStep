@@ -8,9 +8,10 @@ import type {
 import { usageText } from "./command.types.js";
 
 describe("usageText", () => {
-  it("documents workflow skill distribution flags, init scope, and agents management", () => {
+  it("documents workflow skill distribution flags, add dry-run, init scope, agents management, and update confirmation", () => {
     expect(usageText).toContain("--project-skill");
     expect(usageText).toContain("--user-skill");
+    expect(usageText).toContain("--dry-run");
     expect(usageText).toContain(
       "trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
     );
@@ -19,7 +20,7 @@ describe("usageText", () => {
     expect(usageText).toContain("trailstep agents rename <old> <new>");
     expect(usageText).toContain("trailstep doctor");
     expect(usageText).toContain(
-      "trailstep update [--all | --workflows | --workflow <name>] [--force] [--assume-yes]",
+      "trailstep update [--all | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
     );
   });
 
@@ -45,6 +46,22 @@ describe("usageText", () => {
     expect(usageText).toContain("path#exportName");
     expect(usageText).toContain("--workflow review,release,cleanup");
     expect(usageText).toContain("--workflow '*'");
+  });
+
+  it("documents workflow package lifecycle commands and safety flags", () => {
+    expect(usageText).toContain("Package-backed workflow lifecycle:");
+    expect(usageText).toContain(
+      "trailstep add accepts versioned npm package specs and github:<owner>/<repo> package specs",
+    );
+    expect(usageText).toContain("uninstalls only orphaned TrailStep-owned package installs");
+    expect(usageText).toContain("trailstep update --workflows");
+    expect(usageText).toContain("trailstep update --workflow <name>");
+    expect(usageText).toContain("trailstep update --all");
+    expect(usageText).toContain(
+      "Updates prompt before writing unless --yes or --assume-yes is passed",
+    );
+    expect(usageText).toContain("local-file refs are skipped");
+    expect(usageText).toContain("GitHub-sourced workflow package updates are not supported yet");
   });
 
   it("allows CLI prompts to expose multiSelect choices", async () => {

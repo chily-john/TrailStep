@@ -36,6 +36,14 @@ describe("parseUpdateInvocation", () => {
     });
   });
 
+  it("parses yes as an assume-yes alias", () => {
+    expect(parseUpdateInvocation(["update", "--yes"])).toEqual({
+      scope: { kind: "self" },
+      force: false,
+      assumeYes: true,
+    });
+  });
+
   it("rejects mutually exclusive scope flags", () => {
     expect(() => parseUpdateInvocation(["update", "--all", "--workflows"])).toThrow(CliUsageError);
     expect(() => parseUpdateInvocation(["update", "--workflows", "--workflow", "review"])).toThrow(

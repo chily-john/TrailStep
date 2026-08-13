@@ -1,6 +1,6 @@
 # @trailstep/cli
 
-`@trailstep/cli` provides the `trailstep` command for initializing projects, configuring agents, registering workflows, running workflows, continuing interactive steps, and retrying failed runs.
+`@trailstep/cli` provides the `trailstep` command for initializing projects, configuring agents, registering workflows, running workflows, continuing interactive steps, retrying failed runs, and managing package-backed workflow registrations.
 
 ## Install
 
@@ -14,8 +14,10 @@ pnpm add -D @trailstep/cli
 trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]
 trailstep agents
 trailstep agents set <name> --provider <provider> [--model <model>] [--thinking <level>] --scope <local|project|global>
-trailstep add <workflow-file-or-bundle> [--project-skill] [--user-skill]
+trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]
+trailstep remove <namespace>/<name> [--scope <local|project|global>]
 trailstep workflows
+trailstep update [--all | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
 trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
 trailstep continue
 trailstep retry <workflow-ref> <runName>
@@ -31,3 +33,57 @@ Pi model discovery is best-effort. TrailStep offers discovered Pi model choices 
 Custom provider argument templates may use `{{promptFile}}`, `{{outputFile}}`, `{{model}}`, and `{{thinking}}`; interactive templates may also use `{{prompt}}` for inline prompt input. Put optional override placeholders inside `{{#model}} ... {{/model}}` and `{{#thinking}} ... {{/thinking}}` conditional blocks so provider-default runs omit those arguments instead of passing empty values.
 
 Workflow refs may be direct refs, registered refs, or bundle refs. Runs write `.trailstep/runs/<runName>/` directories for inspection.
+
+## Package-backed workflow lifecycle
+
+Package-backed `trailstep add` installs a versioned npm package spec (for example, `@acme/workflows@latest`) or explicit GitHub package spec, discovers workflows from that package, and stores package metadata with each registration so remove/update can make safe decisions later.
+
+```bash
+# Plan a package-backed add without installing, registering, or writing skills.
+trailstep add @acme/trailstep-workflows@latest --scope project --workflow '*' --dry-run
+
+# Install an npm-backed workflow package into the project root and register all workflows.
+trailstep add @acme/trailstep-workflows@latest --scope project --workflow '*' --yes
+
+# Install a GitHub-sourced workflow package into the global package root.
+trailstep add github:acme/trailstep-workflows --scope global --workflow review --yes
+```
+
+Install roots are scope-aware: `local` and `project` package installs use the command cwd and `--save-dev`; `global` package installs use `~/.trailstep/packages` and `--save`. Project and global roots are updated independently.
+
+Removing a registration first deletes the config entry, then attempts package cleanup only when the removed entry has matching package metadata, no remaining registration references the same package install, and the install is TrailStep-owned.
+
+```bash
+trailstep remove project/review --scope project
+```
+
+Cleanup outcomes are intentionally conservative:
+
+- orphaned TrailStep-owned installs are uninstalled;
+- installs still referenced by other registrations are preserved;
+- user-owned installs are preserved;
+- missing or stale package metadata is preserved rather than guessed;
+- if uninstall fails, the registration remains removed and the command reports the install root for manual cleanup.
+
+Update workflow packages from registered metadata:
+
+```bash
+# Update all registered npm-backed workflow packages across their install roots.
+trailstep update --workflows --yes
+
+# Update one registered workflow package target. Use namespace/name when a bare name is ambiguous.
+trailstep update --workflow project/review --yes
+
+# Update TrailStep packages in the current project and workflow packages in all roots.
+trailstep update --all --yes
+```
+
+`trailstep update` prompts before rewriting manifests and running package-manager install commands unless `--yes` or `--assume-yes` is provided. `--force` only bypasses blocking deprecation preflight findings; it does not skip confirmation.
+
+Safety boundaries for workflow package updates:
+
+- local-file workflow refs are not package update targets;
+- missing or stale package metadata is skipped or rejected before any package.json mutation;
+- GitHub-sourced workflow package updates are not supported yet and are skipped with a message;
+- updates rewrite only affected package names in each install root and run one package-manager install per mutated root;
+- no-op targets do not rewrite manifests or run install commands.

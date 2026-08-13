@@ -95,11 +95,37 @@ export function deleteWorkflowRegistryEntry(
   return result;
 }
 
+export type WorkflowPackageSourceType = "npm" | "github";
+export type WorkflowPackageInstallOwnership = "trailstep-installed" | "reused-existing" | "unknown";
+
+export interface WorkflowPackageRegistryMetadata {
+  readonly kind: "package";
+  readonly sourceType: WorkflowPackageSourceType;
+  readonly packageName: string;
+  readonly requestedSpec: string;
+  readonly requestedRange: string;
+  readonly installScope: WorkflowRegistryScope;
+  readonly targetRef: string;
+  readonly workflowName: string;
+  readonly exportName: string;
+  readonly resolvedVersion?: string;
+  readonly githubRef?: string;
+  readonly installOwnership?: WorkflowPackageInstallOwnership;
+}
+
+export interface WorkflowRegistryWriteEntry {
+  readonly namespace: string;
+  readonly name: string;
+  readonly targetRef: string;
+  readonly metadata?: WorkflowPackageRegistryMetadata;
+}
+
 export interface RegisteredWorkflowEntry {
   readonly scope: WorkflowRegistryScope;
   readonly namespace: string;
   readonly name: string;
   readonly targetRef: string;
+  readonly packageMetadata?: WorkflowPackageRegistryMetadata;
 }
 
 /**
@@ -118,11 +144,18 @@ export async function listRegisteredWorkflowEntries(
     const path = configPathForScope(scope, context);
     const config = await readRawTrailStepConfigFile(path);
     const workflows = toMutableWorkflowRegistry(config.workflows);
+    const workflowMetadata = toMutableWorkflowMetadataRegistry(config.workflowMetadata);
+    const hasWorkflowMetadata = isRecord(config.workflowMetadata);
 
     for (const [namespace, bucket] of Object.entries(workflows)) {
       for (const [name, targetRef] of Object.entries(bucket)) {
         if (typeof targetRef === "string") {
-          entries.push({ scope, namespace, name, targetRef });
+          const packageMetadata = readWorkflowPackageMetadata(workflowMetadata, namespace, name);
+          entries.push(
+            packageMetadata === undefined && !hasWorkflowMetadata
+              ? { scope, namespace, name, targetRef }
+              : { scope, namespace, name, targetRef, packageMetadata },
+          );
         }
       }
     }
@@ -138,6 +171,276 @@ export async function listRegisteredWorkflowEntries(
  * otherwise silently shadow the other once merged. For "global" scope only that file is
  * checked, since it is never merged with anything.
  */
+export async function findRegisteredWorkflowEntryInScopes(
+  namespace: string,
+  name: string,
+  scopes: readonly WorkflowRegistryScope[],
+  context: WorkflowRegistryContext,
+): Promise<RegisteredWorkflowEntry | undefined> {
+  for (const scope of scopes) {
+    const path = configPathForScope(scope, context);
+    const config = await readRawTrailStepConfigFile(path);
+    const targetRef = toMutableWorkflowRegistry(config.workflows)[namespace]?.[name];
+    if (typeof targetRef !== "string") {
+      continue;
+    }
+
+    const packageMetadata = readWorkflowPackageMetadata(
+      toMutableWorkflowMetadataRegistry(config.workflowMetadata),
+      namespace,
+      name,
+    );
+    return packageMetadata === undefined
+      ? { scope, namespace, name, targetRef }
+      : { scope, namespace, name, targetRef, packageMetadata };
+  }
+
+  return undefined;
+}
+
+export async function writeWorkflowRegistryEntries(
+  scope: WorkflowRegistryScope,
+  entries: readonly WorkflowRegistryWriteEntry[],
+  context: WorkflowRegistryContext,
+): Promise<void> {
+  const path = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(path);
+  const workflows = toMutableWorkflowRegistry(config.workflows);
+  let workflowMetadata = toMutableWorkflowMetadataRegistry(config.workflowMetadata);
+  let shouldWriteMetadata = isRecord(config.workflowMetadata);
+
+  for (const entry of entries) {
+    workflows[entry.namespace] = {
+      ...(workflows[entry.namespace] ?? {}),
+      [entry.name]: entry.targetRef,
+    };
+
+    workflowMetadata = setWorkflowRegistryMetadataEntry(
+      workflowMetadata,
+      entry.namespace,
+      entry.name,
+      entry.metadata,
+    );
+    shouldWriteMetadata ||= entry.metadata !== undefined;
+  }
+
+  const nextConfig = withWorkflowMetadataRegistry(
+    { ...config, workflows },
+    workflowMetadata,
+    shouldWriteMetadata,
+  );
+
+  await writeRawTrailStepConfigFile(path, nextConfig);
+}
+
+export function deleteWorkflowRegistryEntryFromConfig(
+  config: Record<string, unknown>,
+  namespace: string,
+  name: string,
+): Record<string, unknown> {
+  const workflows = deleteWorkflowRegistryEntry(
+    toMutableWorkflowRegistry(config.workflows),
+    namespace,
+    name,
+  );
+  const workflowMetadata = deleteWorkflowRegistryMetadataEntry(
+    toMutableWorkflowMetadataRegistry(config.workflowMetadata),
+    namespace,
+    name,
+  );
+
+  return withWorkflowMetadataRegistry(
+    { ...config, workflows },
+    workflowMetadata,
+    isRecord(config.workflowMetadata),
+  );
+}
+
+export function moveWorkflowRegistryEntryInConfig(
+  config: Record<string, unknown>,
+  fromNamespace: string,
+  fromName: string,
+  toNamespace: string,
+  toName: string,
+  targetRef: string,
+): Record<string, unknown> {
+  let workflows = deleteWorkflowRegistryEntry(
+    toMutableWorkflowRegistry(config.workflows),
+    fromNamespace,
+    fromName,
+  );
+  workflows = {
+    ...workflows,
+    [toNamespace]: { ...(workflows[toNamespace] ?? {}), [toName]: targetRef },
+  };
+
+  const workflowMetadata = moveWorkflowRegistryMetadataEntry(
+    toMutableWorkflowMetadataRegistry(config.workflowMetadata),
+    fromNamespace,
+    fromName,
+    toNamespace,
+    toName,
+  );
+
+  return withWorkflowMetadataRegistry(
+    { ...config, workflows },
+    workflowMetadata,
+    isRecord(config.workflowMetadata),
+  );
+}
+
+type MutableWorkflowMetadataRegistry = Record<string, Record<string, unknown>>;
+
+function toMutableWorkflowMetadataRegistry(value: unknown): MutableWorkflowMetadataRegistry {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const registry: MutableWorkflowMetadataRegistry = {};
+  for (const [namespace, entries] of Object.entries(value)) {
+    if (isRecord(entries)) {
+      registry[namespace] = { ...entries };
+    }
+  }
+  return registry;
+}
+
+function readWorkflowPackageMetadata(
+  registry: MutableWorkflowMetadataRegistry,
+  namespace: string,
+  name: string,
+): WorkflowPackageRegistryMetadata | undefined {
+  const metadata = registry[namespace]?.[name];
+  return isWorkflowPackageRegistryMetadata(metadata) ? metadata : undefined;
+}
+
+function setWorkflowRegistryMetadataEntry(
+  registry: MutableWorkflowMetadataRegistry,
+  namespace: string,
+  name: string,
+  metadata: WorkflowPackageRegistryMetadata | undefined,
+): MutableWorkflowMetadataRegistry {
+  if (metadata === undefined) {
+    return deleteWorkflowRegistryMetadataEntry(registry, namespace, name);
+  }
+
+  return {
+    ...registry,
+    [namespace]: { ...(registry[namespace] ?? {}), [name]: metadata },
+  };
+}
+
+function moveWorkflowRegistryMetadataEntry(
+  registry: MutableWorkflowMetadataRegistry,
+  fromNamespace: string,
+  fromName: string,
+  toNamespace: string,
+  toName: string,
+): MutableWorkflowMetadataRegistry {
+  const sourceMetadata = readWorkflowPackageMetadata(registry, fromNamespace, fromName);
+  let moved = deleteWorkflowRegistryMetadataEntry(registry, fromNamespace, fromName);
+  moved = deleteWorkflowRegistryMetadataEntry(moved, toNamespace, toName);
+  return sourceMetadata === undefined
+    ? moved
+    : setWorkflowRegistryMetadataEntry(moved, toNamespace, toName, sourceMetadata);
+}
+
+function deleteWorkflowRegistryMetadataEntry(
+  registry: MutableWorkflowMetadataRegistry,
+  namespace: string,
+  name: string,
+): MutableWorkflowMetadataRegistry {
+  const bucket = registry[namespace];
+  if (bucket === undefined || !(name in bucket)) {
+    return registry;
+  }
+
+  const remainingBucket = { ...bucket };
+  delete remainingBucket[name];
+
+  const result = { ...registry };
+  if (Object.keys(remainingBucket).length === 0) {
+    delete result[namespace];
+  } else {
+    result[namespace] = remainingBucket;
+  }
+  return result;
+}
+
+function withWorkflowMetadataRegistry(
+  config: Record<string, unknown>,
+  registry: MutableWorkflowMetadataRegistry,
+  shouldWrite: boolean,
+): Record<string, unknown> {
+  if (!shouldWrite) {
+    return config;
+  }
+
+  const compacted = compactWorkflowMetadataRegistry(registry);
+  const nextConfig: Record<string, unknown> = { ...config };
+  if (Object.keys(compacted).length === 0) {
+    delete nextConfig.workflowMetadata;
+  } else {
+    nextConfig.workflowMetadata = compacted;
+  }
+  return nextConfig;
+}
+
+function compactWorkflowMetadataRegistry(
+  registry: MutableWorkflowMetadataRegistry,
+): MutableWorkflowMetadataRegistry {
+  const compacted: MutableWorkflowMetadataRegistry = {};
+  for (const [namespace, bucket] of Object.entries(registry)) {
+    if (Object.keys(bucket).length > 0) {
+      compacted[namespace] = bucket;
+    }
+  }
+  return compacted;
+}
+
+function isWorkflowPackageRegistryMetadata(
+  value: unknown,
+): value is WorkflowPackageRegistryMetadata {
+  return (
+    isRecord(value) &&
+    value.kind === "package" &&
+    isWorkflowPackageSourceType(value.sourceType) &&
+    typeof value.packageName === "string" &&
+    typeof value.requestedSpec === "string" &&
+    typeof value.requestedRange === "string" &&
+    isWorkflowRegistryScope(value.installScope) &&
+    typeof value.targetRef === "string" &&
+    typeof value.workflowName === "string" &&
+    typeof value.exportName === "string" &&
+    isOptionalString(value.resolvedVersion) &&
+    isOptionalString(value.githubRef) &&
+    isOptionalWorkflowPackageInstallOwnership(value.installOwnership)
+  );
+}
+
+function isWorkflowPackageSourceType(value: unknown): value is WorkflowPackageSourceType {
+  return value === "npm" || value === "github";
+}
+
+function isOptionalWorkflowPackageInstallOwnership(
+  value: unknown,
+): value is WorkflowPackageInstallOwnership | undefined {
+  return (
+    value === undefined ||
+    value === "trailstep-installed" ||
+    value === "reused-existing" ||
+    value === "unknown"
+  );
+}
+
+function isWorkflowRegistryScope(value: unknown): value is WorkflowRegistryScope {
+  return value === "local" || value === "project" || value === "global";
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === "string";
+}
+
 export async function findExistingRegistrationScope(
   namespace: string,
   name: string,

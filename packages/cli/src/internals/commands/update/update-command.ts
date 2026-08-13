@@ -7,7 +7,11 @@ import {
 import { resolveInstalledTrailStepVersions } from "../../deprecation-scan/resolve-installed-trailstep-versions.js";
 import { resolveDeprecationScanTargets } from "../../deprecation-scan/scan-targets.js";
 import { NpmRegistryError } from "../../package-manager/npm-registry.js";
-import { rewritePackageJsonDependencies } from "../../package-manager/package-json-rewrite.js";
+import {
+  type PackageJsonDependencyUpdate,
+  preserveRangeStyle,
+  rewritePackageJsonDependencies,
+} from "../../package-manager/package-json-rewrite.js";
 import {
   defaultPackageCommandRunner,
   detectPackageManager,
@@ -22,6 +26,7 @@ import {
 import {
   resolveWorkflowPackageUpdateTargets,
   type WorkflowPackageUpdatePlan,
+  type WorkflowPackageUpdateTarget,
 } from "./workflow-update-targets.js";
 
 export const updateCommand: CliCommand<UpdateCommandArgs> = {
@@ -46,7 +51,20 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
             })
           : undefined;
 
-      const findings = await collectPreflightFindings({ args, context, selfPlan, workflowPlan });
+      const workflowTargetsToApply = (workflowPlan?.targets ?? []).filter(
+        isChangedDependencyUpdate,
+      );
+      const workflowPlanToApply =
+        workflowPlan === undefined
+          ? undefined
+          : { ...workflowPlan, targets: workflowTargetsToApply };
+
+      const findings = await collectPreflightFindings({
+        args,
+        context,
+        selfPlan,
+        workflowPlan: workflowPlanToApply,
+      });
       const blocked = findings.some((finding) => finding.severity === "blocking");
       for (const finding of findings) {
         context.io.writeLine(formatDeprecationFinding(finding));
@@ -68,13 +86,9 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       }
 
       const hasSelfChanges = (selfPlan?.targets.length ?? 0) > 0;
-      const hasWorkflowChanges = (workflowPlan?.targets.length ?? 0) > 0;
+      const hasWorkflowChanges = workflowTargetsToApply.length > 0;
       if (!hasSelfChanges && !hasWorkflowChanges) {
-        context.io.writeLine(
-          (workflowPlan?.skips.length ?? 0) > 0
-            ? "No package updates to apply."
-            : "No changes needed.",
-        );
+        context.io.writeLine(noChangesMessage(args, workflowPlan));
         return 0;
       }
 
@@ -87,41 +101,49 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         }
       }
 
-      if (hasWorkflowChanges && workflowPlan) {
+      if (hasWorkflowChanges) {
         context.io.writeLine("Planned workflow package updates:");
-        for (const target of workflowPlan.targets) {
+        for (const target of workflowTargetsToApply) {
           context.io.writeLine(
-            `  ${target.packageName}: ${target.currentRange} -> ${target.targetVersion}`,
+            `  ${target.packageName} (${target.installScope} install root: ${target.installRoot}): ${target.currentRange} -> ${target.targetVersion}`,
           );
         }
       }
 
-      const updatesToApply = [...(selfPlan?.targets ?? []), ...(workflowPlan?.targets ?? [])];
+      const updateGroups = createDependencyUpdateGroups({
+        cwd: context.cwd,
+        selfUpdates: selfPlan?.targets ?? [],
+        workflowUpdates: workflowTargetsToApply,
+      });
       const confirmed = await confirmUpdate(args, context);
       if (!confirmed) {
         context.io.writeLine("Update cancelled.");
         return 0;
       }
 
-      await rewritePackageJsonDependencies({ cwd: context.cwd, updates: updatesToApply });
-      const packageManager = await detectPackageManager({ cwd: context.cwd });
-      for (const warning of packageManager.warnings) {
-        context.io.writeLine(warning);
-      }
       const runPackageCommand = context.packageCommandRunner ?? defaultPackageCommandRunner;
-      const installResult = await runPackageCommand({
-        command: packageManager.installCommand.command,
-        args: packageManager.installCommand.args,
-        cwd: context.cwd,
-      });
-      if (installResult.exitCode !== 0) {
-        // package.json may already contain the rewritten dependency ranges; users can recover
-        // by fixing the install issue and re-running their package manager install command.
-        context.io.writeError(`Install failed with exit code ${installResult.exitCode}.`);
-        if (installResult.stderr) {
-          context.io.writeError(installResult.stderr);
+      for (const group of updateGroups) {
+        await rewritePackageJsonDependencies({ cwd: group.installRoot, updates: group.updates });
+        const packageManager = await detectPackageManager({ cwd: group.installRoot });
+        for (const warning of packageManager.warnings) {
+          context.io.writeLine(warning);
         }
-        return 1;
+        const installResult = await runPackageCommand({
+          command: packageManager.installCommand.command,
+          args: packageManager.installCommand.args,
+          cwd: group.installRoot,
+        });
+        if (installResult.exitCode !== 0) {
+          // package.json may already contain the rewritten dependency ranges; users can recover
+          // by fixing the install issue and re-running their package manager install command.
+          context.io.writeError(
+            `Install failed with exit code ${installResult.exitCode} in ${group.installRoot}.`,
+          );
+          if (installResult.stderr) {
+            context.io.writeError(installResult.stderr);
+          }
+          return 1;
+        }
       }
       context.io.writeLine("Update complete.");
       return 0;
@@ -220,6 +242,71 @@ function versionsForPreflight(
   return versionsByPackageName;
 }
 
+interface DependencyUpdateGroup {
+  readonly installRoot: string;
+  readonly updates: readonly PackageJsonDependencyUpdate[];
+}
+
+function createDependencyUpdateGroups({
+  cwd,
+  selfUpdates,
+  workflowUpdates,
+}: {
+  readonly cwd: string;
+  readonly selfUpdates: readonly PackageJsonDependencyUpdate[];
+  readonly workflowUpdates: readonly WorkflowPackageUpdateTarget[];
+}): readonly DependencyUpdateGroup[] {
+  const groups = new Map<string, PackageJsonDependencyUpdate[]>();
+  addDependencyUpdates(groups, cwd, selfUpdates);
+  for (const update of workflowUpdates) {
+    addDependencyUpdates(groups, update.installRoot, [update]);
+  }
+  return [...groups.entries()].map(([installRoot, updates]) => ({ installRoot, updates }));
+}
+
+function addDependencyUpdates(
+  groups: Map<string, PackageJsonDependencyUpdate[]>,
+  installRoot: string,
+  updates: readonly PackageJsonDependencyUpdate[],
+): void {
+  if (updates.length === 0) {
+    return;
+  }
+
+  let group = groups.get(installRoot);
+  if (!group) {
+    group = [];
+    groups.set(installRoot, group);
+  }
+
+  for (const update of updates) {
+    group.push({
+      packageName: update.packageName,
+      targetVersion: update.targetVersion,
+      dependencySection: update.dependencySection,
+    });
+  }
+}
+
+function isChangedDependencyUpdate(update: {
+  readonly currentRange: string;
+  readonly targetVersion: string;
+}): boolean {
+  return preserveRangeStyle(update.currentRange, update.targetVersion) !== update.currentRange;
+}
+
+function noChangesMessage(
+  args: UpdateCommandArgs,
+  workflowPlan: WorkflowPackageUpdatePlan | undefined,
+): string {
+  if (args.scope.kind === "workflows" || args.scope.kind === "workflow") {
+    return "No workflow package updates are available.";
+  }
+  return (workflowPlan?.skips.length ?? 0) > 0
+    ? "No package updates to apply."
+    : "No changes needed.";
+}
+
 async function confirmUpdate(
   args: UpdateCommandArgs,
   context: CliCommandContext,
@@ -229,7 +316,7 @@ async function confirmUpdate(
   }
   if (!context.prompts?.confirm) {
     throw new CliUsageError(
-      "Update requires --assume-yes or an interactive confirm prompt before writing.",
+      "Update requires --yes, --assume-yes, or an interactive confirm prompt before writing.",
     );
   }
   return context.prompts.confirm("Apply package updates and run install?");

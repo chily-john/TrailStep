@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -17,17 +17,21 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 function createPackageCommandRunner(versionsByPackageName: Record<string, readonly string[]>): {
   runner: PackageCommandRunner;
   viewedPackages: string[];
+  viewedCwds: string[];
 } {
   const viewedPackages: string[] = [];
+  const viewedCwds: string[] = [];
   return {
     viewedPackages,
-    runner: async ({ args }) => {
+    viewedCwds,
+    runner: async ({ args, cwd }) => {
       const packageName = args[1]?.replace(/@\*$/u, "");
       const versions = packageName ? versionsByPackageName[packageName] : undefined;
       if (!packageName || !versions) {
         return { exitCode: 1, stderr: `missing metadata for ${packageName ?? "unknown"}` };
       }
       viewedPackages.push(packageName);
+      viewedCwds.push(cwd);
       return {
         exitCode: 0,
         stdout: JSON.stringify(versions.map((version) => ({ version }))),
@@ -47,7 +51,204 @@ function targetSummary(targets: readonly WorkflowPackageUpdateTarget[]) {
   }));
 }
 
+function workflowPackageMetadata({
+  installScope,
+  packageName = "@acme/workflows",
+  requestedRange = "^1.0.0",
+  targetRef,
+  workflowName,
+  exportName,
+}: {
+  readonly installScope: "project" | "global";
+  readonly packageName?: string;
+  readonly requestedRange?: string;
+  readonly targetRef?: string;
+  readonly workflowName: string;
+  readonly exportName: string;
+}): Record<string, unknown> {
+  return {
+    kind: "package",
+    sourceType: "npm",
+    packageName,
+    requestedSpec: `${packageName}@${requestedRange}`,
+    requestedRange,
+    installScope,
+    targetRef: targetRef ?? `${packageName}#${workflowName}`,
+    workflowName,
+    exportName,
+  };
+}
+
 describe("resolveWorkflowPackageUpdateTargets", () => {
+  it("resolves project and global workflow package targets from metadata install roots", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-workflow-update-target-tests",
+      `${task.id}-home`,
+    );
+    const globalInstallRoot = join(homeDir, ".trailstep", "packages");
+
+    await writeJson(join(cwd, "package.json"), {
+      devDependencies: { "@acme/workflows": "^1.0.0" },
+    });
+    await writeJson(join(globalInstallRoot, "package.json"), {
+      dependencies: { "@acme/workflows": "^2.0.0" },
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: {
+        project: {
+          review: "@acme/workflows#review",
+          release: "@acme/workflows#release",
+          local: "./workflows/local.mjs",
+        },
+      },
+      workflowMetadata: {
+        project: {
+          review: workflowPackageMetadata({
+            installScope: "project",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          }),
+          release: workflowPackageMetadata({
+            installScope: "project",
+            workflowName: "release",
+            exportName: "releaseWorkflow",
+          }),
+        },
+      },
+    });
+    await writeJson(join(homeDir, ".trailstep", "config.json"), {
+      workflows: { global: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        global: {
+          review: workflowPackageMetadata({
+            installScope: "global",
+            requestedRange: "^2.0.0",
+            workflowName: "review",
+            exportName: "globalReviewWorkflow",
+          }),
+        },
+      },
+    });
+    await writeJson(join(cwd, "node_modules", "@acme", "workflows", "package.json"), {
+      name: "@acme/workflows",
+      version: "1.0.1",
+      trailstep: {
+        workflows: {
+          review: "./dist/review.mjs#reviewWorkflow",
+          release: "./dist/release.mjs#releaseWorkflow",
+        },
+      },
+    });
+    await writeJson(join(globalInstallRoot, "node_modules", "@acme", "workflows", "package.json"), {
+      name: "@acme/workflows",
+      version: "2.0.1",
+      trailstep: {
+        workflows: {
+          review: "./dist/global-review.mjs#globalReviewWorkflow",
+        },
+      },
+    });
+    const { runner, viewedPackages, viewedCwds } = createPackageCommandRunner({
+      "@acme/workflows": ["1.0.1", "2.0.1", "2.1.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      homeDir,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(plan.targets).toEqual([
+      {
+        packageName: "@acme/workflows",
+        sourceType: "npm",
+        installScope: "project",
+        installRoot: cwd,
+        registeredRefs: ["project/review", "project/release"],
+        currentRange: "^1.0.0",
+        dependencySection: "devDependencies",
+        installedVersion: "1.0.1",
+        targetVersion: "2.1.0",
+        sourceFiles: [
+          resolve(cwd, "node_modules", "@acme", "workflows", "dist", "review.mjs"),
+          resolve(cwd, "node_modules", "@acme", "workflows", "dist", "release.mjs"),
+        ],
+      },
+      {
+        packageName: "@acme/workflows",
+        sourceType: "npm",
+        installScope: "global",
+        installRoot: globalInstallRoot,
+        registeredRefs: ["global/review"],
+        currentRange: "^2.0.0",
+        dependencySection: "dependencies",
+        installedVersion: "2.0.1",
+        targetVersion: "2.1.0",
+        sourceFiles: [
+          resolve(
+            globalInstallRoot,
+            "node_modules",
+            "@acme",
+            "workflows",
+            "dist",
+            "global-review.mjs",
+          ),
+        ],
+      },
+    ]);
+    expect(plan.skips).toEqual([
+      {
+        registeredRef: "project/local",
+        reason: "local-file-source",
+        message: "Skipped project/local: local file source, no version to update.",
+      },
+    ]);
+    expect(viewedPackages).toEqual(["@acme/workflows", "@acme/workflows"]);
+    expect(viewedCwds).toHaveLength(2);
+    expect(viewedCwds).toEqual(expect.arrayContaining([cwd, globalInstallRoot]));
+  });
+
+  it("skips package registrations that are missing package metadata without npm view calls", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
+    await writeJson(join(cwd, "package.json"), {
+      dependencies: { "@acme/workflows": "^1.0.0" },
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+    });
+    await writeJson(join(cwd, "node_modules", "@acme", "workflows", "package.json"), {
+      name: "@acme/workflows",
+      version: "1.0.0",
+    });
+    const { runner, viewedPackages } = createPackageCommandRunner({
+      "@acme/workflows": ["1.0.0", "1.1.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(plan.targets).toEqual([]);
+    expect(plan.skips).toEqual([
+      {
+        registeredRef: "project/review",
+        reason: "missing-package-metadata",
+        message:
+          "Skipped project/review: workflow package metadata is missing; re-add the workflow before updating this package.",
+      },
+    ]);
+    expect(viewedPackages).toEqual([]);
+  });
+
   it("resolves latest stable version and dependency section for registered workflow packages", async ({
     task,
   }) => {
@@ -57,6 +258,17 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "@acme/review-workflow" } },
+      workflowMetadata: {
+        project: {
+          review: workflowPackageMetadata({
+            installScope: "project",
+            packageName: "@acme/review-workflow",
+            targetRef: "@acme/review-workflow",
+            workflowName: "review",
+            exportName: "review",
+          }),
+        },
+      },
     });
     await writeJson(join(cwd, "node_modules", "@acme", "review-workflow", "package.json"), {
       name: "@acme/review-workflow",
@@ -95,6 +307,20 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
         project: {
           review: "@acme/workflows#review",
           release: "@acme/workflows#release",
+        },
+      },
+      workflowMetadata: {
+        project: {
+          review: workflowPackageMetadata({
+            installScope: "project",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          }),
+          release: workflowPackageMetadata({
+            installScope: "project",
+            workflowName: "release",
+            exportName: "releaseWorkflow",
+          }),
         },
       },
     });
@@ -149,6 +375,86 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     expect(viewedPackages).toEqual([]);
   });
 
+  it("skips stale package metadata without npm view calls", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: workflowPackageMetadata({
+            installScope: "project",
+            targetRef: "@acme/workflows#old-review",
+            workflowName: "old-review",
+            exportName: "oldReviewWorkflow",
+          }),
+        },
+      },
+    });
+    const { runner, viewedPackages } = createPackageCommandRunner({
+      "@acme/workflows": ["1.0.0", "1.1.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(plan.targets).toEqual([]);
+    expect(plan.skips).toEqual([
+      {
+        registeredRef: "project/review",
+        reason: "stale-package-metadata",
+        message:
+          "Skipped project/review: workflow package metadata is stale; re-add the workflow before updating this package.",
+      },
+    ]);
+    expect(viewedPackages).toEqual([]);
+  });
+
+  it("skips GitHub package metadata as an unsupported source type without npm view calls", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            ...workflowPackageMetadata({
+              installScope: "project",
+              workflowName: "review",
+              exportName: "reviewWorkflow",
+            }),
+            sourceType: "github",
+            requestedSpec: "github:acme/workflows",
+            requestedRange: "acme/workflows",
+            githubRef: "acme/workflows",
+          },
+        },
+      },
+    });
+    const { runner, viewedPackages } = createPackageCommandRunner({
+      "@acme/workflows": ["1.0.0", "1.1.0"],
+    });
+
+    const plan = await resolveWorkflowPackageUpdateTargets({
+      cwd,
+      scope: { kind: "workflows" },
+      packageCommandRunner: runner,
+    });
+
+    expect(plan.targets).toEqual([]);
+    expect(plan.skips).toEqual([
+      {
+        registeredRef: "project/review",
+        reason: "unsupported-source-type",
+        message: "Skipped project/review: GitHub workflow package updates are not supported yet.",
+      },
+    ]);
+    expect(viewedPackages).toEqual([]);
+  });
+
   it("errors on ambiguous bare workflow names", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, ".trailstep", "config.json"), {
@@ -168,16 +474,14 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     ).rejects.toThrow('Ambiguous workflow name "review" matches project/review, other/review.');
   });
 
-  it("falls back to raw package name when no registration matches", async ({ task }) => {
+  it("returns no workflow package targets when no registration matches", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-update-target-tests", task.id);
     await writeJson(join(cwd, "package.json"), {
       peerDependencies: { "@acme/workflows": "~2.0.0" },
     });
-    await writeJson(join(cwd, "node_modules", "@acme", "workflows", "package.json"), {
-      name: "@acme/workflows",
-      version: "2.0.1",
+    const { runner, viewedPackages } = createPackageCommandRunner({
+      "@acme/workflows": ["2.0.1", "2.1.0"],
     });
-    const { runner } = createPackageCommandRunner({ "@acme/workflows": ["2.0.1", "2.1.0"] });
 
     const plan = await resolveWorkflowPackageUpdateTargets({
       cwd,
@@ -185,16 +489,9 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
       packageCommandRunner: runner,
     });
 
-    expect(targetSummary(plan.targets)).toEqual([
-      {
-        packageName: "@acme/workflows",
-        registeredRefs: [],
-        currentRange: "~2.0.0",
-        dependencySection: "peerDependencies",
-        installedVersion: "2.0.1",
-        targetVersion: "2.1.0",
-      },
-    ]);
+    expect(plan.targets).toEqual([]);
+    expect(plan.skips).toEqual([]);
+    expect(viewedPackages).toEqual([]);
   });
 
   it("errors clearly when target package is not in root dependencies", async ({ task }) => {
@@ -202,6 +499,17 @@ describe("resolveWorkflowPackageUpdateTargets", () => {
     await writeJson(join(cwd, "package.json"), { dependencies: {} });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       workflows: { project: { review: "@acme/review-workflow" } },
+      workflowMetadata: {
+        project: {
+          review: workflowPackageMetadata({
+            installScope: "project",
+            packageName: "@acme/review-workflow",
+            targetRef: "@acme/review-workflow",
+            workflowName: "review",
+            exportName: "review",
+          }),
+        },
+      },
     });
     await writeJson(join(cwd, "node_modules", "@acme", "review-workflow", "package.json"), {
       name: "@acme/review-workflow",

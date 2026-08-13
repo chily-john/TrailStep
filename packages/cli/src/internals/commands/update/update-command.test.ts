@@ -5,6 +5,34 @@ import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
 
+function workflowPackageMetadata({
+  installScope = "project",
+  packageName = "@acme/workflows",
+  requestedRange = "^1.0.0",
+  targetRef,
+  workflowName,
+  exportName = workflowName,
+}: {
+  readonly installScope?: "project" | "global";
+  readonly packageName?: string;
+  readonly requestedRange?: string;
+  readonly targetRef?: string;
+  readonly workflowName: string;
+  readonly exportName?: string;
+}): Record<string, unknown> {
+  return {
+    kind: "package",
+    sourceType: "npm",
+    packageName,
+    requestedSpec: `${packageName}@${requestedRange}`,
+    requestedRange,
+    installScope,
+    targetRef: targetRef ?? `${packageName}#${workflowName}`,
+    workflowName,
+    exportName,
+  };
+}
+
 describe("updateCommand", () => {
   it("blocks TrailStep self-updates on removed-symbol findings before package.json mutation", async ({
     task,
@@ -314,6 +342,14 @@ describe("updateCommand", () => {
             release: "@acme/workflows#release",
           },
         },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
       }),
       "utf8",
     );
@@ -362,7 +398,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
     await writeFile(
@@ -507,7 +553,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
     await writeFile(
@@ -583,7 +639,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
     const lines: string[] = [];
@@ -627,7 +693,17 @@ describe("updateCommand", () => {
     );
     await writeFile(
       join(cwd, ".trailstep", "config.json"),
-      JSON.stringify({ workflows: { project: { release: "@acme/workflows#release" } } }),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
       "utf8",
     );
 

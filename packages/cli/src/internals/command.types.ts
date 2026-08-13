@@ -4,7 +4,7 @@ import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skill
 
 export const usageText = [
   "Usage:",
-  "  trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes]",
+  "  trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]",
   "  trailstep remove <namespace>/<name> [--scope <local|project|global>]",
   "  trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
   "  trailstep agents",

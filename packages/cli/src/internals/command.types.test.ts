@@ -8,9 +8,10 @@ import type {
 import { usageText } from "./command.types.js";
 
 describe("usageText", () => {
-  it("documents workflow skill distribution flags, init scope, and agents management", () => {
+  it("documents workflow skill distribution flags, add dry-run, init scope, and agents management", () => {
     expect(usageText).toContain("--project-skill");
     expect(usageText).toContain("--user-skill");
+    expect(usageText).toContain("--dry-run");
     expect(usageText).toContain(
       "trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
     );

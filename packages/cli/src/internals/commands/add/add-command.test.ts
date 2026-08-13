@@ -75,6 +75,135 @@ describe("addCommand", () => {
     });
   });
 
+  it("plans a fresh package add dry-run without installing or writing files", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["add", "@acme/workflows@latest", "--scope", "project", "--dry-run"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: async () => {
+        throw new Error("package command runner should not be called during dry-run");
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    const output = [...lines, ...errors].join("\n");
+    expect(output).toContain("Dry run");
+    expect(output).toContain("@acme/workflows@latest");
+    expect(output).toContain("project");
+    expect(output).toContain(cwd);
+    await expect(stat(resolve(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(resolve(cwd, ".trailstep", "skills"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(resolve(cwd, "package.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(resolve(cwd, "package-lock.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(resolve(cwd, "pnpm-lock.yaml"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(resolve(cwd, "node_modules", "@acme", "workflows"))).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
+    await expect(stat(resolve(homeDir, ".trailstep", "packages"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("reports blocking conflicts in package dry-run yes mode without mutation", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(configPath, {
+      workflows: { project: { review: "./existing.mjs" } },
+    });
+    const beforeConfig = await readFile(configPath, "utf8");
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+      trailstep: {
+        workflows: {
+          review: "./index.mjs#reviewWorkflow",
+          release: "./index.mjs#releaseWorkflow",
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      [
+        "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+        "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+      ].join("\n"),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["add", "@acme/workflows@latest", "--yes", "--dry-run"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: async () => {
+        throw new Error("package command runner should not be called during dry-run");
+      },
+    });
+
+    expect(exitCode).not.toBe(0);
+    expect([...lines, ...errors].join("\n")).toMatch(/conflict|already exists/i);
+    await expect(readFile(configPath, "utf8")).resolves.toBe(beforeConfig);
+    await expect(readJson(join(packageDir, "package.json"))).resolves.toMatchObject({
+      name: "@acme/workflows",
+      version: "1.2.3",
+    });
+  });
+
+  it("rejects direct workflow dry-run without writing config", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["add", "./workflows/review.mjs", "--scope", "project", "--dry-run"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+    });
+
+    expect(exitCode).not.toBe(0);
+    expect([...lines, ...errors].join("\n")).toMatch(/package-backed only/i);
+    await expect(stat(resolve(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("prompts for scope only in a zero-flag add, deriving namespace and name", async ({ task }) => {
     const cwd = join(
       "node_modules",

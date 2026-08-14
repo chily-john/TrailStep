@@ -10,7 +10,9 @@
       "!.step*",
       "!.pi",
       "!.workflower",
-      "!.trailstep/runs",
+      "!.trailstep",
+      "!.claude",
+      "!agent/skills",
       "!graphify-out",
       "!pnpm-lock.yaml"
     ]

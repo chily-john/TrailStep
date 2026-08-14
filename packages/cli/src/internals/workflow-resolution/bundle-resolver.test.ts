@@ -76,7 +76,9 @@ describe("loadBundleWorkflow", () => {
     });
   });
 
-  it("resolves a package manifest even when package exports hide package.json", async ({ task }) => {
+  it("resolves a package manifest even when package exports hide package.json", async ({
+    task,
+  }) => {
     const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
     const packageDir = join(cwd, "node_modules", "@acme", "workflows");
     await mkdir(packageDir, { recursive: true });
@@ -121,7 +123,10 @@ describe("loadBundleWorkflow", () => {
       "reviewWorkflow",
     ]);
     await expect(
-      loadBundleWorkflow({ packageName: "@acme/workflows", workflowName: "reviewWorkflow" }, { cwd }),
+      loadBundleWorkflow(
+        { packageName: "@acme/workflows", workflowName: "reviewWorkflow" },
+        { cwd },
+      ),
     ).resolves.toMatchObject({
       id: "@acme/workflows#reviewWorkflow",
       workflow: { id: "reviewWorkflow" },

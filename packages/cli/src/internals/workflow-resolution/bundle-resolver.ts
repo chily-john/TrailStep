@@ -102,7 +102,12 @@ export async function listBundleWorkflowNames(
 
   try {
     return (
-      await listPackageRootWorkflowExports(packageName, options, packageJson, dirname(packageJsonPath))
+      await listPackageRootWorkflowExports(
+        packageName,
+        options,
+        packageJson,
+        dirname(packageJsonPath),
+      )
     ).map((entry) => entry.name);
   } catch (error) {
     const staticWorkflowNames = await listStaticPackageRootWorkflowExportNames(

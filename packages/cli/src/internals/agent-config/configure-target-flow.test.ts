@@ -1,3 +1,4 @@
+import { type ProviderAdapter, providerRegistry } from "@trailstep/core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TrailStepCliPrompts } from "../command.types.js";
@@ -221,6 +222,34 @@ describe("configureLiteralAgentTarget", () => {
     expect(writeError).toHaveBeenCalledWith(
       "Warning: Could not discover Pi models; continuing with manual model entry.",
     );
+  });
+
+  it("falls back instead of crashing when provider metadata is missing at runtime", async () => {
+    const originalPiProvider = providerRegistry.pi;
+    providerRegistry.pi = { ...originalPiProvider, spec: undefined } as unknown as ProviderAdapter;
+
+    try {
+      await expect(
+        configureLiteralAgentTarget({
+          prompts: fakePrompts([
+            { label: "Provider", choices: ["pi", "custom"], answer: "pi" },
+            {
+              label: "Model override",
+              choices: ["Use provider default", "Type manually"],
+              answer: "Use provider default",
+            },
+            {
+              label: "Reasoning/thinking override",
+              choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+              answer: "Use provider default",
+            },
+          ]),
+          providerChoices: ["pi"],
+        }),
+      ).resolves.toEqual({ target: { provider: "pi" } });
+    } finally {
+      providerRegistry.pi = originalPiProvider;
+    }
   });
 
   it("custom provider wizard collects standardized provider concepts", async () => {

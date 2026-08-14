@@ -6,6 +6,13 @@ import type { PackageCommandResult, PackageCommandRunner } from "../command.type
 
 export type PackageManagerName = "pnpm" | "npm" | "yarn" | "bun";
 
+export type PackageDependencySaveType = "dependencies" | "devDependencies";
+
+export interface PackageManagerCommand {
+  command: PackageManagerName;
+  args: readonly string[];
+}
+
 export interface PackageManagerDetection {
   name: PackageManagerName;
   installCommand: { command: PackageManagerName; args: ["install"] };
@@ -20,6 +27,7 @@ const lockfileManagers: ReadonlyArray<{ lockfile: string; name: PackageManagerNa
   { lockfile: "pnpm-lock.yaml", name: "pnpm" },
   { lockfile: "package-lock.json", name: "npm" },
   { lockfile: "yarn.lock", name: "yarn" },
+  { lockfile: "bun.lock", name: "bun" },
   { lockfile: "bun.lockb", name: "bun" },
 ];
 
@@ -45,6 +53,67 @@ export interface PackageInstallRunnerOptions {
   packageCommandRunner?: PackageCommandRunner;
 }
 
+export function createPackageAddCommand({
+  packageManager,
+  saveType,
+  packageSpec,
+  workspaceRoot = false,
+}: {
+  packageManager: PackageManagerName;
+  saveType: PackageDependencySaveType;
+  packageSpec: string;
+  workspaceRoot?: boolean;
+}): PackageManagerCommand {
+  if (packageManager === "npm") {
+    return {
+      command: packageManager,
+      args: ["install", saveType === "devDependencies" ? "--save-dev" : "--save", packageSpec],
+    };
+  }
+
+  if (packageManager === "pnpm") {
+    const workspaceRootArgs = workspaceRoot ? ["--workspace-root"] : [];
+    return {
+      command: packageManager,
+      args:
+        saveType === "devDependencies"
+          ? ["add", "--save-dev", ...workspaceRootArgs, packageSpec]
+          : ["add", ...workspaceRootArgs, packageSpec],
+    };
+  }
+
+  return {
+    command: packageManager,
+    args: saveType === "devDependencies" ? ["add", "--dev", packageSpec] : ["add", packageSpec],
+  };
+}
+
+export async function isPnpmWorkspaceRoot({ cwd }: { cwd: string }): Promise<boolean> {
+  return fileExists(join(cwd, "pnpm-workspace.yaml"));
+}
+
+export function createPackageRemoveCommand({
+  packageManager,
+  packageName,
+  workspaceRoot = false,
+}: {
+  packageManager: PackageManagerName;
+  packageName: string;
+  workspaceRoot?: boolean;
+}): PackageManagerCommand {
+  if (packageManager === "pnpm") {
+    return {
+      command: packageManager,
+      args: workspaceRoot ? ["remove", "--workspace-root", packageName] : ["remove", packageName],
+    };
+  }
+
+  return {
+    command: packageManager,
+    args: [packageManager === "npm" ? "uninstall" : "remove", packageName],
+  };
+}
+
 export function createPackageInstallRunner({
   cwd,
   packageCommandRunner = defaultPackageCommandRunner,
@@ -60,7 +129,8 @@ export function createPackageInstallRunner({
 }
 
 export const defaultPackageCommandRunner: PackageCommandRunner = async ({ command, args, cwd }) => {
-  const child = spawn(command, args, { cwd, shell: true });
+  const processCommand = packageCommandProcessForPlatform(command, args);
+  const child = spawn(processCommand.command, processCommand.args, { cwd, shell: false });
   let stdout = "";
   let stderr = "";
 
@@ -80,6 +150,16 @@ export const defaultPackageCommandRunner: PackageCommandRunner = async ({ comman
 
   return { exitCode, stdout, stderr };
 };
+
+function packageCommandProcessForPlatform(
+  command: string,
+  args: readonly string[],
+): { command: string; args: readonly string[] } {
+  if (process.platform === "win32" && isPackageManagerName(command)) {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", command, ...args] };
+  }
+  return { command, args };
+}
 
 function createDetection(
   name: PackageManagerName,

@@ -3,7 +3,12 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { createPackageInstallRunner, detectPackageManager } from "./package-manager.js";
+import {
+  createPackageAddCommand,
+  createPackageInstallRunner,
+  createPackageRemoveCommand,
+  detectPackageManager,
+} from "./package-manager.js";
 
 async function writePackageJson(cwd: string, packageJson: Record<string, unknown> = {}) {
   await mkdir(cwd, { recursive: true });
@@ -15,6 +20,7 @@ describe("detectPackageManager", () => {
     ["pnpm-lock.yaml", "pnpm"],
     ["package-lock.json", "npm"],
     ["yarn.lock", "yarn"],
+    ["bun.lock", "bun"],
     ["bun.lockb", "bun"],
   ] as const)("selects %s before packageManager metadata", async (lockfile, name) => {
     const cwd = join("node_modules", ".tmp-trailstep-package-manager-tests", `lockfile-${name}`);
@@ -49,6 +55,67 @@ describe("detectPackageManager", () => {
       name: "npm",
       installCommand: { command: "npm", args: ["install"] },
       warnings: ["No lockfile or packageManager field found; defaulting to npm."],
+    });
+  });
+});
+
+describe("createPackageAddCommand", () => {
+  it.each([
+    ["npm", "devDependencies", ["install", "--save-dev", "@acme/workflows@latest"]],
+    ["npm", "dependencies", ["install", "--save", "@acme/workflows@latest"]],
+    ["pnpm", "devDependencies", ["add", "--save-dev", "@acme/workflows@latest"]],
+    ["pnpm", "dependencies", ["add", "@acme/workflows@latest"]],
+    ["yarn", "devDependencies", ["add", "--dev", "@acme/workflows@latest"]],
+    ["yarn", "dependencies", ["add", "@acme/workflows@latest"]],
+    ["bun", "devDependencies", ["add", "--dev", "@acme/workflows@latest"]],
+    ["bun", "dependencies", ["add", "@acme/workflows@latest"]],
+  ] as const)("creates a %s %s add command", (packageManager, saveType, args) => {
+    expect(
+      createPackageAddCommand({
+        packageManager,
+        saveType,
+        packageSpec: "@acme/workflows@latest",
+      }),
+    ).toEqual({ command: packageManager, args });
+  });
+  it("adds pnpm dependencies at the workspace root when requested", () => {
+    expect(
+      createPackageAddCommand({
+        packageManager: "pnpm",
+        saveType: "devDependencies",
+        packageSpec: "@acme/workflows@latest",
+        workspaceRoot: true,
+      }),
+    ).toEqual({
+      command: "pnpm",
+      args: ["add", "--save-dev", "--workspace-root", "@acme/workflows@latest"],
+    });
+  });
+});
+
+describe("createPackageRemoveCommand", () => {
+  it.each([
+    ["npm", ["uninstall", "@acme/workflows"]],
+    ["pnpm", ["remove", "@acme/workflows"]],
+    ["yarn", ["remove", "@acme/workflows"]],
+    ["bun", ["remove", "@acme/workflows"]],
+  ] as const)("creates a %s remove command", (packageManager, args) => {
+    expect(createPackageRemoveCommand({ packageManager, packageName: "@acme/workflows" })).toEqual({
+      command: packageManager,
+      args,
+    });
+  });
+
+  it("removes pnpm dependencies at the workspace root when requested", () => {
+    expect(
+      createPackageRemoveCommand({
+        packageManager: "pnpm",
+        packageName: "@acme/workflows",
+        workspaceRoot: true,
+      }),
+    ).toEqual({
+      command: "pnpm",
+      args: ["remove", "--workspace-root", "@acme/workflows"],
     });
   });
 });

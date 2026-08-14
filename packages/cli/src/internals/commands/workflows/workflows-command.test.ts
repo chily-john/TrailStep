@@ -604,7 +604,7 @@ describe("workflowsCommand", () => {
       workflows: { project: { scratch: "./scratch.mjs" } },
     });
     expect(packageCommandCalls).toEqual([
-      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+      { command: "npm", args: ["uninstall", "@acme/workflows"], cwd },
     ]);
     await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
     expect(lines).toContain("Package cleanup: uninstalled @acme/workflows from project scope.");

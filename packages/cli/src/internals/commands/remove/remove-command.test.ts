@@ -341,7 +341,7 @@ describe("removeCommand", () => {
     expect(exitCode).toBe(0);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
     expect(packageCommandCalls).toEqual([
-      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+      { command: "npm", args: ["uninstall", "@acme/workflows"], cwd },
     ]);
     await expect(stat(packageDir)).rejects.toMatchObject({ code: "ENOENT" });
     expect(lines).toEqual([
@@ -407,7 +407,7 @@ describe("removeCommand", () => {
     expect(packageCommandCalls).toEqual([
       {
         command: "npm",
-        args: ["uninstall", "--save", "@acme/workflows"],
+        args: ["uninstall", "@acme/workflows"],
         cwd: packageStore,
       },
     ]);
@@ -466,13 +466,13 @@ describe("removeCommand", () => {
     expect(exitCode).toBe(1);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({ workflows: {} });
     expect(packageCommandCalls).toEqual([
-      { command: "npm", args: ["uninstall", "--save-dev", "@acme/workflows"], cwd },
+      { command: "npm", args: ["uninstall", "@acme/workflows"], cwd },
     ]);
     await expect(stat(packageDir)).resolves.toBeTruthy();
     expect(lines).toEqual(["Removed project/review from project config."]);
     expect(lines).not.toContain("Package cleanup: uninstalled @acme/workflows from project scope.");
     expect(errors).toEqual([
-      `Package cleanup failed for @acme/workflows in project scope at ${cwd}: npm uninstall failed with exit code 19\nstderr:\nEACCES: permission denied`,
+      `Package cleanup failed for @acme/workflows in project scope at ${cwd}: package removal failed with exit code 19\nstderr:\nEACCES: permission denied`,
       `Registration was removed, but package cleanup for @acme/workflows needs manual attention in ${cwd}.`,
     ]);
   });

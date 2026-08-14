@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +9,20 @@ import { resolveCommand } from "../../command-registry.js";
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
+}
+
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function packagedSkillMarker(target: "project" | "user"): Promise<Record<string, string>> {
+  const skillMarkdown = await readFile(resolve("trailstep-skill/SKILL.md"));
+  return {
+    source: "@trailstep/cli/trailstep-skill",
+    target,
+    contentHash: `sha256:${createHash("sha256").update(skillMarkdown).digest("hex")}`,
+  };
 }
 
 const WORKING_ARGS_PROMPT =
@@ -451,6 +465,75 @@ describe("initCommand", () => {
     expect(skillsCalls).toHaveLength(1);
   });
 
+  it("skips project skill installation when the global config already tracks the current skill", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+      "project",
+    );
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+      "home",
+    );
+    await writeJson(resolve(homeDir, ".trailstep", "config.json"), {
+      skillInstallations: { trailstep: await packagedSkillMarker("user") },
+    });
+
+    const command = resolveCommand(["init", "--scope", "project"]);
+    const confirmPrompts: string[] = [];
+    const skillsCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const exitCode = await command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+      cwd,
+      homeDir,
+      io: { writeLine: () => undefined, writeError: () => undefined },
+      prompts: {
+        async text(prompt) {
+          if (prompt === "Model") {
+            return "sonnet";
+          }
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+        async select(prompt) {
+          if (prompt === "Provider") {
+            return "claude";
+          }
+          if (prompt === "Model override") {
+            return "Type manually";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            return "Use provider default";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        async confirm(prompt) {
+          confirmPrompts.push(prompt);
+          if (prompt === "Configure another agent?") {
+            return false;
+          }
+          throw new Error(`Unexpected confirm prompt: ${prompt}`);
+        },
+      },
+      skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+      skillsCliProcessRunner: async (commandName, args) => {
+        skillsCalls.push({ command: commandName, args });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(confirmPrompts).not.toContain("Install the TrailStep usage/authoring skill?");
+    expect(skillsCalls).toHaveLength(0);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
+    });
+  });
+
   it("skips skill installation without prompting when --no-install-skill is passed", async ({
     task,
   }) => {
@@ -609,6 +692,10 @@ describe("initCommand", () => {
     ]);
     expect(skillsCalls[0]?.args.slice(3)).toEqual(["--agent", "*", "-y"]);
     expect(lines).toContain("Installed TrailStep usage skill.");
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      agents: { default: [{ provider: "claude", model: "sonnet" }] },
+      skillInstallations: { trailstep: await packagedSkillMarker("project") },
+    });
   });
 
   it("installs the packaged TrailStep usage skill globally for --scope global", async ({
@@ -673,6 +760,7 @@ describe("initCommand", () => {
     expect(skillsCalls[0]?.args.slice(-1)).toEqual(["-g"]);
     expect(await readJson(resolve(homeDir, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
+      skillInstallations: { trailstep: await packagedSkillMarker("user") },
     });
   });
 

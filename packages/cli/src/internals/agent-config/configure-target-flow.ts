@@ -1,4 +1,5 @@
 import {
+  type ProviderAdapter,
   type ProviderModelDiscoverySpec,
   type ProviderRegistryKey,
   providerRegistry,
@@ -134,12 +135,8 @@ async function modelOverrideChoicesForProvider({
 function modelDiscoverySpecForProvider(
   providerSelection: string,
 ): ProviderModelDiscoverySpec | undefined {
-  if (!Object.hasOwn(providerRegistry, providerSelection)) {
-    return undefined;
-  }
-
-  const modelSupport = providerRegistry[providerSelection as ProviderRegistryKey].spec.model;
-  return modelSupport.supported ? modelSupport.discovery : undefined;
+  const modelSupport = registryProviderForSelection(providerSelection)?.spec?.model;
+  return modelSupport?.supported === true ? modelSupport.discovery : undefined;
 }
 
 async function discoverModelOverrides(options: {
@@ -201,16 +198,33 @@ function thinkingOverrideChoicesForProvider(
     const thinking = customProvider.config.thinking;
     return thinking?.supported === true ? [PROVIDER_DEFAULT_CHOICE, ...thinking.levels] : [];
   }
-  if (!Object.hasOwn(providerRegistry, providerSelection)) {
+  const thinkingSupport = registryProviderForSelection(providerSelection)?.spec?.thinking;
+  if (thinkingSupport === undefined) {
     return GENERIC_THINKING_OVERRIDE_CHOICES;
   }
-
-  const thinkingSupport = providerRegistry[providerSelection as ProviderRegistryKey].spec.thinking;
   if (!thinkingSupport.supported) {
     return [];
   }
 
   return [PROVIDER_DEFAULT_CHOICE, ...thinkingSupport.levels];
+}
+
+// Runtime guard for stale or mismatched @trailstep/core builds; current core
+// adapters require spec metadata, but the CLI should not crash if it is absent.
+type ProviderAdapterWithOptionalSpec = Omit<ProviderAdapter, "spec"> & {
+  readonly spec?: ProviderAdapter["spec"];
+};
+
+function registryProviderForSelection(
+  providerSelection: string,
+): ProviderAdapterWithOptionalSpec | undefined {
+  if (!Object.hasOwn(providerRegistry, providerSelection)) {
+    return undefined;
+  }
+
+  return providerRegistry[
+    providerSelection as ProviderRegistryKey
+  ] as ProviderAdapterWithOptionalSpec;
 }
 
 async function promptThinkingOverride(

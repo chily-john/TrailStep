@@ -15,6 +15,12 @@
   "keywords": [
     "trailstep-workflow"
   ],
+  "trailstep": {
+    "workflows": {
+      "takeItAway": "./dist/index.js#takeItAway",
+      "grillItAway": "./dist/index.js#grillItAway"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -24,7 +30,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "biome check src"
@@ -45,6 +51,7 @@
   },
   "files": [
     "dist",
+    "shared",
     "README.md",
     "LICENSE"
   ],

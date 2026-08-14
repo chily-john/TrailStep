@@ -3,16 +3,18 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { PackageCommandRunner } from "../command.types.js";
-import { defaultPackageCommandRunner } from "../package-manager/package-manager.js";
+import {
+  createPackageAddCommand,
+  defaultPackageCommandRunner,
+  detectPackageManager,
+  isPnpmWorkspaceRoot,
+} from "../package-manager/package-manager.js";
 import type {
   WorkflowPackageInstallOwnership,
   WorkflowRegistryContext,
   WorkflowRegistryScope,
 } from "../workflow-registry/workflow-registry.js";
-import {
-  workflowPackageInstallRootForScope,
-  workflowPackageInstallSaveArgsForScope,
-} from "./install-root.js";
+import { workflowPackageInstallRootForScope } from "./install-root.js";
 import type { ParsedWorkflowPackageRef } from "./package-ref.js";
 
 export interface InstalledNpmWorkflowPackage {
@@ -59,15 +61,23 @@ export async function installNpmWorkflowPackage({
       ? await listInstalledPackageNames(installRoot)
       : new Set<string>();
 
+  const packageManager = await detectPackageManager({ cwd: installRoot });
+  const installCommand = createPackageAddCommand({
+    packageManager: packageManager.name,
+    saveType: workflowPackageInstallSaveTypeForScope(scope),
+    packageSpec: packageRef.requestedSpec,
+    workspaceRoot:
+      packageManager.name === "pnpm" ? await isPnpmWorkspaceRoot({ cwd: installRoot }) : false,
+  });
   const installResult = await packageCommandRunner({
-    command: "npm",
-    args: ["install", ...workflowPackageInstallSaveArgsForScope(scope), packageRef.requestedSpec],
+    command: installCommand.command,
+    args: installCommand.args,
     cwd: installRoot,
   });
   if (installResult.exitCode !== 0) {
     throw new WorkflowPackageInstallError(
       [
-        `npm install failed for ${packageRef.requestedSpec} with exit code ${installResult.exitCode}.`,
+        `${formatPackageCommand(installCommand)} failed for ${packageRef.requestedSpec} with exit code ${installResult.exitCode}.`,
         installResult.stderr,
       ]
         .filter((part): part is string => typeof part === "string" && part.length > 0)
@@ -310,6 +320,16 @@ async function readPackageManifestCandidate(
 async function readJsonObject(path: string): Promise<Record<string, unknown>> {
   const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
   return isRecord(parsed) ? parsed : {};
+}
+
+function workflowPackageInstallSaveTypeForScope(
+  scope: WorkflowRegistryScope,
+): "dependencies" | "devDependencies" {
+  return scope === "global" ? "dependencies" : "devDependencies";
+}
+
+function formatPackageCommand(command: { command: string; args: readonly string[] }): string {
+  return [command.command, ...command.args].join(" ");
 }
 
 function readInstalledPackageName(

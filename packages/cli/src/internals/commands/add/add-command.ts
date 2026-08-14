@@ -48,9 +48,9 @@ import {
 } from "../../workflow-registry/workflow-registry.js";
 import {
   type BundleWorkflowSpecifier,
+  hasBundleWorkflowManifest,
+  listBundleWorkflowNames,
   loadBundleWorkflow,
-  readBundleWorkflowManifest,
-  resolvePackageJsonPath,
 } from "../../workflow-resolution/bundle-resolver.js";
 import { loadDirectWorkflowExports } from "../../workflow-resolution/direct-file-resolver.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
@@ -432,7 +432,7 @@ async function buildAddRegistrationPlan({
 
   const registrations = registryTargets.map((registryTarget) => ({
     registryTarget,
-    name: args.name ?? deriveDefaultWorkflowName(registryTarget.workflow),
+    name: args.name ?? deriveDefaultWorkflowName(registryTarget),
   }));
 
   const registrationConflicts = await findRegistrationConflicts(
@@ -753,8 +753,8 @@ async function resolveNamespace(
   );
 }
 
-function deriveDefaultWorkflowName(workflow: WorkflowSkillMetadata | undefined): string {
-  const id = workflow?.id;
+function deriveDefaultWorkflowName(registryTarget: AddRegistryTarget): string {
+  const id = registryTarget.workflow?.id ?? registryTarget.bundleSpecifier?.workflowName;
   if (id === undefined) {
     throw new CliUsageError("trailstep add requires --name <name> for this source.");
   }
@@ -1436,18 +1436,32 @@ async function listBundleAddWorkflowCandidates(
 ): Promise<readonly AddWorkflowCandidate[]> {
   const workflowNames = await readBundleWorkflowNames(source, cwd);
   const candidates: AddWorkflowCandidate[] = [];
+  const requiresStrictManifestLoading = await hasBundleWorkflowManifest(source, { cwd });
 
   for (const workflowName of workflowNames) {
     const specifier = bundleWorkflowSpecifier(source, workflowName);
-    const bundleWorkflow = await loadBundleWorkflow(specifier, { cwd });
-    candidates.push({
-      selectionName: workflowName,
-      sourceKind: "bundle",
-      targetRef: `${source}#${workflowName}`,
-      workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
-      bundleSpecifier: specifier,
-      bundleExportName: bundleWorkflow.workflowRef.exportName,
-    });
+    try {
+      const bundleWorkflow = await loadBundleWorkflow(specifier, { cwd });
+      candidates.push({
+        selectionName: workflowName,
+        sourceKind: "bundle",
+        targetRef: `${source}#${workflowName}`,
+        workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
+        bundleSpecifier: specifier,
+        bundleExportName: bundleWorkflow.workflowRef.exportName,
+      });
+    } catch (error) {
+      if (requiresStrictManifestLoading) {
+        throw error;
+      }
+      candidates.push({
+        selectionName: workflowName,
+        sourceKind: "bundle",
+        targetRef: `${source}#${workflowName}`,
+        bundleSpecifier: specifier,
+        bundleExportName: workflowName,
+      });
+    }
   }
 
   return candidates;
@@ -1585,20 +1599,8 @@ async function isBundleSource(source: string, cwd: string): Promise<boolean> {
   }
 }
 
-async function readBundleWorkflowNames(source: string, cwd: string): Promise<string[]> {
-  const packageJsonPath = resolvePackageJsonPath(source, cwd);
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as unknown;
-  } catch (error) {
-    throw new WorkflowResolutionError(
-      `Unable to read bundle package manifest for ${source}: ${packageJsonPath}`,
-      { cause: error },
-    );
-  }
-
-  return Object.keys(readBundleWorkflowManifest(parsed, source));
+async function readBundleWorkflowNames(source: string, cwd: string): Promise<readonly string[]> {
+  return listBundleWorkflowNames(source, { cwd });
 }
 
 function bundleWorkflowSpecifier(source: string, workflowName: string): BundleWorkflowSpecifier {

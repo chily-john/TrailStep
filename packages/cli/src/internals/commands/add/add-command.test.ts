@@ -3283,6 +3283,62 @@ describe("addCommand", () => {
     ).resolves.toMatchObject({ id: "project/review" });
   });
 
+  it("uses the detected package manager when installing package-backed workflows", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const installRequests: Array<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+    }> = [];
+    await mkdir(cwd, { recursive: true });
+    await writeFile(join(cwd, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
+    await writeFile(join(cwd, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n", "utf8");
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--scope", "project"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        packageCommandRunner: async (request) => {
+          installRequests.push(request);
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([
+      {
+        command: "pnpm",
+        args: ["add", "--save-dev", "--workspace-root", "@acme/workflows@latest"],
+        cwd,
+      },
+    ]);
+  });
+
   it("reports existing package version and records reused ownership metadata", async ({ task }) => {
     const cwd = join(
       "node_modules",

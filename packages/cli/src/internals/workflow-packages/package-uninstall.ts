@@ -3,17 +3,19 @@ import type {
   PackageCommandRunner,
   TrailStepCliIo,
 } from "../command.types.js";
-import { defaultPackageCommandRunner } from "../package-manager/package-manager.js";
+import {
+  createPackageRemoveCommand,
+  defaultPackageCommandRunner,
+  detectPackageManager,
+  isPnpmWorkspaceRoot,
+} from "../package-manager/package-manager.js";
 import {
   listRegisteredWorkflowEntries,
   type RegisteredWorkflowEntry,
   type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryContext,
 } from "../workflow-registry/workflow-registry.js";
-import {
-  workflowPackageInstallRootForMetadata,
-  workflowPackageInstallSaveArgsForScope,
-} from "./install-root.js";
+import { workflowPackageInstallRootForMetadata } from "./install-root.js";
 
 export type RemovedWorkflowPackageInstallCleanupResult =
   | { readonly status: "none" }
@@ -144,13 +146,16 @@ export async function uninstallWorkflowPackageInstall({
   packageCommandRunner = defaultPackageCommandRunner,
 }: UninstallWorkflowPackageInstallOptions): Promise<PackageCommandResult> {
   const installRoot = workflowPackageInstallRootForMetadata(metadata, { cwd, homeDir });
+  const packageManager = await detectPackageManager({ cwd: installRoot });
+  const removeCommand = createPackageRemoveCommand({
+    packageManager: packageManager.name,
+    packageName: metadata.packageName,
+    workspaceRoot:
+      packageManager.name === "pnpm" ? await isPnpmWorkspaceRoot({ cwd: installRoot }) : false,
+  });
   return packageCommandRunner({
-    command: "npm",
-    args: [
-      "uninstall",
-      ...workflowPackageInstallSaveArgsForScope(metadata.installScope),
-      metadata.packageName,
-    ],
+    command: removeCommand.command,
+    args: removeCommand.args,
     cwd: installRoot,
   });
 }
@@ -189,7 +194,7 @@ function formatPackageCleanupFailure(
   const details = [
     result.exitCode === undefined
       ? undefined
-      : `npm uninstall failed with exit code ${result.exitCode}`,
+      : `package removal failed with exit code ${result.exitCode}`,
     result.stderr === undefined || result.stderr.length === 0
       ? undefined
       : `stderr:\n${result.stderr.trimEnd()}`,

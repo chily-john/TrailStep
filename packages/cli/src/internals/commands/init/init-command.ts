@@ -4,7 +4,14 @@ import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
-import { installPackagedTrailStepSkill } from "../../trailstep-skill/trailstep-skill.js";
+import {
+  createPackagedTrailStepSkillInstallationMarker,
+  hasCurrentTrailStepSkillInstallationMarker,
+  installPackagedTrailStepSkill,
+  setTrailStepSkillInstallationMarker,
+  type TrailStepSkillInstallationMarker,
+  trailStepSkillInstallTargetForScope,
+} from "../../trailstep-skill/trailstep-skill.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
@@ -90,9 +97,17 @@ export const initCommand: CliCommand<InitCommandArgs> = {
     await writeRawTrailStepConfigFile(configPath, nextConfig);
     context.io.writeLine(`Wrote TrailStep agent config to ${configPath}.`);
 
-    if (await shouldInstallSkill(args.skillInstallMode, context)) {
-      await installTrailStepSkillOrThrow(scope, context);
-      context.io.writeLine("Installed TrailStep usage skill.");
+    if (args.skillInstallMode !== "skip") {
+      const skillMarker = await createPackagedTrailStepSkillInstallationMarker(
+        trailStepSkillInstallTargetForScope(scope),
+      );
+      if (await hasTrackedTrailStepSkillInstallation(scope, context, skillMarker)) {
+        context.io.writeLine("TrailStep usage skill is already installed.");
+      } else if (await shouldInstallSkill(args.skillInstallMode, context)) {
+        await installTrailStepSkillOrThrow(scope, context);
+        await markTrailStepSkillInstalled(scope, context, skillMarker);
+        context.io.writeLine("Installed TrailStep usage skill.");
+      }
     }
 
     return 0;
@@ -163,6 +178,44 @@ async function shouldInstallSkill(
       context.prompts,
       "trailstep init requires a yes/no answer.",
     )) === "yes"
+  );
+}
+
+async function hasTrackedTrailStepSkillInstallation(
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+  expectedMarker: TrailStepSkillInstallationMarker,
+): Promise<boolean> {
+  for (const configScope of skillInstallationMarkerScopesForScope(scope)) {
+    const config = await readRawTrailStepConfigFile(configPathForScope(configScope, context));
+    const markerForConfigScope = {
+      ...expectedMarker,
+      target: trailStepSkillInstallTargetForScope(configScope),
+    };
+    if (hasCurrentTrailStepSkillInstallationMarker(config, markerForConfigScope)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function skillInstallationMarkerScopesForScope(
+  scope: WorkflowRegistryScope,
+): readonly WorkflowRegistryScope[] {
+  return scope === "global" ? ["global"] : ["local", "project", "global"];
+}
+
+async function markTrailStepSkillInstalled(
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+  marker: TrailStepSkillInstallationMarker,
+): Promise<void> {
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  await writeRawTrailStepConfigFile(
+    configPath,
+    setTrailStepSkillInstallationMarker(config, marker),
   );
 }
 

@@ -16,6 +16,7 @@ describe("public package positioning", () => {
       publishConfig?: { access?: string };
       files?: string[];
       keywords?: string[];
+      trailstep?: { workflows?: Record<string, string> };
     };
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");
@@ -31,8 +32,14 @@ describe("public package positioning", () => {
     expect(packageJson.bugs?.url).toBe("https://github.com/chily-john/trailstep/issues");
     expect(packageJson.homepage).toBe("https://github.com/chily-john/trailstep#readme");
     expect(packageJson.publishConfig?.access).toBe("public");
-    expect(packageJson.files).toEqual(expect.arrayContaining(["dist", "README.md", "LICENSE"]));
+    expect(packageJson.files).toEqual(
+      expect.arrayContaining(["dist", "shared", "README.md", "LICENSE"]),
+    );
     expect(packageJson.keywords).toContain("trailstep-workflow");
+    expect(packageJson.trailstep?.workflows).toEqual({
+      takeItAway: "./dist/index.js#takeItAway",
+      grillItAway: "./dist/index.js#grillItAway",
+    });
 
     expect(readme).toMatch(/public/i);
     expect(readme).toMatch(/reusable/i);

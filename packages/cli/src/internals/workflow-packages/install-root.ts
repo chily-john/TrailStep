@@ -23,9 +23,3 @@ export function workflowPackageInstallRootForMetadata(
 ): string {
   return workflowPackageInstallRootForScope(metadata.installScope, context);
 }
-
-export function workflowPackageInstallSaveArgsForScope(
-  scope: WorkflowRegistryScope,
-): readonly string[] {
-  return scope === "global" ? ["--save"] : ["--save-dev"];
-}

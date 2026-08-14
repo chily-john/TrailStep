@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  listBundleWorkflowNames,
   loadBundleWorkflow,
   parseManifestTarget,
   readBundleWorkflowManifest,
@@ -73,6 +74,86 @@ describe("loadBundleWorkflow", () => {
         exportName: "reviewWorkflow",
       },
     });
+  });
+
+  it("resolves a package manifest even when package exports hide package.json", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      dependencies: { "@acme/workflows": "1.0.0" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      type: "module",
+      exports: { ".": { import: "./index.mjs", types: "./index.d.ts" } },
+      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+    });
+    await writeFile(join(packageDir, "index.mjs"), workflowModuleSource, "utf8");
+
+    await expect(
+      loadBundleWorkflow({ packageName: "@acme/workflows", workflowName: "review" }, { cwd }),
+    ).resolves.toMatchObject({
+      id: "@acme/workflows#review",
+      workflow: { id: "reviewWorkflow" },
+    });
+  });
+
+  it("discovers package root workflow exports when bundle manifest metadata is absent", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      dependencies: { "@acme/workflows": "1.0.0" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      type: "module",
+      exports: { ".": { import: "./index.mjs", types: "./index.d.ts" } },
+    });
+    await writeFile(join(packageDir, "index.mjs"), workflowModuleSource, "utf8");
+
+    await expect(listBundleWorkflowNames("@acme/workflows", { cwd })).resolves.toEqual([
+      "reviewWorkflow",
+    ]);
+    await expect(
+      loadBundleWorkflow({ packageName: "@acme/workflows", workflowName: "reviewWorkflow" }, { cwd }),
+    ).resolves.toMatchObject({
+      id: "@acme/workflows#reviewWorkflow",
+      workflow: { id: "reviewWorkflow" },
+      workflowRef: { exportName: "reviewWorkflow" },
+    });
+  });
+
+  it("statically discovers package root export names when importing the entrypoint fails", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-bundle-resolver-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await writeJson(join(cwd, "package.json"), {
+      name: "consumer",
+      dependencies: { "@acme/workflows": "1.0.0" },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      type: "module",
+      exports: { ".": { import: "./index.mjs", types: "./index.d.ts" } },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "import './missing-asset.mjs';\nconst review = {};\nexport { review as reviewWorkflow };\nexport const releaseWorkflow = {};\n",
+      "utf8",
+    );
+
+    await expect(listBundleWorkflowNames("@acme/workflows", { cwd })).resolves.toEqual([
+      "releaseWorkflow",
+      "reviewWorkflow",
+    ]);
   });
 
   it("resolves a local package manifest workflow to the named export", async ({ task }) => {

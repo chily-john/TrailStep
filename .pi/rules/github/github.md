@@ -23,7 +23,7 @@ Enter here when changing repository automation or contributor workflow expectati
 - `pull_request_template.md`: Change when reviewer checklist expectations change.
 - `branch-protection.md`: Change when administrator-facing GitHub branch protection setup changes.
 - `workflows/ci.yml`: Change when all-package validation or supported tool versions change.
-- `workflows/release.yml`: Change when manual Changesets release behavior changes.
+- `workflows/release.yml`: Change when Changesets release triggers or publish behavior change.
 - `workflows/dependency-review.yml`: Change when dependency review policy changes; its non-blocking mode is intentional while the project is early.
 
 ## Rules

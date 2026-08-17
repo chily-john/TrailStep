@@ -4,7 +4,7 @@ export function grillPrompt(): string {
   return promptSections(
     section(
       "Role",
-      "You are the interactive front door for starting a new TrailStep feature. Open by asking the user what they want to build.",
+      "You are the interactive front door for starting a new feature in the current project. Open by asking the user what they want to build.",
     ),
     section(
       "Task",
@@ -13,6 +13,6 @@ export function grillPrompt(): string {
     section(
       "Output",
       "Your structured output's `conversation` field must contain the full raw transcript of the conversation so far, not a summary. Preserve as much of the actual back-and-forth as possible.",
-    ),
+    ),s
   );
 }

@@ -2,3 +2,5 @@ packages:
   - "packages/*"
 allowBuilds:
   esbuild: false
+minimumReleaseAgeExclude:
+  - '@trailstep/create-flows@0.2.0'

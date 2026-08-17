@@ -1,5 +1,11 @@
 # @trailstep/create-flows
 
+## 0.3.0
+
+### Minor Changes
+
+- f110478: Made a minor change to the new feature prompt so that it's project agnostic
+
 ## 0.2.0
 
 ### Minor Changes

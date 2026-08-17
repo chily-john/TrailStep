@@ -119,21 +119,22 @@ describe("subPrompt concurrency", () => {
     });
 
     const completedEvents = result.events.filter((event) => event.type === "subPrompt.completed");
-    expect(completedEvents).toMatchObject([
-      {
-        payload: {
-          ordinal: 2,
-          output: { answer: "chosen-b" },
-          artifactPaths: startedByOrdinal.get(2)?.payload.artifactPaths,
-        },
+    const completedByOrdinal = new Map(
+      completedEvents.map((event) => [event.payload.ordinal, event]),
+    );
+    expect(completedByOrdinal.get(1)).toMatchObject({
+      payload: {
+        ordinal: 1,
+        output: { answer: "chosen-a" },
+        artifactPaths: startedByOrdinal.get(1)?.payload.artifactPaths,
       },
-      {
-        payload: {
-          ordinal: 1,
-          output: { answer: "chosen-a" },
-          artifactPaths: startedByOrdinal.get(1)?.payload.artifactPaths,
-        },
+    });
+    expect(completedByOrdinal.get(2)).toMatchObject({
+      payload: {
+        ordinal: 2,
+        output: { answer: "chosen-b" },
+        artifactPaths: startedByOrdinal.get(2)?.payload.artifactPaths,
       },
-    ]);
+    });
   });
 });

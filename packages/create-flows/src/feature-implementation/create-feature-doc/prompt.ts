@@ -1,10 +1,12 @@
-import { loadFragments, promptSections, section } from "@trailstep/authoring";
+import { promptSections, section } from "@trailstep/authoring";
+import featureDocFormatFragment from "../shared/feature-doc-format.md?raw";
+import methodologyFragment from "../shared/feature-methodology.md?raw";
 import type { TakeItAwayInput } from "../shared/input-schema.js";
 
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  featureDocFormat: "../shared/feature-doc-format.md",
-});
+const fragments = {
+  methodology: methodologyFragment.trimEnd(),
+  featureDocFormat: featureDocFormatFragment.trimEnd(),
+};
 
 export function createFeatureDocPrompt({ input }: { readonly input: TakeItAwayInput }): string {
   return promptSections(

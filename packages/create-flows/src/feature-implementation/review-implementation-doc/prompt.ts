@@ -1,10 +1,12 @@
 import type { Document } from "@trailstep/authoring";
-import { list, loadFragments, promptSections, section } from "@trailstep/authoring";
+import { list, promptSections, section } from "@trailstep/authoring";
+import methodologyFragment from "../shared/feature-methodology.md?raw";
+import implementationDocFormatFragment from "../shared/implementation-doc-format.md?raw";
 
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  implementationDocFormat: "../shared/implementation-doc-format.md",
-});
+const fragments = {
+  methodology: methodologyFragment.trimEnd(),
+  implementationDocFormat: implementationDocFormatFragment.trimEnd(),
+};
 
 export interface ReviewImplementationDocInput extends Record<string, unknown> {
   readonly featureDoc: Document;

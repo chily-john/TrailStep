@@ -1,18 +1,14 @@
-import {
-  type Document,
-  jsonSchema,
-  list,
-  loadFragments,
-  promptSections,
-  section,
-} from "@trailstep/authoring";
+import { type Document, jsonSchema, list, promptSections, section } from "@trailstep/authoring";
+import methodologyFragment from "../shared/feature-methodology.md?raw";
+import projectArchitectureGuidanceFragment from "../shared/project-architecture-guidance.md?raw";
 import type { ReviewResult } from "../shared/review-schema.js";
+import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
 
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  architectureGuidance: "../shared/project-architecture-guidance.md",
-  storyContract: "../shared/story-implementation-contract.md",
-});
+const fragments = {
+  methodology: methodologyFragment.trimEnd(),
+  architectureGuidance: projectArchitectureGuidanceFragment.trimEnd(),
+  storyContract: storyImplementationContractFragment.trimEnd(),
+};
 
 export interface ImplementStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;

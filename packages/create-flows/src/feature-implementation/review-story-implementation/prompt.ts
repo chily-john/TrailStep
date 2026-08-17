@@ -1,11 +1,13 @@
 import type { Document } from "@trailstep/authoring";
-import { loadFragments, promptSections, section } from "@trailstep/authoring";
+import { promptSections, section } from "@trailstep/authoring";
+import methodologyFragment from "../shared/feature-methodology.md?raw";
+import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
 import type { StoryReviewGitContext } from "../shared/story-state.js";
 
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  storyContract: "../shared/story-implementation-contract.md",
-});
+const fragments = {
+  methodology: methodologyFragment.trimEnd(),
+  storyContract: storyImplementationContractFragment.trimEnd(),
+};
 
 export interface ReviewStoryImplementationInput extends Record<string, unknown> {
   readonly currentStory: Document;

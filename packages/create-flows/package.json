@@ -30,7 +30,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean && node scripts/copy-assets.mjs",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --loader .md=text",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "biome check src"
@@ -51,7 +51,6 @@
   },
   "files": [
     "dist",
-    "shared",
     "README.md",
     "LICENSE"
   ],

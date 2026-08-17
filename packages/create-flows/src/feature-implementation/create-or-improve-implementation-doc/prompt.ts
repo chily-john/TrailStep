@@ -1,12 +1,15 @@
 import type { Document } from "@trailstep/authoring";
-import { list, loadFragments, promptSections, section } from "@trailstep/authoring";
+import { list, promptSections, section } from "@trailstep/authoring";
+import methodologyFragment from "../shared/feature-methodology.md?raw";
+import implementationDocFormatFragment from "../shared/implementation-doc-format.md?raw";
+import projectArchitectureGuidanceFragment from "../shared/project-architecture-guidance.md?raw";
 import type { ReviewResult } from "../shared/review-schema.js";
 
-const fragments = loadFragments(import.meta.dirname, {
-  methodology: "../shared/feature-methodology.md",
-  architectureGuidance: "../shared/project-architecture-guidance.md",
-  implementationDocFormat: "../shared/implementation-doc-format.md",
-});
+const fragments = {
+  methodology: methodologyFragment.trimEnd(),
+  architectureGuidance: projectArchitectureGuidanceFragment.trimEnd(),
+  implementationDocFormat: implementationDocFormatFragment.trimEnd(),
+};
 
 export interface CreateOrImproveImplementationDocInput extends Record<string, unknown> {
   readonly featureDoc: Document;

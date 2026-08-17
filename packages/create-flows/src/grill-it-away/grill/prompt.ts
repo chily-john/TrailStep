@@ -13,6 +13,6 @@ export function grillPrompt(): string {
     section(
       "Output",
       "Your structured output's `conversation` field must contain the full raw transcript of the conversation so far, not a summary. Preserve as much of the actual back-and-forth as possible.",
-    ),s
+    ),
   );
 }

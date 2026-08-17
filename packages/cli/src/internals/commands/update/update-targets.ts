@@ -15,7 +15,7 @@ const trailstepPackageNames = [
   "@trailstep/cli",
 ] as const;
 
-type TrailStepPackageName = (typeof trailstepPackageNames)[number];
+export type TrailStepPackageName = (typeof trailstepPackageNames)[number];
 
 export type DependencySection = "dependencies" | "devDependencies" | "peerDependencies";
 
@@ -28,6 +28,7 @@ export interface UpdateTarget {
 
 export interface TrailStepSelfUpdatePlan {
   targets: UpdateTarget[];
+  currentPackageNames: readonly TrailStepPackageName[];
 }
 
 export interface ResolveTrailStepSelfUpdateTargetsOptions {
@@ -49,7 +50,7 @@ export async function resolveTrailStepSelfUpdateTargets({
   const packageJson = await readRootPackageJson(cwd);
   const current = readCurrentTrailStepRanges(packageJson);
   if (current.size === 0) {
-    return { targets: [] };
+    return { targets: [], currentPackageNames: [] };
   }
 
   const [coreMetadata, authoringMetadata, cliMetadata] = await Promise.all([
@@ -83,6 +84,7 @@ export async function resolveTrailStepSelfUpdateTargets({
       createTarget("@trailstep/authoring", current, targetAuthoring),
       createTarget("@trailstep/cli", current, targetCli),
     ].filter((target) => target.currentRange !== ""),
+    currentPackageNames: [...current.keys()],
   };
 }
 

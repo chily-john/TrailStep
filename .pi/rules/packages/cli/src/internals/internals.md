@@ -34,7 +34,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `workflow-registry/`: Enter when changing shared config-file read/write/enumerate primitives (`configPathForScope`, raw read/write, package-metadata-aware list/write/delete/move/lookup helpers, cross-scope duplicate lookup, the reserved-namespace and reserved-character guards) used by `add`, `remove`, `run`, and `workflows`.
 - `workflow-packages/`: Enter when changing npm/GitHub package spec parsing, scope-aware install roots/save types, scoped package installation used before `trailstep add` bundle discovery, or package cleanup after `trailstep remove`.
 - `workflow-resolution/`: Enter when changing run-command resolution between discovered workflow ids, project/global-registered config refs, package-metadata install roots, bundle manifest refs, and direct workflow source references.
-- `trailstep-skill/`: Enter when changing packaged TrailStep usage-skill resolution, distribution target selection, or installation markers.
+- `trailstep-skill/`: Enter when changing packaged TrailStep usage-skill resolution, distribution target selection, tracked install refresh, or installation markers.
 - `workflow-skills/`: Enter when changing generated workflow skill naming, content, project skill file writing, leftover generated-skill warnings, or `skills` CLI distribution.
 
 ## Files
@@ -58,12 +58,13 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `package-manager/installed-packages.ts`: Change when installed `@trailstep/core`, `@trailstep/authoring`, or `@trailstep/cli` version resolution changes.
 - `package-manager/package-json-rewrite.ts`: Change when update-command package.json dependency rewrites or range-style preservation changes.
 - `commands/doctor/doctor-command.ts`: Change when doctor argument parsing, output/exit behavior, or installed `@trailstep/core`/`@trailstep/authoring` manifest version resolution changes.
-- `commands/update/update-targets.ts`: Change when TrailStep self-update target selection, peer compatibility, package range discovery, or shared update target package-json helpers change.
+- `commands/update/global-cli-update-target.ts`: Change when global CLI update target resolution, package-manager inference, or global install command creation changes.
+- `commands/update/update-targets.ts`: Change when project TrailStep package update target selection, peer compatibility, package range discovery, or shared update target package-json helpers change.
 - `commands/update/workflow-update-targets.ts`: Change when workflow package update target resolution, dependency-section lookup, npm metadata use, latest-stable selection, local-file skips, or ambiguous bare workflow-name handling changes.
 - `deprecation-scan/scan-targets.ts`: Change when doctor/update deprecation scan target collection, scan modes, direct-file inclusion, discovered package inclusion, bundle source resolution, or `resolveBundleWorkflowScanTargets` changes.
 - `workflow-resolution/bundle-resolver.ts`: Change when bundle manifest resolution, package-root workflow export fallback, `listBundleWorkflowNames`/`hasBundleWorkflowManifest`/`readBundleWorkflowManifest`/`parseManifestTarget` helper exports, workflow imports, package.json lookup for exported packages, or fresh import cache-busting changes.
 - `workflow-resolution/direct-file-resolver.ts`: Change when direct workflow source loading, extensionless/index resolution, TypeScript source imports, `#export` selection, direct-source export listing, or direct-source helper exports change.
-- `trailstep-skill/trailstep-skill.ts`: Change when packaged TrailStep usage-skill resolution, project/user target mapping, content-hash installation marker creation/validation, or config marker writes change.
+- `trailstep-skill/trailstep-skill.ts`: Change when packaged TrailStep usage-skill resolution, project/user target mapping, tracked install refresh, content-hash installation marker creation/validation, or config marker writes change.
 - `workflow-skills/generated-skill-warning.ts`: Change when commands warn about leftover generated skill directories.
 - `workflow-skills/workflow-skill-content.ts`: Change when generated workflow skill names, frontmatter, input instructions, or metadata handling changes.
 

@@ -17,7 +17,7 @@ trailstep agents set <name> --provider <provider> [--model <model>] [--thinking 
 trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]
 trailstep remove <namespace>/<name> [--scope <local|project|global>]
 trailstep workflows
-trailstep update [--all | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
+trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
 trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
 trailstep continue
 trailstep retry <workflow-ref> <runName>
@@ -65,20 +65,31 @@ Cleanup outcomes are intentionally conservative:
 - missing or stale package metadata is preserved rather than guessed;
 - if uninstall fails, the registration remains removed and the command reports the install root for manual cleanup.
 
-Update workflow packages from registered metadata:
+Update the globally installed TrailStep CLI binary:
 
 ```bash
+trailstep update --yes
+```
+
+Bare `trailstep update` updates only the global CLI installation. It does not mutate project `@trailstep/core` or `@trailstep/authoring` dependencies, so authoring/runtime upgrades stay under explicit user control.
+
+Update project TrailStep packages or workflow packages from registered metadata:
+
+```bash
+# Update TrailStep packages in this project's package.json.
+trailstep update --project --yes
+
 # Update all registered npm-backed workflow packages across their install roots.
 trailstep update --workflows --yes
 
 # Update one registered workflow package target. Use namespace/name when a bare name is ambiguous.
 trailstep update --workflow project/review --yes
 
-# Update TrailStep packages in the current project and workflow packages in all roots.
+# Update global CLI, TrailStep packages in the current project, and workflow packages in all roots.
 trailstep update --all --yes
 ```
 
-`trailstep update` prompts before rewriting manifests and running package-manager install commands unless `--yes` or `--assume-yes` is provided. `--force` only bypasses blocking deprecation preflight findings; it does not skip confirmation.
+`trailstep update` prompts before running global installs, rewriting manifests, or running package-manager install commands unless `--yes` or `--assume-yes` is provided. `--force` only bypasses blocking deprecation preflight findings; it does not skip confirmation. After updating the global CLI, TrailStep automatically refreshes tracked installs of the packaged TrailStep usage skill when possible.
 
 Safety boundaries for workflow package updates:
 

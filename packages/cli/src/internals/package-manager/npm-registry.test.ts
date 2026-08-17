@@ -38,6 +38,20 @@ describe("fetchNpmPackageMetadata", () => {
     });
   });
 
+  it("accepts npm view's string shorthand when only the version field is returned", async () => {
+    const metadata = await fetchNpmPackageMetadata({
+      cwd: "/repo",
+      packageName: "@trailstep/core",
+      packageCommandRunner: async () => ({ exitCode: 0, stdout: JSON.stringify("0.1.0") }),
+    });
+
+    expect(metadata).toEqual({
+      packageName: "@trailstep/core",
+      versions: ["0.1.0"],
+      peerDependenciesByVersion: { "0.1.0": {} },
+    });
+  });
+
   it("includes the package name when npm view fails", async () => {
     await expect(
       fetchNpmPackageMetadata({

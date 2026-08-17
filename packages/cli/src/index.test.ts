@@ -665,7 +665,7 @@ describe("main", () => {
 
     await expect(
       main({
-        argv: ["update", "--assume-yes"],
+        argv: ["update", "--project", "--assume-yes"],
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         packageCommandRunner: async (request) => {

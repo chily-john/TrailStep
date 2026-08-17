@@ -20,7 +20,7 @@ describe("usageText", () => {
     expect(usageText).toContain("trailstep agents rename <old> <new>");
     expect(usageText).toContain("trailstep doctor");
     expect(usageText).toContain(
-      "trailstep update [--all | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
+      "trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
     );
   });
 
@@ -54,6 +54,8 @@ describe("usageText", () => {
       "trailstep add accepts versioned npm package specs and github:<owner>/<repo> package specs",
     );
     expect(usageText).toContain("uninstalls only orphaned TrailStep-owned package installs");
+    expect(usageText).toContain("trailstep update updates the globally installed TrailStep CLI");
+    expect(usageText).toContain("trailstep update --project");
     expect(usageText).toContain("trailstep update --workflows");
     expect(usageText).toContain("trailstep update --workflow <name>");
     expect(usageText).toContain("trailstep update --all");

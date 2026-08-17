@@ -4,6 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CliCommandContext } from "../command.types.js";
+import {
+  configPathForScope,
+  readRawTrailStepConfigFile,
+  type WorkflowRegistryScope,
+  writeRawTrailStepConfigFile,
+} from "../workflow-registry/workflow-registry.js";
 import { distributeWorkflowSkill } from "../workflow-skills/skills-cli.js";
 
 const TRAILSTEP_SKILL_DIRECTORY_NAME = "trailstep-skill";
@@ -16,6 +22,11 @@ export interface TrailStepSkillInstallationMarker {
   readonly source: typeof TRAILSTEP_SKILL_SOURCE;
   readonly target: TrailStepSkillInstallTarget;
   readonly contentHash: string;
+}
+
+export interface TrailStepSkillRefreshResult {
+  readonly configPath: string;
+  readonly target: TrailStepSkillInstallTarget;
 }
 
 export async function installPackagedTrailStepSkill(
@@ -34,6 +45,40 @@ export function trailStepSkillInstallTargetForScope(
   scope: "local" | "project" | "global",
 ): TrailStepSkillInstallTarget {
   return scope === "global" ? "user" : "project";
+}
+
+export async function refreshTrackedPackagedTrailStepSkills(
+  context: CliCommandContext,
+): Promise<readonly TrailStepSkillRefreshResult[]> {
+  const refreshed: TrailStepSkillRefreshResult[] = [];
+  const refreshedTargets = new Set<TrailStepSkillInstallTarget>();
+
+  for (const scope of [
+    "local",
+    "project",
+    "global",
+  ] as const satisfies readonly WorkflowRegistryScope[]) {
+    const configPath = configPathForScope(scope, context);
+    const config = await readRawTrailStepConfigFile(configPath);
+    const marker = readTrailStepSkillInstallationMarker(config);
+    if (marker === undefined) {
+      continue;
+    }
+
+    if (!refreshedTargets.has(marker.target)) {
+      await installPackagedTrailStepSkill(scopeForSkillInstallTarget(marker.target), context);
+      refreshedTargets.add(marker.target);
+    }
+
+    const nextMarker = await createPackagedTrailStepSkillInstallationMarker(marker.target);
+    await writeRawTrailStepConfigFile(
+      configPath,
+      setTrailStepSkillInstallationMarker(config, nextMarker),
+    );
+    refreshed.push({ configPath, target: marker.target });
+  }
+
+  return refreshed;
 }
 
 export async function createPackagedTrailStepSkillInstallationMarker(
@@ -73,6 +118,10 @@ export function setTrailStepSkillInstallationMarker(
       [TRAILSTEP_SKILL_NAME]: marker,
     },
   };
+}
+
+function scopeForSkillInstallTarget(target: TrailStepSkillInstallTarget): WorkflowRegistryScope {
+  return target === "user" ? "global" : "project";
 }
 
 export async function resolvePackagedTrailStepSkillDirectory(): Promise<string> {

@@ -10,6 +10,8 @@ Use TrailStep to author, install, discover, run, continue, and retry durable typ
 ## CLI quick start
 
 - Install the packaged TrailStep skill and create local config with `trailstep init`.
+- Update the globally installed TrailStep CLI with `trailstep update`; use `trailstep update --project` only when intentionally updating project authoring/runtime packages.
+- Global CLI updates automatically refresh tracked installs of this packaged skill when possible.
 - List available workflows with `trailstep workflows`.
 - Run a workflow with a JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
 - Continue waiting or interrupted runs with `trailstep continue`.

@@ -67,6 +67,12 @@ function normalizeNpmViewMetadata(
   const peerDependenciesByVersion: Record<string, Record<string, string>> = {};
 
   for (const entry of entries) {
+    if (typeof entry === "string") {
+      versions.push(entry);
+      peerDependenciesByVersion[entry] = {};
+      continue;
+    }
+
     if (!isRecord(entry) || typeof entry.version !== "string") {
       return undefined;
     }

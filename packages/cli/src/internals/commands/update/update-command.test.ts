@@ -69,7 +69,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestTrailStepOne,
@@ -114,7 +114,7 @@ describe("updateCommand", () => {
     const lines: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes", "--force"],
+      argv: ["update", "--project", "--assume-yes", "--force"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: latestTrailStepOne,
@@ -156,7 +156,7 @@ describe("updateCommand", () => {
     const lines: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: latestTrailStepOne,
@@ -195,7 +195,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: latestTrailStepOne,
@@ -240,7 +240,7 @@ describe("updateCommand", () => {
     const output: string[] = [];
 
     await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: {
         writeLine: (line) => output.push(`line:${line}`),
@@ -260,7 +260,9 @@ describe("updateCommand", () => {
     );
   });
 
-  it("returns a no-op result without running workflow fallback", async ({ task }) => {
+  it("returns a no-op result without running workflow fallback when no TrailStep packages are present", async ({
+    task,
+  }) => {
     const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
     await writeFile(join(cwd, "package.json"), JSON.stringify({ name: "consumer" }), "utf8");
@@ -268,14 +270,121 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update"],
+      argv: ["update", "--project"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
     });
 
     expect(exitCode).toBe(0);
-    expect(lines.join("\n")).toMatch(/no changes needed/i);
+    expect(lines.join("\n")).toContain("No TrailStep package dependencies found in package.json");
     expect(errors).toEqual([]);
+  });
+
+  it("updates the global TrailStep CLI for a bare update", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(join(cwd, "package.json"), JSON.stringify({ name: "consumer" }), "utf8");
+    const lines: string[] = [];
+    const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install" || request.args[0] === "add") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "2.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Planned global TrailStep CLI update:");
+    expect(lines.join("\n")).toContain("@trailstep/cli:");
+    expect(installRequests).toEqual([
+      { command: "npm", args: ["install", "--global", "@trailstep/cli@2.0.0"], cwd },
+    ]);
+  });
+
+  it("refreshes tracked TrailStep skill installs after a global CLI update", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const homeDir = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-home`);
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(homeDir, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, "package.json"), JSON.stringify({ name: "consumer" }), "utf8");
+    await writeFile(
+      join(homeDir, ".trailstep", "config.json"),
+      JSON.stringify({
+        skillInstallations: {
+          trailstep: {
+            source: "@trailstep/cli/trailstep-skill",
+            target: "user",
+            contentHash: "sha256:old",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const skillRuns: Array<{ command: string; args: readonly string[] }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      skillsCliResolver: async () => "skills.js",
+      skillsCliProcessRunner: async (command, args) => {
+        skillRuns.push({ command, args });
+        return { exitCode: 0 };
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "2.0.0" }]) };
+      },
+    });
+
+    const config = JSON.parse(
+      await readFile(join(homeDir, ".trailstep", "config.json"), "utf8"),
+    ) as {
+      skillInstallations: { trailstep: { contentHash: string } };
+    };
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("Refreshed tracked TrailStep usage skill installation(s).");
+    expect(skillRuns).toHaveLength(1);
+    expect(skillRuns[0]?.args).toContain("-g");
+    expect(config.skillInstallations.trailstep.contentHash).not.toBe("sha256:old");
+  });
+
+  it("prints a global CLI no-op when the installed CLI is current", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(join(cwd, "package.json"), JSON.stringify({ name: "consumer" }), "utf8");
+    const currentVersion = JSON.parse(await readFile("package.json", "utf8")) as {
+      version: string;
+    };
+    const lines: string[] = [];
+    const installRequests: unknown[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: currentVersion.version }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Global TrailStep CLI is already current");
+    expect(installRequests).toEqual([]);
   });
 
   it("prints planned TrailStep self-update package changes without writing files", async ({
@@ -297,7 +406,7 @@ describe("updateCommand", () => {
     const lines: string[] = [];
 
     const exitCode = await main({
-      argv: ["update"],
+      argv: ["update", "--project"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       prompts: { text: async () => "", select: async () => "", confirm: async () => false },
@@ -638,7 +747,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       packageCommandRunner: latestTrailStepTwo,
@@ -1127,12 +1236,16 @@ describe("updateCommand", () => {
       dependencies: Record<string, string>;
     };
     expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Planned global TrailStep CLI update:");
     expect(lines.join("\n")).toContain("Planned TrailStep package updates:");
     expect(lines.join("\n")).toContain("Planned workflow package updates:");
     expect(packageJson.dependencies["@trailstep/core"]).toBe("^2.0.0");
     expect(packageJson.dependencies["@trailstep/authoring"]).toBe("~2.0.0");
     expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
-    expect(installRequests).toEqual([{ command: "pnpm", args: ["install"], cwd }]);
+    expect(installRequests).toEqual([
+      { command: "npm", args: ["install", "--global", "@trailstep/cli@2.0.0"], cwd },
+      { command: "pnpm", args: ["install"], cwd },
+    ]);
   });
 
   it("applies workflow package updates with --workflows even when there are no self updates", async ({
@@ -1198,7 +1311,7 @@ describe("updateCommand", () => {
     const events: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => events.push(`line:${line}`), writeError: () => undefined },
       packageCommandRunner: async (request) => {
@@ -1236,7 +1349,7 @@ describe("updateCommand", () => {
     const installRequests: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: async (request) => {
@@ -1314,7 +1427,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update"],
+      argv: ["update", "--project"],
       cwd,
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       prompts: { text: async () => "", select: async () => "" },
@@ -1341,7 +1454,7 @@ describe("updateCommand", () => {
     const installRequests: unknown[] = [];
 
     const exitCode = await main({
-      argv: ["update"],
+      argv: ["update", "--project"],
       cwd,
       io: { writeLine: () => undefined, writeError: () => undefined },
       prompts: { text: async () => "", select: async () => "", confirm: async () => false },
@@ -1371,7 +1484,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update", "--assume-yes"],
+      argv: ["update", "--project", "--assume-yes"],
       cwd,
       io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
       packageCommandRunner: async (request) => {
@@ -1389,6 +1502,36 @@ describe("updateCommand", () => {
     expect(lines.join("\n")).not.toMatch(/update complete/i);
   });
 
+  it("explains why self-update has nothing to manage when package.json has no TrailStep dependencies", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      `${JSON.stringify({ devDependencies: { typescript: "^5.8.3" } }, null, 2)}\n`,
+      "utf8",
+    );
+    const lines: string[] = [];
+    const packageRequests: unknown[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--project", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageRequests.push(request);
+        return latestTrailStepTwo(request);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain(
+      "No TrailStep package dependencies found in package.json; add @trailstep/cli to this project or update a global CLI install with your package manager.",
+    );
+    expect(packageRequests).toEqual([]);
+  });
+
   it("reports registry resolution failures as CLI errors", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
@@ -1400,7 +1543,7 @@ describe("updateCommand", () => {
     const errors: string[] = [];
 
     const exitCode = await main({
-      argv: ["update"],
+      argv: ["update", "--project"],
       cwd,
       io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
       packageCommandRunner: async () => ({ exitCode: 0, stdout: "not json" }),

@@ -6,7 +6,7 @@ export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArg
     throw new CliUsageError("Expected update command.");
   }
 
-  let scope: UpdateScope = { kind: "self" };
+  let scope: UpdateScope = { kind: "global" };
   let hasExplicitScope = false;
   let force = false;
   let assumeYes = false;
@@ -26,6 +26,12 @@ export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArg
 
     if (arg === "--all") {
       scope = setScope(scope, hasExplicitScope, { kind: "all" });
+      hasExplicitScope = true;
+      continue;
+    }
+
+    if (arg === "--project") {
+      scope = setScope(scope, hasExplicitScope, { kind: "project" });
       hasExplicitScope = true;
       continue;
     }
@@ -73,7 +79,9 @@ function setScope(
   next: UpdateScope,
 ): UpdateScope {
   if (hasExplicitScope) {
-    throw new CliUsageError("Choose only one update scope: --all, --workflows, or --workflow.");
+    throw new CliUsageError(
+      "Choose only one update scope: --all, --project, --workflows, or --workflow.",
+    );
   }
 
   return next;

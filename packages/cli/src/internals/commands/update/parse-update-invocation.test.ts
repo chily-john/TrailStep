@@ -5,9 +5,9 @@ import { resolveCommand } from "../../command-registry.js";
 import { parseUpdateInvocation } from "./parse-update-invocation.js";
 
 describe("parseUpdateInvocation", () => {
-  it("parses bare update as TrailStep self-update scope", () => {
+  it("parses bare update as global CLI update scope", () => {
     expect(parseUpdateInvocation(["update"])).toEqual({
-      scope: { kind: "self" },
+      scope: { kind: "global" },
       force: false,
       assumeYes: false,
     });
@@ -16,6 +16,9 @@ describe("parseUpdateInvocation", () => {
   it("parses explicit update scopes", () => {
     expect(parseUpdateInvocation(["update", "--all"])).toMatchObject({
       scope: { kind: "all" },
+    });
+    expect(parseUpdateInvocation(["update", "--project"])).toMatchObject({
+      scope: { kind: "project" },
     });
     expect(parseUpdateInvocation(["update", "--workflows"])).toMatchObject({
       scope: { kind: "workflows" },
@@ -30,7 +33,7 @@ describe("parseUpdateInvocation", () => {
 
   it("parses force and assume-yes options", () => {
     expect(parseUpdateInvocation(["update", "--force", "--assume-yes"])).toEqual({
-      scope: { kind: "self" },
+      scope: { kind: "global" },
       force: true,
       assumeYes: true,
     });
@@ -38,7 +41,7 @@ describe("parseUpdateInvocation", () => {
 
   it("parses yes as an assume-yes alias", () => {
     expect(parseUpdateInvocation(["update", "--yes"])).toEqual({
-      scope: { kind: "self" },
+      scope: { kind: "global" },
       force: false,
       assumeYes: true,
     });

@@ -16,6 +16,11 @@ import {
   defaultPackageCommandRunner,
   detectPackageManager,
 } from "../../package-manager/package-manager.js";
+import { refreshTrackedPackagedTrailStepSkills } from "../../trailstep-skill/trailstep-skill.js";
+import {
+  type GlobalCliUpdatePlan,
+  resolveGlobalCliUpdateTarget,
+} from "./global-cli-update-target.js";
 import { parseUpdateInvocation } from "./parse-update-invocation.js";
 import type { UpdateCommandArgs } from "./update-command.types.js";
 import {
@@ -34,15 +39,24 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
   parseArgs: parseUpdateInvocation,
   async run(args, context) {
     try {
+      const globalCliPlan =
+        args.scope.kind === "global" || args.scope.kind === "all"
+          ? await resolveGlobalCliUpdateTarget({
+              cwd: context.cwd,
+              packageCommandRunner: context.packageCommandRunner,
+            })
+          : undefined;
       const selfPlan =
-        args.scope.kind === "self" || args.scope.kind === "all"
+        args.scope.kind === "project" || args.scope.kind === "all"
           ? await resolveTrailStepSelfUpdateTargets({
               cwd: context.cwd,
               packageCommandRunner: context.packageCommandRunner,
             })
           : undefined;
       const workflowPlan =
-        args.scope.kind !== "self"
+        args.scope.kind === "all" ||
+        args.scope.kind === "workflows" ||
+        args.scope.kind === "workflow"
           ? await resolveWorkflowPackageUpdateTargets({
               cwd: context.cwd,
               homeDir: context.homeDir,
@@ -85,11 +99,21 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         context.io.writeLine(skip.message);
       }
 
+      const hasGlobalCliChanges = (globalCliPlan?.targets.length ?? 0) > 0;
       const hasSelfChanges = (selfPlan?.targets.length ?? 0) > 0;
       const hasWorkflowChanges = workflowTargetsToApply.length > 0;
-      if (!hasSelfChanges && !hasWorkflowChanges) {
-        context.io.writeLine(noChangesMessage(args, workflowPlan));
+      if (!hasGlobalCliChanges && !hasSelfChanges && !hasWorkflowChanges) {
+        context.io.writeLine(noChangesMessage(args, globalCliPlan, selfPlan, workflowPlan));
         return 0;
+      }
+
+      if (hasGlobalCliChanges && globalCliPlan) {
+        context.io.writeLine("Planned global TrailStep CLI update:");
+        for (const target of globalCliPlan.targets) {
+          context.io.writeLine(
+            `${target.packageName}: ${target.currentVersion} -> ${target.targetVersion} (${target.command} ${target.args.join(" ")})`,
+          );
+        }
       }
 
       if (hasSelfChanges && selfPlan) {
@@ -122,6 +146,29 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       }
 
       const runPackageCommand = context.packageCommandRunner ?? defaultPackageCommandRunner;
+      if (globalCliPlan) {
+        for (const target of globalCliPlan.targets) {
+          const installResult = await runPackageCommand({
+            command: target.command,
+            args: target.args,
+            cwd: context.cwd,
+          });
+          if (installResult.exitCode !== 0) {
+            context.io.writeError(
+              `Global TrailStep CLI update failed with exit code ${installResult.exitCode}.`,
+            );
+            if (installResult.stderr) {
+              context.io.writeError(installResult.stderr);
+            }
+            return 1;
+          }
+          context.io.writeLine(
+            "Updated global TrailStep CLI. The updated binary will be used by the next trailstep process.",
+          );
+          await refreshTrailStepSkillAfterGlobalCliUpdate(context);
+        }
+      }
+
       for (const group of updateGroups) {
         await rewritePackageJsonDependencies({ cwd: group.installRoot, updates: group.updates });
         const packageManager = await detectPackageManager({ cwd: group.installRoot });
@@ -224,6 +271,21 @@ async function scanTargets(
   return findings;
 }
 
+async function refreshTrailStepSkillAfterGlobalCliUpdate(
+  context: CliCommandContext,
+): Promise<void> {
+  try {
+    const refreshed = await refreshTrackedPackagedTrailStepSkills(context);
+    if (refreshed.length > 0) {
+      context.io.writeLine("Refreshed tracked TrailStep usage skill installation(s).");
+    }
+  } catch (error) {
+    context.io.writeError(
+      `Warning: failed to refresh tracked TrailStep usage skill installation(s): ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
+}
+
 function versionsForPreflight(
   installedVersions: ReadonlyMap<
     string,
@@ -297,10 +359,18 @@ function isChangedDependencyUpdate(update: {
 
 function noChangesMessage(
   args: UpdateCommandArgs,
+  globalCliPlan: GlobalCliUpdatePlan | undefined,
+  selfPlan: TrailStepSelfUpdatePlan | undefined,
   workflowPlan: WorkflowPackageUpdatePlan | undefined,
 ): string {
+  if (args.scope.kind === "global" && globalCliPlan) {
+    return `Global TrailStep CLI is already current (@trailstep/cli ${globalCliPlan.currentVersion}).`;
+  }
   if (args.scope.kind === "workflows" || args.scope.kind === "workflow") {
     return "No workflow package updates are available.";
+  }
+  if (args.scope.kind === "project" && (selfPlan?.currentPackageNames.length ?? 0) === 0) {
+    return "No TrailStep package dependencies found in package.json; add @trailstep/cli to this project or update a global CLI install with your package manager.";
   }
   return (workflowPlan?.skips.length ?? 0) > 0
     ? "No package updates to apply."

@@ -1,5 +1,6 @@
 export type UpdateScope =
-  | { kind: "self" }
+  | { kind: "global" }
+  | { kind: "project" }
   | { kind: "all" }
   | { kind: "workflows" }
   | { kind: "workflow"; name: string };

@@ -1,5 +1,11 @@
 # @trailstep/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 8b8bef8: Fix `trailstep update` so it updates the globally installed CLI by default and refreshes the bundled TrailStep skill.
+
 ## 0.2.0
 
 ### Minor Changes

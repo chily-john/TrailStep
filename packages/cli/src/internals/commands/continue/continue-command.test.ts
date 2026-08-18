@@ -146,6 +146,33 @@ describe("continue command", () => {
     expect(errors.join("\n")).toMatch(/schema validation/i);
   });
 
+  it("rejects an interactive protocol that would write output outside the step directory", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-unsafe-path`);
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-run");
+    const stepDir = join(runDir, "steps", "0001-approve-plan");
+    const interactiveFile = join(stepDir, "interactive.json");
+    const outsideOutput = join(cwd, "outside-output.json");
+    await mkdir(stepDir, { recursive: true });
+    await writeJson(interactiveFile, {
+      ...interactiveProtocol({ runDir, stepDir, outputMode: "json" }),
+      outputFile: outsideOutput,
+    });
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["continue", "--json", '{"approved":true,"notes":"Approved."}'],
+      env: { TRAILSTEP_INTERACTIVE_FILE: interactiveFile },
+      io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+    });
+
+    expect(exitCode).toBe(1);
+    await expect(readFile(outsideOutput, "utf8")).rejects.toThrow();
+    await expect(readFile(interactiveFile, "utf8")).resolves.toContain('"status": "active"');
+    expect(errors.join("\n")).toMatch(/unsafe outputFile/i);
+  });
+
   it("does not replace output.json when validation fails", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-no-replace`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");

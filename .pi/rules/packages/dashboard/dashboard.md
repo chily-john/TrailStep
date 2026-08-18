@@ -2,9 +2,9 @@
 kind: rules
 paths:
   - packages/dashboard/
-summary: `@stepkit/dashboard` Svelte/Vite local workflow run observability UI.
+summary: `@trailstep/dashboard` Svelte/Vite local workflow run observability UI.
 triggers:
-  - '@stepkit/dashboard'
+  - '@trailstep/dashboard'
   - dashboard package
   - Svelte
   - Vite
@@ -14,7 +14,7 @@ triggers:
 
 # packages/dashboard/
 
-Enter here for UI work around workflow run inspection, event visualization, prompt/state observability, or dashboard build tooling. The package displays read-only local workflow runs and events from `.stepkit/runs`.
+Enter here for UI work around workflow run inspection, event visualization, prompt/state observability, or dashboard build tooling. The package displays read-only local workflow runs and events from `.trailstep/runs`.
 
 ## Areas
 

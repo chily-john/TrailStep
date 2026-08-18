@@ -15,6 +15,7 @@ export async function createRunDirectory(options: {
   readonly runsRoot?: string;
 }): Promise<{ runId: string; runDir: string }> {
   const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
+  validateRunName(options.runName);
   await mkdir(runsRoot, { recursive: true });
   await ensureTrailStepGitignoreForRunsRoot(runsRoot);
 
@@ -123,6 +124,22 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function validateRunName(runName: string): void {
+  if (
+    runName.trim().length === 0 ||
+    runName === "." ||
+    runName === ".." ||
+    runName.includes("/") ||
+    runName.includes("\\")
+  ) {
+    throw new TrailStepFailureError({
+      code: "run_name_invalid",
+      message: "Run name must be a non-empty single path segment.",
+      details: { runName },
+    });
+  }
 }
 
 function isRunState(value: unknown): value is RunState {

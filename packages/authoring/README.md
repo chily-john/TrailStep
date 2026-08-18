@@ -5,8 +5,10 @@
 ## Install
 
 ```bash
-pnpm add @trailstep/authoring
+npm install @trailstep/authoring @trailstep/core
 ```
+
+Use the equivalent command for your package manager if you use `pnpm`, `yarn`, or `bun`.
 
 ## Public role
 
@@ -15,6 +17,30 @@ Use this package to author workflows with:
 - `defineWorkflow({ start })` as the workflow definition boundary.
 - `step(...)` for continuation steps.
 - `done(...)` for successful completion.
+- `shape(...)` or `jsonSchema(...)` for JSON-object inputs and outputs.
+
+Example:
+
+```ts
+import { defineWorkflow, done, shape, step } from "@trailstep/authoring";
+
+type ReviewInput = { topic: string };
+type ReviewOutput = { summary: string };
+
+export const review = defineWorkflow<ReviewInput, ReviewOutput>({
+  id: "review",
+  inputShape: shape<ReviewInput>({ topic: "string" }),
+  outputShape: shape<ReviewOutput>({ summary: "string" }),
+  start(input) {
+    return step({ id: "summarize" })
+      .prompt<ReviewInput, ReviewOutput>(
+        ({ input: stepInput }) => `Summarize this topic: ${stepInput.topic}`,
+        { output: shape<ReviewOutput>({ summary: "string" }) },
+      )
+      .do((output) => done(output))(input);
+  },
+});
+```
 
 Export workflows from a Node-readable module. Consumers can run direct refs such as `./workflows/sample.ts#sampleWorkflow`, register refs with `trailstep add`, or use bundle refs when a package exposes a TrailStep workflow manifest.
 

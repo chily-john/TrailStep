@@ -40,7 +40,7 @@ function assertNoPostinstallScripts(packageManifests) {
 }
 
 function assertPublicNpmMetadata(manifest) {
-  assert.equal(manifest.version, "0.1.0", `${manifest.name} must be versioned for 0.1.0`);
+  assertPublicPackageVersion(manifest);
   assert.equal(manifest.license, "Apache-2.0", `${manifest.name} must use Apache-2.0`);
   assert.deepEqual(
     manifest.repository,
@@ -84,6 +84,16 @@ function assertPublicNpmMetadata(manifest) {
   assertFile(`packages/${directory}/LICENSE`);
 }
 
+function assertPublicPackageVersion(manifest) {
+  assert.equal(typeof manifest.version, "string", `${manifest.name} must declare a version`);
+  assert.match(
+    manifest.version,
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u,
+    `${manifest.name} must declare a semver-compatible version`,
+  );
+  assert.notEqual(manifest.version, "0.0.0", `${manifest.name} must not publish as 0.0.0`);
+}
+
 function verifyPublicPackageMetadata() {
   const rootPackage = readJson("package.json");
   const changesetConfig = readJson(".changeset/config.json");
@@ -101,7 +111,7 @@ function verifyPublicPackageMetadata() {
   assert.deepEqual(
     actualPublishablePackageNames,
     [...publishablePackageNames].sort(),
-    "publishable package set must match the initial public release set",
+    "publishable package set must match the public package set",
   );
 
   for (const packageName of publishablePackageNames) {

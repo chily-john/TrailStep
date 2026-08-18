@@ -2,5 +2,10 @@ packages:
   - "packages/*"
 allowBuilds:
   esbuild: false
+overrides:
+  esbuild: 0.28.1
+  fast-uri: 3.1.5
+  nanoid: 3.3.18
+  postcss: 8.5.23
 minimumReleaseAgeExclude:
-  - '@trailstep/create-flows@0.2.0'
+  - '@trailstep/create-flows@0.2.0 || 0.3.0'

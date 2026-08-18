@@ -67,6 +67,14 @@ describe("run storage", () => {
     ]);
   });
 
+  it("rejects run names that would escape the runs root", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+    await expect(createRunDirectory({ cwd, runName: "../escape" })).rejects.toMatchObject({
+      failure: { code: "run_name_invalid" },
+    });
+  });
+
   it("creates a .trailstep/.gitignore file that ignores everything except itself", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
 

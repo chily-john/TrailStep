@@ -14,7 +14,7 @@ interface InteractiveSessionProtocol {
   readonly status: string;
   readonly stepDir: string;
   readonly outputFile: string;
-  readonly interactiveFile?: string;
+  readonly interactiveFile: string;
   readonly outputSchema: Record<string, unknown>;
   readonly outputMode?: string;
   readonly runDir?: string;
@@ -38,6 +38,7 @@ export const continueCommand: CliCommand<ContinueCommandArgs> = {
   async run(args, context) {
     const target = await resolveContinueTarget(args, context);
     const interactive = await loadInteractiveSession(target.interactiveFile);
+    validateInteractiveSessionPaths(target.interactiveFile, interactive);
     const output = await loadSubmittedOutput(target.outputArgs, interactive, context);
     validateOutput(output, interactive.outputSchema);
 
@@ -302,6 +303,39 @@ function inferRunDir(interactive: InteractiveSessionProtocol): string {
 
 function toRunRelativePath(runDir: string, absolutePath: string): string {
   return relative(runDir, absolutePath).replaceAll("\\", "/");
+}
+
+function validateInteractiveSessionPaths(
+  targetInteractiveFile: string,
+  interactive: InteractiveSessionProtocol,
+): void {
+  if (resolve(targetInteractiveFile) !== resolve(interactive.interactiveFile)) {
+    throw new CliInputError("Active interactive session path does not match interactiveFile.");
+  }
+
+  assertPathInside(interactive.stepDir, targetInteractiveFile, "interactiveFile");
+  assertPathInside(interactive.stepDir, interactive.outputFile, "outputFile");
+  if (interactive.sessionDescriptionFile !== undefined) {
+    assertPathInside(
+      interactive.stepDir,
+      interactive.sessionDescriptionFile,
+      "sessionDescriptionFile",
+    );
+  }
+  if (interactive.runDir !== undefined) {
+    assertPathInside(interactive.runDir, interactive.stepDir, "stepDir");
+  }
+}
+
+function assertPathInside(parent: string, child: string, field: string): void {
+  const normalizedParent = resolve(parent);
+  const normalizedChild = resolve(child);
+  const relativePath = relative(normalizedParent, normalizedChild);
+  if (relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))) {
+    return;
+  }
+
+  throw new CliInputError(`Active interactive session has unsafe ${field}.`);
 }
 
 async function safeWriteJson(path: string, value: unknown): Promise<void> {

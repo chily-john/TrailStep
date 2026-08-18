@@ -42,16 +42,16 @@
     "@clack/prompts": "^1.7.0",
     "@trailstep/core": "workspace:*",
     "semver": "^7.8.5",
-    "skills": "^1.5.19",
-    "tsx": "^4.23.1"
+    "skills": "^1.5.22",
+    "tsx": "^4.23.12"
   },
   "peerDependencies": {
     "@trailstep/core": "^0.1.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.1.1",
-    "@types/node": "^26.1.1",
-    "@types/semver": "^7.7.1",
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^26.2.0",
+    "@types/semver": "^7.8.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

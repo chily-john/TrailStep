@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like TrailStep to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or alternative designs have you considered?
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and compatibility
+      description: Does this affect public APIs, CLI behavior, workflow semantics, package publishing, or existing users?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

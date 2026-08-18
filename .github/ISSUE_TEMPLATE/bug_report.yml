@@ -1,0 +1,65 @@
+name: Bug report
+description: Report something that is not working as expected.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TrailStep. Please include a minimal reproduction when possible.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: How can we reproduce the issue?
+      placeholder: |
+        1. Install ...
+        2. Run ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: trailstep-version
+    attributes:
+      label: TrailStep version/package
+      placeholder: "@trailstep/cli@0.3.0"
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      placeholder: "node --version"
+  - type: input
+    id: pnpm-version
+    attributes:
+      label: pnpm version
+      placeholder: "pnpm --version"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS, Linux, Windows, WSL, etc."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant output. Remove secrets/tokens before posting.
+      render: shell

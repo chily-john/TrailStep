@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/chily-john/TrailStep/security/policy
+    about: Please report security issues privately instead of opening a public issue.
+  - name: Support guidelines
+    url: https://github.com/chily-john/TrailStep/blob/main/SUPPORT.md
+    about: Read this before opening a support or question issue.

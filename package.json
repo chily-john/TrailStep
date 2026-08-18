@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.1",
-    "@changesets/cli": "^2.29.5",
+    "@changesets/cli": "^3.0.0",
     "@trailstep/create-flows": "^0.3.0",
     "tsup": "^8.5.0",
     "turbo": "^2.5.4",

@@ -1,5 +1,13 @@
 # @trailstep/create-flows
 
+## 0.3.1
+
+### Patch Changes
+
+- ba31526: Improve public README documentation, getting-started guidance, and npm package positioning.
+- Updated dependencies [ba31526]
+  - @trailstep/authoring@0.1.1
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,139 +1,184 @@
 # TrailStep
 
-TrailStep is a durable, typed, observable workflow harness for coding agents. Workflows are authored in TypeScript, can pause for interactive continuation, can be retried from failed runs, and leave local artifacts you can inspect.
+TrailStep turns repeatable AI coding processes into typed, resumable workflows. It is designed for long-horizon coding tasks where each step can run in a focused agent session, receive only the context it needs, and hand structured output to the next step.
+
+Instead of asking one long chat to clarify requirements, plan, implement, review, and recover from mistakes, TrailStep lets you encode that process as a workflow: durable handoffs between focused agent sessions.
 
 ## Quick start
 
-Install the CLI globally if you want a `trailstep` command everywhere:
+Prerequisite: install a CLI coding agent that TrailStep can call. TrailStep has been tested most heavily with [Pi](https://github.com/earendil-works/pi-coding-agent) and Claude Code, so they currently have the best support. More provider support will continue to improve.
+
+Install the TrailStep CLI, initialize project config, and install the TrailStep usage skill for your agent:
 
 ```bash
 npm install --global @trailstep/cli
 trailstep init --scope project --install-skill
 ```
 
-Or keep the CLI project-local and run it through your package manager:
+Add the public reusable workflow package and generate project skills for the registered workflows:
 
 ```bash
-npm install --save-dev @trailstep/cli
-npx trailstep init --scope project --install-skill
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 ```
 
-Use whatever JavaScript package manager your project already uses. The examples use `npm` because it is the broadest default; `pnpm`, `yarn`, and `bun` equivalents work too. TrailStep's package-backed workflow commands detect the target project's lockfile or `packageManager` field and default to `npm` only when neither is present.
+After that, supported coding agents can discover and run the generated workflow skills. In agents that expose skills as slash commands, this lets you invoke workflows from the agent UI instead of manually typing CLI commands.
+
+TrailStep can register workflows from:
+
+- npm packages, such as `@trailstep/create-flows@latest`
+- GitHub package specs, such as `github:acme/trailstep-workflows`
+- local workflow files or bundles, such as `./workflows/review.ts#review`
+
+<details>
+<summary>Prefer direct CLI usage?</summary>
+
+```bash
+trailstep workflows
+trailstep project/grill-it-away
+trailstep project/take-it-away --input-file feature-request.json
+```
+
+</details>
+
+## Scopes in one minute
+
+TrailStep writes config at one of three scopes:
+
+- **local**: private to this checkout/machine; good for personal overrides.
+- **project**: shared project config; good for team workflow registrations and project skills.
+- **global**: user-wide config; good for personal defaults and workflows you use everywhere.
+
+Rule of thumb: use `--scope project` when setting up a repo for a team, `--scope local` for private project choices, and `--scope global` for personal cross-project defaults.
+
+## A tiny workflow
+
+A TrailStep workflow is a typed function that returns a step, another step, or a final result. Each step can dispatch to an agent, validate structured output, and decide what happens next.
+
+Imagine a workflow that turns a rough feature request into a short summary and one recommended next step:
+
+```text
+feature request --> summarize-request step --> done({ summary, nextStep })
+```
+
+A real project should keep workflow entrypoints and step implementations separate as workflows grow:
+
+```text
+workflows/
+  feature-summary.workflow.ts
+  steps/
+    summarize-request.step.ts
+```
+
+```ts
+// workflows/feature-summary.workflow.ts
+import { defineWorkflow, shape } from "@trailstep/authoring";
+import { summarizeRequestStep } from "./steps/summarize-request.step.js";
+
+type FeatureSummaryInput = { request: string };
+type FeatureSummaryOutput = { summary: string; nextStep: string };
+
+export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
+  id: "feature-summary",
+  description: "Summarize a feature request and suggest one next step.",
+  inputShape: shape<FeatureSummaryInput>({ request: "string" }),
+  outputShape: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }),
+  start(input) {
+    return summarizeRequestStep(input);
+  },
+});
+```
+
+```ts
+// workflows/steps/summarize-request.step.ts
+import { done, shape, step } from "@trailstep/authoring";
+
+type FeatureSummaryInput = { request: string };
+type FeatureSummaryOutput = { summary: string; nextStep: string };
+
+export function summarizeRequestStep(input: FeatureSummaryInput) {
+  return step({ id: "summarize-request" })
+    .prompt<FeatureSummaryInput, FeatureSummaryOutput>(
+      ({ input: stepInput }) =>
+        `Summarize this feature request and recommend one next step:\n\n${stepInput.request}`,
+      { output: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }) },
+    )
+    .do((output) => done(output))(input);
+}
+```
+
+Run it directly while developing:
+
+```bash
+trailstep ./workflows/feature-summary.workflow.ts#featureSummary --input '{"request":"Add CSV export to reports."}'
+```
+
+Register it for your project and generate an agent skill:
+
+```bash
+trailstep add ./workflows/feature-summary.workflow.ts#featureSummary --scope project --name feature-summary --project-skill
+```
+
+## Why steps matter
+
+TrailStep's step model is the core idea:
+
+- **Focused context**: each step can run in its own agent session with a narrow prompt and purpose.
+- **Typed handoffs**: steps pass validated JSON-object outputs to the next continuation.
+- **Long-horizon work**: large jobs can be split into planning, implementation, review, and follow-up steps.
+- **Retry and continuation**: failed or interrupted runs can continue through TrailStep instead of starting from scratch.
+- **Agent-native use**: registered workflows can generate skills so agents understand when and how to call them.
+
+## From tiny workflows to workflow systems
+
+The same primitives power larger reusable workflow packages. `@trailstep/create-flows` currently publishes:
+
+- **`grill-it-away`**: starts interactively, asks clarifying questions, then turns the result into an implementation workflow.
+- **`take-it-away`**: starts from an existing conversation or feature request and runs the implementation workflow directly.
+
+At a high level, those workflows expand the simple step pattern into a multi-stage coding process:
+
+```mermaid
+flowchart TD
+  A[Feature idea or existing conversation] --> B[Clarify or normalize request]
+  B --> C[Write feature document]
+  C --> D[Create implementation plan]
+  D --> E[Review plan]
+  E --> F[Implement one story]
+  F --> G[Review story]
+  G --> H{More stories?}
+  H -->|yes| F
+  H -->|no| I[Done]
+```
+
+See [`packages/create-flows/README.md`](packages/create-flows/README.md) for the full behavior and usage details. These workflows are examples of what can be built on TrailStep; they are not the limit of the model.
 
 ## Packages
 
 Public packages:
 
-- `@trailstep/core` — framework-neutral runtime primitives, validation, events, retry state, and run artifacts.
-- `@trailstep/authoring` — TypeScript workflow authoring helpers such as `defineWorkflow`, `step`, and `done`.
-- `@trailstep/cli` — the `trailstep` command.
-- `@trailstep/create-flows` — reusable workflow automation (`takeItAway` and `grillItAway`).
+- [`@trailstep/cli`](packages/cli/README.md) — the `trailstep` command for init, agents, workflow registration, execution, retry, and updates.
+- [`@trailstep/authoring`](packages/authoring/README.md) — TypeScript helpers for authoring workflows with `defineWorkflow`, `step`, and `done`.
+- [`@trailstep/core`](packages/core/README.md) — framework-neutral runtime primitives, validation, events, retry state, providers, and run artifacts.
+- [`@trailstep/create-flows`](packages/create-flows/README.md) — reusable general-purpose workflows, including `grill-it-away` and `take-it-away`.
 
-## Author a workflow
+Workspace packages not yet part of the initial public publish set:
 
-Install authoring/runtime packages in the project that owns your workflow source:
+- [`@trailstep/dashboard`](packages/dashboard/README.md) — local run observability UI.
+- [`@trailstep/testkit`](packages/testkit/README.md) — workflow testing utilities while the public surface is finalized.
 
-```bash
-npm install @trailstep/authoring @trailstep/core
-```
+## Learn more
 
-Example workflow source:
+- [Getting started](docs/getting-started.md)
+- [Authoring workflows](docs/authoring-workflows.md)
+- [Generated skills](docs/generated-skills.md)
+- [Scopes and config](docs/scopes-and-config.md)
+- [CLI reference](docs/cli-reference.md)
+- [Architecture](docs/architecture.md)
+- [Reusable create flows](packages/create-flows/README.md)
 
-```ts
-import { defineWorkflow, done, shape, step } from "@trailstep/authoring";
+## Contributing
 
-type HelloInput = { topic: string };
-type HelloOutput = { message: string };
-
-export const hello = defineWorkflow<HelloInput, HelloOutput>({
-  id: "hello",
-  description: "A tiny TrailStep workflow.",
-  inputShape: shape<HelloInput>({ topic: "string" }),
-  outputShape: shape<HelloOutput>({ message: "string" }),
-  start(input) {
-    return step({ id: "echo" })
-      .prompt<HelloInput, HelloOutput>(
-        ({ input: stepInput }) => `Write a friendly one-sentence greeting about ${stepInput.topic}.`,
-        { output: shape<HelloOutput>({ message: "string" }) },
-      )
-      .do((output) => done(output))(input);
-  },
-});
-```
-
-Run workflows with JSON object input:
-
-```bash
-trailstep ./workflows/hello.ts#hello --input '{"topic":"Reddit"}'
-```
-
-Reference forms:
-
-- Direct refs: `trailstep ./workflows/review.ts#review --input-file input.json`
-- Registered refs: `trailstep project/review`
-- Bundle refs: `trailstep @acme/workflows#review`
-
-## CLI essentials
-
-```bash
-trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]
-trailstep agents
-trailstep agents set <name> --provider <provider> [--model <model>] [--thinking <level>] --scope <local|project|global>
-trailstep agents delete <name> --scope <local|project|global>
-trailstep agents rename <old> <new> --scope <local|project|global>
-trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]
-trailstep remove <namespace>/<name> [--scope <local|project|global>]
-trailstep workflows
-trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
-trailstep continue [--interactive-file <path> | --session-file <path> | --json-file <path> | --json '<json>']
-trailstep cancel [--reason '<text>']
-trailstep retry <workflow-ref> <runName>
-trailstep runs
-trailstep doctor
-trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
-```
-
-`trailstep init` writes `.trailstep/config.json` style configuration. Use `--install-skill` to install the packaged TrailStep usage skill, or `--no-install-skill` to skip it. There is no npm postinstall prompt.
-
-Configure agents with the canonical `trailstep agents` editor, or set one directly:
-
-```bash
-trailstep agents set default --provider pi [--model <model>] [--thinking <level>] --scope project
-```
-
-`--model` is a model override and `--thinking` is a reasoning/thinking override. Omit either one to use provider defaults; interactive prompts label that choice `Use provider default`. Thinking availability is provider-aware: Pi and Claude expose TrailStep-supported levels, Codex has no `max` tier, and Gemini thinking support is not configured until a confirmed flag exists. Pi model discovery is best-effort and only offers discovered choices when available; TrailStep does not maintain a hardcoded model catalog.
-
-Custom provider args can use `{{promptFile}}`, `{{outputFile}}`, `{{model}}`, and `{{thinking}}`; interactive args may also use `{{prompt}}` for inline prompt input. Guard optional overrides with `{{#model}} ... {{/model}}` and `{{#thinking}} ... {{/thinking}}` so provider defaults omit those argv values cleanly.
-
-## Use reusable workflow packages
-
-`trailstep add` can register direct local refs or package-backed workflows from versioned npm package specs (for example, `@trailstep/create-flows@latest`) and explicit `github:<owner>/<repo>` specs. Package-backed adds install into the selected scope root, discover workflows, and store package metadata with each registration.
-
-```bash
-# Preview without installing, registering, or writing skills.
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --dry-run
-
-# Install/register both public create-flows workflows in this project.
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --yes
-
-# Run the registered workflow ids.
-trailstep project/take-it-away --input-file feature-request.json
-trailstep project/grill-it-away
-```
-
-By default, registrations use the workflow ids published by the package, such as `take-it-away` and `grill-it-away`. You can override a single registration with `--name <name>` and choose a different namespace with `--namespace <namespace>`, but the default ids are the recommended path for examples, support, and repeatability.
-
-Use `--dry-run` on package-backed adds to inspect the plan without installing, registering, or writing skills. Scope controls where packages live: local/project installs use the current project root, while global installs use `~/.trailstep/packages`.
-
-`trailstep remove` deletes the registration and only uninstalls orphaned TrailStep-owned package installs; user-owned installs, still-referenced packages, and missing or stale metadata are preserved. If cleanup fails, the registration remains removed and the command reports the package root for manual cleanup.
-
-Use bare `trailstep update` to update the globally installed TrailStep CLI binary, `trailstep update --project` to explicitly update this project's TrailStep package dependencies, `trailstep update --workflows` to update registered npm-backed workflow packages, `trailstep update --workflow <name>` for one workflow package target, or `trailstep update --all` to combine global CLI, project TrailStep package, and workflow package updates across project/global roots. Updates prompt before writing unless `--yes` or `--assume-yes` is passed. Local-file refs are not package update targets, missing/stale metadata is skipped or rejected before mutation, and GitHub-sourced workflow package updates are not supported yet. Global CLI updates automatically refresh tracked installs of the packaged TrailStep usage skill when possible.
-
-## Artifacts and validation
-
-Run artifacts live under `.trailstep/runs` by default and should not be manually mutated. Set `TRAILSTEP_RUNS_ROOT` to store run artifacts somewhere else for a command/session.
-
-Useful contributor checks:
+This repository is a TypeScript-first pnpm monorepo and requires Node 24 or newer.
 
 ```bash
 pnpm install
@@ -145,5 +190,3 @@ pnpm check:public-packages
 pnpm run pack:public:dry-run
 node scripts/check-local-artifact-ignore.mjs
 ```
-
-This repository itself is a pnpm workspace and requires Node 24 or newer.

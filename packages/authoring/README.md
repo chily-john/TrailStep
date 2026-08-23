@@ -1,6 +1,6 @@
 # @trailstep/authoring
 
-`@trailstep/authoring` provides TypeScript helpers for writing TrailStep workflows.
+`@trailstep/authoring` provides TypeScript helpers for writing TrailStep workflows. Most workflow authors should start here rather than using `@trailstep/core` directly.
 
 ## Install
 
@@ -10,39 +10,70 @@ npm install @trailstep/authoring @trailstep/core
 
 Use the equivalent command for your package manager if you use `pnpm`, `yarn`, or `bun`.
 
-## Public role
+## What this package is for
 
-Use this package to author workflows with:
+Use this package to author continuation workflows with:
 
-- `defineWorkflow({ start })` as the workflow definition boundary.
-- `step(...)` for continuation steps.
-- `done(...)` for successful completion.
-- `shape(...)` or `jsonSchema(...)` for JSON-object inputs and outputs.
+- `defineWorkflow({ start })` as the workflow boundary.
+- `step(...)` for focused units of agent or local work.
+- `.prompt(...).do(...)` for agent-backed steps with structured output.
+- `done(...)` and `fail(...)` for terminal continuations.
+- `shape(...)` or `jsonSchema(...)` for JSON-object validation.
+- prompt helpers such as `promptSections`, `section`, `loadFragments`, and `promptTemplate`.
 
-Example:
+## Basic pattern
+
+Keep workflow entrypoints small and put step logic in separate files as workflows grow.
 
 ```ts
-import { defineWorkflow, done, shape, step } from "@trailstep/authoring";
+// workflows/feature-summary.workflow.ts
+import { defineWorkflow, shape } from "@trailstep/authoring";
+import { summarizeRequestStep } from "./steps/summarize-request.step.js";
 
-type ReviewInput = { topic: string };
-type ReviewOutput = { summary: string };
+type FeatureSummaryInput = { request: string };
+type FeatureSummaryOutput = { summary: string; nextStep: string };
 
-export const review = defineWorkflow<ReviewInput, ReviewOutput>({
-  id: "review",
-  inputShape: shape<ReviewInput>({ topic: "string" }),
-  outputShape: shape<ReviewOutput>({ summary: "string" }),
+export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
+  id: "feature-summary",
+  description: "Summarize a feature request and suggest one next step.",
+  inputShape: shape<FeatureSummaryInput>({ request: "string" }),
+  outputShape: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }),
   start(input) {
-    return step({ id: "summarize" })
-      .prompt<ReviewInput, ReviewOutput>(
-        ({ input: stepInput }) => `Summarize this topic: ${stepInput.topic}`,
-        { output: shape<ReviewOutput>({ summary: "string" }) },
-      )
-      .do((output) => done(output))(input);
+    return summarizeRequestStep(input);
   },
 });
 ```
 
-Export workflows from a Node-readable module. Consumers can run direct refs such as `./workflows/sample.ts#sampleWorkflow`, register refs with `trailstep add`, or use bundle refs when a package exposes a TrailStep workflow manifest.
+```ts
+// workflows/steps/summarize-request.step.ts
+import { done, shape, step } from "@trailstep/authoring";
+
+type FeatureSummaryInput = { request: string };
+type FeatureSummaryOutput = { summary: string; nextStep: string };
+
+export function summarizeRequestStep(input: FeatureSummaryInput) {
+  return step({ id: "summarize-request" })
+    .prompt<FeatureSummaryInput, FeatureSummaryOutput>(
+      ({ input: stepInput }) =>
+        `Summarize this feature request and recommend one next step:\n\n${stepInput.request}`,
+      { output: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }) },
+    )
+    .do((output) => done(output))(input);
+}
+```
+
+Run direct refs while developing:
+
+```bash
+trailstep ./workflows/feature-summary.workflow.ts#featureSummary --input '{"request":"Add CSV export."}'
+```
+
+Register stable refs when the workflow should be shared:
+
+```bash
+trailstep add ./workflows/feature-summary.workflow.ts#featureSummary --scope project --name feature-summary --project-skill
+trailstep project/feature-summary --input '{"request":"Add CSV export."}'
+```
 
 ## Packaging prompt fragments
 
@@ -72,3 +103,9 @@ declare module "*.md?raw" {
 ```
 
 `loadFragments(import.meta.dirname, ...)` is useful for local source workflows or packages that deliberately ship copied asset files, but publishable bundled workflow packages must either inline those fragments or include copied assets in `files` at the exact runtime paths used by the built bundle.
+
+## More docs
+
+- [Authoring workflows](../../docs/authoring-workflows.md)
+- [Generated skills](../../docs/generated-skills.md)
+- [CLI reference](../../docs/cli-reference.md)

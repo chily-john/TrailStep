@@ -11,22 +11,31 @@ Both workflows end with a typed output containing implementation status, feature
 
 ## Recommended setup
 
-Install the TrailStep CLI if you do not already have it:
+Install the TrailStep CLI if you do not already have it, then use the interactive setup from your project root:
 
 ```bash
 npm install --global @trailstep/cli
-trailstep init --scope project --install-skill
+trailstep init
+trailstep add @trailstep/create-flows@latest
 ```
 
-Then let `trailstep add` install and register the workflow package. `--project-skill` generates project skills so supported coding agents can discover and run the workflows from the agent UI.
+Choose **project** scope, install the TrailStep usage skill, select the workflows you want, and add project skills when prompted. Project skills let supported coding agents discover and run the workflows from the agent UI.
+
+<details>
+<summary>Scriptable setup</summary>
 
 ```bash
+# Initialize config and install the packaged TrailStep usage skill.
+trailstep init --scope project --install-skill
+
 # Preview without installing, registering, or writing skills.
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --dry-run
 
 # Install/register both workflows and generate project skills.
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 ```
+
+</details>
 
 Run registered workflows directly if you prefer the CLI:
 

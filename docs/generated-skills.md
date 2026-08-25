@@ -6,6 +6,17 @@ A registered workflow gives TrailStep a stable ref such as `project/review`. A g
 
 ## Generate a skill while adding a workflow
 
+The recommended path is the interactive `trailstep add` flow:
+
+```bash
+trailstep add @trailstep/create-flows@latest
+```
+
+Choose **project** scope for team-shared workflows, select the workflows you want, and add project skills when prompted. Use **global** scope and user skills for personal workflows.
+
+<details>
+<summary>Scriptable examples</summary>
+
 Project skill for a team-shared workflow:
 
 ```bash
@@ -23,6 +34,8 @@ Local file workflow with a project skill:
 ```bash
 trailstep add ./workflows/review.ts#review --scope project --name review --project-skill
 ```
+
+</details>
 
 ## Project skill vs user skill
 

@@ -8,20 +8,27 @@ Instead of asking one long chat to clarify requirements, plan, implement, review
 
 Prerequisite: install a CLI coding agent that TrailStep can call. TrailStep has been tested most heavily with [Pi](https://github.com/earendil-works/pi-coding-agent) and Claude Code, so they currently have the best support. More provider support will continue to improve.
 
-Install the TrailStep CLI, initialize project config, and install the TrailStep usage skill for your agent:
+Install the TrailStep CLI:
 
 ```bash
 npm install --global @trailstep/cli
-trailstep init --scope project --install-skill
 ```
 
-Add the public reusable workflow package and generate project skills for the registered workflows:
+Then start the interactive terminal setup from your project root:
 
 ```bash
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
+trailstep init
 ```
 
-After that, supported coding agents can discover and run the generated workflow skills. In agents that expose skills as slash commands, this lets you invoke workflows from the agent UI instead of manually typing CLI commands.
+Choose **project** scope for team-shared config, pick the agent/provider you want TrailStep to use, and say yes when asked to install the TrailStep usage skill.
+
+Add the public reusable workflow package through the same interactive TUI:
+
+```bash
+trailstep add @trailstep/create-flows@latest
+```
+
+Choose **project** scope, select the workflows you want (or **Select all**), and add project skills when prompted. After that, supported coding agents can discover and run the generated workflow skills. In agents that expose skills as slash commands, this lets you invoke workflows from the agent UI instead of manually typing CLI commands.
 
 TrailStep can register workflows from:
 
@@ -29,10 +36,21 @@ TrailStep can register workflows from:
 - GitHub package specs, such as `github:acme/trailstep-workflows`
 - local workflow files or bundles, such as `./workflows/review.ts#review`
 
-<details>
-<summary>Prefer direct CLI usage?</summary>
+Check what was registered and start the interactive feature flow:
 
 ```bash
+trailstep workflows
+trailstep project/grill-it-away
+```
+
+<details>
+<summary>Need a scriptable flag-based setup?</summary>
+
+Use this version for CI, bootstrap scripts, or terminals where prompts are unavailable:
+
+```bash
+trailstep init --scope project --install-skill
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 trailstep workflows
 trailstep project/grill-it-away
 trailstep project/take-it-away --input-file feature-request.json
@@ -52,71 +70,68 @@ Rule of thumb: use `--scope project` when setting up a repo for a team, `--scope
 
 ## A tiny workflow
 
-A TrailStep workflow is a typed function that returns a step, another step, or a final result. Each step can dispatch to an agent, validate structured output, and decide what happens next.
+A TrailStep workflow is a typed function that returns a step, another step, or a final result. Each step can dispatch to an agent with `.prompt(...)`, then decide what happens next with `.do(...)`.
 
-Imagine a workflow that turns a rough feature request into a short summary and one recommended next step:
-
-```text
-feature request --> summarize-request step --> done({ summary, nextStep })
-```
-
-A real project should keep workflow entrypoints and step implementations separate as workflows grow:
-
-```text
-workflows/
-  feature-summary.workflow.ts
-  steps/
-    summarize-request.step.ts
-```
+Create one local workflow file:
 
 ```ts
 // workflows/feature-summary.workflow.ts
-import { defineWorkflow, shape } from "@trailstep/authoring";
-import { summarizeRequestStep } from "./steps/summarize-request.step.js";
+import { defineWorkflow, done, shape, step } from "@trailstep/authoring";
 
-type FeatureSummaryInput = { request: string };
-type FeatureSummaryOutput = { summary: string; nextStep: string };
+type FeatureSummaryInput = {
+  readonly request: string;
+};
+
+type FeatureSummaryOutput = {
+  readonly summary: string;
+};
+
+const featureSummaryOutput = shape<FeatureSummaryOutput>({
+  summary: "string",
+});
+
+export const summarizeRequestStep = step({ id: "summarize-request" })
+  .prompt<FeatureSummaryInput, FeatureSummaryOutput>(
+    ({ input }) => `Summarize this feature request:\n\n${input.request}`,
+    { output: featureSummaryOutput },
+  )
+  .do((output) => {
+    // This is normal TypeScript. Run code, write files, call APIs,
+    // inspect the repo, or transform the agent's structured output here.
+    //
+    // Return done(...), fail(...), or another step.
+    return done({ summary: output.summary });
+  });
 
 export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
   id: "feature-summary",
-  description: "Summarize a feature request and suggest one next step.",
-  inputShape: shape<FeatureSummaryInput>({ request: "string" }),
-  outputShape: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }),
+  description: "Summarize a feature request.",
   start(input) {
     return summarizeRequestStep(input);
   },
 });
 ```
 
-```ts
-// workflows/steps/summarize-request.step.ts
-import { done, shape, step } from "@trailstep/authoring";
+The `output` shape tells TrailStep what JSON object the agent must return. As workflows grow, move shared shapes, prompts, and steps into separate files.
 
-type FeatureSummaryInput = { request: string };
-type FeatureSummaryOutput = { summary: string; nextStep: string };
-
-export function summarizeRequestStep(input: FeatureSummaryInput) {
-  return step({ id: "summarize-request" })
-    .prompt<FeatureSummaryInput, FeatureSummaryOutput>(
-      ({ input: stepInput }) =>
-        `Summarize this feature request and recommend one next step:\n\n${stepInput.request}`,
-      { output: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }) },
-    )
-    .do((output) => done(output))(input);
-}
-```
-
-Run it directly while developing:
+Add the file to your project workflows and run it:
 
 ```bash
-trailstep ./workflows/feature-summary.workflow.ts#featureSummary --input '{"request":"Add CSV export to reports."}'
+trailstep add ./workflows/feature-summary.workflow.ts
+trailstep feature-summary --input '{"request":"Add CSV export to reports."}'
 ```
 
-Register it for your project and generate an agent skill:
+The add command prompts for scope, name, and skill generation. If you choose project scope, `trailstep feature-summary` resolves to the project workflow registration.
+
+<details>
+<summary>Scriptable local workflow setup</summary>
 
 ```bash
-trailstep add ./workflows/feature-summary.workflow.ts#featureSummary --scope project --name feature-summary --project-skill
+trailstep add ./workflows/feature-summary.workflow.ts --scope project --project-skill --yes
+trailstep feature-summary --input '{"request":"Add CSV export to reports."}'
 ```
+
+</details>
 
 ## Why steps matter
 

@@ -30,13 +30,24 @@ Use the equivalent command for your package manager if you use `pnpm`, `yarn`, o
 
 ## Initialize a project
 
-For a team/project setup, start with project scope:
+For a team/project setup, start the interactive setup from your project root:
+
+```bash
+trailstep init
+```
+
+Choose **project** scope for team-shared config, pick the agent/provider you want TrailStep to use, and say yes when asked to install the packaged TrailStep usage skill. That skill teaches supported agents how to author, register, run, continue, and retry workflows.
+
+<details>
+<summary>Scriptable init</summary>
+
+Use flags for CI, bootstrap scripts, or terminals where prompts are unavailable:
 
 ```bash
 trailstep init --scope project --install-skill
 ```
 
-`trailstep init` writes TrailStep config and walks you through agent/provider defaults. `--install-skill` installs the packaged TrailStep usage skill so supported agents know how to author, register, run, continue, and retry workflows.
+</details>
 
 Use `trailstep agents` any time you want to edit provider targets interactively:
 
@@ -53,11 +64,13 @@ trailstep agents set default --provider claude --scope project
 
 ## Add ready-made workflows
 
-Install/register all workflows from `@trailstep/create-flows` and generate project skills for them:
+Install/register reusable workflows from `@trailstep/create-flows` through the interactive TUI:
 
 ```bash
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
+trailstep add @trailstep/create-flows@latest
 ```
+
+Choose **project** scope, select the workflows you want (or **Select all**), and add project skills when prompted.
 
 That package currently provides:
 
@@ -71,22 +84,23 @@ trailstep add github:acme/trailstep-workflows --scope project --workflow review 
 trailstep add ./workflows/review.ts#review --scope project --name review --project-skill
 ```
 
+<details>
+<summary>Scriptable add</summary>
+
 Use `--dry-run` before package-backed adds to preview the plan without installing, registering, or writing skills:
 
 ```bash
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --dry-run
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 ```
+
+</details>
 
 ## Run workflows from your agent
 
 When you add a workflow with `--project-skill` or `--user-skill`, TrailStep writes a generated skill that explains how to call the registered workflow. In agents that expose skills as slash commands, this lets you invoke workflows from the agent UI instead of manually typing CLI commands.
 
-Use project skills for team-shared workflows and user skills for personal workflows:
-
-```bash
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
-trailstep add @trailstep/create-flows@latest --scope global --workflow "*" --user-skill --yes
-```
+Use project skills for team-shared workflows and user skills for personal workflows. The interactive `trailstep add` flow asks which skill targets to create; for automated setup, pass `--project-skill` or `--user-skill` explicitly.
 
 ## Direct CLI usage
 

@@ -16,48 +16,99 @@ Keep workflow entrypoints small and move step logic into separate files:
 
 ```text
 workflows/
+  feature-summary.schema.ts
   feature-summary.workflow.ts
   steps/
     summarize-request.step.ts
 ```
 
+Shared schemas keep the workflow boundary and step implementation clean:
+
+```ts
+// workflows/feature-summary.schema.ts
+import { shape } from "@trailstep/authoring";
+
+export type FeatureSummaryInput = {
+  readonly request: string;
+};
+
+export type FeatureSummaryOutput = {
+  readonly summary: string;
+  readonly nextStep: string;
+};
+
+export const featureSummaryInput = shape<FeatureSummaryInput>({
+  request: "string",
+});
+
+export const featureSummaryOutput = shape<FeatureSummaryOutput>({
+  summary: "string",
+  nextStep: "string",
+});
+```
+
 The workflow file defines the public boundary: id, description, input shape, output shape, agent roles, and start continuation.
 
 ```ts
-import { defineWorkflow, shape } from "@trailstep/authoring";
+// workflows/feature-summary.workflow.ts
+import { defineWorkflow } from "@trailstep/authoring";
+import {
+  type FeatureSummaryInput,
+  type FeatureSummaryOutput,
+  featureSummaryInput,
+  featureSummaryOutput,
+} from "./feature-summary.schema.js";
 import { summarizeRequestStep } from "./steps/summarize-request.step.js";
-
-type FeatureSummaryInput = { request: string };
-type FeatureSummaryOutput = { summary: string; nextStep: string };
 
 export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
   id: "feature-summary",
   description: "Summarize a feature request and suggest one next step.",
-  inputShape: shape<FeatureSummaryInput>({ request: "string" }),
-  outputShape: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }),
+  inputShape: featureSummaryInput,
+  outputShape: featureSummaryOutput,
+  agents: {
+    summarizer: {
+      size: "medium",
+      thinking: "medium",
+      description: "Summarizes feature requests for planning.",
+    },
+  },
   start(input) {
     return summarizeRequestStep(input);
   },
 });
 ```
 
-A step file owns one focused unit of work:
+A step file owns one focused unit of work. Export the built step as a `const`, then call it with input from the workflow or previous step.
 
 ```ts
-import { done, shape, step } from "@trailstep/authoring";
+// workflows/steps/summarize-request.step.ts
+import { done, promptSections, section, step } from "@trailstep/authoring";
+import {
+  type FeatureSummaryInput,
+  type FeatureSummaryOutput,
+  featureSummaryOutput,
+} from "../feature-summary.schema.js";
 
-type FeatureSummaryInput = { request: string };
-type FeatureSummaryOutput = { summary: string; nextStep: string };
-
-export function summarizeRequestStep(input: FeatureSummaryInput) {
-  return step({ id: "summarize-request" })
-    .prompt<FeatureSummaryInput, FeatureSummaryOutput>(
-      ({ input: stepInput }) =>
-        `Summarize this feature request and recommend one next step:\n\n${stepInput.request}`,
-      { output: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }) },
-    )
-    .do((output) => done(output))(input);
+function summarizeRequestPrompt({
+  input,
+}: {
+  readonly input: FeatureSummaryInput;
+}): string {
+  return promptSections(
+    section("Feature request", input.request),
+    section(
+      "Task",
+      "Summarize the request in two or three sentences, then recommend exactly one next step.",
+    ),
+  );
 }
+
+export const summarizeRequestStep = step({ id: "summarize-request" })
+  .prompt<FeatureSummaryInput, FeatureSummaryOutput>(summarizeRequestPrompt, {
+    agent: "summarizer",
+    output: featureSummaryOutput,
+  })
+  .do((output) => done(output));
 ```
 
 ## Core primitives
@@ -76,12 +127,12 @@ export function summarizeRequestStep(input: FeatureSummaryInput) {
 Prompt steps default to working-agent mode. Use interactive mode when a step needs the user's live input or attention:
 
 ```ts
-step({ id: "clarify-requirements" })
+export const clarifyRequirementsStep = step({ id: "clarify-requirements" })
   .prompt(
     () => "Ask the user clarifying questions until the feature request is clear.",
     { mode: "interactive", output: shape<{ conversation: string }>({ conversation: "string" }) },
   )
-  .do((output) => nextStep(output))();
+  .do((output) => nextStep(output));
 ```
 
 Use `trailstep continue` to continue waiting or interrupted interactive work.

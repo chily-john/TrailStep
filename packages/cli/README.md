@@ -24,12 +24,24 @@ Use the equivalent command for your package manager if you use `pnpm`, `yarn`, o
 Prerequisite: install a CLI coding agent. TrailStep has been tested most heavily with Pi and Claude Code, so they currently have the best support.
 
 ```bash
+trailstep init
+trailstep add @trailstep/create-flows@latest
+trailstep workflows
+trailstep project/grill-it-away
+```
+
+Use the interactive prompts to choose project scope, configure your agent/provider, install the TrailStep usage skill, select workflows, and generate project skills. Generated skills let supported coding agents discover and invoke workflows from the agent UI.
+
+<details>
+<summary>Scriptable setup</summary>
+
+```bash
 trailstep init --scope project --install-skill
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 trailstep workflows
 ```
 
-`--install-skill` installs the packaged TrailStep usage skill. `--project-skill` generates skills for registered workflows so supported coding agents can discover and invoke them from the agent UI.
+</details>
 
 ## Common commands
 

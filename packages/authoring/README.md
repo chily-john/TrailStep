@@ -26,18 +26,51 @@ Use this package to author continuation workflows with:
 Keep workflow entrypoints small and put step logic in separate files as workflows grow.
 
 ```ts
-// workflows/feature-summary.workflow.ts
-import { defineWorkflow, shape } from "@trailstep/authoring";
-import { summarizeRequestStep } from "./steps/summarize-request.step.js";
+// workflows/feature-summary.schema.ts
+import { shape } from "@trailstep/authoring";
 
-type FeatureSummaryInput = { request: string };
-type FeatureSummaryOutput = { summary: string; nextStep: string };
+export type FeatureSummaryInput = {
+  readonly request: string;
+};
+
+export type FeatureSummaryOutput = {
+  readonly summary: string;
+  readonly nextStep: string;
+};
+
+export const featureSummaryInput = shape<FeatureSummaryInput>({
+  request: "string",
+});
+
+export const featureSummaryOutput = shape<FeatureSummaryOutput>({
+  summary: "string",
+  nextStep: "string",
+});
+```
+
+```ts
+// workflows/feature-summary.workflow.ts
+import { defineWorkflow } from "@trailstep/authoring";
+import {
+  type FeatureSummaryInput,
+  type FeatureSummaryOutput,
+  featureSummaryInput,
+  featureSummaryOutput,
+} from "./feature-summary.schema.js";
+import { summarizeRequestStep } from "./steps/summarize-request.step.js";
 
 export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
   id: "feature-summary",
   description: "Summarize a feature request and suggest one next step.",
-  inputShape: shape<FeatureSummaryInput>({ request: "string" }),
-  outputShape: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }),
+  inputShape: featureSummaryInput,
+  outputShape: featureSummaryOutput,
+  agents: {
+    summarizer: {
+      size: "medium",
+      thinking: "medium",
+      description: "Summarizes feature requests for planning.",
+    },
+  },
   start(input) {
     return summarizeRequestStep(input);
   },
@@ -46,20 +79,33 @@ export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummary
 
 ```ts
 // workflows/steps/summarize-request.step.ts
-import { done, shape, step } from "@trailstep/authoring";
+import { done, promptSections, section, step } from "@trailstep/authoring";
+import {
+  type FeatureSummaryInput,
+  type FeatureSummaryOutput,
+  featureSummaryOutput,
+} from "../feature-summary.schema.js";
 
-type FeatureSummaryInput = { request: string };
-type FeatureSummaryOutput = { summary: string; nextStep: string };
-
-export function summarizeRequestStep(input: FeatureSummaryInput) {
-  return step({ id: "summarize-request" })
-    .prompt<FeatureSummaryInput, FeatureSummaryOutput>(
-      ({ input: stepInput }) =>
-        `Summarize this feature request and recommend one next step:\n\n${stepInput.request}`,
-      { output: shape<FeatureSummaryOutput>({ summary: "string", nextStep: "string" }) },
-    )
-    .do((output) => done(output))(input);
+function summarizeRequestPrompt({
+  input,
+}: {
+  readonly input: FeatureSummaryInput;
+}): string {
+  return promptSections(
+    section("Feature request", input.request),
+    section(
+      "Task",
+      "Summarize the request in two or three sentences, then recommend exactly one next step.",
+    ),
+  );
 }
+
+export const summarizeRequestStep = step({ id: "summarize-request" })
+  .prompt<FeatureSummaryInput, FeatureSummaryOutput>(summarizeRequestPrompt, {
+    agent: "summarizer",
+    output: featureSummaryOutput,
+  })
+  .do((output) => done(output));
 ```
 
 Run direct refs while developing:

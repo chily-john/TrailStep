@@ -29,6 +29,14 @@ function packageDirectoryFor(packageName) {
   return packageName.replace("@trailstep/", "");
 }
 
+function expectedCaretPeerRange(manifestByName, packageName) {
+  const version = manifestByName.get(packageName)?.version;
+  assert.equal(typeof version, "string", `${packageName} must declare a version`);
+  const stableVersion = version.split("-")[0];
+  assert.match(stableVersion, /^\d+\.\d+\.\d+$/u, `${packageName} must declare a stable version`);
+  return `^${stableVersion}`;
+}
+
 function assertNoPostinstallScripts(packageManifests) {
   for (const manifest of packageManifests) {
     assert.equal(
@@ -137,8 +145,8 @@ function verifyPublicPackageMetadata() {
   );
   assert.equal(
     manifestByName.get("@trailstep/authoring")?.peerDependencies?.["@trailstep/core"],
-    "^0.1.0",
-    "@trailstep/authoring must declare @trailstep/core 0.1 peer compatibility",
+    expectedCaretPeerRange(manifestByName, "@trailstep/core"),
+    "@trailstep/authoring must declare peer compatibility with the current @trailstep/core version",
   );
   assert.equal(
     manifestByName.get("@trailstep/cli")?.dependencies?.["@trailstep/core"],
@@ -147,8 +155,8 @@ function verifyPublicPackageMetadata() {
   );
   assert.equal(
     manifestByName.get("@trailstep/cli")?.peerDependencies?.["@trailstep/core"],
-    "^0.1.0",
-    "@trailstep/cli must declare @trailstep/core 0.1 peer compatibility",
+    expectedCaretPeerRange(manifestByName, "@trailstep/core"),
+    "@trailstep/cli must declare peer compatibility with the current @trailstep/core version",
   );
   assert.equal(
     manifestByName.get("@trailstep/create-flows")?.dependencies?.["@trailstep/authoring"],
@@ -157,8 +165,8 @@ function verifyPublicPackageMetadata() {
   );
   assert.equal(
     manifestByName.get("@trailstep/create-flows")?.peerDependencies?.["@trailstep/authoring"],
-    "^0.1.0",
-    "@trailstep/create-flows must declare @trailstep/authoring 0.1 peer compatibility",
+    expectedCaretPeerRange(manifestByName, "@trailstep/authoring"),
+    "@trailstep/create-flows must declare peer compatibility with the current @trailstep/authoring version",
   );
   assert.ok(
     manifestByName.get("@trailstep/cli")?.files?.includes("trailstep-skill"),

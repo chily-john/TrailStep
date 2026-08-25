@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/cli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Command-line discovery and execution for TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",

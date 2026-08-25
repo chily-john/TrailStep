@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/create-flows",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Public reusable general-purpose TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
@@ -55,6 +55,6 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@trailstep/authoring": "^0.1.1"
+    "@trailstep/authoring": "^0.1.2"
   }
 }

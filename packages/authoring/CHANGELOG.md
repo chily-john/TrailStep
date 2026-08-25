@@ -1,5 +1,11 @@
 # @trailstep/authoring
 
+## 0.1.2
+
+### Patch Changes
+
+- f11b394: Improve README guidance for interactive setup and clearer workflow authoring examples.
+
 ## 0.1.1
 
 ### Patch Changes

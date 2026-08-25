@@ -1,5 +1,13 @@
 # @trailstep/create-flows
 
+## 0.3.2
+
+### Patch Changes
+
+- f11b394: Improve README guidance for interactive setup and clearer workflow authoring examples.
+- Updated dependencies [f11b394]
+  - @trailstep/authoring@0.1.2
+
 ## 0.3.1
 
 ### Patch Changes

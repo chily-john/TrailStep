@@ -10,8 +10,14 @@ export interface SplitImplementationStoriesInput extends Record<string, unknown>
 
 export const splitImplementationStoriesStep = step({ id: "split-implementation-stories" }).do(
   async ({ implementationDoc }: SplitImplementationStoriesInput): Promise<ContinuationResult> => {
-    const contextStartCount = countOccurrences(implementationDoc.content, STORY_CONTEXT_START);
-    const contextEndCount = countOccurrences(implementationDoc.content, STORY_CONTEXT_END);
+    const contextStartCount = countStandaloneMarkerLines(
+      implementationDoc.content,
+      STORY_CONTEXT_START,
+    );
+    const contextEndCount = countStandaloneMarkerLines(
+      implementationDoc.content,
+      STORY_CONTEXT_END,
+    );
 
     if (contextStartCount !== contextEndCount) {
       return fail({
@@ -70,28 +76,18 @@ export const splitImplementationStoriesStep = step({ id: "split-implementation-s
   },
 );
 
-function countOccurrences(value: string, needle: string): number {
-  if (needle.length === 0) {
-    return 0;
-  }
+function countStandaloneMarkerLines(value: string, marker: string): number {
+  return Array.from(value.matchAll(standaloneMarkerLinePattern(marker))).length;
+}
 
-  let count = 0;
-  let offset = 0;
-  while (true) {
-    const index = value.indexOf(needle, offset);
-    if (index === -1) {
-      return count;
-    }
-
-    count += 1;
-    offset = index + needle.length;
-  }
+function standaloneMarkerLinePattern(marker: string): RegExp {
+  return new RegExp(`^[ \\t]*${escapeRegExp(marker)}[ \\t]*$`, "gm");
 }
 
 function storyContextPattern(): RegExp {
   return new RegExp(
-    `${escapeRegExp(STORY_CONTEXT_START)}([\\s\\S]*?)${escapeRegExp(STORY_CONTEXT_END)}`,
-    "g",
+    `^[ \\t]*${escapeRegExp(STORY_CONTEXT_START)}[ \\t]*\\r?\\n([\\s\\S]*?)^[ \\t]*${escapeRegExp(STORY_CONTEXT_END)}[ \\t]*$`,
+    "gm",
   );
 }
 

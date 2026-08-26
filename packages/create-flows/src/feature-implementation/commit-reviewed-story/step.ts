@@ -1,11 +1,9 @@
 import type { Document } from "@trailstep/authoring";
 import { done, fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
-import { implementStoryStep } from "../implement-story/step.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
 import {
   type ActiveStoryStartCommit,
-  recordActiveStoryStartCommit,
   resetActiveStoryStartCommit,
   STORY_STATE_KEYS,
 } from "../shared/story-state.js";
@@ -174,11 +172,67 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     return done(output);
   }
 
+  if (!storyAutoCommitEnabled()) {
+    const cleanBoundary = await verifyCleanBoundaryBeforeNextStory(activeStory);
+    if (!cleanBoundary.ok) {
+      return fail({
+        code: cleanBoundary.code,
+        message: cleanBoundary.message,
+        details: cleanBoundary.details,
+      });
+    }
+  }
+
   await state.set(STORY_STATE_KEYS.storyQueue, remaining);
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
+  await state.set(STORY_STATE_KEYS.storyBaseline, null);
   await resetActiveStoryStartCommit();
-  await recordActiveStoryStartCommit();
-  return implementStoryStep({ currentStory: nextStory, attempt: 1 });
+  const { storyRouterStep } = await import("../story-router/step.js");
+  return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
+}
+
+async function verifyCleanBoundaryBeforeNextStory(activeStory: Document): Promise<
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly message: string;
+      readonly details: Record<string, unknown>;
+    }
+> {
+  const cwd = state.cwd;
+  if (!cwd) {
+    return {
+      ok: false,
+      code: "story_boundary_missing_cwd",
+      message:
+        "Cannot advance to the next story because the workflow cwd is unavailable. Commit or restore a clean story boundary from a valid checkout, then retry.",
+      details: { storyPath: activeStory.path },
+    };
+  }
+
+  const status = await runGit(["status", "--short"], cwd);
+  if (!status.ok) {
+    return {
+      ok: false,
+      code: "story_boundary_status_failed",
+      message:
+        "Cannot advance to the next story because TrailStep could not inspect `git status --short`. Fix git status inspection, commit or restore a clean story boundary, then retry.",
+      details: { storyPath: activeStory.path, cwd, gitError: status.error },
+    };
+  }
+
+  if (status.stdout.trim().length > 0) {
+    return {
+      ok: false,
+      code: "story_boundary_dirty_without_auto_commit",
+      message:
+        "Cannot advance to the next story because auto-commit is disabled and the reviewed story left uncommitted changes. Commit, stash, or otherwise restore a clean story boundary, then retry the workflow.",
+      details: { storyPath: activeStory.path, cwd, statusShort: status.stdout },
+    };
+  }
+
+  return { ok: true };
 }
 
 function truncateCommitSubject(subject: string): string {

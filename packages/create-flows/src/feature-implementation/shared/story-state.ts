@@ -1,16 +1,40 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
 import { state } from "@trailstep/authoring";
-
-const execFileAsync = promisify(execFile);
+import { runGit } from "../commit-reviewed-story/run-git.js";
 
 export const STORY_STATE_KEYS = {
+  activePhase: "activePhase",
   activeStory: "activeStory",
   activeStoryStartCommit: "activeStoryStartCommit",
+  attemptsByPhase: "attemptsByPhase",
   completedStories: "completedStories",
+  blockedReason: "blockedReason",
+  latestExplorationBrief: "latestExplorationBrief",
+  latestImplementationSummary: "latestImplementationSummary",
+  latestPreflightStatus: "latestPreflightStatus",
+  latestRedTestSummary: "latestRedTestSummary",
+  latestReviewResult: "latestReviewResult",
+  latestValidationSummary: "latestValidationSummary",
+  storyBaseline: "storyBaseline",
   storyQueue: "storyQueue",
 } as const;
+
+export type StoryPhase =
+  | "story-router"
+  | "story-isolation-preflight"
+  | "explore-story"
+  | "write-red-tests"
+  | "implement-green"
+  | "validate-story"
+  | "implement-story"
+  | "review-story-implementation"
+  | "commit-reviewed-story";
+
+export interface StoryPreflightStatus {
+  readonly ok: boolean;
+  readonly code: string;
+  readonly message: string;
+  readonly baseline?: string;
+}
 
 export interface ActiveStoryStartCommit {
   readonly commit?: string;
@@ -20,27 +44,12 @@ export interface ActiveStoryStartCommit {
 export interface StoryReviewGitContext {
   readonly storyStartCommit?: string;
   readonly statusShort?: string;
-  readonly committedDiff?: string;
-  readonly uncommittedDiff?: string;
+  readonly changedFiles: readonly string[];
+  readonly committedChangedFiles: readonly string[];
+  readonly uncommittedChangedFiles: readonly string[];
+  readonly committedDiffStat?: string;
+  readonly uncommittedDiffStat?: string;
   readonly warnings: readonly string[];
-}
-
-async function runGit(
-  args: readonly string[],
-  cwd: string,
-): Promise<
-  { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly error: string }
-> {
-  try {
-    const { stdout } = await execFileAsync("git", [...args], {
-      cwd,
-      maxBuffer: 1024 * 1024 * 10,
-    });
-    return { ok: true, stdout: stdout.trimEnd() };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, error: message };
-  }
 }
 
 export async function recordActiveStoryStartCommit(): Promise<ActiveStoryStartCommit> {
@@ -72,7 +81,16 @@ export async function recordActiveStoryStartCommit(): Promise<ActiveStoryStartCo
 
   const baseline = { commit: result.stdout };
   await state.set(STORY_STATE_KEYS.activeStoryStartCommit, baseline);
+  await state.set(STORY_STATE_KEYS.storyBaseline, result.stdout);
   return baseline;
+}
+
+export async function incrementStoryPhaseAttempt(phase: StoryPhase): Promise<number> {
+  const attempts =
+    (await state.get<Record<string, number> | null>(STORY_STATE_KEYS.attemptsByPhase)) ?? {};
+  const nextAttempt = (attempts[phase] ?? 0) + 1;
+  await state.set(STORY_STATE_KEYS.attemptsByPhase, { ...attempts, [phase]: nextAttempt });
+  return nextAttempt;
 }
 
 export async function resetActiveStoryStartCommit(): Promise<void> {
@@ -94,7 +112,13 @@ export async function loadStoryReviewGitContext(): Promise<StoryReviewGitContext
     warnings.push(
       "Workflow cwd is unavailable; reviewer must treat committed story-change context as missing.",
     );
-    return { storyStartCommit: baseline?.commit, warnings };
+    return {
+      storyStartCommit: baseline?.commit,
+      changedFiles: [],
+      committedChangedFiles: [],
+      uncommittedChangedFiles: [],
+      warnings,
+    };
   }
 
   const status = await runGit(["status", "--short"], cwd);
@@ -102,15 +126,23 @@ export async function loadStoryReviewGitContext(): Promise<StoryReviewGitContext
     warnings.push(`Unable to inspect \`git status --short\`: ${status.error}`);
   }
 
-  const uncommittedDiff = await runGit(["diff"], cwd);
-  if (!uncommittedDiff.ok) {
+  const uncommittedChangedFilesResult = await runGit(["diff", "--name-only"], cwd);
+  if (!uncommittedChangedFilesResult.ok) {
     warnings.push(
-      `Unable to inspect uncommitted changes with \`git diff\`: ${uncommittedDiff.error}`,
+      `Unable to inspect uncommitted changed files with \`git diff --name-only\`: ${uncommittedChangedFilesResult.error}`,
+    );
+  }
+
+  const uncommittedDiffStatResult = await runGit(["diff", "--stat"], cwd);
+  if (!uncommittedDiffStatResult.ok) {
+    warnings.push(
+      `Unable to inspect uncommitted diffstat with \`git diff --stat\`: ${uncommittedDiffStatResult.error}`,
     );
   }
 
   const storyStartCommit = baseline?.commit;
-  let committedDiff: string | undefined;
+  let committedChangedFiles: readonly string[] = [];
+  let committedDiffStat: string | undefined;
   if (!storyStartCommit) {
     warnings.push(
       "No durable story start commit is recorded; reviewer must not silently review only the current working tree diff.",
@@ -122,22 +154,74 @@ export async function loadStoryReviewGitContext(): Promise<StoryReviewGitContext
         `Recorded story start commit \`${storyStartCommit}\` is invalid or unreachable: ${baselineReachable.error}`,
       );
     } else {
-      const committed = await runGit(["diff", `${storyStartCommit}..HEAD`], cwd);
-      if (!committed.ok) {
+      const committedChangedFilesResult = await runGit(
+        ["diff", "--name-only", `${storyStartCommit}..HEAD`],
+        cwd,
+      );
+      if (!committedChangedFilesResult.ok) {
         warnings.push(
-          `Unable to inspect committed story changes with \`git diff ${storyStartCommit}..HEAD\`: ${committed.error}`,
+          `Unable to inspect committed changed files with \`git diff --name-only ${storyStartCommit}..HEAD\`: ${committedChangedFilesResult.error}`,
         );
       } else {
-        committedDiff = committed.stdout;
+        committedChangedFiles = splitGitLines(committedChangedFilesResult.stdout);
+      }
+
+      const committedDiffStatResult = await runGit(
+        ["diff", "--stat", `${storyStartCommit}..HEAD`],
+        cwd,
+      );
+      if (!committedDiffStatResult.ok) {
+        warnings.push(
+          `Unable to inspect committed diffstat with \`git diff --stat ${storyStartCommit}..HEAD\`: ${committedDiffStatResult.error}`,
+        );
+      } else {
+        committedDiffStat = committedDiffStatResult.stdout;
       }
     }
   }
 
+  const uncommittedTrackedFiles = uncommittedChangedFilesResult.ok
+    ? splitGitLines(uncommittedChangedFilesResult.stdout)
+    : [];
+  const uncommittedStatusFiles = status.ok ? parseStatusChangedFiles(status.stdout) : [];
+  const uncommittedChangedFiles = uniqueFiles([
+    ...uncommittedTrackedFiles,
+    ...uncommittedStatusFiles,
+  ]);
+
   return {
     storyStartCommit,
     statusShort: status.ok ? status.stdout : undefined,
-    committedDiff,
-    uncommittedDiff: uncommittedDiff.ok ? uncommittedDiff.stdout : undefined,
+    changedFiles: uniqueFiles([...committedChangedFiles, ...uncommittedChangedFiles]),
+    committedChangedFiles,
+    uncommittedChangedFiles,
+    committedDiffStat,
+    uncommittedDiffStat: uncommittedDiffStatResult.ok
+      ? uncommittedDiffStatResult.stdout
+      : undefined,
     warnings,
   };
+}
+
+function splitGitLines(stdout: string): readonly string[] {
+  return stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function parseStatusChangedFiles(stdout: string): readonly string[] {
+  return splitGitLines(stdout).flatMap((line) => {
+    const path = line.slice(3).trim();
+    if (path.length === 0) {
+      return [];
+    }
+
+    const renamedPath = path.split(" -> ").at(-1)?.trim();
+    return renamedPath ? [renamedPath] : [];
+  });
+}
+
+function uniqueFiles(files: readonly string[]): readonly string[] {
+  return Array.from(new Set(files));
 }

@@ -1,8 +1,8 @@
 import { type Document, document, fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
-import { implementStoryStep } from "../implement-story/step.js";
 import { STORY_BOUNDARY, STORY_CONTEXT_END, STORY_CONTEXT_START } from "../shared/constants.js";
-import { recordActiveStoryStartCommit, STORY_STATE_KEYS } from "../shared/story-state.js";
+import { STORY_STATE_KEYS } from "../shared/story-state.js";
+import { storyRouterStep } from "../story-router/step.js";
 
 export interface SplitImplementationStoriesInput extends Record<string, unknown> {
   readonly implementationDoc: Document;
@@ -70,9 +70,18 @@ export const splitImplementationStoriesStep = step({ id: "split-implementation-s
     await state.set(STORY_STATE_KEYS.storyQueue, remaining);
     await state.set(STORY_STATE_KEYS.completedStories, []);
     await state.set(STORY_STATE_KEYS.activeStory, firstStory);
-    await recordActiveStoryStartCommit();
+    await state.set(STORY_STATE_KEYS.activePhase, "story-router");
+    await state.set(STORY_STATE_KEYS.attemptsByPhase, {});
+    await state.set(STORY_STATE_KEYS.storyBaseline, null);
+    await state.set(STORY_STATE_KEYS.latestPreflightStatus, null);
+    await state.set(STORY_STATE_KEYS.latestExplorationBrief, null);
+    await state.set(STORY_STATE_KEYS.latestRedTestSummary, null);
+    await state.set(STORY_STATE_KEYS.latestImplementationSummary, null);
+    await state.set(STORY_STATE_KEYS.latestValidationSummary, null);
+    await state.set(STORY_STATE_KEYS.latestReviewResult, null);
+    await state.set(STORY_STATE_KEYS.blockedReason, null);
 
-    return implementStoryStep({ currentStory: firstStory, attempt: 1 });
+    return storyRouterStep({ reason: "start-story", currentStory: firstStory });
   },
 );
 

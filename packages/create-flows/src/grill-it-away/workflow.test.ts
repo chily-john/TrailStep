@@ -1,11 +1,69 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { runWorkflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { grillItAway } from "./workflow.js";
+
+const execFileAsync = promisify(execFile);
+
+async function git(cwd: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", [...args], { cwd });
+  return stdout.trimEnd();
+}
+
+async function handleNonGreenStoryPhase(request: {
+  readonly outputFile: string;
+}): Promise<{ readonly exitCode: number } | undefined> {
+  if (request.outputFile.includes("explore-story")) {
+    await writeFile(
+      request.outputFile,
+      JSON.stringify({
+        blocked: false,
+        summary: "Explored the active story.",
+        relevantFiles: ["widget.txt"],
+        testSeams: ["widget behavior"],
+        recommendedValidationCommands: ["pnpm --filter @trailstep/create-flows test"],
+      }),
+      "utf8",
+    );
+    return { exitCode: 0 };
+  }
+
+  if (request.outputFile.includes("write-red-tests")) {
+    await writeFile(
+      request.outputFile,
+      JSON.stringify({
+        blocked: false,
+        summary: "Wrote a focused behavioral red test.",
+        redEvidence: "Focused test failed for the intended behavior.",
+        changedFiles: ["widget.test.ts"],
+      }),
+      "utf8",
+    );
+    return { exitCode: 0 };
+  }
+
+  if (request.outputFile.includes("validate-story")) {
+    await writeFile(
+      request.outputFile,
+      JSON.stringify({
+        blocked: false,
+        summary: "Focused validation passed.",
+        commands: [{ command: "pnpm --filter @trailstep/create-flows test", result: "passed" }],
+        validationPassed: true,
+      }),
+      "utf8",
+    );
+    return { exitCode: 0 };
+  }
+
+  return undefined;
+}
 
 describe("grill-it-away", () => {
   it("fails when the completion payload does not match the conversation schema", async () => {
@@ -43,6 +101,14 @@ describe("grill-it-away", () => {
 
   it("once grilling completes, grill-it-away proceeds into feature-implementation's create-feature-doc with the transcript, and runs the full reviewed pipeline through to done", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-grill-it-away-pipeline-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
     const transcript = "User: I want a widget.\nAgent: Tell me more...\nUser: ...";
 
     const passingReview = {
@@ -99,6 +165,11 @@ describe("grill-it-away", () => {
         return { exitCode: 0 };
       },
       workingAgentProcessRunner: async (request) => {
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult) {
+          return splitPhaseResult;
+        }
+
         if (request.outputFile.includes("create-feature-doc")) {
           createFeatureDocPrompt = await readFile(request.promptFile, "utf8");
           await writeFile(
@@ -133,12 +204,13 @@ describe("grill-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("implement-story")) {
+        if (request.outputFile.includes("implement-green")) {
           await writeFile(
             request.outputFile,
             JSON.stringify({
               blocked: false,
               summary: "Implemented the widget exporter core with passing tests.",
+              changedFiles: ["widget.txt"],
             }),
             "utf8",
           );

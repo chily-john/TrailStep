@@ -119,6 +119,20 @@ export interface ProviderWorkingInvocationSpec {
   readonly repair?: ProviderWorkingRepairInvocationSpec;
 }
 
+export type ManagedSessionPromptInjectionMode =
+  | "hidden-system-prompt-file"
+  | "visible-prompt-file"
+  | "visible-inline-prompt";
+
+export type ProviderManagedSessionPromptDelivery =
+  | {
+      readonly delivery: "hidden-system-prompt-file";
+    }
+  | {
+      readonly delivery: "visible-prompt";
+      readonly mode: "visible-prompt-file" | "visible-inline-prompt";
+    };
+
 export type ProviderInteractiveInvocationSpec =
   | {
       readonly supported: true;
@@ -127,6 +141,13 @@ export type ProviderInteractiveInvocationSpec =
       readonly systemPromptFileFlag?: string;
       readonly modelFlag?: string;
       readonly permissionBypassFlag?: string;
+      /**
+       * Declares how TrailStep-managed standalone sessions should deliver their
+       * managed-session prompt. Hidden/system delivery is only claimed when the
+       * provider adapter has a dedicated system-prompt mechanism; otherwise the
+       * managed prompt is intentionally passed as visible user input.
+       */
+      readonly managedSessionPrompt: ProviderManagedSessionPromptDelivery;
     }
   | {
       readonly supported: false;

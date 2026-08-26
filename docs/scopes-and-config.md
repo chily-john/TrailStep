@@ -49,6 +49,10 @@ TrailStep detects the install root's package manager from lockfiles or `packageM
 
 ## Agent config
 
+Agent mappings control both workflow step dispatch and standalone managed agent sessions opened from the CLI. `trailstep` and `trailstep open` launch the first configured default target, `agents.default[0]`, in the current project. Named entries, such as `agents.reviewer[0]`, can be opened with `trailstep open reviewer`; bare `trailstep reviewer` opens the agent only when that token is not also a workflow ref. If a configured agent name matches a provider shortcut, the configured agent wins for open behavior. If a bare token also matches a workflow, TrailStep reports ambiguity and asks for explicit syntax.
+
+Standalone open sessions use the first target in the selected agent entry for this MVP. They run in the current project through inherited stdio and write `.trailstep/sessions/<session-id>/` artifacts instead of workflow run artifacts.
+
 Use the interactive editor for most changes:
 
 ```bash
@@ -62,7 +66,7 @@ trailstep agents set default --provider pi --scope project
 trailstep agents set reviewer --provider claude --thinking high --scope project
 ```
 
-`--model` and `--thinking` are optional overrides. Omit either one to use the provider default.
+`--model` and `--thinking` are optional overrides. Omit either one to use the provider default. Use `trailstep init` when you need to create the initial `agents.default` entry, then `trailstep agents` or `trailstep agents set <name>` to add named mappings.
 
 ## Skill scope recommendations
 

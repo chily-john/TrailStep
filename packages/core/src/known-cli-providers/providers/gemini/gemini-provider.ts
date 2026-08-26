@@ -43,7 +43,12 @@ const GEMINI_SPEC: ProviderSpec = {
       parsing: { resultField: GEMINI_RESULT_FIELD },
     },
   },
-  interactive: { supported: true, command: GEMINI_BINARY, modelFlag: "-m" },
+  interactive: {
+    supported: true,
+    command: GEMINI_BINARY,
+    modelFlag: "-m",
+    managedSessionPrompt: { delivery: "visible-prompt", mode: "visible-inline-prompt" },
+  },
 };
 
 async function runWorking(

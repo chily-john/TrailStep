@@ -20,7 +20,12 @@ Then start the interactive terminal setup from your project root:
 trailstep init
 ```
 
-Choose **project** scope for team-shared config, pick the agent/provider you want TrailStep to use, and say yes when asked to install the TrailStep usage skill.
+Choose **project** scope for team-shared config, pick the agent/provider you want TrailStep to use, and say yes when asked to install the TrailStep usage skill. You can then open that default agent as a standalone managed session:
+
+```bash
+trailstep
+trailstep open
+```
 
 Add the public reusable workflow package through the same interactive TUI:
 
@@ -42,6 +47,8 @@ Check what was registered and start the interactive feature flow:
 trailstep workflows
 trailstep project/grill-it-away
 ```
+
+Standalone `trailstep open [agent-or-provider]` sessions write `.trailstep/sessions/<session-id>/` artifacts and are separate from workflow runs, which write `.trailstep/runs/<runName>/`.
 
 <details>
 <summary>Need a scriptable flag-based setup?</summary>

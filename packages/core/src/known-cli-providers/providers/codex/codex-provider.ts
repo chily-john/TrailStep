@@ -49,7 +49,12 @@ const CODEX_SPEC: ProviderSpec = {
     ],
     output: { style: "provider-output-file" },
   },
-  interactive: { supported: true, command: CODEX_BINARY, modelFlag: "--model" },
+  interactive: {
+    supported: true,
+    command: CODEX_BINARY,
+    modelFlag: "--model",
+    managedSessionPrompt: { delivery: "visible-prompt", mode: "visible-inline-prompt" },
+  },
 };
 
 /**

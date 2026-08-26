@@ -5,9 +5,10 @@ import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
+import { openCommand } from "./commands/open/open-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
 import { retryCommand } from "./commands/retry/retry-command.js";
-import { runCommand } from "./commands/run/run-command.js";
+import { runOrOpenCommand } from "./commands/run-or-open/run-or-open-command.js";
 import { runsCommand } from "./commands/runs/runs-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
 import { updateCommand } from "./commands/update/update-command.js";
@@ -19,6 +20,10 @@ import { workflowsCommand } from "./commands/workflows/workflows-command.js";
  * This is the only file that needs to change to register a new command.
  */
 export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
+  if (argv.length === 0) {
+    return openCommand;
+  }
+
   if (argv[0] === "add") {
     return addCommand;
   }
@@ -67,5 +72,9 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
     return doctorCommand;
   }
 
-  return runCommand;
+  if (argv[0] === "open") {
+    return openCommand;
+  }
+
+  return runOrOpenCommand;
 }

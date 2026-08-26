@@ -19,4 +19,4 @@ Enter here when changing the public set of built-in provider ids or the adapter 
 - Keep registry keys stable unless config migration is part of the same change.
 - Provider adapters expose required standardized capability metadata plus working/interactive methods; generic retry/fallback and file-protocol behavior belongs outside the registry.
 - Provider working requests receive prepared file paths, optional model/thinking values, and abort signals; interactive requests may receive environment variables and abort signals; providers decide whether stdout parsing or vendor file output is appropriate.
-- Provider specs document CLI-facing capabilities such as prompt delivery, output style, model/thinking flags, model-discovery metadata, and repair support; keep them aligned with provider command tests.
+- Provider specs document CLI-facing capabilities such as prompt delivery, output style, model/thinking flags, managed-session prompt delivery, model-discovery metadata, and repair support; keep them aligned with provider command tests.

@@ -25,6 +25,8 @@ Prerequisite: install a CLI coding agent. TrailStep has been tested most heavily
 
 ```bash
 trailstep init
+trailstep
+trailstep open claude
 trailstep add @trailstep/create-flows@latest
 trailstep workflows
 trailstep project/grill-it-away
@@ -46,6 +48,9 @@ trailstep workflows
 ## Common commands
 
 ```bash
+trailstep
+trailstep <agent-or-provider>
+trailstep open [agent-or-provider]
 trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]
 trailstep agents
 trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--workflow <workflow>] [--project-skill] [--user-skill] [--yes] [--dry-run]
@@ -57,6 +62,31 @@ trailstep update [--all | --project | --workflows | --workflow <name>] [--yes]
 ```
 
 See the repository [CLI reference](../../docs/cli-reference.md) for the full command list and detailed behavior.
+
+## Managed agent sessions
+
+Use `trailstep` or `trailstep open` to open the first configured default target, `agents.default[0]`, as a standalone coding-agent session in the current project:
+
+```bash
+trailstep
+trailstep open
+```
+
+Open a named configured agent, such as a reviewer target configured with `trailstep agents`:
+
+```bash
+trailstep open reviewer
+trailstep reviewer
+```
+
+Open a built-in or custom provider shortcut ephemerally when you do not need a named config entry:
+
+```bash
+trailstep open claude
+trailstep claude
+```
+
+Standalone sessions are not workflow runs and do not create workflow steps. They write generated artifacts under `.trailstep/sessions/<session-id>/`, including `session.json` and `launch-prompt.md`. The MVP launches providers through the inherited-stdio terminal backend, uses only the first configured target for an agent entry, does not capture transcripts, and does not yet provide node-pty, send-input, or multi-session management. TrailStep injects managed-session guidance as a hidden/system prompt where a provider supports it; otherwise the session metadata records the visible prompt fallback.
 
 ## Workflow refs
 
@@ -93,4 +123,4 @@ See [Scopes and config](../../docs/scopes-and-config.md) for details.
 
 ## Run artifacts
 
-Runs write `.trailstep/runs/<runName>/` directories for inspection and replay. Set `TRAILSTEP_RUNS_ROOT` to override the runs root for a command/session. Treat run directories as generated output; do not manually edit them to recover workflow state.
+Workflow runs write `.trailstep/runs/<runName>/` directories for inspection and replay. Standalone managed agent sessions write `.trailstep/sessions/<session-id>/` instead and are not workflow runs. Set `TRAILSTEP_RUNS_ROOT` to override the runs root for a command/session. Treat generated artifact directories as output; do not manually edit them to recover workflow state.

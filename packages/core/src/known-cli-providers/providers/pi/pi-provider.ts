@@ -72,7 +72,12 @@ const PI_SPEC: ProviderSpec = {
       parsing: { resultField: PI_RESULT_FIELD },
     },
   },
-  interactive: { supported: true, command: PI_BINARY, modelFlag: "--model" },
+  interactive: {
+    supported: true,
+    command: PI_BINARY,
+    modelFlag: "--model",
+    managedSessionPrompt: { delivery: "visible-prompt", mode: "visible-inline-prompt" },
+  },
 };
 
 async function runWorking(

@@ -1,3 +1,8 @@
+export type {
+  LaunchInteractiveAgentTargetOptions,
+  LaunchInteractiveAgentTargetResult,
+} from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
+export { launchInteractiveAgentTarget } from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
 export { parseTrailStepConfig } from "./agent-targeting/parse-trailstep-config/parse-trailstep-config.js";
 export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 export type {
@@ -88,9 +93,11 @@ export {
   providerRegistry,
 } from "./known-cli-providers/registry/provider-registry.js";
 export type {
+  ManagedSessionPromptInjectionMode,
   ProviderAdapter,
   ProviderInteractiveInvocationSpec,
   ProviderInteractiveRequest,
+  ProviderManagedSessionPromptDelivery,
   ProviderModelDiscoveryOutputParser,
   ProviderModelDiscoverySpec,
   ProviderModelOverrideSupport,

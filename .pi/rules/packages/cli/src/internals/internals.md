@@ -2,7 +2,7 @@
 kind: rules
 paths:
   - packages/cli/src/internals/
-summary: Internal command registry, command implementations, discovery, workflow package ref/install/uninstall helpers, package-manager/npm-registry/installed-version helpers, deprecation-scan helpers, agent-config initialization/editing helpers, config loading, input loading, interactive continuation, configured runs-root resolution, doctor deprecation scanning, update command self-update planning, retry command wiring, runs command listing, skill checks, workflow registration, workflow package metadata, TrailStep packaged skill tracking, workflow skill generation/distribution, registered workflow refs, agent ref maintenance, workflow resolution, and workflow-reference parsing for the CLI.
+summary: Internal command registry, command implementations, discovery, workflow package ref/install/uninstall helpers, package-manager/npm-registry/installed-version helpers, deprecation-scan helpers, agent-config initialization/editing helpers, standalone agent sessions, bare run/open dispatch, config loading, input loading, interactive continuation, configured runs-root resolution, doctor deprecation scanning, update command self-update planning, retry command wiring, runs command listing, skill checks, workflow registration, workflow package metadata, TrailStep packaged skill tracking, workflow skill generation/distribution, registered workflow refs, agent ref maintenance, workflow resolution, and workflow-reference parsing for the CLI.
 triggers:
   - CLI internals
   - command registry
@@ -11,6 +11,8 @@ triggers:
   - workflow id
   - CLI config
   - agent config
+  - trailstep open
+  - agent sessions
   - workflow discovery
   - bundle workflow
   - direct workflow file
@@ -24,7 +26,8 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 ## Subdirectories
 
 - `agent-config/`: Enter when changing shared flows for literal agent target prompts, first-agent setup, agent entry item editing, save confirmation, config-scope paths, or rename/delete referrer handling.
-- `commands/`: Enter when changing `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `run`, `runs`, `retry`, `cancel`, `doctor`, `update`, or `skill-check` command behavior and command-specific argument parsing.
+- `agent-sessions/`: Enter when changing standalone `trailstep open` artifact creation, launch prompts, target resolution, or interactive provider launch.
+- `commands/`: Enter when changing `add`, `remove`, `init`, `agents`, `open`, `run-or-open`, `continue`, `workflows`, `run`, `runs`, `retry`, `cancel`, `doctor`, `update`, or `skill-check` command behavior and command-specific argument parsing.
 - `deprecation-scan/`: Enter when changing update preflight discovery, scanning, or formatting for TrailStep deprecated symbols in workflow source files.
 - `config/`: Enter when changing optional `.trailstep/config.json`/`.trailstep/config-local.json` loading, merge precedence, and CLI-facing config errors.
 - `discovery/`: Enter when changing workflow package discovery from consumer dependencies.
@@ -44,8 +47,12 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `agent-config/configure-target-flow.ts`: Change when provider, model, thinking, or custom-provider target prompts, args, or support metadata change.
 - `agent-config/pi-model-discovery.ts`: Change when Pi `--list-models` model override discovery parsing or timeouts change.
 - `agent-config/save-confirm-flow.ts`: Change when save/discard choices for named agents or workflow role overrides change.
-- `command-registry.ts`: Change when registering a new top-level command; current explicit commands are `add`, `remove`, `init`, `agents`, `continue`, `workflows`, `runs`, `retry`, `cancel`, `doctor`, `update`, and `skill-check`, with other argv falling through to `run`.
-- `command.types.ts`: Change when command context, usage text, command interface, prompt text/select/multi-select/confirm injection, env injection, home-dir injection, skills CLI injection, run-name injection, package command runner injection, or deprecation manifest injection changes.
+- `agent-sessions/agent-session-artifacts.ts`: Change when standalone session ids, artifact paths, record schema, or status values change.
+- `agent-sessions/agent-session-target-resolution.ts`: Change when `trailstep open` configured-agent, built-in-provider, custom-provider, or default-agent resolution changes.
+- `agent-sessions/managed-session-prompt.ts`: Change when standalone session handoff guidance changes.
+- `agent-sessions/open-agent-session.ts`: Change when `trailstep open` target selection, interactive launch wiring, launch prompt wiring, or session status handling changes.
+- `command-registry.ts`: Change when registering a new top-level command or changing empty/bare argv dispatch; current explicit commands are `add`, `remove`, `init`, `agents`, `open`, `continue`, `workflows`, `runs`, `retry`, `cancel`, `doctor`, `update`, and `skill-check`; empty argv dispatches to `open`, and other argv fall through to `run-or-open`.
+- `command.types.ts`: Change when command context, usage text, command interface, prompt text/select/multi-select/confirm injection, env injection, home-dir injection, agent-session terminal-runner injection, skills CLI injection, run-name injection, package command runner injection, or deprecation manifest injection changes.
 - `workflow-packages/package-ref.ts`: Change when npm/GitHub package spec detection or GitHub shorthand rejection for `trailstep add` changes.
 - `workflow-packages/install-root.ts`: Change when local/project vs global workflow-package install roots change.
 - `workflow-packages/npm-package-installer.ts`: Change when `trailstep add` package install roots, package.json bootstrapping, npm install invocation, GitHub installed-package identification, installed manifest handling, or TrailStep-installed ownership metadata changes.

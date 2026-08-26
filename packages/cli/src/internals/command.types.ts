@@ -4,6 +4,9 @@ import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skill
 
 export const usageText = [
   "Usage:",
+  "  trailstep",
+  "  trailstep <agent-or-provider>",
+  "  trailstep open [agent-or-provider]",
   "  trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]",
   "  trailstep remove <namespace>/<name> [--scope <local|project|global>]",
   "  trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",
@@ -43,6 +46,12 @@ export const usageText = [
   "  trailstep update --all combines global CLI, project TrailStep package, and workflow package updates per install root.",
   "  Updates prompt before writing unless --yes or --assume-yes is passed; --force only bypasses blocking deprecation preflight.",
   "  GitHub-sourced workflow package updates are not supported yet and are skipped with a message.",
+  "",
+  "Managed agent sessions:",
+  "  trailstep opens agents.default[0] as a standalone inherited-stdio session; run trailstep init or trailstep agents if no default is configured.",
+  "  trailstep <agent-or-provider> opens an unambiguous configured agent or provider shortcut; workflow-only refs still run workflows, and ambiguous bare names require explicit syntax.",
+  "  trailstep open [agent-or-provider] is the canonical standalone session command and never runs workflows.",
+  "  Standalone sessions are not workflow runs and write artifacts under .trailstep/sessions/<session-id>/.",
   "",
   "Agent provider defaults:",
   "  Omit a model override or reasoning/thinking override to use provider defaults.",
@@ -113,6 +122,7 @@ export interface CliCommandContext {
   eventSink?: (event: Event) => void | Promise<void>;
   env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
+  agentSessionTerminalRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
   skillsCliResolver?: SkillsCliResolver;
   skillsCliProcessRunner?: SkillsCliProcessRunner;

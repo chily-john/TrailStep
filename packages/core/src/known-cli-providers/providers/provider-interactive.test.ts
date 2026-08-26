@@ -4,6 +4,20 @@ import type { InteractiveProcessRequest } from "../../runtime/run-workflow/run-w
 import { providerRegistry } from "../registry/provider-registry.js";
 
 describe("built-in provider interactive runners", () => {
+  it("provider interactive specs expose managed-session prompt delivery capability", () => {
+    expect(providerRegistry.claude.spec.interactive).toMatchObject({
+      supported: true,
+      managedSessionPrompt: { delivery: "hidden-system-prompt-file" },
+    });
+
+    for (const providerId of ["codex", "gemini", "pi"] as const) {
+      expect(providerRegistry[providerId].spec.interactive).toMatchObject({
+        supported: true,
+        managedSessionPrompt: { delivery: "visible-prompt", mode: "visible-inline-prompt" },
+      });
+    }
+  });
+
   it("passes environment and abort signal through built-in interactive providers", async () => {
     const signal = new AbortController().signal;
     const env = { TRAILSTEP_INTERACTIVE_FILE: "/tmp/run/steps/0001-review/interactive.json" };

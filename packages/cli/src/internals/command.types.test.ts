@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -8,6 +10,29 @@ import type {
 import { usageText } from "./command.types.js";
 
 describe("usageText", () => {
+  it("documents managed agent session commands", () => {
+    expect(usageText).toContain("  trailstep");
+    expect(usageText).toContain("trailstep <agent-or-provider>");
+    expect(usageText).toContain("trailstep open [agent-or-provider]");
+    expect(usageText).toContain(
+      "trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
+    );
+  });
+
+  it("keeps managed session docs on TrailStep naming", async () => {
+    const paths = [
+      "../../README.md",
+      "../../docs/cli-reference.md",
+      "../../docs/scopes-and-config.md",
+      "README.md",
+    ];
+    const docs = await Promise.all(paths.map((path) => readFile(path, "utf8")));
+
+    for (const doc of docs) {
+      expect(doc).not.toMatch(/stepkit/i);
+    }
+  });
+
   it("documents workflow skill distribution flags, add dry-run, init scope, agents management, and update confirmation", () => {
     expect(usageText).toContain("--project-skill");
     expect(usageText).toContain("--user-skill");

@@ -58,6 +58,7 @@ const CLAUDE_SPEC: ProviderSpec = {
     systemPromptFileFlag: "--append-system-prompt-file",
     modelFlag: "--model",
     permissionBypassFlag: "--dangerously-skip-permissions",
+    managedSessionPrompt: { delivery: "hidden-system-prompt-file" },
   },
 };
 

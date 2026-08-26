@@ -7,6 +7,7 @@ import type {
   TrailStepConfig,
 } from "../../agent-targeting/targeting.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
+import { resolveCliCommandForSpawn } from "../../known-cli-providers/process/resolve-cli-command.js";
 import { providerRegistry } from "../../known-cli-providers/registry/provider-registry.js";
 import type { ManagedSessionPromptInjectionMode } from "../../known-cli-providers/registry/provider-registry.types.js";
 import type {
@@ -46,21 +47,31 @@ export async function launchInteractiveAgentTarget(
       provider.spec.interactive.managedSessionPrompt.delivery === "hidden-system-prompt-file"
         ? "hidden-system-prompt-file"
         : provider.spec.interactive.managedSessionPrompt.mode;
-    const result = await provider.runInteractive(
-      {
-        prompt: options.prompt,
-        ...(promptInjectionMode === "hidden-system-prompt-file"
-          ? { systemPromptFile: options.promptFile }
-          : {}),
-        cwd: options.cwd,
-        signal: options.signal,
-        ...(options.target.model === undefined ? {} : { model: options.target.model }),
-        ...(options.target.permissionMode === undefined
-          ? {}
-          : { permissionMode: options.target.permissionMode }),
-      },
-      options.runner,
-    );
+    let result: InteractiveProcessResult;
+    try {
+      result = await provider.runInteractive(
+        {
+          prompt: options.prompt,
+          ...(promptInjectionMode === "hidden-system-prompt-file"
+            ? { systemPromptFile: options.promptFile }
+            : {}),
+          cwd: options.cwd,
+          signal: options.signal,
+          ...(options.target.model === undefined ? {} : { model: options.target.model }),
+          ...(options.target.thinking === undefined ? {} : { thinking: options.target.thinking }),
+          ...(options.target.permissionMode === undefined
+            ? {}
+            : { permissionMode: options.target.permissionMode }),
+        },
+        options.runner,
+      );
+    } catch (error) {
+      throw mapInteractiveProviderLaunchError({
+        error,
+        provider: options.target.provider,
+        command: provider.spec.interactive.command,
+      });
+    }
 
     return { ...result, promptInjectionMode };
   }
@@ -115,6 +126,53 @@ export async function launchInteractiveAgentTarget(
   return { ...result, promptInjectionMode };
 }
 
+function mapInteractiveProviderLaunchError(options: {
+  readonly error: unknown;
+  readonly provider: string;
+  readonly command: string;
+}): unknown {
+  if (options.error instanceof TrailStepFailureError) {
+    return options.error;
+  }
+
+  const message = errorMessage(options.error);
+  if (isSpawnEnoentError(options.error, options.command, message)) {
+    return new TrailStepFailureError({
+      code: "agent_provider_spawn_error",
+      message: `Provider '${options.provider}' could not be opened because the '${options.command}' CLI was not found on PATH. Install the CLI or configure a different TrailStep agent target.`,
+      details: { provider: options.provider, command: options.command, cause: message },
+    });
+  }
+
+  return options.error;
+}
+
+function isSpawnEnoentError(error: unknown, command: string, message: string): boolean {
+  if (isNodeError(error) && error.code === "ENOENT") {
+    return true;
+  }
+
+  return new RegExp(
+    `(?:spawn|ENOENT).*${escapeRegExp(command)}|${escapeRegExp(command)}.*ENOENT`,
+    "iu",
+  ).test(message);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 function definedProcessEnv(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter(
@@ -130,8 +188,10 @@ const spawnInteractiveProcess: InteractiveProcessRunner = async ({
   env,
   signal,
 }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args, env });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       env,
       signal,

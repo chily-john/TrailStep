@@ -69,6 +69,7 @@ async function runInteractiveAgentTarget(options: {
   readonly signal?: AbortSignal;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const files = options.artifactPaths;
+  const thinking = options.target.thinking ?? options.role.thinking;
   await prepareInteractiveArtifacts({
     files,
     runDir: options.runDir,
@@ -105,6 +106,7 @@ async function runInteractiveAgentTarget(options: {
             env,
             signal: abortController.signal,
             ...(options.target.model === undefined ? {} : { model: options.target.model }),
+            ...(thinking === undefined ? {} : { thinking }),
             ...(options.target.permissionMode === undefined
               ? {}
               : { permissionMode: options.target.permissionMode }),
@@ -132,7 +134,6 @@ async function runInteractiveAgentTarget(options: {
     });
   }
 
-  const thinking = options.target.thinking ?? options.role.thinking;
   const args = renderCustomProviderArgs({
     argv: options.target.args ?? agentConfig.interactiveArgs,
     values: {

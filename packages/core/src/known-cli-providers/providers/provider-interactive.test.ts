@@ -10,7 +10,12 @@ describe("built-in provider interactive runners", () => {
       managedSessionPrompt: { delivery: "hidden-system-prompt-file" },
     });
 
-    for (const providerId of ["codex", "gemini", "pi"] as const) {
+    expect(providerRegistry.pi.spec.interactive).toMatchObject({
+      supported: true,
+      managedSessionPrompt: { delivery: "hidden-system-prompt-file" },
+    });
+
+    for (const providerId of ["codex", "gemini"] as const) {
       expect(providerRegistry[providerId].spec.interactive).toMatchObject({
         supported: true,
         managedSessionPrompt: { delivery: "visible-prompt", mode: "visible-inline-prompt" },

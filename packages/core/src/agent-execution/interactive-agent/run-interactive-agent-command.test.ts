@@ -1006,7 +1006,7 @@ describe("continuation interactive agent roles", () => {
         version: 1,
         customProviders: {},
         agents: {
-          small: [{ provider: "claude", model: "opus" }],
+          small: [{ provider: "claude", model: "opus", thinking: "high" }],
         },
       },
       processRunner: async (call) => {
@@ -1029,6 +1029,8 @@ describe("continuation interactive agent roles", () => {
       args: [
         "--model",
         "opus",
+        "--effort",
+        "high",
         "--dangerously-skip-permissions",
         "--append-system-prompt-file",
         promptFilePath,

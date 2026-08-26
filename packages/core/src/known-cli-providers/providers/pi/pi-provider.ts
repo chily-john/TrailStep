@@ -75,8 +75,9 @@ const PI_SPEC: ProviderSpec = {
   interactive: {
     supported: true,
     command: PI_BINARY,
+    systemPromptFileFlag: "--append-system-prompt",
     modelFlag: "--model",
-    managedSessionPrompt: { delivery: "visible-prompt", mode: "visible-inline-prompt" },
+    managedSessionPrompt: { delivery: "hidden-system-prompt-file" },
   },
 };
 
@@ -177,7 +178,8 @@ function buildPiWorkingArgs(request: ProviderWorkingRequest): string[] {
 /**
  * `request.permissionMode` is deliberately unread here — no confirmed Pi CLI
  * flag exists for approval behavior yet. When available, `systemPromptFile` is
- * passed as an @file prompt reference to avoid argv-length limits.
+ * passed through Pi's append-system-prompt flag so TrailStep's managed prompt is
+ * hidden from the visible chat transcript.
  */
 async function runInteractive(
   request: ProviderInteractiveRequest,
@@ -189,9 +191,15 @@ async function runInteractive(
     args.push("--model", request.model);
   }
 
-  args.push(
-    request.systemPromptFile ? promptFileReference(request.systemPromptFile) : request.prompt,
-  );
+  if (request.thinking) {
+    args.push("--thinking", request.thinking);
+  }
+
+  if (request.systemPromptFile) {
+    args.push("--append-system-prompt", request.systemPromptFile);
+  } else {
+    args.push(request.prompt);
+  }
 
   return await runner({
     command: PI_BINARY,

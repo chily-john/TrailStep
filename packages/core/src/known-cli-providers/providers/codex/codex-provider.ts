@@ -4,6 +4,7 @@ import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
+import { resolveCliCommandForSpawn } from "../../process/resolve-cli-command.js";
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
@@ -133,6 +134,18 @@ async function runInteractive(
     args.push("--model", request.model);
   }
 
+  if (request.thinking) {
+    if (!SUPPORTED_CODEX_THINKING.has(request.thinking)) {
+      throw new TrailStepFailureError({
+        code: "agent_provider_thinking_unsupported",
+        message: `codex provider does not support thinking level '${request.thinking}'. Codex only supports low|medium|high|xhigh (no "max" tier).`,
+        details: { thinking: request.thinking },
+      });
+    }
+
+    args.push("-c", `model_reasoning_effort="${request.thinking}"`);
+  }
+
   args.push(
     request.systemPromptFile ? promptFileReference(request.systemPromptFile) : request.prompt,
   );
@@ -149,8 +162,10 @@ async function runInteractive(
 }
 
 const spawnCodexInheritingStdio: ProviderWorkingRunner = async ({ command, args, cwd, signal }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       shell: false,
       stdio: "inherit",
@@ -172,8 +187,10 @@ const spawnCodexInteractive: InteractiveProcessRunner = async ({
   env,
   signal,
 }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args, env });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       env,
       signal,

@@ -173,6 +173,7 @@ export interface ProviderInteractiveRequest {
   readonly systemPromptFile?: string;
   readonly cwd: string;
   readonly model?: string;
+  readonly thinking?: WorkflowAgentThinking;
   /** Undefined means bypass (per-tool confirmation is skipped by default). */
   readonly permissionMode?: "bypass" | "prompt";
   readonly env?: Readonly<Record<string, string>>;

@@ -494,6 +494,7 @@ describe("claudeProvider.runInteractive", () => {
         prompt: "Pair with me on the bug.",
         cwd: "/tmp/example",
         model: "opus",
+        thinking: "high",
         systemPromptFile: "/tmp/example/prompt.txt",
       },
       async (request) => {
@@ -508,6 +509,8 @@ describe("claudeProvider.runInteractive", () => {
       args: [
         "--model",
         "opus",
+        "--effort",
+        "high",
         "--dangerously-skip-permissions",
         "--append-system-prompt-file",
         "/tmp/example/prompt.txt",

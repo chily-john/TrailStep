@@ -12,6 +12,7 @@ import {
   extractEnvelopeOutput,
   extractEnvelopeText,
 } from "../../envelopes/envelope.js";
+import { resolveCliCommandForSpawn } from "../../process/resolve-cli-command.js";
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
@@ -326,6 +327,10 @@ async function runInteractive(
     args.push("--model", request.model);
   }
 
+  if (request.thinking) {
+    args.push("--effort", request.thinking);
+  }
+
   if (request.permissionMode !== "prompt") {
     args.push("--dangerously-skip-permissions");
   }
@@ -357,9 +362,11 @@ const spawnClaudeCapturingStdout: ProviderWorkingRunner = async ({
   stdin,
   signal,
 }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args });
+
   return await new Promise((resolve, reject) => {
     const hasStdin = stdin !== undefined;
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       shell: false,
       stdio: [hasStdin ? "pipe" : "ignore", "pipe", "inherit"],
@@ -389,8 +396,10 @@ const spawnClaudeInteractive: InteractiveProcessRunner = async ({
   env,
   signal,
 }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args, env });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       env,
       signal,

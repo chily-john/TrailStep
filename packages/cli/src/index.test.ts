@@ -195,7 +195,7 @@ describe("main", () => {
     });
   });
 
-  it("open records visible prompt fallback for pi or codex", async ({ task }) => {
+  it("open records hidden system prompt injection for pi", async ({ task }) => {
     const cwd = join(MAIN_TEST_ROOT, `${task.id}-open-pi-prompt-mode`);
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       version: 1,
@@ -217,16 +217,23 @@ describe("main", () => {
     ).resolves.toBe(0);
 
     const [sessionDirName] = await readdir(join(cwd, ".trailstep", "sessions"));
+    const launchPromptPath = join(
+      cwd,
+      ".trailstep",
+      "sessions",
+      sessionDirName ?? "",
+      "launch-prompt.md",
+    );
     const sessionJson = JSON.parse(
       await readFile(
         join(cwd, ".trailstep", "sessions", sessionDirName ?? "", "session.json"),
         "utf8",
       ),
     ) as Record<string, { promptInjectionMode?: string }>;
-    expect(sessionJson.launch).toMatchObject({ promptInjectionMode: "visible-inline-prompt" });
+    expect(sessionJson.launch).toMatchObject({ promptInjectionMode: "hidden-system-prompt-file" });
     expect(requests[0]).toMatchObject({
       command: "pi",
-      args: [expect.stringContaining("opened by TrailStep")],
+      args: ["--append-system-prompt", launchPromptPath],
     });
   });
 
@@ -771,9 +778,12 @@ describe("main", () => {
     ) as Record<string, unknown>;
     expect(sessionJson).toMatchObject({
       status: "failed",
-      failure: { message: "spawn claude ENOENT" },
+      failure: {
+        message:
+          "Provider 'claude' could not be opened because the 'claude' CLI was not found on PATH. Install the CLI or configure a different TrailStep agent target.",
+      },
     });
-    expect(errors.join("\n")).toMatch(/failed to open.*spawn claude ENOENT/i);
+    expect(errors.join("\n")).toMatch(/claude.*not found on PATH/i);
   });
 
   it("records failed status and exit code when provider exits nonzero", async ({ task }) => {

@@ -28,7 +28,13 @@ describe("piProvider.spec", () => {
           parsing: { resultField: "message" },
         },
       },
-      interactive: { supported: true, command: "pi", modelFlag: "--model" },
+      interactive: {
+        supported: true,
+        command: "pi",
+        systemPromptFileFlag: "--append-system-prompt",
+        modelFlag: "--model",
+        managedSessionPrompt: { delivery: "hidden-system-prompt-file" },
+      },
     });
   });
 });
@@ -323,11 +329,16 @@ describe("createPiJsonStreamStdoutCollector", () => {
 });
 
 describe("piProvider.runInteractive", () => {
-  it("launches with inherited stdio and --model but no dangerous flag", async () => {
+  it("launches with inherited stdio, --model, and --thinking but no dangerous flag", async () => {
     const calls: unknown[] = [];
 
     const result = await piProvider.runInteractive(
-      { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "openai-codex/gpt-5.5" },
+      {
+        prompt: "Pair with me on the bug.",
+        cwd: "/tmp/example",
+        model: "openai-codex/gpt-5.5",
+        thinking: "high",
+      },
       async (request) => {
         calls.push(request);
         return { exitCode: 0 };
@@ -337,14 +348,14 @@ describe("piProvider.runInteractive", () => {
     expect(result).toEqual({ exitCode: 0 });
     expect(calls[0]).toMatchObject({
       command: "pi",
-      args: ["--model", "openai-codex/gpt-5.5", "Pair with me on the bug."],
+      args: ["--model", "openai-codex/gpt-5.5", "--thinking", "high", "Pair with me on the bug."],
       cwd: "/tmp/example",
       shell: false,
       stdio: "inherit",
     });
   });
 
-  it("uses systemPromptFile as an @file prompt reference and ignores permissionMode", async () => {
+  it("uses systemPromptFile with --append-system-prompt and ignores permissionMode", async () => {
     const calls: unknown[] = [];
 
     await piProvider.runInteractive(
@@ -364,7 +375,8 @@ describe("piProvider.runInteractive", () => {
     expect((calls[0] as { args: string[] }).args).toEqual([
       "--model",
       "openai-codex/gpt-5.5",
-      "@/tmp/whatever/prompt.txt",
+      "--append-system-prompt",
+      "/tmp/whatever/prompt.txt",
     ]);
   });
 });

@@ -7,6 +7,7 @@ import type {
   InteractiveProcessRunner,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import { extractEnvelopeOutput, extractEnvelopeText } from "../../envelopes/envelope.js";
+import { resolveCliCommandForSpawn } from "../../process/resolve-cli-command.js";
 import type {
   ProviderAdapter,
   ProviderInteractiveRequest,
@@ -173,8 +174,10 @@ const spawnGeminiCapturingStdout: ProviderWorkingRunner = async ({
   cwd,
   signal,
 }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       shell: false,
       stdio: ["ignore", "pipe", "inherit"],
@@ -199,8 +202,10 @@ const spawnGeminiInteractive: InteractiveProcessRunner = async ({
   env,
   signal,
 }) => {
+  const executable = await resolveCliCommandForSpawn({ command, args, env });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       env,
       signal,

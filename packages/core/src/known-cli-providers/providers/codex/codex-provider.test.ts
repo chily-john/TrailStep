@@ -198,11 +198,16 @@ describe("codexProvider.runWorking", () => {
 });
 
 describe("codexProvider.runInteractive", () => {
-  it("launches with inherited stdio and --model but no dangerous-bypass flag", async () => {
+  it("launches with inherited stdio, --model, and thinking but no dangerous-bypass flag", async () => {
     const calls: unknown[] = [];
 
     const result = await codexProvider.runInteractive(
-      { prompt: "Pair with me on the bug.", cwd: "/tmp/example", model: "gpt-5.5" },
+      {
+        prompt: "Pair with me on the bug.",
+        cwd: "/tmp/example",
+        model: "gpt-5.5",
+        thinking: "high",
+      },
       async (request) => {
         calls.push(request);
         return { exitCode: 0 };
@@ -212,7 +217,13 @@ describe("codexProvider.runInteractive", () => {
     expect(result).toEqual({ exitCode: 0 });
     expect(calls[0]).toMatchObject({
       command: "codex",
-      args: ["--model", "gpt-5.5", "Pair with me on the bug."],
+      args: [
+        "--model",
+        "gpt-5.5",
+        "-c",
+        'model_reasoning_effort="high"',
+        "Pair with me on the bug.",
+      ],
       cwd: "/tmp/example",
       shell: false,
       stdio: "inherit",
@@ -240,5 +251,18 @@ describe("codexProvider.runInteractive", () => {
       "gpt-5.5",
       "@/tmp/whatever/prompt.txt",
     ]);
+  });
+
+  it("rejects unsupported interactive thinking levels", async () => {
+    await expect(
+      codexProvider.runInteractive(
+        {
+          prompt: "Pair with me on the bug.",
+          cwd: "/tmp/example",
+          thinking: "max",
+        },
+        async () => ({ exitCode: 0 }),
+      ),
+    ).rejects.toMatchObject({ failure: { code: "agent_provider_thinking_unsupported" } });
   });
 });

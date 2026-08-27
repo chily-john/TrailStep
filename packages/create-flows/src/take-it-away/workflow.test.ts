@@ -1336,15 +1336,19 @@ describe("take-it-away", () => {
     expect(retryImplementAfterValidationIndex).toBe(-1);
     expect(reviewAfterValidationIndex).toBe(-1);
 
-    const failedState = JSON.parse(await readFile(join(failed.runDir, "state.json"), "utf8")) as {
+    const failedStatePath = join(failed.runDir, "state.json");
+    const failedState = JSON.parse(await readFile(failedStatePath, "utf8")) as {
       activeStory?: { path?: string; content?: string } | null;
       blockedReason?: string | null;
+      latestValidationSummary?: unknown;
       latestStoryRouterState?: {
         route?: string;
         blockedPhase?: string;
         blockedReason?: string;
+        reviewRetryCount?: number;
+        validationRetryCount?: number;
         activeStory?: { path?: string; content?: string };
-        source?: { reason?: string; blocked?: boolean };
+        source?: { reason?: string; blocked?: boolean; code?: string };
       } | null;
     };
 
@@ -1353,6 +1357,8 @@ describe("take-it-away", () => {
       route: "blocked",
       blockedPhase: "validate-story",
       blockedReason,
+      reviewRetryCount: 0,
+      validationRetryCount: 0,
       activeStory: {
         path: failedState.activeStory?.path,
         content: expect.stringContaining("Story 001: Build the widget exporter core"),
@@ -1360,6 +1366,7 @@ describe("take-it-away", () => {
       source: {
         reason: "failed-validation",
         blocked: true,
+        code: "story_validation_blocked",
       },
     });
 
@@ -1390,6 +1397,40 @@ describe("take-it-away", () => {
       code: "story_validation_blocked",
       message: blockedReason,
     });
+
+    const retryStartedIndex = retried.events.findIndex(
+      (event) => event.type === "workflow.retryStarted",
+    );
+    const retryRouterStartedIndex = retried.events.findIndex(
+      (event, index) =>
+        event.type === "step.started" &&
+        event.stepId === "story-router" &&
+        index > retryStartedIndex,
+    );
+    const retryRouterFailedIndex = retried.events.findIndex(
+      (event, index) =>
+        event.type === "step.failed" &&
+        event.stepId === "story-router" &&
+        index > retryRouterStartedIndex,
+    );
+    expect(retryStartedIndex).toBeGreaterThanOrEqual(0);
+    expect(retryRouterStartedIndex).toBeGreaterThan(retryStartedIndex);
+    expect(retryRouterFailedIndex).toBeGreaterThan(retryRouterStartedIndex);
+    expect(
+      retried.events.some(
+        (event, index) =>
+          index > retryStartedIndex &&
+          event.type === "step.started" &&
+          typeof event.stepId === "string" &&
+          [
+            "explore-story",
+            "write-red-tests",
+            "implement-green",
+            "validate-story",
+            "review-story-implementation",
+          ].includes(event.stepId),
+      ),
+    ).toBe(false);
     expect(retryAgentRequests).toEqual([]);
   });
 

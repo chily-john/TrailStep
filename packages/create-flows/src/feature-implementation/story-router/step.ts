@@ -55,6 +55,10 @@ export const storyRouterStep = step({ id: "story-router" }).do(
       return routeFailedValidation(currentStory);
     }
     if (typeof reason === "object" && reason.type === "blocked") {
+      const blockedReplay = await replayBlockedStoryRoute();
+      if (blockedReplay) {
+        return blockedReplay;
+      }
       return routeBlockedStory(currentStory, reason);
     }
 
@@ -312,15 +316,42 @@ async function routeBlockedStory(
   await state.set(STORY_STATE_KEYS.latestStoryRouterState, routerState);
   await state.set(STORY_STATE_KEYS.blockedReason, blockedRoute.blockedReason);
 
-  return fail({
-    code: blockedRoute.code,
-    message: blockedRoute.blockedReason,
-    details: {
-      storyPath: activeStory.path,
-      routerState,
-      ...formatBlockedRouteFailureDetails(blockedRoute.blockedPhase, blockedRoute.metadata),
-    },
-  });
+  return fail(formatBlockedRouteFailure(routerState));
+}
+
+async function replayBlockedStoryRoute(): Promise<ContinuationResult | null> {
+  const routerState = await state.get<StoryRouterState | null>(
+    STORY_STATE_KEYS.latestStoryRouterState,
+  );
+  if (routerState?.route !== "blocked") {
+    return null;
+  }
+
+  const activeStory = await state.get<Document | null>(STORY_STATE_KEYS.activeStory);
+  if (!activeStory) {
+    return fail({
+      code: "story_router_no_active_story",
+      message:
+        "Cannot replay blocked story routing because durable router state exists but no active story is available.",
+      details: { routerState },
+    });
+  }
+
+  if (
+    routerState.activeStory.path !== activeStory.path ||
+    routerState.activeStory.content !== activeStory.content
+  ) {
+    return fail({
+      code: "story_router_blocked_state_mismatch",
+      message:
+        "Cannot replay blocked story routing because durable router state does not match the active story.",
+      details: { storyPath: activeStory.path, routerState },
+    });
+  }
+
+  await state.set(STORY_STATE_KEYS.activeStory, activeStory);
+  await state.set(STORY_STATE_KEYS.blockedReason, routerState.blockedReason ?? null);
+  return fail(formatBlockedRouteFailure(routerState));
 }
 
 async function persistRetryRouterState(input: {
@@ -400,6 +431,25 @@ function phaseAttemptFallback(
 
 function normalizeRetryCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function formatBlockedRouteFailure(routerState: StoryRouterState): {
+  code: string;
+  message: string;
+  details: Record<string, unknown>;
+} {
+  return {
+    code: routerState.source.code,
+    message: routerState.blockedReason ?? "Story routing is blocked.",
+    details: {
+      storyPath: routerState.activeStory.path,
+      routerState,
+      ...formatBlockedRouteFailureDetails(
+        routerState.blockedPhase ?? "validate-story",
+        routerState.source.metadata,
+      ),
+    },
+  };
 }
 
 function formatBlockedRouteFailureDetails(

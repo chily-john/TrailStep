@@ -1,14 +1,6 @@
 import { type Document, jsonSchema, list, promptSections, section } from "@trailstep/authoring";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import projectArchitectureGuidanceFragment from "../shared/project-architecture-guidance.md?raw";
 import type { ReviewResult } from "../shared/review-schema.js";
-import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
-
-const fragments = {
-  methodology: methodologyFragment.trimEnd(),
-  architectureGuidance: projectArchitectureGuidanceFragment.trimEnd(),
-  storyContract: storyImplementationContractFragment.trimEnd(),
-};
+import { storyViewForImplementer } from "../shared/story-view.js";
 
 export interface ImplementStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -46,13 +38,14 @@ export function implementStoryPrompt({ input }: { readonly input: ImplementStory
         );
 
   return promptSections(
-    fragments.methodology,
-    fragments.architectureGuidance,
-    fragments.storyContract,
-    section("Story", input.currentStory.content),
+    section(
+      "Role",
+      "You are the story implementer. This legacy prompt should stay scoped to the active story only.",
+    ),
+    section("Story implementation view", storyViewForImplementer(input.currentStory.content)),
     section(
       "Task",
-      `${taskBody}\n\nSet \`blocked: true\` with a clear \`blockedReason\` instead of guessing or pretending the story is complete. Otherwise set \`blocked: false\` and use \`summary\` to report files changed, commands run, and their results.`,
+      `${taskBody}\n\nWrite focused behavioral tests first when needed, make the smallest production change, and run focused validation when feasible. Set \`blocked: true\` with a clear \`blockedReason\` instead of guessing or pretending the story is complete. Otherwise set \`blocked: false\` and use \`summary\` to report files changed, commands run, and concise results.`,
     ),
   );
 }

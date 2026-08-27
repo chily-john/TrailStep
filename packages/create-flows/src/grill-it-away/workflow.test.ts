@@ -138,6 +138,7 @@ describe("grill-it-away", () => {
           worker: { binary: "worker-agent" },
         },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },

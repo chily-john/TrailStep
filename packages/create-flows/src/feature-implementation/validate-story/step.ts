@@ -14,7 +14,7 @@ import {
 
 export const validateStoryStep = step({ id: "validate-story" })
   .prompt<ValidateStoryInput, ValidateStoryOutput>(validateStoryPrompt, {
-    agent: "implementer",
+    agent: "validator",
     output: validateStoryOutput,
   })
   .do(async (promptOutput, input) => {

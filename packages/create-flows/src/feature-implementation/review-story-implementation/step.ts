@@ -7,7 +7,7 @@ import { type ReviewStoryImplementationInput, reviewStoryImplementationPrompt } 
 
 export const reviewStoryImplementationStep = step({ id: "review-story-implementation" })
   .prompt<ReviewStoryImplementationInput, ReviewResult>(reviewStoryImplementationPrompt, {
-    agent: "reviewer",
+    agent: "storyReviewer",
     output: reviewOutput,
   })
   .do(async (review, input) => {

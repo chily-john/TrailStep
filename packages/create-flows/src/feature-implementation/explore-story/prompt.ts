@@ -1,6 +1,5 @@
 import { type Document, jsonSchema, list, promptSections, section } from "@trailstep/authoring";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import projectArchitectureGuidanceFragment from "../shared/project-architecture-guidance.md?raw";
+import { storyViewForExplorer } from "../shared/story-view.js";
 
 export interface ExploreStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -32,20 +31,23 @@ export const exploreStoryOutput = jsonSchema<ExploreStoryOutput>({
 
 export function exploreStoryPrompt({ input }: { readonly input: ExploreStoryInput }): string {
   return promptSections(
-    methodologyFragment.trimEnd(),
-    projectArchitectureGuidanceFragment.trimEnd(),
-    section("Active story", input.currentStory.content),
+    section(
+      "Role",
+      "You are the story explorer. Gather only the facts later agents need; do not plan tests, edit files, validate, or review.",
+    ),
+    section("Active story view", storyViewForExplorer(input.currentStory.content)),
     section("Implementation context", input.implementationContext),
     section(
       "Task",
       [
         "Explore only this active story and the local architecture needed to implement it.",
-        "Do not implement code or write tests in this phase.",
-        "Return concise evidence: relevant files, behavioral test seams, and focused validation commands.",
+        "Read project guidance and nearby source only when needed to identify conventions, affected files, and seams.",
+        "Do not implement code, write tests, run validation, or review the solution in this phase.",
+        "Return concise evidence: relevant files, likely behavioral seams, and focused validation command hints.",
         "If the story is unsafe or ambiguous, set `blocked: true` and explain why.",
         "Recommended commands should be narrow and executable by later validation.",
         "Use arrays for relevantFiles, testSeams, and recommendedValidationCommands.",
-        "Do not include unrelated stories.",
+        "Do not include unrelated stories or copy large source/diff excerpts.",
       ].join("\n"),
     ),
     section(

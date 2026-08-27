@@ -92,6 +92,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -197,6 +198,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -289,6 +291,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -401,6 +404,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -546,6 +550,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -714,6 +719,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -956,6 +962,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -1117,6 +1124,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -1218,6 +1226,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -1324,6 +1333,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -1454,6 +1464,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },
@@ -1575,6 +1586,7 @@ describe("take-it-away", () => {
           version: 1,
           customProviders: { worker: { binary: "worker-agent" } },
           agents: {
+            small: [{ provider: "worker" }],
             medium: [{ provider: "worker" }],
             large: [{ provider: "worker" }],
           },
@@ -1681,6 +1693,7 @@ describe("take-it-away", () => {
       version: 1 as const,
       customProviders: { worker: { binary: "worker-agent" } },
       agents: {
+        small: [{ provider: "worker" }],
         medium: [{ provider: "worker" }],
         large: [{ provider: "worker" }],
       },
@@ -1827,6 +1840,7 @@ describe("take-it-away", () => {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
         agents: {
+          small: [{ provider: "worker" }],
           medium: [{ provider: "worker" }],
           large: [{ provider: "worker" }],
         },

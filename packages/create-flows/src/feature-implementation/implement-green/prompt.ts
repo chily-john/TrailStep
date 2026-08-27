@@ -1,8 +1,6 @@
 import { type Document, jsonSchema, promptSections, section } from "@trailstep/authoring";
 import type { ExploreStoryOutput } from "../explore-story/prompt.js";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import projectArchitectureGuidanceFragment from "../shared/project-architecture-guidance.md?raw";
-import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
+import { storyViewForImplementer } from "../shared/story-view.js";
 import type { WriteRedTestsOutput } from "../write-red-tests/prompt.js";
 
 export interface ImplementGreenValidationCommand extends Record<string, unknown> {
@@ -46,10 +44,14 @@ export function implementGreenPrompt({ input }: { readonly input: ImplementGreen
     .join("\n");
 
   return promptSections(
-    methodologyFragment.trimEnd(),
-    projectArchitectureGuidanceFragment.trimEnd(),
-    storyImplementationContractFragment.trimEnd(),
-    section("Active story", input.currentStory.content),
+    section(
+      "Role",
+      "You are the green implementer. Make the smallest production change that satisfies the focused red test; do not broaden scope.",
+    ),
+    section(
+      "Active story implementation view",
+      storyViewForImplementer(input.currentStory.content),
+    ),
     section("Exploration summary", input.explorationBrief?.summary ?? "Not provided."),
     section("Red-test summary", input.redTestSummary?.summary ?? "Not provided."),
     section("Red evidence", input.redTestSummary?.redEvidence ?? "Not provided."),
@@ -69,9 +71,9 @@ export function implementGreenPrompt({ input }: { readonly input: ImplementGreen
       "Task",
       [
         "Implement the smallest production-code slice needed to make the focused behavioral red test pass.",
-        "Continue strict behavioral-red TDD: preserve the red test and do not skip straight to broad refactoring.",
+        "Preserve the red test and avoid broad refactoring until the focused behavior is green.",
         "Do not write new unrelated stories, broad polish, or accumulated-diff cleanup.",
-        "Run the focused green test when feasible and summarize files changed plus evidence.",
+        "Run the focused green test when feasible and summarize files changed plus concise evidence.",
         "If implementation is unsafe or ambiguous, set `blocked: true` and explain why.",
       ].join("\n"),
     ),

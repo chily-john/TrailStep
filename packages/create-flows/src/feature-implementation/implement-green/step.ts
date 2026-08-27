@@ -10,7 +10,7 @@ import {
 
 export const implementGreenStep = step({ id: "implement-green" })
   .prompt<ImplementGreenInput, ImplementGreenOutput>(implementGreenPrompt, {
-    agent: "implementer",
+    agent: "storyImplementer",
     output: implementGreenOutput,
   })
   .do(async (promptOutput, input) => {

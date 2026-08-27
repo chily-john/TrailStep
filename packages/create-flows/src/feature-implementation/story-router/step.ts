@@ -7,9 +7,15 @@ import type { ReviewResult } from "../shared/review-schema.js";
 import { reviewPasses } from "../shared/review-schema.js";
 import { incrementStoryPhaseAttempt, STORY_STATE_KEYS } from "../shared/story-state.js";
 import { storyIsolationPreflightStep } from "../story-isolation-preflight/step.js";
+import type { ValidateStoryOutput } from "../validate-story/prompt.js";
 
 export interface StoryRouterInput extends Record<string, unknown> {
-  readonly reason: "start-story" | "retry-story" | "story-completed" | "failed-review";
+  readonly reason:
+    | "start-story"
+    | "retry-story"
+    | "story-completed"
+    | "failed-review"
+    | "failed-validation";
   readonly currentStory?: Document;
 }
 
@@ -20,6 +26,9 @@ export const storyRouterStep = step({ id: "story-router" }).do(
 
     if (reason === "failed-review") {
       return routeFailedReview(currentStory);
+    }
+    if (reason === "failed-validation") {
+      return routeFailedValidation(currentStory);
     }
 
     const activeStory =
@@ -97,6 +106,58 @@ async function routeFailedReview(currentStory?: Document): Promise<ContinuationR
     attempt,
     previousReviewSummary: review.summary,
     requiredImprovements: review.requiredImprovements,
+  });
+}
+
+async function routeFailedValidation(currentStory?: Document): Promise<ContinuationResult> {
+  const activeStory =
+    (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? currentStory;
+  if (!activeStory) {
+    return fail({
+      code: "story_router_no_active_story",
+      message:
+        "Cannot route failed story validation because no active story is available for retry.",
+    });
+  }
+
+  const validation = await state.get<ValidateStoryOutput | null>(
+    STORY_STATE_KEYS.latestValidationSummary,
+  );
+  if (!validation) {
+    return fail({
+      code: "story_router_missing_validation_result",
+      message:
+        "Cannot route failed story validation because no latest validation result is available.",
+      details: { storyPath: activeStory.path },
+    });
+  }
+
+  if (validation.blocked) {
+    return fail({
+      code: "story_validation_blocked",
+      message: validation.blockedReason ?? "Story validation reported a blocked state.",
+      details: { storyPath: activeStory.path, validation },
+    });
+  }
+
+  if (validation.validationPassed) {
+    return fail({
+      code: "story_router_validation_already_passed",
+      message: "Cannot route failed story validation because the latest validation already passes.",
+      details: { storyPath: activeStory.path, validation },
+    });
+  }
+
+  await state.set(STORY_STATE_KEYS.activeStory, activeStory);
+  await state.set(STORY_STATE_KEYS.activePhase, "implement-green");
+  const attempt = await incrementStoryPhaseAttempt("implement-green");
+  return implementGreenStep({
+    currentStory: activeStory,
+    explorationBrief: (await state.get(STORY_STATE_KEYS.latestExplorationBrief)) ?? undefined,
+    redTestSummary: (await state.get(STORY_STATE_KEYS.latestRedTestSummary)) ?? undefined,
+    attempt,
+    failedValidationSummary: validation.summary,
+    failedValidationCommands: validation.commands,
   });
 }
 

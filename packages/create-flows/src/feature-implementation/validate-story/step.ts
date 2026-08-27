@@ -19,16 +19,21 @@ export const validateStoryStep = step({ id: "validate-story" })
   })
   .do(async (promptOutput, input) => {
     await state.set(STORY_STATE_KEYS.latestValidationSummary, promptOutput);
-    if (promptOutput.blocked || !promptOutput.validationPassed) {
+    if (promptOutput.blocked) {
       await state.set(
         STORY_STATE_KEYS.blockedReason,
-        promptOutput.blockedReason ?? "Story validation did not pass.",
+        promptOutput.blockedReason ?? "Story validation reported a blocked state.",
       );
       return fail({
-        code: "story_validation_failed",
-        message: promptOutput.blockedReason ?? "Story validation did not pass.",
+        code: "story_validation_blocked",
+        message: promptOutput.blockedReason ?? "Story validation reported a blocked state.",
         details: { storyPath: input.currentStory.path, validation: promptOutput },
       });
+    }
+
+    if (!promptOutput.validationPassed) {
+      const { storyRouterStep } = await import("../story-router/step.js");
+      return storyRouterStep({ reason: "failed-validation", currentStory: input.currentStory });
     }
 
     await state.set(STORY_STATE_KEYS.activePhase, "review-story-implementation");

@@ -5,6 +5,11 @@ import projectArchitectureGuidanceFragment from "../shared/project-architecture-
 import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
 import type { WriteRedTestsOutput } from "../write-red-tests/prompt.js";
 
+export interface ImplementGreenValidationCommand extends Record<string, unknown> {
+  readonly command: string;
+  readonly result: string;
+}
+
 export interface ImplementGreenInput extends Record<string, unknown> {
   readonly currentStory: Document;
   readonly explorationBrief?: ExploreStoryOutput;
@@ -12,6 +17,8 @@ export interface ImplementGreenInput extends Record<string, unknown> {
   readonly attempt: number;
   readonly previousReviewSummary?: string;
   readonly requiredImprovements?: readonly string[];
+  readonly failedValidationSummary?: string;
+  readonly failedValidationCommands?: readonly ImplementGreenValidationCommand[];
 }
 
 export interface ImplementGreenOutput extends Record<string, unknown> {
@@ -34,6 +41,10 @@ export const implementGreenOutput = jsonSchema<ImplementGreenOutput>({
 });
 
 export function implementGreenPrompt({ input }: { readonly input: ImplementGreenInput }): string {
+  const validationCommandEvidence = (input.failedValidationCommands ?? [])
+    .map(({ command, result }) => `- ${command}: ${result}`)
+    .join("\n");
+
   return promptSections(
     methodologyFragment.trimEnd(),
     projectArchitectureGuidanceFragment.trimEnd(),
@@ -46,6 +57,12 @@ export function implementGreenPrompt({ input }: { readonly input: ImplementGreen
       ? section(
           "Previous review summary",
           `${input.previousReviewSummary}\n\nRequired improvements:\n${(input.requiredImprovements ?? []).map((item) => `- ${item}`).join("\n") || "- None"}`,
+        )
+      : "",
+    input.failedValidationSummary
+      ? section(
+          "Previous validation failure",
+          `${input.failedValidationSummary}\n\nCommand evidence:\n${validationCommandEvidence || "- Not provided."}`,
         )
       : "",
     section(

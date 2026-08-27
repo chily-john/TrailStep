@@ -10,7 +10,7 @@ import {
 
 export const exploreStoryStep = step({ id: "explore-story" })
   .prompt<ExploreStoryInput, ExploreStoryOutput>(exploreStoryPrompt, {
-    agent: "implementer",
+    agent: "storyExplorer",
     output: exploreStoryOutput,
   })
   .do(async (promptOutput, input) => {

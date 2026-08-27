@@ -1,13 +1,13 @@
 import type { Document } from "@trailstep/authoring";
 import { promptSections, section } from "@trailstep/authoring";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
 import type { StoryReviewGitContext } from "../shared/story-state.js";
+import { storyViewForReviewer } from "../shared/story-view.js";
 
-const fragments = {
-  methodology: methodologyFragment.trimEnd(),
-  storyContract: storyImplementationContractFragment.trimEnd(),
-};
+const REVIEW_RUBRIC = [
+  "Score 4-5 only when the active story is complete, well-tested, scoped, and integrated with local conventions.",
+  "Score below 4 for missing acceptance criteria, weak/missing behavioral-red evidence, unsafe diff isolation, broken validation, broad unrelated changes, or poor integration.",
+  "Scores below 4 must include specific requiredImprovements for the next retry.",
+].join("\n");
 
 export interface ReviewStoryImplementationInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -32,9 +32,12 @@ export function reviewStoryImplementationPrompt({
     : "git diff <missing-story-start-commit>..HEAD";
 
   return promptSections(
-    fragments.methodology,
-    fragments.storyContract,
-    section("Story", input.currentStory.content),
+    section(
+      "Role",
+      "You are the story reviewer. Review only the isolated active-story change set; do not edit, stage, commit, clean, or run tests.",
+    ),
+    section("Review rubric", REVIEW_RUBRIC),
+    section("Story review view", storyViewForReviewer(input.currentStory.content)),
     section("Exploration summary", input.explorationSummary ?? "Not provided."),
     section("Red-test summary", input.redTestSummary ?? "Not provided."),
     section("Red-test evidence", input.redEvidence ?? "Not provided."),
@@ -86,7 +89,7 @@ export function reviewStoryImplementationPrompt({
     ),
     section(
       "Task",
-      "Review only the active story slice represented by the recorded story start commit through HEAD, plus the current uncommitted working tree changes, against the story above and the implementer summary. Use the metadata above first; if you need to inspect locally, use read-only commands only (`git status --short`, the listed committed `git diff <storyStartCommit>..HEAD`, and `git diff`) — do not run tests, edit code, stage files, commit files, revert files, clean files, or try to isolate the diff by changing the repository. If unrelated dirty files, a missing/invalid baseline, or ambiguous context prevents a trustworthy review, say so in the structured review and require the implementer/workflow to fix the isolation; never remove changes yourself. Respond only with the structured review.",
+      "Review only the active story slice represented by the recorded story start commit through HEAD, plus the current uncommitted working tree changes, against the story above and the phase summaries. Use the metadata above first; if you need to inspect locally, use read-only commands only (`git status --short`, the listed committed `git diff <storyStartCommit>..HEAD`, and `git diff`) — do not run tests, edit code, stage files, commit files, revert files, clean files, or try to isolate the diff by changing the repository. If unrelated dirty files, a missing/invalid baseline, or ambiguous context prevents a trustworthy review, say so in the structured review and require the implementer/workflow to fix the isolation; never remove changes yourself. Respond only with the structured review.",
     ),
   );
 }

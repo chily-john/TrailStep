@@ -1,7 +1,6 @@
 import { type Document, jsonSchema, promptSections, section } from "@trailstep/authoring";
 import type { ExploreStoryOutput } from "../explore-story/prompt.js";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import storyImplementationContractFragment from "../shared/story-implementation-contract.md?raw";
+import { storyViewForTestWriter } from "../shared/story-view.js";
 
 export interface WriteRedTestsInput extends Record<string, unknown> {
   readonly currentStory: Document;
@@ -32,18 +31,24 @@ export const writeRedTestsOutput = jsonSchema<WriteRedTestsOutput>({
 
 export function writeRedTestsPrompt({ input }: { readonly input: WriteRedTestsInput }): string {
   return promptSections(
-    methodologyFragment.trimEnd(),
-    storyImplementationContractFragment.trimEnd(),
-    section("Active story", input.currentStory.content),
+    section(
+      "Role",
+      "You are the red-test writer. Create focused behavioral failing tests; do not implement production behavior or review the story.",
+    ),
+    section("Active story test view", storyViewForTestWriter(input.currentStory.content)),
     section("Exploration summary", input.explorationBrief?.summary ?? "Not provided."),
+    section(
+      "Exploration test seams",
+      input.explorationBrief?.testSeams?.map((item) => `- ${item}`).join("\n") ?? "Not provided.",
+    ),
     section(
       "Task",
       [
         "Write or update the focused behavioral red test for only this active story.",
-        "Use strict behavioral-red TDD: the test must fail for the intended product/integration behavior before green implementation.",
+        "The test must fail for the intended product/integration behavior before green implementation.",
         "Do not implement production code except the absolute minimum needed to compile the red test harness.",
-        "Run the focused red test when feasible and report the failing command/output in `redEvidence`.",
-        "Do not include unrelated stories or broaden into review.",
+        "Run the focused red test when feasible and report only the command plus concise failing evidence in `redEvidence`.",
+        "Do not include unrelated stories, green implementation work, or review scoring.",
         "If a safe red test cannot be written, set `blocked: true` and explain why.",
       ].join("\n"),
     ),

@@ -10,7 +10,7 @@ import {
 
 export const writeRedTestsStep = step({ id: "write-red-tests" })
   .prompt<WriteRedTestsInput, WriteRedTestsOutput>(writeRedTestsPrompt, {
-    agent: "implementer",
+    agent: "testWriter",
     output: writeRedTestsOutput,
   })
   .do(async (promptOutput, input) => {

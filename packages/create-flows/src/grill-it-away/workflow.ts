@@ -27,12 +27,32 @@ export const grillItAway = defineWorkflow({
     reviewer: {
       size: "large",
       thinking: "high",
-      description: "Reviews isolated implementation docs and story diffs against methodology.",
+      description: "Reviews implementation docs before story execution.",
     },
-    implementer: {
+    storyExplorer: {
+      size: "small",
+      thinking: "low",
+      description: "Finds story-specific files, seams, and validation hints without editing.",
+    },
+    testWriter: {
       size: "medium",
       thinking: "medium",
-      description: "Implements one story at a time using strict behavioral-red TDD.",
+      description: "Writes focused behavioral red tests for the active story.",
+    },
+    storyImplementer: {
+      size: "medium",
+      thinking: "medium",
+      description: "Implements the smallest green slice for the active story.",
+    },
+    validator: {
+      size: "small",
+      thinking: "low",
+      description: "Runs focused validation commands and reports concise results.",
+    },
+    storyReviewer: {
+      size: "large",
+      thinking: "high",
+      description: "Reviews isolated story diffs and phase evidence before commit.",
     },
   },
   start() {

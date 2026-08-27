@@ -158,6 +158,8 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
 
   if (!nextStory) {
     await state.set(STORY_STATE_KEYS.activeStory, null);
+    await state.set(STORY_STATE_KEYS.activeStoryContext, null);
+    await state.set(STORY_STATE_KEYS.storyContextQueue, []);
     await resetActiveStoryStartCommit();
     const featureDoc = await state.get<Document>("featureDoc");
     const implementationDoc = await state.get<Document>("implementationDoc");
@@ -183,8 +185,12 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     }
   }
 
+  const [nextStoryContext = "", ...remainingStoryContexts] =
+    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
   await state.set(STORY_STATE_KEYS.storyQueue, remaining);
+  await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
+  await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
   await state.set(STORY_STATE_KEYS.storyBaseline, null);
   await resetActiveStoryStartCommit();
   const { storyRouterStep } = await import("../story-router/step.js");

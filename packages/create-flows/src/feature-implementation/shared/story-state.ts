@@ -4,6 +4,7 @@ import { runGit } from "../commit-reviewed-story/run-git.js";
 export const STORY_STATE_KEYS = {
   activePhase: "activePhase",
   activeStory: "activeStory",
+  activeStoryContext: "activeStoryContext",
   activeStoryStartCommit: "activeStoryStartCommit",
   attemptsByPhase: "attemptsByPhase",
   completedStories: "completedStories",
@@ -15,6 +16,7 @@ export const STORY_STATE_KEYS = {
   latestReviewResult: "latestReviewResult",
   latestValidationSummary: "latestValidationSummary",
   storyBaseline: "storyBaseline",
+  storyContextQueue: "storyContextQueue",
   storyQueue: "storyQueue",
 } as const;
 

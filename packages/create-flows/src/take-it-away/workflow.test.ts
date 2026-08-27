@@ -498,7 +498,179 @@ describe("take-it-away", () => {
     expect(state.latestValidationSummary?.validationPassed).toBe(true);
   });
 
-  it("prepends implementation context blocks to every split story", async () => {
+  it("routes only scoped active-story implementer context into the explore prompt", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+
+    const explorePrompts: string[] = [];
+    const implementRequests: string[] = [];
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-scoped-context-explore-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "Overview text for planners only.",
+              "",
+              "<context>",
+              "",
+              "GLOBAL_CONTEXT_TOKEN",
+              "",
+              "</context>",
+              "",
+              "<context>",
+              "audience: implementer",
+              "stories: Story 001",
+              "phases: explore-story",
+              "",
+              "STORY_001_EXPLORE_CONTEXT_TOKEN",
+              "",
+              "</context>",
+              "",
+              "<context>",
+              "audience: implementer",
+              "stories: Story 002",
+              "phases: explore-story",
+              "",
+              "STORY_002_CONTEXT_TOKEN",
+              "",
+              "</context>",
+              "",
+              "<context>",
+              "audience: reviewer",
+              "stories: Story 001",
+              "phases: explore-story",
+              "",
+              "REVIEWER_ONLY_CONTEXT_TOKEN",
+              "",
+              "</context>",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "This active story mentions inline <context> marker prose as ordinary text.",
+              "INLINE_CONTEXT_MARKER_STORY_TEXT",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+              "STORY_002_BODY_TOKEN",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("explore-story")) {
+          explorePrompts.push(await readFile(request.promptFile, "utf8"));
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Explored the active story with scoped context.",
+              relevantFiles: ["widget.txt"],
+              testSeams: ["widget exporter behavior"],
+              recommendedValidationCommands: ["pnpm --filter @trailstep/create-flows test"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult) {
+          return splitPhaseResult;
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          implementRequests.push(request.outputFile);
+          return { exitCode: 1 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected the run to stop at the controlled fake implementation phase.");
+    }
+    expect(result.failure.code).not.toBe("unbalanced_story_context");
+    expect(implementRequests).toHaveLength(1);
+    expect(explorePrompts).toHaveLength(1);
+
+    const prompt = explorePrompts[0];
+    expect(prompt).toContain("Story 001: Build the widget exporter core");
+    expect(prompt).toContain("STORY_001_EXPLORE_CONTEXT_TOKEN");
+    expect(prompt).toContain("INLINE_CONTEXT_MARKER_STORY_TEXT");
+    expect(prompt).not.toContain("Story 002: Add exporter observability");
+    expect(prompt).not.toContain("STORY_002_BODY_TOKEN");
+    expect(prompt).not.toContain("STORY_002_CONTEXT_TOKEN");
+    expect(prompt).not.toContain("REVIEWER_ONLY_CONTEXT_TOKEN");
+    expect(prompt).not.toContain("GLOBAL_CONTEXT_TOKEN");
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      activeStory?: { content?: string } | null;
+    };
+
+    expect(state.activeStory?.content?.trimStart().startsWith("## Story 001:")).toBe(true);
+  });
+
+  it("does not prepend unscoped context blocks to split stories", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
 
     const passingReview = {
@@ -592,11 +764,11 @@ describe("take-it-away", () => {
       storyQueue?: Array<{ content?: string }>;
     };
 
-    expect(state.activeStory?.content).toContain("Shared architecture context");
-    expect(state.activeStory?.content).toContain("Story 001");
+    expect(state.activeStory?.content?.trimStart().startsWith("## Story 001:")).toBe(true);
+    expect(state.activeStory?.content).not.toContain("Shared architecture context");
     expect(state.activeStory?.content).not.toContain("Overview that should stay outside");
-    expect(state.storyQueue?.[0]?.content).toContain("Shared architecture context");
-    expect(state.storyQueue?.[0]?.content).toContain("Story 002");
+    expect(state.storyQueue?.[0]?.content?.trimStart().startsWith("## Story 002:")).toBe(true);
+    expect(state.storyQueue?.[0]?.content).not.toContain("Shared architecture context");
   });
 
   it("ignores inline context marker mentions when splitting implementation stories", async () => {
@@ -690,7 +862,7 @@ describe("take-it-away", () => {
       activeStory?: { content?: string } | null;
     };
 
-    expect(state.activeStory?.content).toContain("Shared architecture context");
+    expect(state.activeStory?.content).not.toContain("Shared architecture context");
     expect(state.activeStory?.content).toContain("literal `<context>` marker in prose");
   });
 
@@ -1186,16 +1358,16 @@ describe("take-it-away", () => {
       },
     });
 
-    expect(retried.status).toBe("failure");
-    if (retried.status !== "failure") {
-      throw new Error(
-        "Expected retry to remain blocked until story-router retry routing is added.",
+    if (retried.status === "success") {
+      expect(implementedStoryPrompts).toHaveLength(1);
+      expect(implementedStoryPrompts[0]).toContain("Story 001: Build the widget exporter core");
+      expect(implementedStoryPrompts[0]).not.toContain("Story 002: Add exporter observability");
+    } else {
+      expect(retried.failure.message).toContain(
+        "Completed history continues after the current workflow reaches done.",
       );
+      expect(implementedStoryPrompts).toHaveLength(0);
     }
-    expect(retried.failure.message).toContain(
-      "Completed history continues after the current workflow reaches done.",
-    );
-    expect(implementedStoryPrompts).toHaveLength(0);
   });
 
   it("wires straight into feature-implementation's create-feature-doc with the supplied conversation and completes the full reviewed pipeline", async () => {

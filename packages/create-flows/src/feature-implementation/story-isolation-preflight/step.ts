@@ -22,7 +22,9 @@ export const storyIsolationPreflightStep = step({ id: "story-isolation-preflight
 
     await state.set(STORY_STATE_KEYS.activePhase, "explore-story");
     await incrementStoryPhaseAttempt("explore-story");
-    return exploreStoryStep({ currentStory });
+    const implementationContext =
+      (await state.get<string | null>(STORY_STATE_KEYS.activeStoryContext)) ?? undefined;
+    return exploreStoryStep({ currentStory, implementationContext });
   },
 );
 

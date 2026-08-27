@@ -27,8 +27,12 @@ export const storyRouterStep = step({ id: "story-router" }).do(
         });
       }
 
+      const [nextStoryContext = "", ...remainingStoryContexts] =
+        (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
       await state.set(STORY_STATE_KEYS.storyQueue, remaining);
+      await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
       await state.set(STORY_STATE_KEYS.activeStory, nextStory);
+      await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
       return routeStoryAfterPreflight(nextStory);
     }
 

@@ -4,6 +4,7 @@ import projectArchitectureGuidanceFragment from "../shared/project-architecture-
 
 export interface ExploreStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;
+  readonly implementationContext?: string;
 }
 
 export interface ExploreStoryOutput extends Record<string, unknown> {
@@ -34,6 +35,7 @@ export function exploreStoryPrompt({ input }: { readonly input: ExploreStoryInpu
     methodologyFragment.trimEnd(),
     projectArchitectureGuidanceFragment.trimEnd(),
     section("Active story", input.currentStory.content),
+    section("Implementation context", input.implementationContext),
     section(
       "Task",
       [

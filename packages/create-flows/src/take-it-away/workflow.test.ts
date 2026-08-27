@@ -5,9 +5,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { runWorkflow } from "@trailstep/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
+import {
+  MAX_STORY_REVIEW_ATTEMPTS,
+  MAX_STORY_VALIDATION_ATTEMPTS,
+  STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD,
+} from "../feature-implementation/shared/constants.js";
 import { takeItAway } from "./workflow.js";
 
 const execFileAsync = promisify(execFile);
@@ -65,6 +70,22 @@ async function handleNonGreenStoryPhase(request: {
 
   return undefined;
 }
+
+let previousStoryCommitMode: string | undefined;
+
+beforeEach(() => {
+  previousStoryCommitMode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
+  delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
+});
+
+afterEach(() => {
+  if (previousStoryCommitMode === undefined) {
+    delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
+    return;
+  }
+
+  process.env.TRAILSTEP_STORY_COMMIT_MODE = previousStoryCommitMode;
+});
 
 describe("take-it-away", () => {
   it("keeps the selected story durably active when implementation is interrupted before review", async () => {
@@ -692,6 +713,220 @@ describe("take-it-away", () => {
     expect(state.attemptsByPhase?.["review-story-implementation"]).toBe(1);
   });
 
+  it("keeps retrying failed story review until the review retry limit is reached", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const storyOneFailingReview = {
+      score: 3,
+      summary: "Story 001 review failed before the story eventually passed.",
+      methodologyRatings: {
+        tdd: 2,
+        verticalSlicing: 4,
+        tracerBullet: 4,
+        dependencies: 4,
+        architecture: 4,
+      },
+      requiredImprovements: ["Add the missing red-test evidence for story 001."],
+    };
+    const storyTwoReviewSummaries: string[] = [];
+    let storyOneImplementAttempts = 0;
+    let storyOneReviewAttempts = 0;
+    let storyTwoImplementAttempts = 0;
+    let storyTwoReviewAttempts = 0;
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-review-retry-cap-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult && !request.outputFile.includes("implement-green")) {
+          return splitPhaseResult;
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          const prompt = await readFile(request.promptFile, "utf8");
+          const storyLabel = prompt.includes("Story 002: Add exporter observability")
+            ? "Story 002"
+            : "Story 001";
+          if (storyLabel === "Story 002") {
+            storyTwoImplementAttempts += 1;
+          } else {
+            storyOneImplementAttempts += 1;
+          }
+          await writeFile(
+            join(cwd, "widget.txt"),
+            `${storyLabel} implementation attempt ${
+              storyLabel === "Story 002" ? storyTwoImplementAttempts : storyOneImplementAttempts
+            }\n`,
+            "utf8",
+          );
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Implemented the green story slice.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-story-implementation")) {
+          const prompt = await readFile(request.promptFile, "utf8");
+          if (prompt.includes("Story 001: Build the widget exporter core")) {
+            storyOneReviewAttempts += 1;
+            await writeFile(
+              request.outputFile,
+              JSON.stringify(storyOneReviewAttempts === 1 ? storyOneFailingReview : passingReview),
+              "utf8",
+            );
+            return { exitCode: 0 };
+          }
+
+          storyTwoReviewAttempts += 1;
+          const summary = `Story 002 review failed attempt ${storyTwoReviewAttempts}.`;
+          storyTwoReviewSummaries.push(summary);
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              score: 3,
+              summary,
+              methodologyRatings: {
+                tdd: 2,
+                verticalSlicing: 4,
+                tracerBullet: 4,
+                dependencies: 4,
+                architecture: 4,
+              },
+              requiredImprovements: ["Add the missing red-test evidence for story 002."],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected repeated story review failures to exhaust the second story.");
+    }
+    expect(result.failure.code).toBe("story_review_exhausted");
+    expect(storyOneReviewAttempts).toBe(2);
+    expect(storyTwoReviewAttempts).toBe(MAX_STORY_REVIEW_ATTEMPTS);
+    expect(storyTwoImplementAttempts).toBe(MAX_STORY_REVIEW_ATTEMPTS);
+    expect(result.failure.details).toMatchObject({
+      storyPath: expect.any(String),
+      reviewRetryCount: MAX_STORY_REVIEW_ATTEMPTS,
+      retryLimit: MAX_STORY_REVIEW_ATTEMPTS,
+      review: {
+        summary: storyTwoReviewSummaries.at(-1),
+      },
+    });
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      latestStoryRouterState?: {
+        route?: string;
+        exhaustedReason?: string;
+        reviewRetryCount?: number;
+        validationRetryCount?: number;
+        retryLimit?: number;
+        activeStory?: { content?: string };
+        latestReview?: { summary?: string };
+        source?: { reason?: string; code?: string };
+      } | null;
+    };
+    expect(state.latestStoryRouterState).toMatchObject({
+      route: "exhausted",
+      exhaustedReason: "review",
+      reviewRetryCount: MAX_STORY_REVIEW_ATTEMPTS,
+      validationRetryCount: 0,
+      retryLimit: MAX_STORY_REVIEW_ATTEMPTS,
+      activeStory: {
+        content: expect.stringContaining("Story 002: Add exporter observability"),
+      },
+      latestReview: {
+        summary: storyTwoReviewSummaries.at(-1),
+      },
+      source: {
+        reason: "failed-review",
+        code: "story_review_exhausted",
+      },
+    });
+  });
+
   it("routes failed validation through the story router back to the same story implementation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);
@@ -1145,6 +1380,269 @@ describe("take-it-away", () => {
       retryLimit: 3,
     });
     expect(state.latestStoryRouterState?.targetPhase).toBeUndefined();
+  });
+
+  it("keeps retrying failed story validation until the validation retry limit is reached", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const storyTwoValidationSummaries: string[] = [];
+    const storyTwoValidationResults: string[] = [];
+    let storyOneImplementAttempts = 0;
+    let storyOneValidationAttempts = 0;
+    let storyTwoDoctorAttempts = 0;
+    let storyTwoImplementAttempts = 0;
+    let storyTwoValidationAttempts = 0;
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-validation-retry-cap-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (
+          splitPhaseResult &&
+          !request.outputFile.includes("implement-green") &&
+          !request.outputFile.includes("validate-story")
+        ) {
+          return splitPhaseResult;
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          const prompt = await readFile(request.promptFile, "utf8");
+          const storyLabel = prompt.includes("Story 002: Add exporter observability")
+            ? "Story 002"
+            : "Story 001";
+          if (storyLabel === "Story 002") {
+            storyTwoImplementAttempts += 1;
+          } else {
+            storyOneImplementAttempts += 1;
+          }
+          await writeFile(
+            join(cwd, "widget.txt"),
+            `${storyLabel} implementation attempt ${
+              storyLabel === "Story 002" ? storyTwoImplementAttempts : storyOneImplementAttempts
+            }\n`,
+            "utf8",
+          );
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Implemented the green story slice.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("validate-story")) {
+          const prompt = await readFile(request.promptFile, "utf8");
+          if (prompt.includes("Story 001: Build the widget exporter core")) {
+            storyOneValidationAttempts += 1;
+            await writeFile(
+              request.outputFile,
+              JSON.stringify({
+                blocked: false,
+                summary:
+                  storyOneValidationAttempts === 1
+                    ? "Story 001 validation failed before the story eventually passed."
+                    : "Story 001 validation passed.",
+                commands: [
+                  {
+                    command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
+                    result:
+                      storyOneValidationAttempts === 1
+                        ? "failed: expected Story 001 metadata"
+                        : "passed",
+                  },
+                ],
+                validationPassed: storyOneValidationAttempts !== 1,
+              }),
+              "utf8",
+            );
+            return { exitCode: 0 };
+          }
+
+          storyTwoValidationAttempts += 1;
+          const summary = `Story 002 validation failed attempt ${storyTwoValidationAttempts}.`;
+          const resultText = `failed: Story 002 validation failure ${storyTwoValidationAttempts}`;
+          storyTwoValidationSummaries.push(summary);
+          storyTwoValidationResults.push(resultText);
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary,
+              commands: [
+                {
+                  command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
+                  result: resultText,
+                },
+              ],
+              validationPassed: false,
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("story-doctor")) {
+          const prompt = await readFile(request.promptFile, "utf8");
+          if (prompt.includes("Story 002: Add exporter observability")) {
+            storyTwoDoctorAttempts += 1;
+          }
+          await writeFile(
+            join(cwd, "widget.txt"),
+            `Story 002 doctor attempt ${storyTwoDoctorAttempts}\n`,
+            "utf8",
+          );
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Doctor repaired the suspected validation failure root cause.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-story-implementation")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected repeated story validation failures to exhaust the second story.");
+    }
+    expect(result.failure.code).toBe("story_validation_exhausted");
+    expect(storyOneValidationAttempts).toBe(2);
+    expect(storyTwoValidationAttempts).toBe(MAX_STORY_VALIDATION_ATTEMPTS);
+    expect(storyTwoImplementAttempts).toBe(STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD);
+    expect(storyTwoDoctorAttempts).toBe(1);
+    expect(result.failure.details).toMatchObject({
+      storyPath: expect.any(String),
+      validationRetryCount: MAX_STORY_VALIDATION_ATTEMPTS,
+      retryLimit: MAX_STORY_VALIDATION_ATTEMPTS,
+      validation: {
+        summary: storyTwoValidationSummaries.at(-1),
+        commands: [
+          {
+            result: storyTwoValidationResults.at(-1),
+          },
+        ],
+      },
+    });
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      latestStoryRouterState?: {
+        route?: string;
+        exhaustedReason?: string;
+        reviewRetryCount?: number;
+        validationRetryCount?: number;
+        retryLimit?: number;
+        activeStory?: { content?: string };
+        latestValidation?: { summary?: string; commands?: Array<{ result?: string }> };
+        source?: { reason?: string; code?: string };
+      } | null;
+    };
+    expect(state.latestStoryRouterState).toMatchObject({
+      route: "exhausted",
+      exhaustedReason: "validation",
+      reviewRetryCount: 0,
+      validationRetryCount: MAX_STORY_VALIDATION_ATTEMPTS,
+      retryLimit: MAX_STORY_VALIDATION_ATTEMPTS,
+      activeStory: {
+        content: expect.stringContaining("Story 002: Add exporter observability"),
+      },
+      latestValidation: {
+        summary: storyTwoValidationSummaries.at(-1),
+        commands: [
+          {
+            result: storyTwoValidationResults.at(-1),
+          },
+        ],
+      },
+      source: {
+        reason: "failed-validation",
+        code: "story_validation_exhausted",
+      },
+    });
   });
 
   it("routes blocked validation through durable story router without retrying implementation", async () => {

@@ -498,6 +498,181 @@ describe("take-it-away", () => {
     expect(state.latestValidationSummary?.validationPassed).toBe(true);
   });
 
+  it("routes a failed story review through the story router before retrying the same story", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const requiredImprovement = "Add behavioral red-test evidence before changing implementation.";
+    const failingReview = {
+      score: 3,
+      summary: "Review failed because the red-test evidence is missing.",
+      methodologyRatings: {
+        tdd: 2,
+        verticalSlicing: 4,
+        tracerBullet: 4,
+        dependencies: 4,
+        architecture: 4,
+      },
+      requiredImprovements: [requiredImprovement],
+    };
+    const implementGreenPrompts: string[] = [];
+    let implementGreenAttempts = 0;
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-failed-story-review-router-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult) {
+          return splitPhaseResult;
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          implementGreenAttempts += 1;
+          implementGreenPrompts.push(await readFile(request.promptFile, "utf8"));
+          if (implementGreenAttempts === 1) {
+            await writeFile(
+              join(cwd, "widget.txt"),
+              "Story 001 implementation attempt 1\n",
+              "utf8",
+            );
+            await writeFile(
+              request.outputFile,
+              JSON.stringify({
+                blocked: false,
+                summary: "Implemented the first green story slice.",
+                changedFiles: ["widget.txt"],
+              }),
+              "utf8",
+            );
+            return { exitCode: 0 };
+          }
+
+          return { exitCode: 1 };
+        }
+
+        if (request.outputFile.includes("review-story-implementation")) {
+          await writeFile(request.outputFile, JSON.stringify(failingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    expect(implementGreenPrompts).toHaveLength(2);
+    const retryPrompt = implementGreenPrompts.at(1) ?? "";
+    expect(retryPrompt).toContain("Story 001: Build the widget exporter core");
+    expect(retryPrompt).toContain(failingReview.summary);
+    expect(retryPrompt).toContain(requiredImprovement);
+    expect(retryPrompt).not.toContain("Story 002: Add exporter observability");
+
+    const startedStepIds = result.events
+      .filter((event) => event.type === "step.started")
+      .map((event) => event.stepId);
+    const reviewStartedIndex = startedStepIds.indexOf("review-story-implementation");
+    const retryImplementStartedIndex = startedStepIds.findIndex(
+      (stepId, index) => stepId === "implement-green" && index > reviewStartedIndex,
+    );
+    const retryRouterStartedIndex = startedStepIds.findIndex(
+      (stepId, index) => stepId === "story-router" && index > reviewStartedIndex,
+    );
+
+    expect(reviewStartedIndex).toBeGreaterThanOrEqual(0);
+    expect(retryImplementStartedIndex).toBeGreaterThan(reviewStartedIndex);
+    expect(retryRouterStartedIndex).toBeGreaterThan(reviewStartedIndex);
+    expect(retryRouterStartedIndex).toBeLessThan(retryImplementStartedIndex);
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      activePhase?: string;
+      activeStory?: { content?: string } | null;
+      attemptsByPhase?: Record<string, number>;
+      completedStories?: string[];
+      latestReviewResult?: { score?: number; summary?: string; requiredImprovements?: string[] };
+      storyQueue?: Array<{ content?: string }>;
+    };
+    expect(state.activePhase).toBe("implement-green");
+    expect(state.activeStory?.content).toContain("Story 001");
+    expect(state.completedStories).toEqual([]);
+    expect(state.storyQueue).toHaveLength(1);
+    expect(state.storyQueue?.[0]?.content).toContain("Story 002");
+    expect(state.latestReviewResult).toMatchObject({
+      score: 3,
+      summary: failingReview.summary,
+      requiredImprovements: [requiredImprovement],
+    });
+    expect(state.attemptsByPhase?.["story-router"]).toBe(2);
+    expect(state.attemptsByPhase?.["implement-green"]).toBe(2);
+    expect(state.attemptsByPhase?.["review-story-implementation"]).toBe(1);
+  });
+
   it("routes only scoped active-story implementer context into the explore prompt", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);

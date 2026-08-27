@@ -1,4 +1,4 @@
-import { state } from "@trailstep/authoring";
+import { type Document, state } from "@trailstep/authoring";
 import { runGit } from "../commit-reviewed-story/run-git.js";
 
 export const STORY_STATE_KEYS = {
@@ -14,6 +14,7 @@ export const STORY_STATE_KEYS = {
   latestPreflightStatus: "latestPreflightStatus",
   latestRedTestSummary: "latestRedTestSummary",
   latestReviewResult: "latestReviewResult",
+  latestStoryRouterState: "latestStoryRouterState",
   latestValidationSummary: "latestValidationSummary",
   storyBaseline: "storyBaseline",
   storyContextQueue: "storyContextQueue",
@@ -26,10 +27,52 @@ export type StoryPhase =
   | "explore-story"
   | "write-red-tests"
   | "implement-green"
+  | "story-doctor"
   | "validate-story"
   | "implement-story"
   | "review-story-implementation"
   | "commit-reviewed-story";
+
+export type BlockedStoryPhase =
+  | "explore-story"
+  | "write-red-tests"
+  | "implement-green"
+  | "validate-story";
+
+export type BlockedStoryRouteSourceReason =
+  | "failed-exploration"
+  | "failed-red-tests"
+  | "failed-implementation"
+  | "failed-validation";
+
+export type StoryRouterRoute = "blocked" | "retrying" | "doctoring" | "exhausted";
+
+export interface StoryRouterState {
+  readonly route: StoryRouterRoute;
+  readonly activeStory: Document;
+  readonly targetPhase?: StoryPhase;
+  readonly reviewRetryCount: number;
+  readonly validationRetryCount: number;
+  readonly retryLimit?: number;
+  readonly blockedPhase?: BlockedStoryPhase;
+  readonly blockedReason?: string;
+  readonly exhaustedReason?: "review" | "validation";
+  readonly latestReview?: {
+    readonly score: number;
+    readonly summary: string;
+    readonly requiredImprovements: readonly string[];
+  };
+  readonly latestValidation?: {
+    readonly summary: string;
+    readonly commands: readonly { readonly command: string; readonly result: string }[];
+  };
+  readonly source: {
+    readonly reason: BlockedStoryRouteSourceReason | "failed-review" | "failed-validation";
+    readonly blocked?: true;
+    readonly code: string;
+    readonly metadata?: Record<string, unknown>;
+  };
+}
 
 export interface StoryPreflightStatus {
   readonly ok: boolean;

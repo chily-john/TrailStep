@@ -1,4 +1,4 @@
-import { fail, state, step } from "@trailstep/authoring";
+import { state, step } from "@trailstep/authoring";
 import { implementGreenStep } from "../implement-green/step.js";
 import { incrementStoryPhaseAttempt, STORY_STATE_KEYS } from "../shared/story-state.js";
 import {
@@ -19,10 +19,16 @@ export const writeRedTestsStep = step({ id: "write-red-tests" })
         STORY_STATE_KEYS.blockedReason,
         promptOutput.blockedReason ?? "Red-test phase reported a blocked state.",
       );
-      return fail({
-        code: "story_red_tests_blocked",
-        message: promptOutput.blockedReason ?? "Red-test phase reported a blocked state.",
-        details: { storyPath: input.currentStory.path },
+      const { storyRouterStep } = await import("../story-router/step.js");
+      return storyRouterStep({
+        reason: {
+          type: "blocked",
+          sourceReason: "failed-red-tests",
+          blockedPhase: "write-red-tests",
+          blockedReason: promptOutput.blockedReason ?? "Red-test phase reported a blocked state.",
+          code: "story_red_tests_blocked",
+        },
+        currentStory: input.currentStory,
       });
     }
 

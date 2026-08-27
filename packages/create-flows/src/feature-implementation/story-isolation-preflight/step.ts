@@ -7,6 +7,7 @@ import {
   incrementStoryPhaseAttempt,
   STORY_STATE_KEYS,
   type StoryPreflightStatus,
+  type StoryRouterState,
 } from "../shared/story-state.js";
 
 export interface StoryIsolationPreflightInput extends Record<string, unknown> {
@@ -33,6 +34,19 @@ export async function runStoryIsolationPreflight(
 ): Promise<StoryIsolationPreflightResult> {
   await state.set(STORY_STATE_KEYS.activePhase, "story-isolation-preflight");
   await incrementStoryPhaseAttempt("story-isolation-preflight");
+
+  const blockedReplay = await loadBlockedReplayPreflightState(currentStory);
+  if (blockedReplay) {
+    await state.set(STORY_STATE_KEYS.storyBaseline, blockedReplay.baseline);
+    await state.set(STORY_STATE_KEYS.activeStoryStartCommit, { commit: blockedReplay.baseline });
+    await state.set(STORY_STATE_KEYS.latestPreflightStatus, {
+      ok: true,
+      code: "story_preflight_passed",
+      message: "Story isolation preflight passed.",
+      baseline: blockedReplay.baseline,
+    } satisfies StoryPreflightStatus);
+    return { ok: true, baseline: blockedReplay.baseline };
+  }
 
   const cwd = state.cwd;
   if (!cwd) {
@@ -112,6 +126,27 @@ export async function runStoryIsolationPreflight(
 type StoryIsolationPreflightResult =
   | { readonly ok: true; readonly baseline: string }
   | { readonly ok: false; readonly failure: ContinuationResult };
+
+async function loadBlockedReplayPreflightState(
+  currentStory: Document,
+): Promise<{ readonly baseline: string } | null> {
+  const routerState = await state.get<StoryRouterState | null>(
+    STORY_STATE_KEYS.latestStoryRouterState,
+  );
+  if (
+    routerState?.route !== "blocked" ||
+    routerState.activeStory.path !== currentStory.path ||
+    routerState.activeStory.content !== currentStory.content
+  ) {
+    return null;
+  }
+
+  const baseline =
+    (await state.get<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
+    (await state.get<{ readonly commit?: string } | null>(STORY_STATE_KEYS.activeStoryStartCommit))
+      ?.commit;
+  return baseline ? { baseline } : null;
+}
 
 async function preflightFailure(
   code: string,

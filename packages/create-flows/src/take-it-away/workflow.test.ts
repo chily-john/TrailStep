@@ -661,6 +661,13 @@ describe("take-it-away", () => {
       attemptsByPhase?: Record<string, number>;
       completedStories?: string[];
       latestReviewResult?: { score?: number; summary?: string; requiredImprovements?: string[] };
+      latestStoryRouterState?: {
+        route?: string;
+        reviewRetryCount?: number;
+        validationRetryCount?: number;
+        targetPhase?: string;
+        source?: { reason?: string };
+      } | null;
       storyQueue?: Array<{ content?: string }>;
     };
     expect(state.activePhase).toBe("implement-green");
@@ -672,6 +679,13 @@ describe("take-it-away", () => {
       score: 3,
       summary: failingReview.summary,
       requiredImprovements: [requiredImprovement],
+    });
+    expect(state.latestStoryRouterState).toMatchObject({
+      route: "retrying",
+      reviewRetryCount: 1,
+      validationRetryCount: 0,
+      targetPhase: "implement-green",
+      source: { reason: "failed-review" },
     });
     expect(state.attemptsByPhase?.["story-router"]).toBe(2);
     expect(state.attemptsByPhase?.["implement-green"]).toBe(2);
@@ -909,6 +923,13 @@ describe("take-it-away", () => {
       attemptsByPhase?: Record<string, number>;
       completedStories?: string[];
       latestValidationSummary?: { summary?: string; validationPassed?: boolean };
+      latestStoryRouterState?: {
+        route?: string;
+        reviewRetryCount?: number;
+        validationRetryCount?: number;
+        targetPhase?: string;
+        source?: { reason?: string };
+      } | null;
       storyQueue?: Array<{ content?: string }>;
     };
     expect(state.activePhase).toBe("review-story-implementation");
@@ -920,10 +941,456 @@ describe("take-it-away", () => {
       summary: passingValidationSummary,
       validationPassed: true,
     });
+    expect(state.latestStoryRouterState).toMatchObject({
+      route: "retrying",
+      reviewRetryCount: 0,
+      validationRetryCount: 1,
+      targetPhase: "implement-green",
+      source: { reason: "failed-validation" },
+    });
     expect(state.attemptsByPhase?.["story-router"]).toBe(2);
     expect(state.attemptsByPhase?.["implement-green"]).toBe(2);
     expect(state.attemptsByPhase?.["validate-story"]).toBe(2);
     expect(state.attemptsByPhase?.["review-story-implementation"]).toBe(1);
+  });
+
+  it("escalates repeated validation failures to the story doctor and then exhausts", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const failedValidationSummary = "Focused validation still fails after implementation work.";
+    const failedValidationResult = "failed: widget output omitted stable metadata";
+    const implementGreenPrompts: string[] = [];
+    const doctorPrompts: string[] = [];
+    let implementGreenAttempts = 0;
+    let doctorAttempts = 0;
+    let validateAttempts = 0;
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-validation-doctor-exhaustion-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult && !request.outputFile.includes("validate-story")) {
+          return splitPhaseResult;
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          implementGreenAttempts += 1;
+          implementGreenPrompts.push(await readFile(request.promptFile, "utf8"));
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: `Implemented green story slice attempt ${implementGreenAttempts}.`,
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("story-doctor")) {
+          doctorAttempts += 1;
+          doctorPrompts.push(await readFile(request.promptFile, "utf8"));
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Doctor repaired the suspected validation failure root cause.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("validate-story")) {
+          validateAttempts += 1;
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: `${failedValidationSummary} Attempt ${validateAttempts}.`,
+              commands: [
+                {
+                  command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
+                  result: failedValidationResult,
+                },
+              ],
+              validationPassed: false,
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-story-implementation")) {
+          throw new Error("Exhausted validation should not dispatch story review.");
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected repeated validation failure to exhaust the story.");
+    }
+    expect(result.failure.code).toBe("story_validation_exhausted");
+    expect(implementGreenPrompts).toHaveLength(2);
+    expect(doctorPrompts).toHaveLength(1);
+    expect(validateAttempts).toBe(3);
+    expect(doctorAttempts).toBe(1);
+    expect(doctorPrompts[0]).toContain(failedValidationSummary);
+    expect(doctorPrompts[0]).toContain(failedValidationResult);
+    expect(doctorPrompts[0]).toContain("Validation failure count consumed by the router: 2/3");
+
+    const doctorStartedIndex = result.events.findIndex(
+      (event) => event.type === "step.started" && event.stepId === "story-doctor",
+    );
+    const reviewStartedAfterDoctorIndex = result.events.findIndex(
+      (event, index) =>
+        event.type === "step.started" &&
+        event.stepId === "review-story-implementation" &&
+        index > doctorStartedIndex,
+    );
+    expect(doctorStartedIndex).toBeGreaterThanOrEqual(0);
+    expect(reviewStartedAfterDoctorIndex).toBe(-1);
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      activeStory?: { content?: string } | null;
+      latestStoryRouterState?: {
+        route?: string;
+        exhaustedReason?: string;
+        reviewRetryCount?: number;
+        validationRetryCount?: number;
+        retryLimit?: number;
+        targetPhase?: string;
+      } | null;
+    };
+    expect(state.activeStory?.content).toContain("Story 001");
+    expect(state.latestStoryRouterState).toMatchObject({
+      route: "exhausted",
+      exhaustedReason: "validation",
+      reviewRetryCount: 0,
+      validationRetryCount: 3,
+      retryLimit: 3,
+    });
+    expect(state.latestStoryRouterState?.targetPhase).toBeUndefined();
+  });
+
+  it("routes blocked validation through durable story router without retrying implementation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const blockedReason =
+      "Validation is blocked until the widget exporter fixture can be generated deterministically.";
+    const workingAgentRequests: string[] = [];
+
+    const failed = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-blocked-validation-router-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        workingAgentRequests.push(request.outputFile);
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("explore-story")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Explored the active story.",
+              relevantFiles: ["widget.txt"],
+              testSeams: ["widget behavior"],
+              recommendedValidationCommands: ["pnpm --filter @trailstep/create-flows test"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("write-red-tests")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Wrote a focused behavioral red test.",
+              redEvidence: "Focused test failed for the intended behavior.",
+              changedFiles: ["widget.test.ts"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Implemented the green story slice.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("validate-story")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: true,
+              blockedReason,
+              summary: "Validation could not run to completion.",
+              commands: [
+                {
+                  command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
+                  result: "blocked: deterministic fixture generation is unavailable",
+                },
+              ],
+              validationPassed: false,
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(failed.status).toBe("failure");
+    if (failed.status !== "failure") {
+      throw new Error("Expected blocked validation tracer run to fail.");
+    }
+    expect(failed.failure.code).toBe("story_validation_blocked");
+    expect(
+      workingAgentRequests.some((outputFile) => outputFile.includes("review-story-implementation")),
+    ).toBe(false);
+
+    const validateCompletedIndex = failed.events.findIndex(
+      (event) => event.type === "step.completed" && event.stepId === "validate-story",
+    );
+    const routerStartedIndex = failed.events.findIndex(
+      (event, index) =>
+        event.type === "step.started" &&
+        event.stepId === "story-router" &&
+        index > validateCompletedIndex,
+    );
+    const routerFailedIndex = failed.events.findIndex(
+      (event, index) =>
+        event.type === "step.failed" &&
+        event.stepId === "story-router" &&
+        index > routerStartedIndex,
+    );
+    const retryImplementAfterValidationIndex = failed.events.findIndex(
+      (event, index) =>
+        event.type === "step.started" &&
+        event.stepId === "implement-green" &&
+        index > validateCompletedIndex,
+    );
+    const reviewAfterValidationIndex = failed.events.findIndex(
+      (event, index) =>
+        event.type === "step.started" &&
+        event.stepId === "review-story-implementation" &&
+        index > validateCompletedIndex,
+    );
+
+    expect(validateCompletedIndex).toBeGreaterThanOrEqual(0);
+    expect(routerStartedIndex).toBeGreaterThan(validateCompletedIndex);
+    expect(routerFailedIndex).toBeGreaterThan(routerStartedIndex);
+    expect(retryImplementAfterValidationIndex).toBe(-1);
+    expect(reviewAfterValidationIndex).toBe(-1);
+
+    const failedState = JSON.parse(await readFile(join(failed.runDir, "state.json"), "utf8")) as {
+      activeStory?: { path?: string; content?: string } | null;
+      blockedReason?: string | null;
+      latestStoryRouterState?: {
+        route?: string;
+        blockedPhase?: string;
+        blockedReason?: string;
+        activeStory?: { path?: string; content?: string };
+        source?: { reason?: string; blocked?: boolean };
+      } | null;
+    };
+
+    expect(failedState.blockedReason).toBe(blockedReason);
+    expect(failedState.latestStoryRouterState).toMatchObject({
+      route: "blocked",
+      blockedPhase: "validate-story",
+      blockedReason,
+      activeStory: {
+        path: failedState.activeStory?.path,
+        content: expect.stringContaining("Story 001: Build the widget exporter core"),
+      },
+      source: {
+        reason: "failed-validation",
+        blocked: true,
+      },
+    });
+
+    const retryAgentRequests: string[] = [];
+    const retried = await runWorkflow({
+      workflow: takeItAway,
+      retry: { runDir: failed.runDir, kind: "manual" },
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        retryAgentRequests.push(request.outputFile);
+        throw new Error(`Retry should not dispatch a new agent prompt: ${request.outputFile}`);
+      },
+    });
+
+    expect(retried.status).toBe("failure");
+    if (retried.status !== "failure") {
+      throw new Error("Expected blocked validation retry to fail deterministically.");
+    }
+    expect(retried.failure).toMatchObject({
+      code: "story_validation_blocked",
+      message: blockedReason,
+    });
+    expect(retryAgentRequests).toEqual([]);
   });
 
   it("routes only scoped active-story implementer context into the explore prompt", async () => {

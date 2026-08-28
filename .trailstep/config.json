@@ -1,0 +1,165 @@
+{
+  "workflows": {
+    "project": {
+      "grillItAway": "@trailstep/create-flows#grillItAway",
+      "takeItAway": "@trailstep/create-flows#takeItAway"
+    },
+    "take-it-away": {
+      "agents": {
+        "featureWriter": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4-mini",
+            "thinking": "medium"
+          }
+        ],
+        "planner": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.5",
+            "thinking": "high"
+          }
+        ],
+        "reviewer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.5",
+            "thinking": "high"
+          }
+        ],
+        "storyExplorer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.3-codex-spark",
+            "thinking": "low"
+          }
+        ],
+        "testWriter": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4",
+            "thinking": "medium"
+          }
+        ],
+        "storyImplementer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4",
+            "thinking": "medium"
+          }
+        ],
+        "validator": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.3-codex-spark",
+            "thinking": "low"
+          }
+        ],
+        "storyReviewer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.5",
+            "thinking": "high"
+          }
+        ]
+      }
+    },
+    "grill-it-away": {
+      "agents": {
+        "grillingAgent": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4-mini",
+            "thinking": "medium"
+          }
+        ],
+        "featureWriter": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4-mini",
+            "thinking": "medium"
+          }
+        ],
+        "planner": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.5",
+            "thinking": "high"
+          }
+        ],
+        "reviewer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.5",
+            "thinking": "high"
+          }
+        ],
+        "storyExplorer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.3-codex-spark",
+            "thinking": "low"
+          }
+        ],
+        "testWriter": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4",
+            "thinking": "medium"
+          }
+        ],
+        "storyImplementer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.4",
+            "thinking": "medium"
+          }
+        ],
+        "validator": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.3-codex-spark",
+            "thinking": "low"
+          }
+        ],
+        "storyReviewer": [
+          {
+            "provider": "pi",
+            "model": "openai-codex/gpt-5.5",
+            "thinking": "high"
+          }
+        ]
+      }
+    }
+  },
+  "workflowMetadata": {
+    "project": {
+      "grillItAway": {
+        "kind": "package",
+        "sourceType": "npm",
+        "packageName": "@trailstep/create-flows",
+        "requestedSpec": "@trailstep/create-flows@latest",
+        "requestedRange": "latest",
+        "installScope": "project",
+        "targetRef": "@trailstep/create-flows#grillItAway",
+        "workflowName": "grillItAway",
+        "exportName": "grillItAway",
+        "resolvedVersion": "0.1.0",
+        "installOwnership": "trailstep-installed"
+      },
+      "takeItAway": {
+        "kind": "package",
+        "sourceType": "npm",
+        "packageName": "@trailstep/create-flows",
+        "requestedSpec": "@trailstep/create-flows@latest",
+        "requestedRange": "latest",
+        "installScope": "project",
+        "targetRef": "@trailstep/create-flows#takeItAway",
+        "workflowName": "takeItAway",
+        "exportName": "takeItAway",
+        "resolvedVersion": "0.1.0",
+        "installOwnership": "trailstep-installed"
+      }
+    }
+  }
+}

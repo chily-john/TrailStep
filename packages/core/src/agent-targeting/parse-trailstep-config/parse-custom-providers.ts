@@ -14,6 +14,10 @@ export function parseCustomProviders(
 ): Record<string, TrailStepCustomProviderConfig> {
   const customProviders: Record<string, TrailStepCustomProviderConfig> = {};
 
+  if (value === undefined) {
+    return customProviders;
+  }
+
   if (!isRecord(value)) {
     diagnostics.push("customProviders must be an object.");
     return customProviders;

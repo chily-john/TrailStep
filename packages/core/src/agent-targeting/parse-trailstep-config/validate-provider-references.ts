@@ -27,7 +27,7 @@ export function validateProviderReferences(options: {
     throw new TrailStepFailureError({
       code: "agent_provider_unknown",
       message:
-        "One or more agent targets reference a provider that is neither a built-in provider nor a declared customProviders entry.",
+        "One or more agent targets reference a provider that is neither a built-in provider nor a declared customProviders/providers entry.",
       details: { diagnostics: providerViolations },
     });
   }
@@ -61,7 +61,7 @@ function validateTargetReferences(
 
     if (!providerNames.has(target.provider) && !isProviderRegistryKey(target.provider)) {
       diagnostics.push(
-        `${path}[${index}].provider references unknown provider '${target.provider}'. Declare it under customProviders or use a built-in provider.`,
+        `${path}[${index}].provider references unknown provider '${target.provider}'. Declare it under customProviders/providers or use a built-in provider.`,
       );
     }
   }

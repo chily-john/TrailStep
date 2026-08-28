@@ -228,6 +228,98 @@ describe("runWorkingAgentCommand", () => {
     });
   });
 
+  it("runs a manifest-only working provider with rendered args and reads the provider output file", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-manifest-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-manifest-provider-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "manifest dispatch" },
+      runName: "working-agent-manifest-provider-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        providers: {
+          "echo-agent": {
+            source: { type: "local-manifest", path: "./echo-agent.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "echo-agent",
+              displayName: "Echo Agent",
+              working: {
+                supported: true,
+                command: "echo-agent",
+                args: [
+                  "--prompt-file",
+                  "{{promptFile}}",
+                  "--output-file",
+                  "{{outputFile}}",
+                  "--model",
+                  "{{model}}",
+                  "--thinking",
+                  "{{thinking}}",
+                ],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false, reason: "No interactive mode" },
+              model: { supported: true },
+              thinking: { supported: true, levels: ["high"] },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "echo-agent", model: "tiny", thinking: "high" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        await writeFile(request.outputFile, JSON.stringify({ answer: "from manifest" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({ answer: "from manifest" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      command: "echo-agent",
+      cwd,
+      shell: false,
+      stdio: "inherit",
+      model: "tiny",
+    });
+    expect(requests[0]?.args).toEqual([
+      "--prompt-file",
+      requests[0]?.promptFile,
+      "--output-file",
+      requests[0]?.outputFile,
+      "--model",
+      "tiny",
+      "--thinking",
+      "high",
+    ]);
+    expect(requests[0]?.promptFile).toContain(join("steps", "0001-review", "prompt.md"));
+    expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
+  });
+
   it("runs custom working conditional args without empty model or thinking overrides", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-conditional-"));
     const requests: WorkingAgentProcessRequest[] = [];

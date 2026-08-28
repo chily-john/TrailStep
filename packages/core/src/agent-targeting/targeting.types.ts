@@ -1,4 +1,5 @@
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
+import type { TrailStepProviderRegistration } from "../providers/provider-manifest.js";
 import type { RetryPolicyInput } from "../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../runtime/timeout/timeout-policy.js";
 
@@ -62,6 +63,7 @@ export interface TrailStepWorkflowConfig {
 export interface TrailStepConfig {
   readonly version: 1;
   readonly customProviders: Readonly<Record<string, TrailStepCustomProviderConfig>>;
+  readonly providers?: Readonly<Record<string, TrailStepProviderRegistration>>;
   readonly agents: TrailStepAgentMappings;
   readonly settings?: TrailStepSettings;
   readonly workflows?: Readonly<Record<string, TrailStepWorkflowConfig>>;

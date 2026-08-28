@@ -12,6 +12,7 @@ import type { ProviderWorkingRunner } from "../../../known-cli-providers/registr
 import type { WorkingAgentProcessRunner } from "../../../runtime/run-workflow/run-workflow.types.js";
 import type { WorkingAgentFiles } from "../artifacts/resolve-step-agent-files.js";
 import { runCustomWorkingProvider } from "./custom-provider/run-custom-working-provider.js";
+import { runManifestWorkingProvider } from "./manifest-provider/run-manifest-working-provider.js";
 import { runRegistryWorkingProvider } from "./registry-provider/run-registry-working-provider.js";
 
 export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options: {
@@ -42,6 +43,19 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       renderedPrompt: options.renderedPrompt,
       cwd: options.cwd,
       providerWorkingRunner: options.providerWorkingRunner,
+      target: options.target,
+      files: options.files,
+      signal: options.signal,
+    });
+  }
+
+  if (options.config.providers?.[options.target.provider] !== undefined) {
+    return runManifestWorkingProvider({
+      config: options.config,
+      step: options.step,
+      role: options.role,
+      cwd: options.cwd,
+      runner: options.runner,
       target: options.target,
       files: options.files,
       signal: options.signal,

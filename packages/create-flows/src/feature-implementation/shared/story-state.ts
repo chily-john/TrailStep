@@ -142,13 +142,27 @@ export async function resetActiveStoryStartCommit(): Promise<void> {
   await state.set(STORY_STATE_KEYS.activeStoryStartCommit, null);
 }
 
+interface ResetStoryLocalStateOptions {
+  readonly preserveActiveStoryStartCommit?: boolean;
+  readonly preserveLatestStoryRouterState?: boolean;
+  readonly preserveStoryBaseline?: boolean;
+}
+
 export async function resetStoryLocalState(
-  options: {
-    readonly preserveActiveStoryStartCommit?: boolean;
-    readonly preserveLatestStoryRouterState?: boolean;
-    readonly preserveStoryBaseline?: boolean;
-  } = {},
+  options: ResetStoryLocalStateOptions = {},
 ): Promise<void> {
+  await resetStoryLocalStateFields(options);
+}
+
+export async function resetStoryLocalStateForNextStory(): Promise<void> {
+  await resetStoryLocalStateFields({
+    preserveActiveStoryStartCommit: false,
+    preserveLatestStoryRouterState: false,
+    preserveStoryBaseline: false,
+  });
+}
+
+async function resetStoryLocalStateFields(options: ResetStoryLocalStateOptions): Promise<void> {
   await state.set(STORY_STATE_KEYS.attemptsByPhase, {});
   if (!options.preserveStoryBaseline) {
     await state.set(STORY_STATE_KEYS.storyBaseline, null);
@@ -166,10 +180,6 @@ export async function resetStoryLocalState(
     await state.set(STORY_STATE_KEYS.latestStoryRouterState, null);
   }
   await state.set(STORY_STATE_KEYS.blockedReason, null);
-}
-
-export async function resetStoryLocalStateForNextStory(): Promise<void> {
-  await resetStoryLocalState();
 }
 
 export async function loadStoryReviewGitContext(): Promise<StoryReviewGitContext> {

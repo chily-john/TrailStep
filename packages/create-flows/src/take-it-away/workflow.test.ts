@@ -715,6 +715,7 @@ describe("take-it-away", () => {
 
   it("starts the next story with clean story-local state and retry budgets", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    const runName = "take-it-away-clean-next-story-state-run";
     await git(cwd, ["init"]);
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
@@ -731,6 +732,7 @@ describe("take-it-away", () => {
     const storyOneImplementationToken = "STORY_001_IMPLEMENTATION_TOKEN";
     const storyOneValidationToken = "STORY_001_VALIDATION_TOKEN";
     const storyOneReviewToken = "STORY_001_REVIEW_TOKEN";
+    const storyOneContextToken = "STORY_001_CONTEXT_TOKEN";
     const storyTwoContextToken = "STORY_002_CONTEXT_TOKEN";
     const storyTwoExplorationToken = "STORY_002_EXPLORATION_TOKEN";
     const storyTwoRedToken = "STORY_002_RED_TOKEN";
@@ -785,7 +787,7 @@ describe("take-it-away", () => {
     const result = await runWorkflow({
       workflow: takeItAway,
       input: { conversation: "We want a widget exporter." },
-      runName: "take-it-away-clean-next-story-state-run",
+      runName,
       cwd,
       trailstepConfig: {
         version: 1,
@@ -817,7 +819,7 @@ describe("take-it-away", () => {
               "stories: Story 001",
               "phases: explore-story",
               "",
-              "STORY_001_CONTEXT_TOKEN",
+              storyOneContextToken,
               "",
               "</context>",
               "",
@@ -960,7 +962,7 @@ describe("take-it-away", () => {
     expect(storyTwoImplementPrompt).toContain("Story 002: Add exporter observability");
     expect(storyTwoImplementPrompt).toContain(storyTwoExplorationToken);
     expect(storyTwoImplementPrompt).toContain(storyTwoRedToken);
-    for (const staleToken of staleStoryOneTokens) {
+    for (const staleToken of [storyOneContextToken, ...staleStoryOneTokens]) {
       expect(storyTwoImplementPrompt).not.toContain(staleToken);
     }
 
@@ -3415,6 +3417,16 @@ describe("take-it-away", () => {
     expect(implementedStoryPrompts).toHaveLength(1);
     expect(implementedStoryPrompts[0]).toContain("Story 001");
     expect(implementedStoryPrompts[0]).not.toContain("Story 002");
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      activeStory?: { content?: string } | null;
+      completedStories?: string[];
+      storyQueue?: Array<{ content?: string }>;
+    };
+    expect(state.completedStories).toEqual([]);
+    expect(state.activeStory?.content).toContain("Story 001: Build the widget exporter core");
+    expect(state.storyQueue).toHaveLength(1);
+    expect(state.storyQueue?.[0]?.content).toContain("Story 002: Add exporter observability");
   });
 
   it("commits each passing reviewed story when story commit mode is enabled", async () => {

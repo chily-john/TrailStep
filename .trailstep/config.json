@@ -1,4 +1,78 @@
 {
+  "version": 1,
+  "customProviders": {},
+  "agents": {
+    "grillingAgent": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4-mini",
+        "thinking": "medium"
+      }
+    ],
+    "featureWriter": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4-mini",
+        "thinking": "medium"
+      }
+    ],
+    "planner": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ],
+    "reviewer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ],
+    "storyExplorer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.3-codex-spark",
+        "thinking": "low"
+      }
+    ],
+    "testWriter": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4",
+        "thinking": "medium"
+      }
+    ],
+    "storyImplementer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4",
+        "thinking": "medium"
+      }
+    ],
+    "storyDoctor": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ],
+    "validator": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.3-codex-spark",
+        "thinking": "low"
+      }
+    ],
+    "storyReviewer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ]
+  },
   "workflows": {
     "project": {
       "grillItAway": "@trailstep/create-flows#grillItAway",
@@ -8,58 +82,47 @@
       "agents": {
         "featureWriter": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4-mini",
-            "thinking": "medium"
+            "ref": "featureWriter"
           }
         ],
         "planner": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.5",
-            "thinking": "high"
+            "ref": "planner"
           }
         ],
         "reviewer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.5",
-            "thinking": "high"
+            "ref": "reviewer"
           }
         ],
         "storyExplorer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.3-codex-spark",
-            "thinking": "low"
+            "ref": "storyExplorer"
           }
         ],
         "testWriter": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4",
-            "thinking": "medium"
+            "ref": "testWriter"
           }
         ],
         "storyImplementer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4",
-            "thinking": "medium"
+            "ref": "storyImplementer"
+          }
+        ],
+        "storyDoctor": [
+          {
+            "ref": "storyDoctor"
           }
         ],
         "validator": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.3-codex-spark",
-            "thinking": "low"
+            "ref": "validator"
           }
         ],
         "storyReviewer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.5",
-            "thinking": "high"
+            "ref": "storyReviewer"
           }
         ]
       }
@@ -68,65 +131,52 @@
       "agents": {
         "grillingAgent": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4-mini",
-            "thinking": "medium"
+            "ref": "grillingAgent"
           }
         ],
         "featureWriter": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4-mini",
-            "thinking": "medium"
+            "ref": "featureWriter"
           }
         ],
         "planner": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.5",
-            "thinking": "high"
+            "ref": "planner"
           }
         ],
         "reviewer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.5",
-            "thinking": "high"
+            "ref": "reviewer"
           }
         ],
         "storyExplorer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.3-codex-spark",
-            "thinking": "low"
+            "ref": "storyExplorer"
           }
         ],
         "testWriter": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4",
-            "thinking": "medium"
+            "ref": "testWriter"
           }
         ],
         "storyImplementer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.4",
-            "thinking": "medium"
+            "ref": "storyImplementer"
+          }
+        ],
+        "storyDoctor": [
+          {
+            "ref": "storyDoctor"
           }
         ],
         "validator": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.3-codex-spark",
-            "thinking": "low"
+            "ref": "validator"
           }
         ],
         "storyReviewer": [
           {
-            "provider": "pi",
-            "model": "openai-codex/gpt-5.5",
-            "thinking": "high"
+            "ref": "storyReviewer"
           }
         ]
       }

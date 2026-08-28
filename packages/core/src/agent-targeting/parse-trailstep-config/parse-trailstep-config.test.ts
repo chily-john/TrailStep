@@ -3,6 +3,39 @@ import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import { parseTrailStepConfig } from "./parse-trailstep-config.js";
 
 describe("parseTrailStepConfig", () => {
+  it("parses top-level provider registrations and validates agent targets against providers", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      providers: {
+        "echo-agent": {
+          source: { type: "local-manifest", path: "./echo-provider.json" },
+          manifest: {
+            schemaVersion: 1,
+            id: "echo-agent",
+            displayName: "Echo Agent",
+            working: {
+              supported: true,
+              command: "echo-agent",
+              args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+              prompt: { kind: "prompt-file" },
+              output: { style: "provider-output-file" },
+            },
+            interactive: { supported: false, reason: "No interactive mode" },
+            model: { supported: false },
+            thinking: { supported: false },
+          },
+        },
+      },
+      agents: {
+        default: [{ provider: "echo-agent" }],
+      },
+    });
+
+    expect(parsed.providers["echo-agent"]?.manifest.displayName).toBe("Echo Agent");
+    expect(parsed.agents.default).toEqual([{ provider: "echo-agent" }]);
+    expect(parsed.customProviders).toEqual({});
+  });
+
   it("parses literal unified agent entries and custom providers", () => {
     const parsed = parseTrailStepConfig({
       version: 1,

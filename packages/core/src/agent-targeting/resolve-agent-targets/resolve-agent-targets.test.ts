@@ -4,15 +4,17 @@ import { parseTrailStepConfig } from "../parse-trailstep-config/parse-trailstep-
 import { resolveAgentTargets } from "./resolve-agent-targets.js";
 
 describe("TrailStep config", () => {
-  it("resolves the unified precedence chain from workflow role, size, then default", () => {
+  it("resolves the unified precedence chain from workflow role, top-level role, size, then default", () => {
     const config = parseTrailStepConfig({
       version: 1,
       customProviders: {
         workflowReviewer: customProvider("workflow-reviewer"),
+        roleReviewer: customProvider("role-reviewer"),
         mediumReviewer: customProvider("medium-reviewer"),
         defaultReviewer: customProvider("default-reviewer"),
       },
       agents: {
+        reviewer: [target("roleReviewer")],
         medium: [target("mediumReviewer")],
         default: [target("defaultReviewer")],
       },
@@ -32,7 +34,33 @@ describe("TrailStep config", () => {
         roleName: "reviewer",
         roleSize: "medium",
       }),
-    ).toEqual([target("workflowReviewer"), target("mediumReviewer"), target("defaultReviewer")]);
+    ).toEqual([
+      target("workflowReviewer"),
+      target("roleReviewer"),
+      target("mediumReviewer"),
+      target("defaultReviewer"),
+    ]);
+  });
+
+  it("resolves a workflow role from the top-level agent with the same name", () => {
+    const config = parseTrailStepConfig({
+      version: 1,
+      customProviders: {
+        featureWriter: customProvider("feature-writer"),
+      },
+      agents: {
+        featureWriter: [target("featureWriter")],
+      },
+    });
+
+    expect(
+      resolveAgentTargets({
+        config,
+        workflowId: "take-it-away",
+        roleName: "featureWriter",
+        roleSize: "medium",
+      }),
+    ).toEqual([target("featureWriter")]);
   });
 
   it("falls back from empty size mapping to agents.default", () => {

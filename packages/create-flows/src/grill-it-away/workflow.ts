@@ -44,6 +44,12 @@ export const grillItAway = defineWorkflow({
       thinking: "medium",
       description: "Implements the smallest green slice for the active story.",
     },
+    storyDoctor: {
+      size: "large",
+      thinking: "high",
+      description:
+        "Diagnoses and repairs repeated active-story validation failures before the workflow exhausts retries.",
+    },
     validator: {
       size: "small",
       thinking: "low",

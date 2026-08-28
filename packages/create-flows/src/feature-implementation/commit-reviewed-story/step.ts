@@ -5,6 +5,7 @@ import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schem
 import {
   type ActiveStoryStartCommit,
   resetActiveStoryStartCommit,
+  resetStoryLocalStateForNextStory,
   STORY_STATE_KEYS,
 } from "../shared/story-state.js";
 import { runGit } from "./run-git.js";
@@ -98,12 +99,22 @@ async function commitReviewedStoryChanges(
     };
   }
 
+  const storyTitle = extractStoryTitle(activeStory.content, 1);
+
   if (staged.stdout.trim().length === 0) {
     const baseline = await state.get<ActiveStoryStartCommit | null>(
       STORY_STATE_KEYS.activeStoryStartCommit,
     );
     const head = await runGit(["rev-parse", "HEAD"], cwd);
     if (baseline?.commit && head.ok && head.stdout !== baseline.commit) {
+      return { ok: true };
+    }
+
+    const headSubject = await runGit(["log", "-1", "--format=%s"], cwd);
+    if (
+      headSubject.ok &&
+      headSubject.stdout === truncateCommitSubject(`trailstep: ${storyTitle}`)
+    ) {
       return { ok: true };
     }
 
@@ -121,7 +132,6 @@ async function commitReviewedStoryChanges(
     };
   }
 
-  const storyTitle = extractStoryTitle(activeStory.content, 1);
   const commit = await runGit(
     [
       "commit",
@@ -151,12 +161,14 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     ...completed,
     extractStoryTitle(activeStory.content, completed.length + 1),
   ];
-  await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
 
   const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
   const [nextStory, ...remaining] = storyQueue;
+  const [nextStoryContext = "", ...remainingStoryContexts] =
+    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
 
   if (!nextStory) {
+    await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
     await state.set(STORY_STATE_KEYS.activeStory, null);
     await state.set(STORY_STATE_KEYS.activeStoryContext, null);
     await state.set(STORY_STATE_KEYS.storyContextQueue, []);
@@ -185,14 +197,12 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     }
   }
 
-  const [nextStoryContext = "", ...remainingStoryContexts] =
-    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
+  await resetStoryLocalStateForNextStory();
+  await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
   await state.set(STORY_STATE_KEYS.storyQueue, remaining);
   await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
   await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
-  await state.set(STORY_STATE_KEYS.storyBaseline, null);
-  await resetActiveStoryStartCommit();
   const { storyRouterStep } = await import("../story-router/step.js");
   return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
 }

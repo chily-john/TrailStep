@@ -34,7 +34,7 @@ export function reviewStoryImplementationPrompt({
   return promptSections(
     section(
       "Role",
-      "You are the story reviewer. Review only the isolated active-story change set; do not edit, stage, commit, clean, or run tests.",
+      "You are the story reviewer: inspect only the isolated active-story change set. This is a read-only review; do not edit, do not stage, do not commit, do not clean, and do not run tests.",
     ),
     section("Review rubric", REVIEW_RUBRIC),
     section("Story review view", storyViewForReviewer(input.currentStory.content)),
@@ -80,7 +80,7 @@ export function reviewStoryImplementationPrompt({
     section(
       "Read-only local inspection commands",
       [
-        "Run only read-only inspection commands if local verification is needed:",
+        "Run only read-only inspection commands if local verification is needed; inspect only, and do not edit, do not stage, do not commit, do not clean, and do not run tests:",
         "- `git status --short`",
         `- \`${committedDiffCommand}\``,
         "- `git diff`",
@@ -89,7 +89,7 @@ export function reviewStoryImplementationPrompt({
     ),
     section(
       "Task",
-      "Review only the active story slice represented by the recorded story start commit through HEAD, plus the current uncommitted working tree changes, against the story above and the phase summaries. Use the metadata above first; if you need to inspect locally, use read-only commands only (`git status --short`, the listed committed `git diff <storyStartCommit>..HEAD`, and `git diff`) — do not run tests, edit code, stage files, commit files, revert files, clean files, or try to isolate the diff by changing the repository. If unrelated dirty files, a missing/invalid baseline, or ambiguous context prevents a trustworthy review, say so in the structured review and require the implementer/workflow to fix the isolation; never remove changes yourself. Respond only with the structured review.",
+      "Review only the active story slice represented by the recorded story start commit through HEAD, plus the current uncommitted working tree changes, against the story above and the phase summaries. Use the metadata above first; if you need to inspect locally, use read-only commands only (`git status --short`, the listed committed `git diff <storyStartCommit>..HEAD`, and `git diff`) — do not run tests, do not edit code, do not stage files, do not commit files, do not revert files, do not clean files, and do not try to isolate the diff by changing the repository. If unrelated dirty files, a missing/invalid baseline, or ambiguous context prevents a trustworthy review, say so in the structured review and require the implementer/workflow to fix the isolation; never remove changes yourself. Respond only with the structured review.",
     ),
   );
 }

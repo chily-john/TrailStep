@@ -96,6 +96,22 @@ The important TrailStep pattern is not the specific feature methodology; it is t
 - stories are split so implementation work happens one story at a time
 - failed runs can be retried through TrailStep instead of restarting the entire conversation
 
+### Reliability and recovery
+
+After `split-implementation-stories`, the story router owns active-story routing. It records the active story, route, retry counts, retry limit, and latest concise review or validation evidence so retryable story work can resume from `.trailstep/runs/<runName>/` artifacts.
+
+The review retry cap is 3 failed reviews. Failed reviews route back through `implement-green` until that finite cap is reached; exhausted review routes fail explicitly and leave router state available for inspection.
+
+The validation retry cap is 3 failed validations. Validation failures first route back through `implement-green`; the story-doctor threshold is 2 validation failures, so repeated failures escalate to `story-doctor` before the finite cap is exhausted. Exhausted validation routes fail explicitly and preserve their router state.
+
+Blocked story phases fail explicitly without guessing a next step. Resolve the underlying blocked condition, then recover the run with `trailstep retry` or `trailstep continue`; do not manually edit `.trailstep/runs` state files.
+
+Starting a new story resets per-story clean state and retry budgets, including phase attempts and latest phase summaries, while preserving completed-story progress and the remaining story queue.
+
+Reviewer prompt hygiene keeps reviews bounded: reviewer prompts include the active story, concise phase summaries, file lists, git status, the story baseline, and committed/uncommitted diffstat, without full diff bodies or hunks.
+
+`TRAILSTEP_STORY_COMMIT_MODE` controls automatic story commits. Set it to `1`, `true`, `enabled`, or `worktree` to have `commit-reviewed-story` create one commit per passing story; otherwise TrailStep requires a clean story boundary before prompting the next story.
+
 ## Agent roles
 
 The workflows declare role defaults so TrailStep can target different kinds of agent work:

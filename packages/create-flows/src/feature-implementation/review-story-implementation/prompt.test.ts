@@ -24,7 +24,7 @@ const activeStory = {
 };
 
 describe("reviewStoryImplementationPrompt", () => {
-  it("uses reviewer-only evidence and metadata without full diff bodies", () => {
+  it("keeps reviewer instructions read-only and renders metadata without diff hunks", () => {
     const prompt = reviewStoryImplementationPrompt({
       input: {
         currentStory: activeStory,
@@ -37,12 +37,12 @@ describe("reviewStoryImplementationPrompt", () => {
         validationCommands: [{ command: "pnpm widget:test", result: "Passed." }],
         gitContext: {
           storyStartCommit: "abc123",
-          changedFiles: ["src/widget.ts"],
+          changedFiles: ["src/widget.ts", "src/widget.test.ts"],
           committedChangedFiles: ["src/widget.ts"],
-          uncommittedChangedFiles: [],
+          uncommittedChangedFiles: ["src/widget.test.ts"],
           committedDiffStat: "src/widget.ts | 2 ++",
-          uncommittedDiffStat: "",
-          statusShort: "",
+          uncommittedDiffStat: "src/widget.test.ts | 4 ++++",
+          statusShort: " M src/widget.test.ts",
           warnings: [],
         },
       },
@@ -52,9 +52,27 @@ describe("reviewStoryImplementationPrompt", () => {
     expect(prompt).toContain("Review rubric");
     expect(prompt).toContain("Red Phase");
     expect(prompt).toContain("Green Phase");
-    expect(prompt).toContain("git diff abc123..HEAD");
+    expect(prompt).toContain("Recorded story start commit: abc123");
+    expect(prompt).toContain("Changed files:");
+    expect(prompt).toContain("- src/widget.ts");
+    expect(prompt).toContain("- src/widget.test.ts");
+    expect(prompt).toContain("Committed changed files:");
+    expect(prompt).toContain("Uncommitted changed files:");
+    expect(prompt).toContain("Committed diffstat");
     expect(prompt).toContain("src/widget.ts | 2 ++");
+    expect(prompt).toContain("Uncommitted diffstat");
+    expect(prompt).toContain("src/widget.test.ts | 4 ++++");
+    expect(prompt).toContain("git status --short");
+    expect(prompt).toContain("inspect only");
+    expect(prompt).toContain("do not edit");
+    expect(prompt).toContain("do not stage");
+    expect(prompt).toContain("do not commit");
+    expect(prompt).toContain("do not clean");
+    expect(prompt).toContain("do not run tests");
+    expect(prompt).not.toContain("diff --git");
     expect(prompt).not.toContain("@@");
+    expect(prompt).not.toContain("COMMITTED_DIFF_PAYLOAD_TOKEN");
+    expect(prompt).not.toContain("UNCOMMITTED_DIFF_PAYLOAD_TOKEN");
     expect(prompt).not.toContain("Reviewer responsibilities");
     expect(prompt).not.toContain("Feature workflow methodology");
   });

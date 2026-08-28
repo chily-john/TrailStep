@@ -1,6 +1,6 @@
 import type { Document } from "@trailstep/authoring";
 import { fail, state, step } from "@trailstep/authoring";
-import type { ContinuationResult } from "@trailstep/core";
+import type { ContinuationResult, Failure } from "@trailstep/core";
 import { implementGreenStep } from "../implement-green/step.js";
 import {
   MAX_STORY_REVIEW_ATTEMPTS,
@@ -43,15 +43,35 @@ interface RouterRetryCounts {
   readonly validationRetryCount: number;
 }
 
+type RetryRouteSourceReason = "failed-review" | "failed-validation";
+
+class StoryRouterFailureError extends Error {
+  readonly failure: Failure;
+
+  constructor(failure: Failure) {
+    super(failure.message);
+    this.name = "StoryRouterFailureError";
+    this.failure = failure;
+  }
+}
+
 export const storyRouterStep = step({ id: "story-router" }).do(
   async ({ currentStory, reason }: StoryRouterInput): Promise<ContinuationResult> => {
     await state.set(STORY_STATE_KEYS.activePhase, "story-router");
     await incrementStoryPhaseAttempt("story-router");
 
     if (reason === "failed-review") {
+      const replayedRoute = await replayPersistedRetryRoute(reason, currentStory);
+      if (replayedRoute) {
+        return replayedRoute;
+      }
       return routeFailedReview(currentStory);
     }
     if (reason === "failed-validation") {
+      const replayedRoute = await replayPersistedRetryRoute(reason, currentStory);
+      if (replayedRoute) {
+        return replayedRoute;
+      }
       return routeFailedValidation(currentStory);
     }
     if (typeof reason === "object" && reason.type === "blocked") {
@@ -337,10 +357,7 @@ async function replayBlockedStoryRoute(): Promise<ContinuationResult | null> {
     });
   }
 
-  if (
-    routerState.activeStory.path !== activeStory.path ||
-    routerState.activeStory.content !== activeStory.content
-  ) {
+  if (!storiesMatch(routerState.activeStory, activeStory)) {
     return fail({
       code: "story_router_blocked_state_mismatch",
       message:
@@ -352,6 +369,319 @@ async function replayBlockedStoryRoute(): Promise<ContinuationResult | null> {
   await state.set(STORY_STATE_KEYS.activeStory, activeStory);
   await state.set(STORY_STATE_KEYS.blockedReason, routerState.blockedReason ?? null);
   return fail(formatBlockedRouteFailure(routerState));
+}
+
+async function replayPersistedRetryRoute(
+  reason: RetryRouteSourceReason,
+  currentStory?: Document,
+): Promise<ContinuationResult | null> {
+  const routerState = await state.get<Partial<StoryRouterState> | null>(
+    STORY_STATE_KEYS.latestStoryRouterState,
+  );
+  if (!routerState || !isPersistedRetryRoute(routerState.route)) {
+    return null;
+  }
+
+  if (routerState.source?.reason !== reason) {
+    return null;
+  }
+
+  const activeStory =
+    (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? currentStory;
+  if (!activeStory) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because no active story is available.",
+      { routerState },
+    );
+  }
+
+  if (!routerState.activeStory) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because the durable router state is missing its active story.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (!storiesMatch(routerState.activeStory, activeStory)) {
+    return retryStateMismatch(routerState, activeStory);
+  }
+
+  const shapeFailure = validatePersistedRetryRouteShape(routerState, reason, activeStory);
+  if (shapeFailure) {
+    return shapeFailure;
+  }
+
+  if (routerState.route === "exhausted") {
+    return fail(formatExhaustedRetryRouteFailure(routerState, activeStory));
+  }
+
+  if (!(await persistedRetryEvidenceMatches(reason, routerState))) {
+    return null;
+  }
+
+  if (routerState.route === "retrying") {
+    await state.set(STORY_STATE_KEYS.activeStory, activeStory);
+    await state.set(STORY_STATE_KEYS.activePhase, "implement-green");
+    const attempt = await incrementStoryPhaseAttempt("implement-green");
+    return implementGreenStep({
+      currentStory: activeStory,
+      explorationBrief: (await state.get(STORY_STATE_KEYS.latestExplorationBrief)) ?? undefined,
+      redTestSummary: (await state.get(STORY_STATE_KEYS.latestRedTestSummary)) ?? undefined,
+      attempt,
+      previousReviewSummary:
+        reason === "failed-review" ? routerState.latestReview?.summary : undefined,
+      requiredImprovements:
+        reason === "failed-review" ? routerState.latestReview?.requiredImprovements : undefined,
+      failedValidationSummary:
+        reason === "failed-validation" ? routerState.latestValidation?.summary : undefined,
+      failedValidationCommands:
+        reason === "failed-validation" ? routerState.latestValidation?.commands : undefined,
+    });
+  }
+
+  if (routerState.route === "doctoring") {
+    await state.set(STORY_STATE_KEYS.activeStory, activeStory);
+    await state.set(STORY_STATE_KEYS.activePhase, "story-doctor");
+    await incrementStoryPhaseAttempt("story-doctor");
+    return storyDoctorStep({
+      currentStory: activeStory,
+      explorationBrief: (await state.get(STORY_STATE_KEYS.latestExplorationBrief)) ?? undefined,
+      redTestSummary: (await state.get(STORY_STATE_KEYS.latestRedTestSummary)) ?? undefined,
+      implementationSummary:
+        (await state.get(STORY_STATE_KEYS.latestImplementationSummary)) ?? undefined,
+      failedValidationSummary: routerState.latestValidation?.summary ?? "",
+      failedValidationCommands: routerState.latestValidation?.commands ?? [],
+      validationRetryCount: routerState.validationRetryCount ?? 0,
+      retryLimit: routerState.retryLimit ?? MAX_STORY_VALIDATION_ATTEMPTS,
+    });
+  }
+
+  return inconsistentRetryState(
+    "Cannot replay persisted story retry route with an unknown route.",
+    {
+      storyPath: activeStory.path,
+      routerState,
+    },
+  );
+}
+
+function isPersistedRetryRoute(
+  route: unknown,
+): route is Extract<StoryRouterState["route"], "retrying" | "doctoring" | "exhausted"> {
+  return route === "retrying" || route === "doctoring" || route === "exhausted";
+}
+
+function validatePersistedRetryRouteShape(
+  routerState: Partial<StoryRouterState>,
+  reason: RetryRouteSourceReason,
+  activeStory: Document,
+): ContinuationResult | null {
+  if (typeof routerState.source?.code !== "string" || routerState.source.code.length === 0) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because the durable router state is missing its source code.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (!isNonNegativeInteger(routerState.reviewRetryCount)) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because the review retry count is missing or invalid.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (!isNonNegativeInteger(routerState.validationRetryCount)) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because the validation retry count is missing or invalid.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (!isPositiveInteger(routerState.retryLimit)) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because the retry limit is missing or invalid.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (routerState.route === "retrying" && routerState.targetPhase !== "implement-green") {
+    return inconsistentRetryState(
+      "Cannot replay persisted story retry route because retrying routes must target implement-green.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (routerState.route === "doctoring" && routerState.targetPhase !== "story-doctor") {
+    return inconsistentRetryState(
+      "Cannot replay persisted story doctor route because doctoring routes must target story-doctor.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (reason === "failed-review" && !hasReviewMetadata(routerState.latestReview)) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story review retry route because latest review evidence is missing or invalid.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  if (reason === "failed-validation" && !hasValidationMetadata(routerState.latestValidation)) {
+    return inconsistentRetryState(
+      "Cannot replay persisted story validation retry route because latest validation evidence is missing or invalid.",
+      { storyPath: activeStory.path, routerState },
+    );
+  }
+
+  return null;
+}
+
+async function persistedRetryEvidenceMatches(
+  reason: RetryRouteSourceReason,
+  routerState: Partial<StoryRouterState>,
+): Promise<boolean> {
+  return routerState.source?.reason === reason && routerStateEvidenceMatchesLatest(routerState);
+}
+
+async function routerStateEvidenceMatchesLatest(
+  routerState: Partial<StoryRouterState>,
+): Promise<boolean> {
+  if (routerState.source?.reason === "failed-review") {
+    if (!hasReviewMetadata(routerState.latestReview)) {
+      return false;
+    }
+
+    const review = await state.get<ReviewResult | null>(STORY_STATE_KEYS.latestReviewResult);
+    return (
+      !!review &&
+      routerState.latestReview.score === review.score &&
+      routerState.latestReview.summary === review.summary &&
+      stringArraysEqual(routerState.latestReview.requiredImprovements, review.requiredImprovements)
+    );
+  }
+
+  if (routerState.source?.reason === "failed-validation") {
+    if (!hasValidationMetadata(routerState.latestValidation)) {
+      return false;
+    }
+
+    const validation = await state.get<ValidateStoryOutput | null>(
+      STORY_STATE_KEYS.latestValidationSummary,
+    );
+    return (
+      !!validation &&
+      routerState.latestValidation.summary === validation.summary &&
+      validationCommandArraysEqual(routerState.latestValidation.commands, validation.commands)
+    );
+  }
+
+  return true;
+}
+
+function hasReviewMetadata(value: unknown): value is NonNullable<StoryRouterState["latestReview"]> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "score" in value &&
+    typeof value.score === "number" &&
+    "summary" in value &&
+    typeof value.summary === "string" &&
+    "requiredImprovements" in value &&
+    Array.isArray(value.requiredImprovements) &&
+    value.requiredImprovements.every((item) => typeof item === "string")
+  );
+}
+
+function hasValidationMetadata(
+  value: unknown,
+): value is NonNullable<StoryRouterState["latestValidation"]> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "summary" in value &&
+    typeof value.summary === "string" &&
+    "commands" in value &&
+    Array.isArray(value.commands) &&
+    value.commands.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "command" in item &&
+        typeof item.command === "string" &&
+        "result" in item &&
+        typeof item.result === "string",
+    )
+  );
+}
+
+function storiesMatch(left: Document, right: Document): boolean {
+  return left.path === right.path && left.content === right.content;
+}
+
+function stringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function validationCommandArraysEqual(
+  left: readonly { readonly command: string; readonly result: string }[],
+  right: readonly { readonly command: string; readonly result: string }[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (item, index) =>
+        item.command === right[index]?.command && item.result === right[index]?.result,
+    )
+  );
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function retryStateMismatch(routerState: Partial<StoryRouterState>, activeStory: Document): never {
+  throw new StoryRouterFailureError({
+    code: "story_router_retry_state_mismatch",
+    message:
+      "Cannot replay persisted story retry route because durable router state does not match the active story.",
+    details: { storyPath: activeStory.path, routerState },
+  });
+}
+
+function inconsistentRetryState(message: string, details: Record<string, unknown>): never {
+  throw new StoryRouterFailureError({
+    code: "story_router_inconsistent_retry_state",
+    message,
+    details,
+  });
+}
+
+function formatExhaustedRetryRouteFailure(
+  routerState: Partial<StoryRouterState>,
+  activeStory: Document,
+): {
+  code: string;
+  message: string;
+  details: Record<string, unknown>;
+} {
+  const exhaustedReason =
+    routerState.exhaustedReason ?? reasonForSource(routerState.source?.reason);
+  const retryCount =
+    exhaustedReason === "review" ? routerState.reviewRetryCount : routerState.validationRetryCount;
+  return {
+    code: routerState.source?.code ?? `story_${exhaustedReason}_exhausted`,
+    message: `Story ${exhaustedReason} retry route is already exhausted (${retryCount}/${routerState.retryLimit}).`,
+    details: { storyPath: activeStory.path, routerState },
+  };
+}
+
+function reasonForSource(
+  reason: StoryRouterState["source"]["reason"] | undefined,
+): "review" | "validation" {
+  return reason === "failed-review" ? "review" : "validation";
 }
 
 async function persistRetryRouterState(input: {
@@ -412,6 +742,22 @@ async function loadRouterRetryCounts(input: {
     routerState.activeStory.content === activeStory.content;
 
   if (routerStateMatchesActiveStory) {
+    const fallbackCounts = {
+      reviewRetryCount: phaseAttemptFallback(attemptsByPhase, input.reviewPhaseFallback),
+      validationRetryCount: phaseAttemptFallback(attemptsByPhase, input.validationPhaseFallback),
+    };
+    const replayingSameReviewEvidence =
+      input.reviewPhaseFallback && routerState.source?.reason === "failed-review";
+    const replayingSameValidationEvidence =
+      input.validationPhaseFallback && routerState.source?.reason === "failed-validation";
+
+    if (
+      (replayingSameReviewEvidence || replayingSameValidationEvidence) &&
+      !(await routerStateEvidenceMatchesLatest(routerState))
+    ) {
+      return fallbackCounts;
+    }
+
     return {
       reviewRetryCount: normalizeRetryCount(routerState.reviewRetryCount),
       validationRetryCount: normalizeRetryCount(routerState.validationRetryCount),

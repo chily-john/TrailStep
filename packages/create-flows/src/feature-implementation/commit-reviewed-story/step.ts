@@ -5,7 +5,9 @@ import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schem
 import {
   type ActiveStoryStartCommit,
   resetActiveStoryStartCommit,
+  resetStoryLocalState,
   STORY_STATE_KEYS,
+  type StoryRouterState,
 } from "../shared/story-state.js";
 import { runGit } from "./run-git.js";
 
@@ -98,12 +100,22 @@ async function commitReviewedStoryChanges(
     };
   }
 
+  const storyTitle = extractStoryTitle(activeStory.content, 1);
+
   if (staged.stdout.trim().length === 0) {
     const baseline = await state.get<ActiveStoryStartCommit | null>(
       STORY_STATE_KEYS.activeStoryStartCommit,
     );
     const head = await runGit(["rev-parse", "HEAD"], cwd);
     if (baseline?.commit && head.ok && head.stdout !== baseline.commit) {
+      return { ok: true };
+    }
+
+    const headSubject = await runGit(["log", "-1", "--format=%s"], cwd);
+    if (
+      headSubject.ok &&
+      headSubject.stdout === truncateCommitSubject(`trailstep: ${storyTitle}`)
+    ) {
       return { ok: true };
     }
 
@@ -121,7 +133,6 @@ async function commitReviewedStoryChanges(
     };
   }
 
-  const storyTitle = extractStoryTitle(activeStory.content, 1);
   const commit = await runGit(
     [
       "commit",
@@ -185,16 +196,27 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     }
   }
 
+  const preserveFutureRouterState = await shouldPreserveFutureRouterState(activeStory);
   const [nextStoryContext = "", ...remainingStoryContexts] =
     (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
   await state.set(STORY_STATE_KEYS.storyQueue, remaining);
   await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
   await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
-  await state.set(STORY_STATE_KEYS.storyBaseline, null);
-  await resetActiveStoryStartCommit();
+  await resetStoryLocalState({ preserveLatestStoryRouterState: preserveFutureRouterState });
   const { storyRouterStep } = await import("../story-router/step.js");
   return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
+}
+
+async function shouldPreserveFutureRouterState(completedStory: Document): Promise<boolean> {
+  const routerState = await state.get<StoryRouterState | null>(
+    STORY_STATE_KEYS.latestStoryRouterState,
+  );
+  return !!routerState?.activeStory && !storiesMatch(routerState.activeStory, completedStory);
+}
+
+function storiesMatch(left: Document, right: Document): boolean {
+  return left.path === right.path && left.content === right.content;
 }
 
 async function verifyCleanBoundaryBeforeNextStory(activeStory: Document): Promise<

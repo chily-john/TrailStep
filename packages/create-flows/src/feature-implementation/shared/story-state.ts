@@ -142,6 +142,32 @@ export async function resetActiveStoryStartCommit(): Promise<void> {
   await state.set(STORY_STATE_KEYS.activeStoryStartCommit, null);
 }
 
+export async function resetStoryLocalState(
+  options: {
+    readonly preserveActiveStoryStartCommit?: boolean;
+    readonly preserveLatestStoryRouterState?: boolean;
+    readonly preserveStoryBaseline?: boolean;
+  } = {},
+): Promise<void> {
+  await state.set(STORY_STATE_KEYS.attemptsByPhase, {});
+  if (!options.preserveStoryBaseline) {
+    await state.set(STORY_STATE_KEYS.storyBaseline, null);
+  }
+  if (!options.preserveActiveStoryStartCommit) {
+    await resetActiveStoryStartCommit();
+  }
+  await state.set(STORY_STATE_KEYS.latestPreflightStatus, null);
+  await state.set(STORY_STATE_KEYS.latestExplorationBrief, null);
+  await state.set(STORY_STATE_KEYS.latestRedTestSummary, null);
+  await state.set(STORY_STATE_KEYS.latestImplementationSummary, null);
+  await state.set(STORY_STATE_KEYS.latestValidationSummary, null);
+  await state.set(STORY_STATE_KEYS.latestReviewResult, null);
+  if (!options.preserveLatestStoryRouterState) {
+    await state.set(STORY_STATE_KEYS.latestStoryRouterState, null);
+  }
+  await state.set(STORY_STATE_KEYS.blockedReason, null);
+}
+
 export async function loadStoryReviewGitContext(): Promise<StoryReviewGitContext> {
   const baseline = await state.get<ActiveStoryStartCommit | null>(
     STORY_STATE_KEYS.activeStoryStartCommit,

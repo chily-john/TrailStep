@@ -36,5 +36,8 @@ describe("writeRedTestsPrompt", () => {
     expect(prompt).not.toContain("Implement the exporter");
     expect(prompt).not.toContain("Reviewer responsibilities");
     expect(prompt).not.toContain("Review scoring");
+    expect(prompt).not.toContain("SubPrompt");
+    expect(prompt).not.toContain("SubPrompts");
+    expect(prompt).not.toContain("sub-prompt");
   });
 });

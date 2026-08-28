@@ -1,5 +1,5 @@
 import { defineWorkflow } from "@trailstep/authoring";
-import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
+import { initializeTakeItAwayStep } from "../feature-implementation/initialize-take-it-away/step.js";
 import { takeItAwayInput } from "../feature-implementation/shared/input-schema.js";
 import { takeItAwayOutput } from "../feature-implementation/shared/output-schema.js";
 
@@ -43,6 +43,12 @@ export const takeItAway = defineWorkflow({
       thinking: "medium",
       description: "Implements the smallest green slice for the active story.",
     },
+    storyDoctor: {
+      size: "large",
+      thinking: "high",
+      description:
+        "Diagnoses and repairs repeated active-story validation failures before the workflow exhausts retries.",
+    },
     validator: {
       size: "small",
       thinking: "low",
@@ -55,6 +61,6 @@ export const takeItAway = defineWorkflow({
     },
   },
   start(input) {
-    return createFeatureDocStep(input);
+    return initializeTakeItAwayStep(input);
   },
 });

@@ -1,4 +1,4 @@
-import { fail, state, step } from "@trailstep/authoring";
+import { state, step } from "@trailstep/authoring";
 import { reviewStoryImplementationStep } from "../review-story-implementation/step.js";
 import {
   incrementStoryPhaseAttempt,
@@ -24,10 +24,17 @@ export const validateStoryStep = step({ id: "validate-story" })
         STORY_STATE_KEYS.blockedReason,
         promptOutput.blockedReason ?? "Story validation reported a blocked state.",
       );
-      return fail({
-        code: "story_validation_blocked",
-        message: promptOutput.blockedReason ?? "Story validation reported a blocked state.",
-        details: { storyPath: input.currentStory.path, validation: promptOutput },
+      const { storyRouterStep } = await import("../story-router/step.js");
+      return storyRouterStep({
+        reason: {
+          type: "blocked",
+          sourceReason: "failed-validation",
+          blockedPhase: "validate-story",
+          blockedReason: promptOutput.blockedReason ?? "Story validation reported a blocked state.",
+          code: "story_validation_blocked",
+          metadata: { validation: promptOutput },
+        },
+        currentStory: input.currentStory,
       });
     }
 

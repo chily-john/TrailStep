@@ -157,6 +157,8 @@ The same primitives power larger reusable workflow packages. `@trailstep/create-
 - **`grill-it-away`**: starts interactively, asks clarifying questions, then turns the result into an implementation workflow.
 - **`take-it-away`**: starts from an existing conversation or feature request and runs the implementation workflow directly.
 
+These create-flows are durable and retry-aware: story routing is recorded in `.trailstep/runs/<runName>/` so interrupted implementation work can resume with `trailstep retry` or `trailstep continue` instead of restarting planning.
+
 At a high level, those workflows expand the simple step pattern into a multi-stage coding process:
 
 ```mermaid

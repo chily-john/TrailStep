@@ -74,6 +74,8 @@ export function implementGreenPrompt({ input }: { readonly input: ImplementGreen
         "Preserve the red test and avoid broad refactoring until the focused behavior is green.",
         "Do not write new unrelated stories, broad polish, or accumulated-diff cleanup.",
         "Run the focused green test when feasible and summarize files changed plus concise evidence.",
+        "When this prompt includes a previous validation failure, treat that failure as the primary task: fix the root cause and rerun the failing command when feasible before returning.",
+        "Do not claim the story is complete if focused validation is still red; either keep fixing it or set `blocked: true` with a concrete reason.",
         "If implementation is unsafe or ambiguous, set `blocked: true` and explain why.",
       ].join("\n"),
     ),

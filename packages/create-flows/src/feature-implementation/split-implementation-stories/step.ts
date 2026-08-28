@@ -1,7 +1,7 @@
 import { type Document, document, fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
 import { STORY_BOUNDARY, STORY_CONTEXT_END, STORY_CONTEXT_START } from "../shared/constants.js";
-import { STORY_STATE_KEYS } from "../shared/story-state.js";
+import { resetStoryLocalState, STORY_STATE_KEYS } from "../shared/story-state.js";
 import { storyRouterStep } from "../story-router/step.js";
 import { parseStoryContextBlocks, selectStoryContext } from "./story-context.js";
 
@@ -81,15 +81,11 @@ export const splitImplementationStoriesStep = step({ id: "split-implementation-s
     await state.set(STORY_STATE_KEYS.activeStory, firstStory);
     await state.set(STORY_STATE_KEYS.activeStoryContext, firstStoryContext);
     await state.set(STORY_STATE_KEYS.activePhase, "story-router");
-    await state.set(STORY_STATE_KEYS.attemptsByPhase, {});
-    await state.set(STORY_STATE_KEYS.storyBaseline, null);
-    await state.set(STORY_STATE_KEYS.latestPreflightStatus, null);
-    await state.set(STORY_STATE_KEYS.latestExplorationBrief, null);
-    await state.set(STORY_STATE_KEYS.latestRedTestSummary, null);
-    await state.set(STORY_STATE_KEYS.latestImplementationSummary, null);
-    await state.set(STORY_STATE_KEYS.latestValidationSummary, null);
-    await state.set(STORY_STATE_KEYS.latestReviewResult, null);
-    await state.set(STORY_STATE_KEYS.blockedReason, null);
+    await resetStoryLocalState({
+      preserveActiveStoryStartCommit: true,
+      preserveLatestStoryRouterState: true,
+      preserveStoryBaseline: true,
+    });
 
     return storyRouterStep({ reason: "start-story", currentStory: firstStory });
   },

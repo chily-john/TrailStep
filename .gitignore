@@ -5,7 +5,9 @@ coverage/
 graphify-out/
 
 # Local agent/runtime artifacts
-.trailstep/
+.trailstep/*
+!.trailstep/.gitignore
+!.trailstep/config.json
 .step[k]it/
 .claude/
 .pi/*

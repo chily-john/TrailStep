@@ -48,13 +48,14 @@ function assertNotIgnored(path) {
 }
 
 function assertNoTrackedLocalArtifacts() {
+  const allowedTrailstepFiles = new Set([".trailstep/.gitignore", ".trailstep/config.json"]);
   const tracked = execFileSync(
     "git",
     ["ls-files", ".trailstep", ".claude", "skills-lock", "skills-lock.json", "agent/skills"],
     { cwd: root, encoding: "utf8" },
   )
     .split(/\r?\n/u)
-    .filter(Boolean);
+    .filter((path) => Boolean(path) && !allowedTrailstepFiles.has(path));
 
   assert.deepEqual(
     tracked,
@@ -97,7 +98,7 @@ function escapeRegExp(value) {
 }
 
 for (const pattern of [
-  ".trailstep/",
+  ".trailstep/*",
   ".claude/",
   "agent/skills/",
   "skills-lock",
@@ -107,6 +108,7 @@ for (const pattern of [
 }
 
 for (const path of [
+  ".trailstep/config-local.json",
   ".trailstep/runs/example/events.jsonl",
   ".claude/settings.json",
   "agent/skills/example/SKILL.md",
@@ -115,6 +117,8 @@ for (const path of [
   assertIgnored(path);
 }
 
+assertNotIgnored(".trailstep/.gitignore");
+assertNotIgnored(".trailstep/config.json");
 assertNotIgnored("packages/cli/trailstep-skill/SKILL.md");
 assertNoTrackedLocalArtifacts();
 assertPackageFilesExcludeLocalArtifacts();

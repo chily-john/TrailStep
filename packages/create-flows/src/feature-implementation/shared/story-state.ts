@@ -168,6 +168,10 @@ export async function resetStoryLocalState(
   await state.set(STORY_STATE_KEYS.blockedReason, null);
 }
 
+export async function resetStoryLocalStateForNextStory(): Promise<void> {
+  await resetStoryLocalState();
+}
+
 export async function loadStoryReviewGitContext(): Promise<StoryReviewGitContext> {
   const baseline = await state.get<ActiveStoryStartCommit | null>(
     STORY_STATE_KEYS.activeStoryStartCommit,

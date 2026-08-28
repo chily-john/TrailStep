@@ -713,6 +713,307 @@ describe("take-it-away", () => {
     expect(state.attemptsByPhase?.["review-story-implementation"]).toBe(1);
   });
 
+  it("starts the next story with clean story-local state and retry budgets", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+    const initialBaseline = await git(cwd, ["rev-parse", "HEAD"]);
+    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
+
+    const storyOneExplorationToken = "STORY_001_EXPLORATION_TOKEN";
+    const storyOneRedToken = "STORY_001_RED_TOKEN";
+    const storyOneImplementationToken = "STORY_001_IMPLEMENTATION_TOKEN";
+    const storyOneValidationToken = "STORY_001_VALIDATION_TOKEN";
+    const storyOneReviewToken = "STORY_001_REVIEW_TOKEN";
+    const storyTwoContextToken = "STORY_002_CONTEXT_TOKEN";
+    const storyTwoExplorationToken = "STORY_002_EXPLORATION_TOKEN";
+    const storyTwoRedToken = "STORY_002_RED_TOKEN";
+    const staleStoryOneTokens = [
+      storyOneExplorationToken,
+      storyOneRedToken,
+      storyOneImplementationToken,
+      storyOneValidationToken,
+      storyOneReviewToken,
+    ];
+
+    const passingImplementationDocReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const passingStoryReview = {
+      score: 5,
+      summary: "Story review passes after the requested fix.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+    const failingStoryReview = {
+      score: 3,
+      summary: `${storyOneReviewToken}: story needs one more focused red-test evidence note.`,
+      methodologyRatings: {
+        tdd: 2,
+        verticalSlicing: 4,
+        tracerBullet: 4,
+        dependencies: 4,
+        architecture: 4,
+      },
+      requiredImprovements: [`Address ${storyOneReviewToken} before passing.`],
+    };
+    let storyOneImplementAttempts = 0;
+    let storyOneReviewAttempts = 0;
+    const storyTwoImplementPrompts: string[] = [];
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-clean-next-story-state-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<context>",
+              "audience: implementer",
+              "stories: Story 001",
+              "phases: explore-story",
+              "",
+              "STORY_001_CONTEXT_TOKEN",
+              "",
+              "</context>",
+              "",
+              "<context>",
+              "audience: implementer",
+              "stories: Story 002",
+              "phases: explore-story",
+              "",
+              storyTwoContextToken,
+              "",
+              "</context>",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 002: Add exporter observability",
+              "",
+              "Emit observable exporter events.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify(passingImplementationDocReview),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        const prompt = await readFile(request.promptFile, "utf8");
+        const storyLabel = prompt.includes("Story 002: Add exporter observability")
+          ? "Story 002"
+          : "Story 001";
+
+        if (request.outputFile.includes("explore-story")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary:
+                storyLabel === "Story 001" ? storyOneExplorationToken : storyTwoExplorationToken,
+              relevantFiles: ["widget.txt"],
+              testSeams: [`${storyLabel} behavior`],
+              recommendedValidationCommands: ["pnpm --filter @trailstep/create-flows test"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("write-red-tests")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: storyLabel === "Story 001" ? storyOneRedToken : storyTwoRedToken,
+              redEvidence:
+                storyLabel === "Story 001"
+                  ? `${storyOneRedToken} failed for the intended reason.`
+                  : `${storyTwoRedToken} failed for the intended reason.`,
+              changedFiles: ["widget.test.ts"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          if (storyLabel === "Story 002") {
+            storyTwoImplementPrompts.push(prompt);
+            return { exitCode: 1 };
+          }
+
+          storyOneImplementAttempts += 1;
+          await writeFile(
+            join(cwd, "widget.txt"),
+            `${storyOneImplementationToken} attempt ${storyOneImplementAttempts}\n`,
+            "utf8",
+          );
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: `${storyOneImplementationToken} attempt ${storyOneImplementAttempts}`,
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("validate-story")) {
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: storyOneValidationToken,
+              commands: [
+                { command: "pnpm --filter @trailstep/create-flows test", result: "passed" },
+              ],
+              validationPassed: true,
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-story-implementation")) {
+          if (storyLabel !== "Story 001") {
+            throw new Error("Story 002 should stop before review in this test.");
+          }
+
+          storyOneReviewAttempts += 1;
+          await writeFile(
+            request.outputFile,
+            JSON.stringify(storyOneReviewAttempts === 1 ? failingStoryReview : passingStoryReview),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    expect(storyOneImplementAttempts).toBe(2);
+    expect(storyOneReviewAttempts).toBe(2);
+    expect(storyTwoImplementPrompts).toHaveLength(1);
+    const storyTwoImplementPrompt = storyTwoImplementPrompts[0] ?? "";
+    expect(storyTwoImplementPrompt).toContain("Story 002: Add exporter observability");
+    expect(storyTwoImplementPrompt).toContain(storyTwoExplorationToken);
+    expect(storyTwoImplementPrompt).toContain(storyTwoRedToken);
+    for (const staleToken of staleStoryOneTokens) {
+      expect(storyTwoImplementPrompt).not.toContain(staleToken);
+    }
+
+    const storyTwoBaseline = await git(cwd, ["rev-parse", "HEAD"]);
+    expect(storyTwoBaseline).not.toBe(initialBaseline);
+
+    const state = JSON.parse(await readFile(join(result.runDir, "state.json"), "utf8")) as {
+      activeStory?: { content?: string } | null;
+      activeStoryContext?: string | null;
+      activeStoryStartCommit?: { commit?: string } | null;
+      attemptsByPhase?: Record<string, number>;
+      blockedReason?: string | null;
+      completedStories?: string[];
+      latestExplorationBrief?: { summary?: string } | null;
+      latestImplementationSummary?: { summary?: string } | null;
+      latestPreflightStatus?: { baseline?: string } | null;
+      latestRedTestSummary?: { redEvidence?: string; summary?: string } | null;
+      latestReviewResult?: { summary?: string } | null;
+      latestStoryRouterState?: unknown | null;
+      latestValidationSummary?: { summary?: string } | null;
+      storyBaseline?: string | null;
+      storyContextQueue?: string[];
+      storyQueue?: Array<{ content?: string }>;
+    };
+
+    expect(state.activeStory?.content).toContain("Story 002: Add exporter observability");
+    expect(state.activeStoryContext).toContain(storyTwoContextToken);
+    expect(state.completedStories).toEqual(["Story 001: Build the widget exporter core"]);
+    expect(state.storyQueue ?? []).toEqual([]);
+    expect(state.storyContextQueue ?? []).toEqual([]);
+    expect(state.attemptsByPhase).toEqual({
+      "story-router": 1,
+      "story-isolation-preflight": 1,
+      "explore-story": 1,
+      "write-red-tests": 1,
+      "implement-green": 1,
+    });
+    expect(state.latestPreflightStatus?.baseline).toBe(storyTwoBaseline);
+    expect(state.storyBaseline).toBe(storyTwoBaseline);
+    expect(state.activeStoryStartCommit?.commit).toBe(storyTwoBaseline);
+    expect(state.latestExplorationBrief?.summary).toBe(storyTwoExplorationToken);
+    expect(state.latestRedTestSummary?.summary).toBe(storyTwoRedToken);
+    expect(state.latestRedTestSummary?.redEvidence).toContain(storyTwoRedToken);
+    expect(state.latestImplementationSummary ?? null).toBeNull();
+    expect(state.latestValidationSummary ?? null).toBeNull();
+    expect(state.latestReviewResult ?? null).toBeNull();
+    expect(state.latestStoryRouterState ?? null).toBeNull();
+    expect(state.blockedReason ?? null).toBeNull();
+    for (const staleToken of staleStoryOneTokens) {
+      expect(JSON.stringify(state)).not.toContain(staleToken);
+    }
+  }, 10_000);
+
   it("manual retry resumes a persisted review retry route without replaying planning or consuming another review retry", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);

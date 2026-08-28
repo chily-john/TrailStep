@@ -5,9 +5,8 @@ import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schem
 import {
   type ActiveStoryStartCommit,
   resetActiveStoryStartCommit,
-  resetStoryLocalState,
+  resetStoryLocalStateForNextStory,
   STORY_STATE_KEYS,
-  type StoryRouterState,
 } from "../shared/story-state.js";
 import { runGit } from "./run-git.js";
 
@@ -166,6 +165,8 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
 
   const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
   const [nextStory, ...remaining] = storyQueue;
+  const [nextStoryContext = "", ...remainingStoryContexts] =
+    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
 
   if (!nextStory) {
     await state.set(STORY_STATE_KEYS.activeStory, null);
@@ -196,27 +197,13 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     }
   }
 
-  const preserveFutureRouterState = await shouldPreserveFutureRouterState(activeStory);
-  const [nextStoryContext = "", ...remainingStoryContexts] =
-    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
+  await resetStoryLocalStateForNextStory();
   await state.set(STORY_STATE_KEYS.storyQueue, remaining);
   await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
   await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
-  await resetStoryLocalState({ preserveLatestStoryRouterState: preserveFutureRouterState });
   const { storyRouterStep } = await import("../story-router/step.js");
   return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
-}
-
-async function shouldPreserveFutureRouterState(completedStory: Document): Promise<boolean> {
-  const routerState = await state.get<StoryRouterState | null>(
-    STORY_STATE_KEYS.latestStoryRouterState,
-  );
-  return !!routerState?.activeStory && !storiesMatch(routerState.activeStory, completedStory);
-}
-
-function storiesMatch(left: Document, right: Document): boolean {
-  return left.path === right.path && left.content === right.content;
 }
 
 async function verifyCleanBoundaryBeforeNextStory(activeStory: Document): Promise<

@@ -19,6 +19,8 @@ export const STORY_STATE_KEYS = {
   storyBaseline: "storyBaseline",
   storyContextQueue: "storyContextQueue",
   storyQueue: "storyQueue",
+  workflowOptions: "workflowOptions",
+  workflowWarnings: "workflowWarnings",
 } as const;
 
 export type StoryPhase =

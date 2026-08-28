@@ -1,5 +1,5 @@
 import { step } from "@trailstep/authoring";
-import { createFeatureDocStep } from "../../feature-implementation/create-feature-doc/step.js";
+import { initializeTakeItAwayStep } from "../../feature-implementation/initialize-take-it-away/step.js";
 import { takeItAwayInput } from "../../feature-implementation/shared/input-schema.js";
 import { grillPrompt } from "./prompt.js";
 
@@ -9,4 +9,4 @@ export const grillStep = step({ id: "grill" })
     mode: "interactive",
     output: takeItAwayInput,
   })
-  .do((output) => createFeatureDocStep(output));
+  .do((output) => initializeTakeItAwayStep(output));

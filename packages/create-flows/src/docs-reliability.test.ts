@@ -36,7 +36,9 @@ describe("create-flows reliability documentation", () => {
       /reviewer prompt/i,
       /diffstat/i,
       /no full diff|without full diff/i,
-      /TRAILSTEP_STORY_COMMIT_MODE/,
+      /autoCommit/i,
+      /pullRequest/i,
+      /open-pull-request/i,
     ];
 
     for (const pattern of requiredPackagePatterns) {

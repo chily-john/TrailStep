@@ -1,6 +1,11 @@
 import type { Document } from "@trailstep/authoring";
-import { done, fail, state, step } from "@trailstep/authoring";
+import { fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
+import { openPullRequestStep } from "../open-pull-request/step.js";
+import {
+  defaultTakeItAwayWorkflowOptions,
+  type TakeItAwayWorkflowOptions,
+} from "../shared/input-schema.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
 import {
   type ActiveStoryStartCommit,
@@ -15,22 +20,40 @@ export interface CommitReviewedStoryInput extends Record<string, unknown> {
   readonly implementationSummary?: string;
 }
 
+type StoryCommitResult =
+  | { readonly ok: true; readonly warning?: string }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly message: string;
+      readonly details: Record<string, unknown>;
+    };
+
 export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
   async (input: CommitReviewedStoryInput): Promise<ContinuationResult> => {
     const activeStory =
       (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? input.currentStory;
 
-    if (storyAutoCommitEnabled()) {
+    if (await storyAutoCommitEnabled()) {
       const commitResult = await commitReviewedStoryChanges(
         activeStory,
         input.implementationSummary,
       );
-      if (!commitResult.ok) {
-        return fail({
-          code: commitResult.code,
-          message: commitResult.message,
-          details: commitResult.details,
-        });
+      if (commitResult.ok) {
+        if (commitResult.warning) {
+          await appendWorkflowWarning(commitResult.warning);
+        }
+      } else {
+        const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
+        if (storyQueue.length > 0) {
+          return fail({
+            code: commitResult.code,
+            message: commitResult.message,
+            details: commitResult.details,
+          });
+        }
+
+        await appendWorkflowWarning(commitResult.message);
       }
     }
 
@@ -38,23 +61,17 @@ export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
   },
 );
 
-function storyAutoCommitEnabled(): boolean {
-  const mode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
-  return ["1", "true", "enabled", "worktree"].includes(mode?.toLowerCase() ?? "");
+async function storyAutoCommitEnabled(): Promise<boolean> {
+  const options =
+    (await state.get<TakeItAwayWorkflowOptions | null>(STORY_STATE_KEYS.workflowOptions)) ??
+    defaultTakeItAwayWorkflowOptions();
+  return options.autoCommit;
 }
 
 async function commitReviewedStoryChanges(
   activeStory: Document,
   implementationSummary: string | undefined,
-): Promise<
-  | { readonly ok: true }
-  | {
-      readonly ok: false;
-      readonly code: string;
-      readonly message: string;
-      readonly details: Record<string, unknown>;
-    }
-> {
+): Promise<StoryCommitResult> {
   const cwd = state.cwd;
   if (!cwd) {
     return {
@@ -119,16 +136,9 @@ async function commitReviewedStoryChanges(
     }
 
     return {
-      ok: false,
-      code: "story_commit_empty",
-      message:
-        "The story passed review, but there are no staged or already-committed changes since the story baseline to commit.",
-      details: {
-        storyPath: activeStory.path,
-        storyStartCommit: baseline?.commit,
-        head: head.ok ? head.stdout : undefined,
-        gitError: head.ok ? undefined : head.error,
-      },
+      ok: true,
+      warning:
+        "The story passed review, but there were no staged or already-committed changes since the story baseline to commit.",
     };
   }
 
@@ -183,10 +193,10 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
       completedStories: updatedCompleted,
       summary: `Implemented and reviewed ${updatedCompleted.length} ${updatedCompleted.length === 1 ? "story" : "stories"}.`,
     };
-    return done(output);
+    return openPullRequestStep(output);
   }
 
-  if (!storyAutoCommitEnabled()) {
+  if (!(await storyAutoCommitEnabled())) {
     const cleanBoundary = await verifyCleanBoundaryBeforeNextStory(activeStory);
     if (!cleanBoundary.ok) {
       return fail({
@@ -205,6 +215,11 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
   await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
   const { storyRouterStep } = await import("../story-router/step.js");
   return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
+}
+
+async function appendWorkflowWarning(warning: string): Promise<void> {
+  const warnings = (await state.get<string[] | null>(STORY_STATE_KEYS.workflowWarnings)) ?? [];
+  await state.set(STORY_STATE_KEYS.workflowWarnings, [...warnings, warning]);
 }
 
 async function verifyCleanBoundaryBeforeNextStory(activeStory: Document): Promise<

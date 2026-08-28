@@ -59,11 +59,18 @@ rough idea --> interactive grill step --> { conversation } --> implementation pi
 
 Use this when you already have enough context in a conversation, ticket, issue, or feature request. It skips the interactive grill step and starts the implementation pipeline directly.
 
-Input is a JSON object:
+Input is a JSON object. `autoCommit` and `pullRequest.enabled` both default to `true`; disable them only when you want to manage commits or PR creation yourself.
 
 ```json
 {
-  "conversation": "We need a workflow that exports widget reports..."
+  "conversation": "We need a workflow that exports widget reports...",
+  "autoCommit": true,
+  "pullRequest": {
+    "enabled": true,
+    "base": "main",
+    "remote": "origin",
+    "draft": false
+  }
 }
 ```
 
@@ -73,8 +80,9 @@ The two workflows share the same implementation pipeline after initial intake:
 
 ```mermaid
 flowchart TD
-  A[grill-it-away interactive intake] --> C[create-feature-doc]
-  B[take-it-away conversation input] --> C
+  A[grill-it-away interactive intake] --> B1[initialize-take-it-away]
+  B[take-it-away conversation input] --> B1
+  B1 --> C[create-feature-doc]
   C --> D[create-or-improve-implementation-doc]
   D --> E[review-implementation-doc]
   E -->|needs work| D
@@ -85,7 +93,8 @@ flowchart TD
   H -->|passes| I[commit-reviewed-story / mark complete]
   I --> J{more stories?}
   J -->|yes| G
-  J -->|no| K[done]
+  J -->|no| K[open-pull-request]
+  K --> L[done]
 ```
 
 The important TrailStep pattern is not the specific feature methodology; it is the architecture:
@@ -110,7 +119,9 @@ Starting a new story resets per-story clean state and retry budgets, including p
 
 Reviewer prompt hygiene keeps reviews bounded: reviewer prompts include the active story, concise phase summaries, file lists, git status, the story baseline, and committed/uncommitted diffstat, without full diff bodies or hunks.
 
-`TRAILSTEP_STORY_COMMIT_MODE` controls automatic story commits. Set it to `1`, `true`, `enabled`, or `worktree` to have `commit-reviewed-story` create one commit per passing story; otherwise TrailStep requires a clean story boundary before prompting the next story.
+The `autoCommit` input option controls automatic story commits and defaults to `true`. `commit-reviewed-story` creates one commit per passing story; when `autoCommit` is `false`, TrailStep requires a clean story boundary before prompting the next story.
+
+The `pullRequest` input option controls the final code-only PR step and defaults to enabled. At the end of a successful run, TrailStep uses the existing feature doc, implementation doc, completed-story list, and reviewed commits to push the current branch and run `gh pr create`. If the working tree is dirty or PR creation is unsafe, the workflow still completes and returns a warning with suggested `git`/`gh` commands to run after review.
 
 ## Agent roles
 
@@ -126,7 +137,7 @@ The workflows declare role defaults so TrailStep can target different kinds of a
 
 These workflows are intended to change the current project when they reach implementation steps. Review your working tree before and after runs.
 
-By default, the `commit-reviewed-story` step marks reviewed stories complete without creating commits. Automatic story commits are enabled only when `TRAILSTEP_STORY_COMMIT_MODE` is set to `1`, `true`, `enabled`, or `worktree`.
+By default, `commit-reviewed-story` creates reviewed story commits and the final `open-pull-request` step opens a PR with the GitHub CLI. Set `autoCommit` or `pullRequest.enabled` to `false` in workflow input when you want to manage those actions manually.
 
 Generated run artifacts live under `.trailstep/runs` by default. Inspect them when needed, but do not edit them to recover workflow state; use `trailstep continue` or `trailstep retry`.
 

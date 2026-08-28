@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { runWorkflow } from "@trailstep/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
 import {
@@ -70,22 +70,6 @@ async function handleNonGreenStoryPhase(request: {
 
   return undefined;
 }
-
-let previousStoryCommitMode: string | undefined;
-
-beforeEach(() => {
-  previousStoryCommitMode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
-  delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
-});
-
-afterEach(() => {
-  if (previousStoryCommitMode === undefined) {
-    delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
-    return;
-  }
-
-  process.env.TRAILSTEP_STORY_COMMIT_MODE = previousStoryCommitMode;
-});
 
 describe("take-it-away", () => {
   it("keeps the selected story durably active when implementation is interrupted before review", async () => {
@@ -725,7 +709,6 @@ describe("take-it-away", () => {
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
     const initialBaseline = await git(cwd, ["rev-parse", "HEAD"]);
-    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const storyOneExplorationToken = "STORY_001_EXPLORATION_TOKEN";
     const storyOneRedToken = "STORY_001_RED_TOKEN";
@@ -1026,7 +1009,6 @@ describe("take-it-away", () => {
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
-    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const passingReview = {
       score: 5,
@@ -1587,7 +1569,6 @@ describe("take-it-away", () => {
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
-    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const passingReview = {
       score: 5,
@@ -2256,7 +2237,6 @@ describe("take-it-away", () => {
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
-    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const passingReview = {
       score: 5,
@@ -3311,7 +3291,6 @@ describe("take-it-away", () => {
     await writeFile(join(cwd, "observability.txt"), "", "utf8");
     await git(cwd, ["add", "README.md", "observability.txt", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
-    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const priorStoryTokens = [
       "PRIOR_STORY_EXPLORATION_TOKEN",
@@ -3569,7 +3548,7 @@ describe("take-it-away", () => {
     const implementedStoryPrompts: string[] = [];
     const result = await runWorkflow({
       workflow: takeItAway,
-      input: { conversation: "We want a widget exporter." },
+      input: { conversation: "We want a widget exporter.", autoCommit: false },
       runName: "take-it-away-dirty-boundary-run",
       cwd,
       trailstepConfig: {
@@ -3671,7 +3650,7 @@ describe("take-it-away", () => {
     expect(state.storyQueue?.[0]?.content).toContain("Story 002: Add exporter observability");
   });
 
-  it("commits each passing reviewed story when story commit mode is enabled", async () => {
+  it("completes with a PR warning and suggested commands when final reviewed changes are dirty", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
@@ -3681,9 +3660,6 @@ describe("take-it-away", () => {
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
-
-    const previousCommitMode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
-    process.env.TRAILSTEP_STORY_COMMIT_MODE = "enabled";
 
     const passingReview = {
       score: 5,
@@ -3698,93 +3674,202 @@ describe("take-it-away", () => {
       requiredImprovements: [],
     };
 
-    try {
-      const result = await runWorkflow({
-        workflow: takeItAway,
-        input: { conversation: "We want a widget exporter." },
-        runName: "take-it-away-autocommit-run",
-        cwd,
-        trailstepConfig: {
-          version: 1,
-          customProviders: { worker: { binary: "worker-agent" } },
-          agents: {
-            small: [{ provider: "worker" }],
-            medium: [{ provider: "worker" }],
-            large: [{ provider: "worker" }],
-          },
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: {
+        conversation: "We want a widget exporter.",
+        autoCommit: false,
+        pullRequest: { enabled: true },
+      },
+      runName: "take-it-away-dirty-pr-warning-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
         },
-        workingAgentProcessRunner: async (request) => {
-          const splitPhaseResult = await handleNonGreenStoryPhase(request);
-          if (splitPhaseResult) {
-            return splitPhaseResult;
-          }
-          if (request.outputFile.includes("create-feature-doc")) {
-            await writeFile(
-              request.outputFile,
-              "# Feature Doc\n\nA widget exporter feature.",
-              "utf8",
-            );
-            return { exitCode: 0 };
-          }
+      },
+      workingAgentProcessRunner: async (request) => {
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult) {
+          return splitPhaseResult;
+        }
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Widget exporter\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
 
-          if (request.outputFile.includes("create-or-improve-implementation-doc")) {
-            await writeFile(
-              request.outputFile,
-              [
-                "# Implementation Doc",
-                "",
-                "Overview of the widget exporter plan.",
-                "",
-                "<!-- trailstep-story-boundary -->",
-                "",
-                "## Story 001: Build the widget exporter core",
-                "",
-                "Implement the core widget exporter behavior.",
-              ].join("\n"),
-              "utf8",
-            );
-            return { exitCode: 0 };
-          }
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
 
-          if (request.outputFile.includes("review-implementation-doc")) {
-            await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
-            return { exitCode: 0 };
-          }
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
 
-          if (request.outputFile.includes("implement-green")) {
-            await writeFile(join(cwd, "widget.txt"), "exported widget\n", "utf8");
-            await writeFile(
-              request.outputFile,
-              JSON.stringify({
-                blocked: false,
-                summary: "Implemented widget exporter core in widget.txt.",
-                changedFiles: ["widget.txt"],
-              }),
-              "utf8",
-            );
-            return { exitCode: 0 };
-          }
+        if (request.outputFile.includes("implement-green")) {
+          await writeFile(join(cwd, "widget.txt"), "exported widget\n", "utf8");
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Implemented widget exporter core in widget.txt.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
 
-          if (request.outputFile.includes("review-story-implementation")) {
-            await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
-            return { exitCode: 0 };
-          }
+        if (request.outputFile.includes("review-story-implementation")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
 
-          throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
-        },
-      });
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
 
-      expect(result.status).toBe("success");
-      const log = await git(cwd, ["log", "--oneline", "--max-count=2"]);
-      expect(log).toContain("trailstep: Story 001: Build the widget exporter core");
-      expect(await git(cwd, ["status", "--short"])).toBe("");
-    } finally {
-      if (previousCommitMode === undefined) {
-        delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
-      } else {
-        process.env.TRAILSTEP_STORY_COMMIT_MODE = previousCommitMode;
-      }
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
     }
+
+    expect(result.output.pullRequest).toMatchObject({
+      status: "skipped",
+      warning: expect.stringContaining("working tree is dirty"),
+      commands: expect.arrayContaining([
+        "git status --short",
+        'git add -A && git commit -m "trailstep: finalize reviewed changes"',
+      ]),
+    });
+    expect(result.output.warnings).toContainEqual(expect.stringContaining("working tree is dirty"));
+  });
+
+  it("commits each passing reviewed story by default", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const passingReview = {
+      score: 5,
+      summary: "Meets the methodology.",
+      methodologyRatings: {
+        tdd: 5,
+        verticalSlicing: 5,
+        tracerBullet: 5,
+        dependencies: 5,
+        architecture: 5,
+      },
+      requiredImprovements: [],
+    };
+
+    const result = await runWorkflow({
+      workflow: takeItAway,
+      input: { conversation: "We want a widget exporter." },
+      runName: "take-it-away-autocommit-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: {
+          small: [{ provider: "worker" }],
+          medium: [{ provider: "worker" }],
+          large: [{ provider: "worker" }],
+        },
+      },
+      workingAgentProcessRunner: async (request) => {
+        const splitPhaseResult = await handleNonGreenStoryPhase(request);
+        if (splitPhaseResult) {
+          return splitPhaseResult;
+        }
+        if (request.outputFile.includes("create-feature-doc")) {
+          await writeFile(
+            request.outputFile,
+            "# Feature Doc\n\nA widget exporter feature.",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Doc",
+              "",
+              "Overview of the widget exporter plan.",
+              "",
+              "<!-- trailstep-story-boundary -->",
+              "",
+              "## Story 001: Build the widget exporter core",
+              "",
+              "Implement the core widget exporter behavior.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-doc")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("implement-green")) {
+          await writeFile(join(cwd, "widget.txt"), "exported widget\n", "utf8");
+          await writeFile(
+            request.outputFile,
+            JSON.stringify({
+              blocked: false,
+              summary: "Implemented widget exporter core in widget.txt.",
+              changedFiles: ["widget.txt"],
+            }),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-story-implementation")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+          return { exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected working-agent request: ${request.outputFile}`);
+      },
+    });
+
+    expect(result.status).toBe("success");
+    const log = await git(cwd, ["log", "--oneline", "--max-count=2"]);
+    expect(log).toContain("trailstep: Story 001: Build the widget exporter core");
+    expect(await git(cwd, ["status", "--short"])).toBe("");
   });
 
   it("retry of an interrupted story does not dispatch stale legacy implementation prompts", async () => {

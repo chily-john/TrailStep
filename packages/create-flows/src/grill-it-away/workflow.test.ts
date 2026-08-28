@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { runWorkflow } from "@trailstep/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { grillItAway } from "./workflow.js";
 
@@ -64,22 +64,6 @@ async function handleNonGreenStoryPhase(request: {
 
   return undefined;
 }
-
-let previousStoryCommitMode: string | undefined;
-
-beforeEach(() => {
-  previousStoryCommitMode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
-  delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
-});
-
-afterEach(() => {
-  if (previousStoryCommitMode === undefined) {
-    delete process.env.TRAILSTEP_STORY_COMMIT_MODE;
-    return;
-  }
-
-  process.env.TRAILSTEP_STORY_COMMIT_MODE = previousStoryCommitMode;
-});
 
 describe("grill-it-away", () => {
   it("fails when the completion payload does not match the conversation schema", async () => {

@@ -114,6 +114,11 @@ export type PackageCommandRunner = (
   request: PackageCommandRequest,
 ) => Promise<PackageCommandResult>;
 
+export type ProviderBinaryResolver = (
+  binary: string,
+  context: CliCommandContext,
+) => Promise<boolean>;
+
 export interface CliCommandContext {
   cwd: string;
   homeDir?: string;
@@ -121,6 +126,7 @@ export interface CliCommandContext {
   prompts?: TrailStepCliPrompts;
   eventSink?: (event: Event) => void | Promise<void>;
   env?: Record<string, string | undefined>;
+  providerBinaryResolver?: ProviderBinaryResolver;
   processRunner?: InteractiveProcessRunner;
   agentSessionTerminalRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;

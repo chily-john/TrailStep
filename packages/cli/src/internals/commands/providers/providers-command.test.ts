@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { resolveCommand } from "../../command-registry.js";
 
@@ -116,6 +116,109 @@ describe("providersCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(lines).toContain("my-agent\tMy Agent\tlocal-manifest\thooks: yes");
+  });
+
+  it("test reports a missing working binary without running a prompt", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: validManifest,
+        },
+      },
+    });
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const workingAgentProcessRunner = vi.fn(async () => ({ exitCode: 0 }));
+    const command = resolveCommand(["providers", "test", "my-agent", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "test", "my-agent", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line: string) => lines.push(line), writeError: (line: string) => errors.push(line) },
+        workingAgentProcessRunner,
+        providerBinaryResolver: async (binary: string) => binary !== "my-agent",
+      } as never,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(`${lines.join("\n")}\n${errors.join("\n")}`).toContain(
+      "Missing binary for working.command: my-agent",
+    );
+    expect(workingAgentProcessRunner).not.toHaveBeenCalled();
+  });
+
+  it("test reports missing required environment variables declared by the manifest", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: {
+            ...validManifest,
+            environment: { required: ["MY_AGENT_API_KEY"] },
+          },
+        },
+      },
+    });
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const command = resolveCommand(["providers", "test", "my-agent", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "test", "my-agent", "--scope", "project"]) as never,
+      {
+        cwd,
+        env: {},
+        io: { writeLine: (line: string) => lines.push(line), writeError: (line: string) => errors.push(line) },
+        providerBinaryResolver: async () => true,
+      } as never,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(`${lines.join("\n")}\n${errors.join("\n")}`).toContain("MY_AGENT_API_KEY");
+  });
+
+  it("test accepts a valid provider, reports hooks, and states prompt execution was skipped", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: {
+            ...validManifest,
+            hooks: { beforeWorkingAgent: { supported: true } },
+          },
+        },
+      },
+    });
+    const lines: string[] = [];
+    const workingAgentProcessRunner = vi.fn(async () => ({ exitCode: 0 }));
+    const command = resolveCommand(["providers", "test", "my-agent", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "test", "my-agent", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line: string) => lines.push(line), writeError: () => undefined },
+        workingAgentProcessRunner,
+        providerBinaryResolver: async () => true,
+      } as never,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Hooks: present");
+    expect(lines.join("\n")).toContain("Prompt execution skipped");
+    expect(workingAgentProcessRunner).not.toHaveBeenCalled();
   });
 
   it("remove reports agents that reference a provider and leaves config unchanged", async ({ task }) => {

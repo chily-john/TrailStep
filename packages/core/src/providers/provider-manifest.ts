@@ -21,6 +21,7 @@ export interface TrailStepProviderManifest {
   readonly interactive: TrailStepProviderInteractiveManifest;
   readonly model: TrailStepProviderModelManifest;
   readonly thinking: TrailStepProviderThinkingManifest;
+  readonly env?: TrailStepProviderEnvironmentManifest;
 }
 
 export interface TrailStepProviderWorkingManifest {
@@ -34,6 +35,12 @@ export interface TrailStepProviderWorkingManifest {
 export interface TrailStepProviderInteractiveManifest {
   readonly supported: boolean;
   readonly reason?: string;
+  readonly command?: string;
+}
+
+export interface TrailStepProviderEnvironmentManifest {
+  readonly required?: readonly string[];
+  readonly optional?: readonly string[];
 }
 
 export interface TrailStepProviderModelManifest {
@@ -149,9 +156,10 @@ function parseManifest(
   const id = parseRequiredString(`${path}.id`, value.id, diagnostics);
   const displayName = parseRequiredString(`${path}.displayName`, value.displayName, diagnostics);
   const working = parseWorking(`${path}.working`, value.working, diagnostics);
-  const interactive = parseSupportedObject(`${path}.interactive`, value.interactive, diagnostics);
+  const interactive = parseInteractive(`${path}.interactive`, value.interactive, diagnostics);
   const model = parseSupportedObject(`${path}.model`, value.model, diagnostics);
   const thinking = parseThinking(`${path}.thinking`, value.thinking, diagnostics);
+  const env = parseEnvironment(`${path}.env`, value.env, diagnostics);
 
   if (
     value.schemaVersion !== 1 ||
@@ -160,12 +168,22 @@ function parseManifest(
     working === undefined ||
     interactive === undefined ||
     model === undefined ||
-    thinking === undefined
+    thinking === undefined ||
+    env === null
   ) {
     return undefined;
   }
 
-  return { schemaVersion: 1, id, displayName, working, interactive, model, thinking };
+  return {
+    schemaVersion: 1,
+    id,
+    displayName,
+    working,
+    interactive,
+    model,
+    thinking,
+    ...(env === undefined ? {} : { env }),
+  };
 }
 
 function parseWorking(
@@ -194,6 +212,22 @@ function parseWorking(
   return { supported: true, command, ...(args === undefined ? {} : { args }), prompt, output };
 }
 
+function parseInteractive(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderInteractiveManifest | undefined {
+  const parsed = parseSupportedObject(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) {
+    return undefined;
+  }
+  const command = parseOptionalNonEmptyString(`${path}.command`, value.command, diagnostics);
+  if (command === null) {
+    return undefined;
+  }
+  return { ...parsed, ...(command === undefined ? {} : { command }) };
+}
+
 function parseSupportedObject(
   path: string,
   value: unknown,
@@ -206,6 +240,30 @@ function parseSupportedObject(
   return {
     supported: value.supported,
     ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
+  };
+}
+
+function parseEnvironment(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderEnvironmentManifest | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+  const start = diagnostics.length;
+  const required = parseOptionalStringArray(`${path}.required`, value.required, diagnostics);
+  const optional = parseOptionalStringArray(`${path}.optional`, value.optional, diagnostics);
+  if (diagnostics.length > start) {
+    return null;
+  }
+  return {
+    ...(required === undefined ? {} : { required }),
+    ...(optional === undefined ? {} : { optional }),
   };
 }
 
@@ -270,6 +328,21 @@ function parseRequiredString(
   if (typeof value !== "string" || value.length === 0) {
     diagnostics.push(`${path} must be a non-empty string.`);
     return undefined;
+  }
+  return value;
+}
+
+function parseOptionalNonEmptyString(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): string | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    diagnostics.push(`${path} must be a non-empty string when present.`);
+    return null;
   }
   return value;
 }

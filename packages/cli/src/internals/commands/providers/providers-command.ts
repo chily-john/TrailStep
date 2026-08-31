@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { constants } from "node:fs";
+import { access, readFile } from "node:fs/promises";
+import { delimiter, resolve } from "node:path";
 
 import * as trailstepCore from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
@@ -27,9 +28,18 @@ interface TrailStepProviderManifest {
     readonly prompt?: { readonly kind: "prompt-file" };
     readonly output?: { readonly style: "provider-output-file" };
   };
-  readonly interactive: { readonly supported: boolean; readonly reason?: string };
+  readonly interactive: {
+    readonly supported: boolean;
+    readonly reason?: string;
+    readonly command?: string;
+  };
   readonly model: { readonly supported: boolean };
   readonly thinking: { readonly supported: boolean; readonly levels?: readonly string[] };
+  readonly environment?: {
+    readonly required?: readonly string[];
+    readonly optional?: readonly string[];
+  };
+  readonly env?: { readonly required?: readonly string[]; readonly optional?: readonly string[] };
   readonly hooks?: Record<string, unknown>;
 }
 
@@ -38,6 +48,7 @@ type ProviderCommandArgs =
   | { readonly action: "add"; readonly path: string; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "list"; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "show"; readonly provider: string; readonly scope?: WorkflowRegistryScope }
+  | { readonly action: "test"; readonly provider: string; readonly scope?: WorkflowRegistryScope }
   | {
       readonly action: "remove";
       readonly provider: string;
@@ -74,6 +85,12 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       const flags = parseFlags(argv.slice(3));
       return { action: "show", provider, scope: parseOptionalScope(flags.scope) };
     }
+    if (action === "test") {
+      const provider = argv[2];
+      assertRequiredArg(provider, "trailstep providers test requires <provider>.");
+      const flags = parseFlags(argv.slice(3));
+      return { action: "test", provider, scope: parseOptionalScope(flags.scope) };
+    }
     if (action === "remove") {
       const provider = argv[2];
       assertRequiredArg(provider, "trailstep providers remove requires <provider>.");
@@ -81,7 +98,9 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       return { action: "remove", provider, scope: parseOptionalScope(flags.scope) };
     }
 
-    throw new CliUsageError("trailstep providers requires inspect, add, list, show, or remove.");
+    throw new CliUsageError(
+      "trailstep providers requires inspect, add, list, show, test, or remove.",
+    );
   },
   async run(args: ProviderCommandArgs, context: CliCommandContext): Promise<number> {
     try {
@@ -96,6 +115,9 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       }
       if (args.action === "show") {
         return await showProvider(args, context);
+      }
+      if (args.action === "test") {
+        return await testProvider(args, context);
       }
       return await removeProvider(args, context);
     } catch (error) {
@@ -164,6 +186,66 @@ async function showProvider(
   writeManifestDetails(registration.manifest, context);
   context.io.writeLine(`Source: ${registration.source.type} ${registration.source.path}`);
   return 0;
+}
+
+async function testProvider(
+  args: Extract<ProviderCommandArgs, { readonly action: "test" }>,
+  context: CliCommandContext,
+): Promise<number> {
+  const scope = await resolveScope(args.scope, context);
+  const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
+  const rawRegistration = toMutableRecord(config.providers)[args.provider];
+  const diagnostics: string[] = [];
+  const registration = readRegistration(rawRegistration, diagnostics);
+  let failed = false;
+
+  if (registration === undefined) {
+    context.io.writeError(
+      diagnostics.length > 0
+        ? `Invalid stored provider metadata for ${args.provider}:\n${diagnostics.join("\n")}`
+        : `Provider ${args.provider} does not exist in ${scope} config.`,
+    );
+    return 1;
+  }
+
+  context.io.writeLine(`Provider: ${registration.manifest.id}`);
+  context.io.writeLine("Registration: valid");
+
+  if (registration.manifest.working.supported) {
+    const command = registration.manifest.working.command;
+    if (command === undefined || !(await resolveProviderBinary(command, context))) {
+      context.io.writeError(`Missing binary for working.command: ${command ?? "(missing)"}`);
+      failed = true;
+    } else {
+      context.io.writeLine(`Working binary: ${command}`);
+    }
+  }
+
+  if (registration.manifest.interactive.command !== undefined) {
+    const command = registration.manifest.interactive.command;
+    if (!(await resolveProviderBinary(command, context))) {
+      context.io.writeError(`Missing binary for interactive.command: ${command}`);
+      failed = true;
+    } else {
+      context.io.writeLine(`Interactive binary: ${command}`);
+    }
+  }
+
+  for (const variable of requiredEnvironmentVariables(registration.manifest)) {
+    const value = context.env?.[variable];
+    if (value === undefined || value === "") {
+      context.io.writeError(`Missing required environment variable: ${variable}`);
+      failed = true;
+    } else {
+      context.io.writeLine(`Required environment variable present: ${variable}`);
+    }
+  }
+
+  context.io.writeLine(
+    `Hooks: ${providerRegistrationHasHooks(rawRegistration) ? "present" : "absent"}`,
+  );
+  context.io.writeLine("Prompt execution skipped.");
+  return failed ? 1 : 0;
 }
 
 async function removeProvider(
@@ -367,9 +449,10 @@ function parseManifestSnapshot(
   const id = parseRequiredString(`${path}.id`, value.id, diagnostics);
   const displayName = parseRequiredString(`${path}.displayName`, value.displayName, diagnostics);
   const working = parseWorking(`${path}.working`, value.working, diagnostics);
-  const interactive = parseSupported(`${path}.interactive`, value.interactive, diagnostics);
+  const interactive = parseInteractive(`${path}.interactive`, value.interactive, diagnostics);
   const model = parseSupported(`${path}.model`, value.model, diagnostics);
   const thinking = parseThinking(`${path}.thinking`, value.thinking, diagnostics);
+  const env = parseManifestEnvironment(`${path}.env`, value.env, diagnostics);
   if (
     value.schemaVersion !== 1 ||
     id === undefined ||
@@ -377,11 +460,21 @@ function parseManifestSnapshot(
     working === undefined ||
     interactive === undefined ||
     model === undefined ||
-    thinking === undefined
+    thinking === undefined ||
+    env === null
   ) {
     return undefined;
   }
-  return { schemaVersion: 1, id, displayName, working, interactive, model, thinking };
+  return {
+    schemaVersion: 1,
+    id,
+    displayName,
+    working,
+    interactive,
+    model,
+    thinking,
+    ...(env === undefined ? {} : { env }),
+  };
 }
 
 function parseWorking(
@@ -411,6 +504,18 @@ function parseWorking(
   return { supported: true, command, ...(args === undefined ? {} : { args }), prompt, output };
 }
 
+function parseInteractive(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["interactive"] | undefined {
+  const parsed = parseSupported(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) return undefined;
+  const command = parseOptionalNonEmptyString(`${path}.command`, value.command, diagnostics);
+  if (command === null) return undefined;
+  return { ...parsed, ...(command === undefined ? {} : { command }) };
+}
+
 function parseSupported(
   path: string,
   value: unknown,
@@ -423,6 +528,25 @@ function parseSupported(
   return {
     supported: value.supported,
     ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
+  };
+}
+
+function parseManifestEnvironment(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["env"] | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+  const required = parseOptionalStringArray(`${path}.required`, value.required, diagnostics);
+  const optional = parseOptionalStringArray(`${path}.optional`, value.optional, diagnostics);
+  if (required === null || optional === null) return null;
+  return {
+    ...(required === undefined ? {} : { required }),
+    ...(optional === undefined ? {} : { optional }),
   };
 }
 
@@ -476,19 +600,130 @@ function parseOptionalStringArray(
   return value;
 }
 
-function readRegistration(value: unknown): TrailStepProviderRegistration | undefined {
+function readRegistration(
+  value: unknown,
+  diagnostics: string[] = [],
+): TrailStepProviderRegistration | undefined {
   if (!isRecord(value) || !isRecord(value.source) || !isRecord(value.manifest)) {
+    diagnostics.push("registration must include source and manifest objects.");
     return undefined;
   }
   if (value.source.type !== "local-manifest" || typeof value.source.path !== "string") {
+    diagnostics.push("registration.source must be a local-manifest source with a path.");
     return undefined;
   }
-  const diagnostics: string[] = [];
   const manifest = parseProviderManifest("manifest", value.manifest, diagnostics);
   if (manifest === undefined || diagnostics.length > 0) {
     return undefined;
   }
-  return { source: { type: "local-manifest", path: value.source.path }, manifest };
+  return {
+    source: { type: "local-manifest", path: value.source.path },
+    manifest: withStoredManifestMetadata(manifest, value.manifest),
+  };
+}
+
+function withStoredManifestMetadata(
+  manifest: TrailStepProviderManifest,
+  storedManifest: Record<string, unknown>,
+): TrailStepProviderManifest {
+  const environment = parseEnvironmentDeclarations(storedManifest.environment);
+  const env = parseEnvironmentDeclarations(storedManifest.env);
+  const interactiveCommand = isRecord(storedManifest.interactive)
+    ? parseOptionalString(storedManifest.interactive.command)
+    : undefined;
+  return {
+    ...manifest,
+    interactive: {
+      ...manifest.interactive,
+      ...(interactiveCommand === undefined ? {} : { command: interactiveCommand }),
+    },
+    ...(environment === undefined ? {} : { environment }),
+    ...(env === undefined ? {} : { env }),
+  };
+}
+
+function requiredEnvironmentVariables(manifest: TrailStepProviderManifest): readonly string[] {
+  return [...(manifest.environment?.required ?? []), ...(manifest.env?.required ?? [])];
+}
+
+function parseEnvironmentDeclarations(
+  value: unknown,
+): { readonly required?: readonly string[]; readonly optional?: readonly string[] } | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const required = parseStoredStringArray(value.required);
+  const optional = parseStoredStringArray(value.optional);
+  if (required === undefined && optional === undefined) {
+    return undefined;
+  }
+  return {
+    ...(required === undefined ? {} : { required }),
+    ...(optional === undefined ? {} : { optional }),
+  };
+}
+
+function parseStoredStringArray(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    return undefined;
+  }
+  return value;
+}
+
+function parseOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function parseOptionalNonEmptyString(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): string | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    diagnostics.push(`${path} must be a non-empty string when present.`);
+    return null;
+  }
+  return value;
+}
+
+async function resolveProviderBinary(binary: string, context: CliCommandContext): Promise<boolean> {
+  if (context.providerBinaryResolver !== undefined) {
+    return context.providerBinaryResolver(binary, context);
+  }
+  return defaultProviderBinaryResolver(binary, context);
+}
+
+async function defaultProviderBinaryResolver(
+  binary: string,
+  context: CliCommandContext,
+): Promise<boolean> {
+  const candidates =
+    binary.includes("/") || binary.includes("\\")
+      ? [resolve(context.cwd, binary)]
+      : pathBinaryCandidates(binary, context.env?.PATH ?? process.env.PATH ?? "");
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.X_OK);
+      return true;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return false;
+}
+
+function pathBinaryCandidates(binary: string, pathValue: string): readonly string[] {
+  const extensions =
+    process.platform === "win32" ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""];
+  const names =
+    process.platform === "win32" && /\.[^\\/]+$/.test(binary)
+      ? [binary]
+      : extensions.map((extension) => `${binary}${extension.toLowerCase()}`);
+  return pathValue
+    .split(delimiter)
+    .filter((entry) => entry.length > 0)
+    .flatMap((entry) => names.map((name) => resolve(entry, name)));
 }
 
 function toMutableRecord(value: unknown): Record<string, unknown> {

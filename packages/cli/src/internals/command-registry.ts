@@ -6,6 +6,7 @@ import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
 import { openCommand } from "./commands/open/open-command.js";
+import { providersCommand } from "./commands/providers/providers-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
 import { retryCommand } from "./commands/retry/retry-command.js";
 import { runOrOpenCommand } from "./commands/run-or-open/run-or-open-command.js";
@@ -38,6 +39,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "agents") {
     return agentsCommand;
+  }
+
+  if (argv[0] === "providers") {
+    return providersCommand;
   }
 
   if (argv[0] === "workflows") {

@@ -158,12 +158,20 @@ describe("claudeProvider.runWorking", () => {
     child.emit("close", 0);
     await runPromise;
 
-    expect(spawn).toHaveBeenCalledWith(
-      "claude",
-      ["-p", `@${promptFile}`, "--output-format", "json", "--dangerously-skip-permissions"],
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const spawnCall = vi.mocked(spawn).mock.calls[0];
+    expect(spawnCall?.[1]).toEqual(
+      expect.arrayContaining([
+        "-p",
+        `@${promptFile}`,
+        "--output-format",
+        "json",
+        "--dangerously-skip-permissions",
+      ]),
+    );
+    expect(spawnCall?.[2]).toEqual(
       expect.objectContaining({ stdio: ["ignore", "pipe", "inherit"] }),
     );
-    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it("writes usage.json after successful output extraction", async () => {

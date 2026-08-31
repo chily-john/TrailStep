@@ -47,6 +47,14 @@ export interface TrailStepProviderThinkingManifest {
 
 const THINKING_LEVELS = new Set<WorkflowAgentThinking>(["low", "medium", "high", "xhigh", "max"]);
 
+export function parseTrailStepProviderManifest(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest | undefined {
+  return parseManifest(path, value, diagnostics);
+}
+
 export function parseTrailStepProviderRegistrations(
   path: string,
   value: unknown,

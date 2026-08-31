@@ -116,6 +116,11 @@ export type {
   ProviderWorkingRunner,
 } from "./known-cli-providers/registry/provider-registry.types.js";
 export {
+  parseTrailStepProviderManifest,
+  type TrailStepProviderManifest,
+  type TrailStepProviderRegistration,
+} from "./providers/provider-manifest.js";
+export {
   defaultRunsRoot,
   readRunEvents,
   readRunState,

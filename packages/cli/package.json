@@ -35,7 +35,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "node scripts/vitest-run.mjs",
     "lint": "biome check src"
   },
   "dependencies": {

@@ -118,7 +118,9 @@ export type {
 export {
   parseTrailStepProviderManifest,
   type TrailStepProviderManifest,
+  type TrailStepProviderPackageDefinition,
   type TrailStepProviderRegistration,
+  type TrailStepProviderSource,
 } from "./providers/provider-manifest.js";
 export {
   defaultRunsRoot,

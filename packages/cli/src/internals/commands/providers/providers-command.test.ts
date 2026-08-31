@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import { resolveCommand } from "../../command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
-  return join("node_modules", ".tmp-trailstep-providers-command-tests", `${task.id}-${randomUUID()}`);
+  return join(
+    "node_modules",
+    ".tmp-trailstep-providers-command-tests",
+    `${task.id}-${randomUUID()}`,
+  );
 }
 
 async function readJson(path: string): Promise<unknown> {
@@ -16,6 +20,28 @@ async function readJson(path: string): Promise<unknown> {
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function writeProviderPackage(
+  packageRoot: string,
+  options: {
+    readonly packageName?: string;
+    readonly version?: string;
+    readonly manifest?: unknown;
+    readonly hooksExport?: string;
+  } = {},
+): Promise<void> {
+  await writeJson(resolve(packageRoot, "package.json"), {
+    name: options.packageName ?? "@example/provider",
+    version: options.version ?? "1.2.3",
+    type: "module",
+    exports: "./index.mjs",
+  });
+  await writeFile(
+    resolve(packageRoot, "index.mjs"),
+    `export const trailstepProvider = {\n  manifest: ${JSON.stringify(options.manifest ?? validManifest)},\n  ${options.hooksExport ?? "hooks: { beforeWorkingAgent: async () => undefined }"}\n};\n`,
+    "utf8",
+  );
 }
 
 const validManifest = {
@@ -58,6 +84,203 @@ describe("providersCommand", () => {
     });
   });
 
+  it("preserves bare relative local manifest paths instead of treating them as npm refs", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, "provider.json"), validManifest);
+    const packageCommandRunner = vi.fn(async () => ({ exitCode: 1 }));
+    const command = resolveCommand(["providers", "add", "provider.json", "--scope", "project"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "add", "provider.json", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        packageCommandRunner,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(packageCommandRunner).not.toHaveBeenCalled();
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "provider.json" },
+          manifest: validManifest,
+        },
+      },
+    });
+  });
+
+  it("inspect loads a provider package export and reports hooks outside the manifest", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const lines: string[] = [];
+    const packageRoot = resolve(cwd, "providers", "echo-package");
+    await writeProviderPackage(packageRoot, {
+      packageName: "@example/trailstep-provider-echo",
+      manifest: { ...validManifest, id: "echo", displayName: "Echo Provider" },
+    });
+    const command = resolveCommand(["providers", "inspect", packageRoot]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "inspect", packageRoot]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("Id: echo");
+    expect(lines).toContain("Display name: Echo Provider");
+    expect(lines).toContain("Hooks: present");
+  });
+
+  it("inspect reports the expected provider package export when it is missing", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const errors: string[] = [];
+    const packageRoot = resolve(cwd, "providers", "missing-export");
+    await writeJson(resolve(packageRoot, "package.json"), {
+      name: "@example/missing-export",
+      version: "1.0.0",
+      type: "module",
+      exports: "./index.mjs",
+    });
+    await writeFile(resolve(packageRoot, "index.mjs"), "export const notAProvider = {};\n", "utf8");
+    const command = resolveCommand(["providers", "inspect", packageRoot]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "inspect", packageRoot]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("trailstepProvider");
+    expect(errors.join("\n")).toContain("provider export missing");
+  });
+
+  it("inspect of an npm-style provider package reuses node_modules without package writes", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const lines: string[] = [];
+    await writeProviderPackage(resolve(cwd, "node_modules", "@example", "provider"));
+    const packageCommandRunner = vi.fn(async () => ({ exitCode: 1 }));
+    const command = resolveCommand(["providers", "inspect", "@example/provider"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "inspect", "@example/provider"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+        packageCommandRunner,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(packageCommandRunner).not.toHaveBeenCalled();
+    expect(lines).toContain("Id: my-agent");
+    await expect(readJson(resolve(cwd, "package.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("adds an npm-style provider package through the package runner and stores source metadata", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const packageCommandRunner = vi.fn(async (request) => {
+      await writeProviderPackage(resolve(request.cwd, "node_modules", "@example", "provider"));
+      return { exitCode: 0, stdout: "added @example/provider@1.2.3" };
+    });
+    const command = resolveCommand([
+      "providers",
+      "add",
+      "@example/provider@^1.2.0",
+      "--scope",
+      "project",
+    ]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs([
+        "providers",
+        "add",
+        "@example/provider@^1.2.0",
+        "--scope",
+        "project",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        packageCommandRunner,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(packageCommandRunner).toHaveBeenCalled();
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      providers: {
+        "my-agent": {
+          source: {
+            type: "npm",
+            packageName: "@example/provider",
+            spec: "@example/provider@^1.2.0",
+            resolvedVersion: "1.2.3",
+          },
+          manifest: validManifest,
+        },
+      },
+    });
+  });
+
+  it("does not write a provider registration when package validation fails", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const errors: string[] = [];
+    const packageCommandRunner = vi.fn(async (request) => {
+      await writeJson(
+        resolve(request.cwd, "node_modules", "@example", "provider", "package.json"),
+        {
+          name: "@example/provider",
+          version: "1.2.3",
+          type: "module",
+          exports: "./index.mjs",
+        },
+      );
+      await writeFile(
+        resolve(request.cwd, "node_modules", "@example", "provider", "index.mjs"),
+        "export const notAProvider = {};\n",
+        "utf8",
+      );
+      return { exitCode: 0 };
+    });
+    const command = resolveCommand(["providers", "add", "@example/provider", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "add", "@example/provider", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+        packageCommandRunner,
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("trailstepProvider");
+    await expect(readJson(resolve(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("inspect reports actionable diagnostics for an invalid manifest without registering it", async ({
     task,
   }) => {
@@ -76,10 +299,13 @@ describe("providersCommand", () => {
     const command = resolveCommand(["providers", "inspect", manifestPath]);
 
     expect(command.name).toBe("providers");
-    const exitCode = await command.run(command.parseArgs(["providers", "inspect", manifestPath]) as never, {
-      cwd,
-      io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-    });
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "inspect", manifestPath]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      },
+    );
 
     expect(exitCode).toBe(1);
     expect(errors.join("\n")).toContain("manifest.working.command must be a non-empty string");
@@ -138,7 +364,10 @@ describe("providersCommand", () => {
       command.parseArgs(["providers", "test", "my-agent", "--scope", "project"]) as never,
       {
         cwd,
-        io: { writeLine: (line: string) => lines.push(line), writeError: (line: string) => errors.push(line) },
+        io: {
+          writeLine: (line: string) => lines.push(line),
+          writeError: (line: string) => errors.push(line),
+        },
         workingAgentProcessRunner,
         providerBinaryResolver: async (binary: string) => binary !== "my-agent",
       } as never,
@@ -176,7 +405,10 @@ describe("providersCommand", () => {
       {
         cwd,
         env: {},
-        io: { writeLine: (line: string) => lines.push(line), writeError: (line: string) => errors.push(line) },
+        io: {
+          writeLine: (line: string) => lines.push(line),
+          writeError: (line: string) => errors.push(line),
+        },
         providerBinaryResolver: async () => true,
       } as never,
     );
@@ -221,7 +453,9 @@ describe("providersCommand", () => {
     expect(workingAgentProcessRunner).not.toHaveBeenCalled();
   });
 
-  it("remove reports agents that reference a provider and leaves config unchanged", async ({ task }) => {
+  it("remove reports agents that reference a provider and leaves config unchanged", async ({
+    task,
+  }) => {
     const cwd = tmpDir(task);
     const configPath = resolve(cwd, ".trailstep", "config.json");
     const originalConfig = {

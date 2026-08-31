@@ -1,10 +1,24 @@
 import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
-import { delimiter, resolve } from "node:path";
-
+import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { delimiter, join, resolve } from "node:path";
+import type { TrailStepProviderManifest } from "@trailstep/core";
 import * as trailstepCore from "@trailstep/core";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import type { CliCommand, CliCommandContext, PackageCommandRunner } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import {
+  createPackageAddCommand,
+  defaultPackageCommandRunner,
+  detectPackageManager,
+  isPnpmWorkspaceRoot,
+} from "../../package-manager/package-manager.js";
+import {
+  type LoadedProviderPackageDefinition,
+  loadProviderPackage,
+} from "../../providers/provider-package-loader.js";
+import {
+  type ProviderPackageRef,
+  parseProviderPackageRef,
+} from "../../providers/provider-package-ref.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
@@ -12,36 +26,29 @@ import {
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 
-interface TrailStepProviderRegistration {
-  readonly source: { readonly type: "local-manifest"; readonly path: string };
-  readonly manifest: TrailStepProviderManifest;
-}
-
-interface TrailStepProviderManifest {
-  readonly schemaVersion: 1;
-  readonly id: string;
-  readonly displayName: string;
-  readonly working: {
-    readonly supported: boolean;
-    readonly command?: string;
-    readonly args?: readonly string[];
-    readonly prompt?: { readonly kind: "prompt-file" };
-    readonly output?: { readonly style: "provider-output-file" };
-  };
-  readonly interactive: {
-    readonly supported: boolean;
-    readonly reason?: string;
-    readonly command?: string;
-  };
-  readonly model: { readonly supported: boolean };
-  readonly thinking: { readonly supported: boolean; readonly levels?: readonly string[] };
+type ProviderManifestWithStoredMetadata = TrailStepProviderManifest & {
   readonly environment?: {
     readonly required?: readonly string[];
     readonly optional?: readonly string[];
   };
-  readonly env?: { readonly required?: readonly string[]; readonly optional?: readonly string[] };
   readonly hooks?: Record<string, unknown>;
+};
+
+interface TrailStepProviderRegistration {
+  readonly source:
+    | { readonly type: "local-manifest"; readonly path: string }
+    | {
+        readonly type: "npm" | "github" | "local-package";
+        readonly packageName: string;
+        readonly spec: string;
+        readonly resolvedVersion?: string;
+      };
+  readonly manifest: ProviderManifestWithStoredMetadata;
 }
+
+type LoadedProviderDefinition = Omit<LoadedProviderPackageDefinition, "manifest"> & {
+  readonly manifest: ProviderManifestWithStoredMetadata;
+};
 
 type ProviderCommandArgs =
   | { readonly action: "inspect"; readonly path: string }
@@ -131,8 +138,10 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
 };
 
 async function inspectProvider(path: string, context: CliCommandContext): Promise<number> {
-  const manifest = await readLocalManifest(path, context);
-  writeManifestDetails(manifest, context);
+  const provider = (await localSourceExists(path, context))
+    ? await loadProviderDefinition(path, context)
+    : await inspectInstalledProviderPackage(path, context);
+  writeManifestDetails(provider.manifest, context, provider.hooksPresent);
   return 0;
 }
 
@@ -141,16 +150,16 @@ async function addProvider(
   context: CliCommandContext,
 ): Promise<number> {
   const scope = await resolveScope(args.scope, context);
-  const manifest = await readLocalManifest(args.path, context);
+  const prepared = await prepareProviderForAdd(args.path, scope, context);
   const configPath = configPathForScope(scope, context);
   const config = await readRawTrailStepConfigFile(configPath);
   const providers = toMutableRecord(config.providers);
-  providers[manifest.id] = {
-    source: { type: "local-manifest", path: args.path },
-    manifest,
+  providers[prepared.manifest.id] = {
+    source: prepared.source,
+    manifest: prepared.manifest,
   } satisfies TrailStepProviderRegistration;
   await writeRawTrailStepConfigFile(configPath, { ...config, providers });
-  context.io.writeLine(`Wrote provider ${manifest.id} to ${configPath}.`);
+  context.io.writeLine(`Wrote provider ${prepared.manifest.id} to ${configPath}.`);
   return 0;
 }
 
@@ -179,12 +188,17 @@ async function showProvider(
 ): Promise<number> {
   const scope = await resolveScope(args.scope, context);
   const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
-  const registration = readRegistration(toMutableRecord(config.providers)[args.provider]);
+  const rawRegistration = toMutableRecord(config.providers)[args.provider];
+  const registration = readRegistration(rawRegistration);
   if (registration === undefined) {
     throw new CliUsageError(`Provider ${args.provider} does not exist in ${scope} config.`);
   }
-  writeManifestDetails(registration.manifest, context);
-  context.io.writeLine(`Source: ${registration.source.type} ${registration.source.path}`);
+  writeManifestDetails(
+    registration.manifest,
+    context,
+    providerRegistrationHasHooks(rawRegistration),
+  );
+  context.io.writeLine(`Source: ${formatProviderSource(registration.source)}`);
   return 0;
 }
 
@@ -274,10 +288,188 @@ async function removeProvider(
   return 0;
 }
 
+async function prepareProviderForAdd(
+  source: string,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<
+  LoadedProviderDefinition & { readonly source: TrailStepProviderRegistration["source"] }
+> {
+  const packageRef = (await localSourceExists(source, context))
+    ? undefined
+    : parseProviderPackageRef(source);
+  if (packageRef === undefined) {
+    const provider = await loadProviderDefinition(source, context);
+    return {
+      ...provider,
+      source: provider.packageName
+        ? {
+            type: "local-package",
+            packageName: provider.packageName,
+            spec: source,
+            ...(provider.version === undefined ? {} : { resolvedVersion: provider.version }),
+          }
+        : { type: "local-manifest", path: source },
+    };
+  }
+
+  const installed = await installProviderPackage(packageRef, scope, context);
+  const provider = await loadProviderPackage(installed.packageRoot);
+  return {
+    ...provider,
+    source: {
+      type: packageRef.sourceType,
+      packageName: installed.packageName,
+      spec: source,
+      ...(provider.version === undefined ? {} : { resolvedVersion: provider.version }),
+    },
+  };
+}
+
+async function loadProviderDefinition(
+  source: string,
+  context: CliCommandContext,
+): Promise<LoadedProviderDefinition> {
+  const fullPath = resolve(context.cwd, source);
+  try {
+    if ((await stat(fullPath)).isDirectory()) {
+      return loadProviderPackage(fullPath) as Promise<LoadedProviderDefinition>;
+    }
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+  const manifest = await readLocalManifest(source, context);
+  return {
+    manifest,
+    hooksPresent: isRecord(manifest.hooks) && Object.keys(manifest.hooks).length > 0,
+  };
+}
+
+async function inspectInstalledProviderPackage(
+  source: string,
+  context: CliCommandContext,
+): Promise<LoadedProviderDefinition> {
+  const packageRef = parseProviderPackageRef(source);
+  if (packageRef?.packageName === undefined) {
+    throw new CliUsageError(
+      "trailstep providers inspect requires a local manifest path, local package directory, or npm package already present in node_modules.",
+    );
+  }
+  const packageRoot = join(context.cwd, "node_modules", ...packageRef.packageName.split("/"));
+  try {
+    await stat(packageRoot);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new CliUsageError(
+        `Provider package ${source} is not installed. Run trailstep providers add ${source} --scope <scope> to install and register it.`,
+      );
+    }
+    throw error;
+  }
+  return loadProviderPackage(packageRoot) as Promise<LoadedProviderDefinition>;
+}
+
+async function localSourceExists(source: string, context: CliCommandContext): Promise<boolean> {
+  try {
+    await stat(resolve(context.cwd, source));
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function installProviderPackage(
+  packageRef: ProviderPackageRef,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<{ readonly packageRoot: string; readonly packageName: string }> {
+  const installRoot =
+    scope === "global"
+      ? join(context.homeDir ?? context.cwd, ".trailstep", "packages")
+      : context.cwd;
+  await ensurePackageJsonExists(installRoot);
+  const packageManager = await detectPackageManager({ cwd: installRoot });
+  const command = createPackageAddCommand({
+    packageManager: packageManager.name,
+    saveType: "dependencies",
+    packageSpec: packageRef.requestedSpec,
+    workspaceRoot:
+      packageManager.name === "pnpm" ? await isPnpmWorkspaceRoot({ cwd: installRoot }) : false,
+  });
+  const runner: PackageCommandRunner = context.packageCommandRunner ?? defaultPackageCommandRunner;
+  const installedBefore =
+    packageRef.packageName === undefined ? await listInstalledPackageNames(installRoot) : [];
+  const result = await runner({ command: command.command, args: command.args, cwd: installRoot });
+  if (result.exitCode !== 0) {
+    throw new CliUsageError(
+      `Package install failed for ${packageRef.requestedSpec} with exit code ${result.exitCode}.${result.stderr ? `\n${result.stderr}` : ""}`,
+    );
+  }
+  const packageName =
+    packageRef.packageName ??
+    (await findInstalledProviderPackageName(installRoot, installedBefore));
+  return { packageName, packageRoot: join(installRoot, "node_modules", ...packageName.split("/")) };
+}
+
+async function ensurePackageJsonExists(installRoot: string): Promise<void> {
+  await mkdir(installRoot, { recursive: true });
+  try {
+    await readFile(join(installRoot, "package.json"), "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      await writeFile(join(installRoot, "package.json"), "{}\n", "utf8");
+      return;
+    }
+    throw error;
+  }
+}
+
+async function findInstalledProviderPackageName(
+  installRoot: string,
+  installedBefore: readonly string[],
+): Promise<string> {
+  const before = new Set(installedBefore);
+  const installedAfter = await listInstalledPackageNames(installRoot);
+  const added = installedAfter.filter((packageName) => !before.has(packageName));
+  if (added.length === 1 && added[0] !== undefined) return added[0];
+  if (installedAfter.length === 1 && installedAfter[0] !== undefined) return installedAfter[0];
+  throw new CliUsageError(
+    "Package install completed but provider package name could not be identified.",
+  );
+}
+
+async function listInstalledPackageNames(installRoot: string): Promise<readonly string[]> {
+  const root = join(installRoot, "node_modules");
+  let entries: Array<{ readonly name: string; isDirectory(): boolean }>;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+  const packages: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith("@")) {
+      for (const scopedEntry of await readdir(join(root, entry.name), { withFileTypes: true })) {
+        if (scopedEntry.isDirectory() && !scopedEntry.name.startsWith(".")) {
+          packages.push(`${entry.name}/${scopedEntry.name}`);
+        }
+      }
+      continue;
+    }
+    packages.push(entry.name);
+  }
+  return packages;
+}
+
 async function readLocalManifest(
   manifestPath: string,
   context: CliCommandContext,
-): Promise<TrailStepProviderManifest> {
+): Promise<ProviderManifestWithStoredMetadata> {
   const fullPath = resolve(context.cwd, manifestPath);
   let value: unknown;
   try {
@@ -302,8 +494,9 @@ async function readLocalManifest(
 }
 
 function writeManifestDetails(
-  manifest: TrailStepProviderManifest,
+  manifest: ProviderManifestWithStoredMetadata,
   context: CliCommandContext,
+  hooksPresent = isRecord(manifest.hooks) && Object.keys(manifest.hooks).length > 0,
 ): void {
   context.io.writeLine(`Id: ${manifest.id}`);
   context.io.writeLine(`Display name: ${manifest.displayName}`);
@@ -313,6 +506,7 @@ function writeManifestDetails(
   );
   context.io.writeLine(`Model override: ${manifest.model.supported ? "supported" : "unsupported"}`);
   context.io.writeLine(`Thinking: ${manifest.thinking.supported ? "supported" : "unsupported"}`);
+  context.io.writeLine(`Hooks: ${hooksPresent ? "present" : "absent"}`);
 }
 
 async function resolveScope(
@@ -608,8 +802,8 @@ function readRegistration(
     diagnostics.push("registration must include source and manifest objects.");
     return undefined;
   }
-  if (value.source.type !== "local-manifest" || typeof value.source.path !== "string") {
-    diagnostics.push("registration.source must be a local-manifest source with a path.");
+  const source = readProviderSource(value.source, diagnostics);
+  if (source === undefined) {
     return undefined;
   }
   const manifest = parseProviderManifest("manifest", value.manifest, diagnostics);
@@ -617,15 +811,47 @@ function readRegistration(
     return undefined;
   }
   return {
-    source: { type: "local-manifest", path: value.source.path },
+    source,
     manifest: withStoredManifestMetadata(manifest, value.manifest),
   };
+}
+
+function readProviderSource(
+  source: Record<string, unknown>,
+  diagnostics: string[],
+): TrailStepProviderRegistration["source"] | undefined {
+  if (source.type === "local-manifest" && typeof source.path === "string") {
+    return { type: "local-manifest", path: source.path };
+  }
+  if (
+    (source.type === "npm" || source.type === "github" || source.type === "local-package") &&
+    typeof source.packageName === "string" &&
+    typeof source.spec === "string"
+  ) {
+    return {
+      type: source.type,
+      packageName: source.packageName,
+      spec: source.spec,
+      ...(typeof source.resolvedVersion === "string"
+        ? { resolvedVersion: source.resolvedVersion }
+        : {}),
+    };
+  }
+  diagnostics.push("registration.source must be a supported provider source.");
+  return undefined;
+}
+
+function formatProviderSource(source: TrailStepProviderRegistration["source"]): string {
+  if (source.type === "local-manifest") {
+    return `${source.type} ${source.path}`;
+  }
+  return `${source.type} ${source.packageName}`;
 }
 
 function withStoredManifestMetadata(
   manifest: TrailStepProviderManifest,
   storedManifest: Record<string, unknown>,
-): TrailStepProviderManifest {
+): ProviderManifestWithStoredMetadata {
   const environment = parseEnvironmentDeclarations(storedManifest.environment);
   const env = parseEnvironmentDeclarations(storedManifest.env);
   const interactiveCommand = isRecord(storedManifest.interactive)
@@ -642,7 +868,9 @@ function withStoredManifestMetadata(
   };
 }
 
-function requiredEnvironmentVariables(manifest: TrailStepProviderManifest): readonly string[] {
+function requiredEnvironmentVariables(
+  manifest: ProviderManifestWithStoredMetadata,
+): readonly string[] {
   return [...(manifest.environment?.required ?? []), ...(manifest.env?.required ?? [])];
 }
 
@@ -738,6 +966,10 @@ function providerRegistrationHasHooks(value: unknown): boolean {
     return false;
   }
   return Object.keys(value.manifest.hooks).length > 0;
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

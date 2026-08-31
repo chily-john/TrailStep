@@ -28,6 +28,17 @@ TrailStep's key runtime boundary is the step: each step can run as a focused uni
 
 Runtime events are appended to `.trailstep/runs/<runName>/events.jsonl` by default. Set `TRAILSTEP_RUNS_ROOT` in CLI runs when you need artifacts somewhere else. Run directories are generated outputs for inspection and replay; do not manually edit them to recover workflow state.
 
+## Provider package export convention
+
+Provider packages expose their definition from the package root as an ESM export named `trailstepProvider`. The exported object must include a serializable `manifest`; optional hook functions belong beside the manifest, not inside it:
+
+```ts
+export const trailstepProvider = {
+  manifest: { schemaVersion: 1, id: "example", /* ... */ },
+  hooks: { /* optional hook functions */ },
+};
+```
+
 ## More docs
 
 - [Architecture](../../docs/architecture.md)

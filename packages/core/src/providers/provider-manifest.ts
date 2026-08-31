@@ -6,11 +6,27 @@ import {
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
 
 export interface TrailStepProviderRegistration {
-  readonly source: {
-    readonly type: "local-manifest";
-    readonly path: string;
-  };
+  readonly source: TrailStepProviderSource;
   readonly manifest: TrailStepProviderManifest;
+}
+
+export type TrailStepProviderSource =
+  | { readonly type: "local-manifest"; readonly path: string }
+  | {
+      readonly type: "npm" | "github" | "local-package";
+      readonly packageName: string;
+      readonly spec: string;
+      readonly resolvedVersion?: string;
+    };
+
+/**
+ * ESM package contract for provider packages: export `trailstepProvider` from
+ * the package root. Keep hook functions outside `manifest` so the manifest is
+ * serializable and safe to persist.
+ */
+export interface TrailStepProviderPackageDefinition {
+  readonly manifest: TrailStepProviderManifest;
+  readonly hooks?: Record<string, unknown>;
 }
 
 export interface TrailStepProviderManifest {
@@ -121,23 +137,41 @@ function parseSource(
     return undefined;
   }
 
-  if (value.type !== "local-manifest") {
-    diagnostics.push(`${path}.type must be local-manifest.`);
+  if (value.type === "local-manifest") {
+    if (typeof value.path !== "string" || value.path.length === 0) {
+      diagnostics.push(`${path}.path must be a non-empty string.`);
+      return undefined;
+    }
+    return { type: "local-manifest", path: value.path };
   }
 
-  if (typeof value.path !== "string" || value.path.length === 0) {
-    diagnostics.push(`${path}.path must be a non-empty string.`);
+  if (value.type === "npm" || value.type === "github" || value.type === "local-package") {
+    if (typeof value.packageName !== "string" || value.packageName.length === 0) {
+      diagnostics.push(`${path}.packageName must be a non-empty string.`);
+    }
+    if (typeof value.spec !== "string" || value.spec.length === 0) {
+      diagnostics.push(`${path}.spec must be a non-empty string.`);
+    }
+    if (
+      typeof value.packageName !== "string" ||
+      value.packageName.length === 0 ||
+      typeof value.spec !== "string" ||
+      value.spec.length === 0
+    ) {
+      return undefined;
+    }
+    return {
+      type: value.type,
+      packageName: value.packageName,
+      spec: value.spec,
+      ...(typeof value.resolvedVersion === "string" && value.resolvedVersion.length > 0
+        ? { resolvedVersion: value.resolvedVersion }
+        : {}),
+    };
   }
 
-  if (
-    value.type !== "local-manifest" ||
-    typeof value.path !== "string" ||
-    value.path.length === 0
-  ) {
-    return undefined;
-  }
-
-  return { type: "local-manifest", path: value.path };
+  diagnostics.push(`${path}.type must be local-manifest, npm, github, or local-package.`);
+  return undefined;
 }
 
 function parseManifest(

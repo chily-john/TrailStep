@@ -22,11 +22,11 @@
     "pack:public:dry-run": "node scripts/pack-public-packages.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
+    "@biomejs/biome": "^2.5.11",
     "@changesets/cli": "^3.0.1",
     "@trailstep/create-flows": "^0.3.0",
     "tsup": "^8.5.0",
-    "turbo": "^2.10.10",
+    "turbo": "^2.10.12",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

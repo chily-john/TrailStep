@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+
 import type {
   TrailStepAgentTarget,
   TrailStepConfig,
@@ -87,9 +89,67 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     });
   }
 
+  await writeHookExtractedOutput({
+    provider: options.target.provider,
+    stepId: options.step.id,
+    outputFile: options.files.outputFile,
+    stdout: (result as WorkingAgentProcessResult & { readonly stdout?: string }).stdout,
+    extractOutputHook: registration?.manifest.hooks?.extractOutput,
+  });
+
   return readWorkingAgentOutput({
     stepId: options.step.id,
     outputFile: options.files.outputFile,
     step: options.step,
   });
+}
+
+async function writeHookExtractedOutput(options: {
+  readonly provider: string;
+  readonly stepId: string;
+  readonly outputFile: string;
+  readonly stdout?: string;
+  readonly extractOutputHook?: unknown;
+}): Promise<void> {
+  if (!isRecord(options.extractOutputHook) || options.stdout === undefined) {
+    return;
+  }
+
+  const extracted = extractJsonObject(options.stdout);
+  if (extracted === undefined) {
+    throw new TrailStepFailureError({
+      code: "agent_provider_output_invalid",
+      message: `Working agent step ${options.stepId} provider '${options.provider}' could not extract JSON output from stdout using declared hook metadata.`,
+      details: { provider: options.provider },
+    });
+  }
+
+  await writeFile(options.outputFile, `${JSON.stringify(extracted)}\n`, "utf8");
+}
+
+function extractJsonObject(stdout: string): Record<string, unknown> | undefined {
+  const trimmed = stdout.trim();
+  const candidates = [trimmed];
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (isRecord(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

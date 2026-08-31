@@ -138,6 +138,7 @@ describe("providersCommand", () => {
     expect(lines).toContain("Id: echo");
     expect(lines).toContain("Display name: Echo Provider");
     expect(lines).toContain("Hooks: present");
+    expect(lines.join("\n")).toContain("executes provider package code");
   });
 
   it("inspect reports the expected provider package export when it is missing", async ({
@@ -240,6 +241,42 @@ describe("providersCommand", () => {
         },
       },
     });
+  });
+
+  it("add warns when the registered provider will execute provider package code through hooks", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const lines: string[] = [];
+    const packageCommandRunner = vi.fn(async (request) => {
+      await writeProviderPackage(resolve(request.cwd, "node_modules", "@example", "provider"));
+      return { exitCode: 0, stdout: "added @example/provider@1.2.3" };
+    });
+    const command = resolveCommand([
+      "providers",
+      "add",
+      "@example/provider@^1.2.0",
+      "--scope",
+      "project",
+    ]);
+
+    const exitCode = await command.run(
+      command.parseArgs([
+        "providers",
+        "add",
+        "@example/provider@^1.2.0",
+        "--scope",
+        "project",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+        packageCommandRunner,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("executes provider package code");
   });
 
   it("does not write a provider registration when package validation fails", async ({ task }) => {
@@ -449,8 +486,42 @@ describe("providersCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Hooks: present");
+    expect(lines.join("\n")).toContain("executes provider package code");
     expect(lines.join("\n")).toContain("Prompt execution skipped");
     expect(workingAgentProcessRunner).not.toHaveBeenCalled();
+  });
+
+  it("show warns when a registered provider declares executable package hooks", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      providers: {
+        "my-agent": {
+          source: {
+            type: "npm",
+            packageName: "@example/provider",
+            spec: "@example/provider",
+            resolvedVersion: "1.2.3",
+          },
+          manifest: {
+            ...validManifest,
+            hooks: { beforeWorkingAgent: { supported: true } },
+          },
+        },
+      },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["providers", "show", "my-agent", "--scope", "project"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "show", "my-agent", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("executes provider package code");
   });
 
   it("remove reports agents that reference a provider and leaves config unchanged", async ({

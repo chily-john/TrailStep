@@ -160,6 +160,7 @@ async function addProvider(
   } satisfies TrailStepProviderRegistration;
   await writeRawTrailStepConfigFile(configPath, { ...config, providers });
   context.io.writeLine(`Wrote provider ${prepared.manifest.id} to ${configPath}.`);
+  writeProviderHookTrustWarning(context, prepared.hooksPresent);
   return 0;
 }
 
@@ -174,7 +175,7 @@ async function listProviders(
     const rawRegistration = providers[id];
     const registration = readRegistration(rawRegistration);
     const manifest = registration?.manifest;
-    const hooksPresent = providerRegistrationHasHooks(rawRegistration);
+    const hooksPresent = await providerRegistrationHasHooks(rawRegistration, scope, context);
     context.io.writeLine(
       `${id}\t${manifest?.displayName ?? "(unknown)"}\t${registration?.source.type ?? "unknown"}\thooks: ${hooksPresent ? "yes" : "no"}`,
     );
@@ -196,7 +197,7 @@ async function showProvider(
   writeManifestDetails(
     registration.manifest,
     context,
-    providerRegistrationHasHooks(rawRegistration),
+    await providerRegistrationHasHooks(rawRegistration, scope, context),
   );
   context.io.writeLine(`Source: ${formatProviderSource(registration.source)}`);
   return 0;
@@ -255,9 +256,9 @@ async function testProvider(
     }
   }
 
-  context.io.writeLine(
-    `Hooks: ${providerRegistrationHasHooks(rawRegistration) ? "present" : "absent"}`,
-  );
+  const hooksPresent = await providerRegistrationHasHooks(rawRegistration, scope, context);
+  context.io.writeLine(`Hooks: ${hooksPresent ? "present" : "absent"}`);
+  writeProviderHookTrustWarning(context, hooksPresent);
   context.io.writeLine("Prompt execution skipped.");
   return failed ? 1 : 0;
 }
@@ -507,6 +508,17 @@ function writeManifestDetails(
   context.io.writeLine(`Model override: ${manifest.model.supported ? "supported" : "unsupported"}`);
   context.io.writeLine(`Thinking: ${manifest.thinking.supported ? "supported" : "unsupported"}`);
   context.io.writeLine(`Hooks: ${hooksPresent ? "present" : "absent"}`);
+  writeProviderHookTrustWarning(context, hooksPresent);
+}
+
+function writeProviderHookTrustWarning(
+  context: Pick<CliCommandContext, "io">,
+  hooksPresent: boolean,
+): void {
+  if (!hooksPresent) {
+    return;
+  }
+  context.io.writeLine("Warning: hook-backed provider actions executes provider package code.");
 }
 
 async function resolveScope(
@@ -961,11 +973,46 @@ function toMutableRecord(value: unknown): Record<string, unknown> {
   return { ...value };
 }
 
-function providerRegistrationHasHooks(value: unknown): boolean {
-  if (!isRecord(value) || !isRecord(value.manifest) || !isRecord(value.manifest.hooks)) {
+async function providerRegistrationHasHooks(
+  value: unknown,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<boolean> {
+  if (isRecord(value) && isRecord(value.manifest) && isRecord(value.manifest.hooks)) {
+    return Object.keys(value.manifest.hooks).length > 0;
+  }
+
+  const registration = readRegistration(value);
+  if (
+    registration === undefined ||
+    registration.source.type === "local-manifest" ||
+    registration.source.packageName.length === 0
+  ) {
     return false;
   }
-  return Object.keys(value.manifest.hooks).length > 0;
+
+  try {
+    const packageRoot = resolveRegisteredProviderPackageRoot(registration.source, scope, context);
+    return (await loadProviderPackage(packageRoot)).hooksPresent;
+  } catch {
+    return false;
+  }
+}
+
+function resolveRegisteredProviderPackageRoot(
+  source: Exclude<TrailStepProviderRegistration["source"], { readonly type: "local-manifest" }>,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): string {
+  if (source.type === "local-package") {
+    return resolve(context.cwd, source.spec);
+  }
+
+  const installRoot =
+    scope === "global"
+      ? join(context.homeDir ?? context.cwd, ".trailstep", "packages")
+      : context.cwd;
+  return join(installRoot, "node_modules", ...source.packageName.split("/"));
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

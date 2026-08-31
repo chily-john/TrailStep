@@ -320,6 +320,75 @@ describe("runWorkingAgentCommand", () => {
     expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
   });
 
+  it("uses package-backed output hooks to transform stdout into the step output for working-agent runs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-package-hooks-"));
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-package-hooks-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "package hook parsing" },
+      runName: "working-agent-package-hooks-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {},
+        providers: {
+          "hook-agent": {
+            source: {
+              type: "local-package",
+              packageName: "@example/hook-agent",
+              spec: "./providers/hook-agent",
+              resolvedVersion: "1.2.3",
+            },
+            manifest: {
+              schemaVersion: 1,
+              id: "hook-agent",
+              displayName: "Hook Agent",
+              working: {
+                supported: true,
+                command: "hook-agent",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false, reason: "Working-agent only." },
+              model: { supported: false },
+              thinking: { supported: false },
+              hooks: {
+                extractOutput: { supported: true, source: "package" },
+              },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "hook-agent" }] },
+      }),
+      workingAgentProcessRunner: async () => ({
+        exitCode: 0,
+        stdout: 'FINAL ANSWER: {"answer":"parsed from stdout hook"}',
+      }),
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ answer: "parsed from stdout hook" });
+  });
+
   it("runs custom working conditional args without empty model or thinking overrides", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-conditional-"));
     const requests: WorkingAgentProcessRequest[] = [];

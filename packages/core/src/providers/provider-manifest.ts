@@ -38,6 +38,7 @@ export interface TrailStepProviderManifest {
   readonly model: TrailStepProviderModelManifest;
   readonly thinking: TrailStepProviderThinkingManifest;
   readonly env?: TrailStepProviderEnvironmentManifest;
+  readonly hooks?: Record<string, unknown>;
 }
 
 export interface TrailStepProviderWorkingManifest {
@@ -217,6 +218,7 @@ function parseManifest(
     model,
     thinking,
     ...(env === undefined ? {} : { env }),
+    ...(isRecord(value.hooks) ? { hooks: value.hooks } : {}),
   };
 }
 

@@ -1,12 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import {
-  providerRegistry,
-  resolveAgentTargets,
-  type TrailStepConfig,
-  type WorkflowAgentRole,
-} from "@trailstep/core";
+import { resolveAgentTargets, type TrailStepConfig, type WorkflowAgentRole } from "@trailstep/core";
 
 import {
   type ConfiguredCustomProvider,
@@ -15,6 +10,7 @@ import {
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { loadTrailStepProjectConfig } from "../../config/config.js";
+import { OFFICIAL_PROVIDER_IDS } from "../../official-provider-specs.js";
 import {
   promptMultiSelect,
   promptSelect,
@@ -99,7 +95,7 @@ interface AddRegistration {
 const SCOPE_PROMPT_LABEL =
   "Where should this workflow be registered? (local = just you on this repo, " +
   "project = shared with your team, global = global across all your projects)";
-const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
+const PROVIDER_CHOICES = [...OFFICIAL_PROVIDER_IDS].sort();
 const SELECT_ALL_WORKFLOWS_CHOICE = "Select all";
 const EXISTING_PACKAGE_PROMPT_CHOICES = [
   "Reuse installed package",

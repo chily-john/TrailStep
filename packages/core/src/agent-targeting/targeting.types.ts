@@ -34,11 +34,7 @@ export interface TrailStepCustomProviderConfig {
 }
 
 export interface TrailStepAgentTarget {
-  /**
-   * Either a key declared in the top-level `customProviders` object, or a
-   * built-in provider registry id (e.g. `"claude"`). The registry is checked
-   * first; `customProviders` is the fallback/escape hatch.
-   */
+  /** Either a key declared in top-level `providers` or `customProviders`. */
   readonly provider: string;
   readonly model?: string;
   readonly thinking?: WorkflowAgentThinking;

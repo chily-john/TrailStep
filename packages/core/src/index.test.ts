@@ -14,6 +14,17 @@ describe("@trailstep/core public API", () => {
     expect(core.TrailStepFailureError).toBeTypeOf("function");
   });
 
+  it("does not export built-in provider registry symbols", async () => {
+    expect("providerRegistry" in core).toBe(false);
+
+    const publicEntrypoint = await readFile(
+      path.join(path.resolve(import.meta.dirname), "index.ts"),
+      "utf8",
+    );
+    expect(publicEntrypoint).not.toContain("providerRegistry");
+    expect(publicEntrypoint).not.toContain("ProviderRegistryKey");
+  });
+
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
     expect(runWorkflow).toBeTypeOf("function");
     expect(jsonSchema).toBeTypeOf("function");

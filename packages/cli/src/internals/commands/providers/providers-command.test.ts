@@ -491,7 +491,9 @@ describe("providersCommand", () => {
     expect(workingAgentProcessRunner).not.toHaveBeenCalled();
   });
 
-  it("show warns when a registered provider declares executable package hooks", async ({ task }) => {
+  it("show warns when a registered provider declares executable package hooks", async ({
+    task,
+  }) => {
     const cwd = tmpDir(task);
     await writeJson(resolve(cwd, ".trailstep", "config.json"), {
       providers: {

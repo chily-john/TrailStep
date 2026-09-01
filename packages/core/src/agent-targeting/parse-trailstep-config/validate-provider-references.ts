@@ -1,5 +1,4 @@
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
-import { isProviderRegistryKey } from "../../known-cli-providers/registry/provider-registry.js";
 import type { RawTrailStepAgentMappings, RawTrailStepAgentTarget } from "./parse-agent-targets.js";
 import type { RawTrailStepWorkflowConfig } from "./parse-workflow-agent-mappings.js";
 
@@ -27,7 +26,7 @@ export function validateProviderReferences(options: {
     throw new TrailStepFailureError({
       code: "agent_provider_unknown",
       message:
-        "One or more agent targets reference a provider that is neither a built-in provider nor a declared customProviders/providers entry.",
+        "One or more agent targets reference a provider that is not declared under customProviders/providers.",
       details: { diagnostics: providerViolations },
     });
   }
@@ -59,9 +58,9 @@ function validateTargetReferences(
       continue;
     }
 
-    if (!providerNames.has(target.provider) && !isProviderRegistryKey(target.provider)) {
+    if (!providerNames.has(target.provider)) {
       diagnostics.push(
-        `${path}[${index}].provider references unknown provider '${target.provider}'. Declare it under customProviders/providers or use a built-in provider.`,
+        `${path}[${index}].provider references unknown provider '${target.provider}'. Declare it under customProviders/providers.`,
       );
     }
   }

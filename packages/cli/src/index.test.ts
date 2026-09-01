@@ -13,6 +13,23 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 const MAIN_TEST_ROOT = join("node_modules", ".tmp-trailstep-main-tests");
 
 describe("main", () => {
+  it("does not import the core provider registry from CLI source files", async () => {
+    const sourceRoot = join(process.cwd(), "src");
+    const files = await listSourceFiles(sourceRoot);
+    const registryPattern = new RegExp(["provider", "Registry"].join(""));
+    const registryKeyPattern = new RegExp(["Provider", "RegistryKey"].join(""));
+    const providersPathPattern = new RegExp(["known-cli", "-providers"].join(""));
+
+    await Promise.all(
+      files.map(async (file) => {
+        const contents = await readFile(file, "utf8");
+        expect(contents, file).not.toMatch(registryPattern);
+        expect(contents, file).not.toMatch(registryKeyPattern);
+        expect(contents, file).not.toMatch(providersPathPattern);
+      }),
+    );
+  });
+
   beforeAll(async () => {
     await rm(MAIN_TEST_ROOT, { recursive: true, force: true });
   });
@@ -1582,6 +1599,20 @@ describe("main", () => {
     expect(installRequests).toEqual([{ command: "yarn", args: ["install"], cwd }]);
   });
 });
+
+async function listSourceFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return listSourceFiles(entryPath);
+      }
+      return entry.name.endsWith(".ts") ? [entryPath] : [];
+    }),
+  );
+  return files.flat();
+}
 
 const removedAuthoringSymbol = {
   packageName: "@trailstep/authoring",

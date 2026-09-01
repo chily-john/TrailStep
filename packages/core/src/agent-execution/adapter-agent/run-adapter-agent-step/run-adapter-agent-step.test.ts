@@ -3,12 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-
 import {
   type AgentAdapter,
   done,
   jsonSchema,
-  type ProviderWorkingProcessRequest,
   parseTrailStepConfig,
   promptTemplate,
   runWorkflow,
@@ -16,7 +14,6 @@ import {
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../../index.js";
-import { providerRegistry } from "../../../known-cli-providers/registry/provider-registry.js";
 
 describe("agent steps", () => {
   it("core source does not expose provider SDK adapter registry exports", async () => {
@@ -493,265 +490,14 @@ describe("agent steps", () => {
   });
 });
 
-describe("registry-vs-customProviders dispatch split", () => {
-  it("dispatches a working target whose provider matches a registry key through the built-in provider, with no customProviders entry required", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-"));
-    const providerCalls: ProviderWorkingProcessRequest[] = [];
+describe("provider registration dispatch", () => {
+  it("prefers a config.providers registration over a same-named customProviders entry", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-provider-registration-priority-"));
+    const manifestRequests: WorkingAgentProcessRequest[] = [];
+    const customRequests: WorkingAgentProcessRequest[] = [];
 
     const workflow: Workflow<{ name: string }, { greeting: string }> = {
-      id: "registry-dispatch-workflow",
-      inputShape: { name: "string" },
-      outputShape: { greeting: "string" },
-      agents: { writer: { size: "small", thinking: "medium" } },
-      start(input) {
-        return step({
-          id: "greet",
-        })
-          .prompt(({ input }) => `Greet ${input.name}.`, {
-            output: { greeting: "string" },
-            agent: "writer",
-          })
-          .do((output) => done(output))(input);
-      },
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: { name: "Ada" },
-      runName: "registry-dispatch-run",
-      cwd,
-      trailstepConfig: parseTrailStepConfig({
-        version: 1,
-        customProviders: {},
-        agents: { small: [{ provider: "claude", model: "sonnet" }] },
-      }),
-      providerWorkingRunner: async (request) => {
-        providerCalls.push(request);
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({ result: '{"greeting":"Hello, Ada!"}' }),
-        };
-      },
-    });
-
-    expect(result.status).toBe("success");
-    if (result.status !== "success") {
-      throw new Error(result.failure.message);
-    }
-    expect(result.output).toEqual({ greeting: "Hello, Ada!" });
-    expect(providerCalls).toHaveLength(1);
-    expect(providerCalls[0]).toMatchObject({
-      command: "claude",
-      args: expect.arrayContaining(["--model", "sonnet", "--effort", "medium"]),
-      cwd,
-    });
-  });
-
-  it("dispatches a codex working target through the built-in provider using direct -o file capture, with no envelope stdout parsing", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-codex-"));
-    const providerCalls: ProviderWorkingProcessRequest[] = [];
-
-    const workflow: Workflow<{ name: string }, { greeting: string }> = {
-      id: "registry-dispatch-codex-workflow",
-      inputShape: { name: "string" },
-      outputShape: { greeting: "string" },
-      agents: { writer: { size: "small", thinking: "medium" } },
-      start(input) {
-        return step({
-          id: "greet",
-        })
-          .prompt(({ input }) => `Greet ${input.name}.`, {
-            output: { greeting: "string" },
-            agent: "writer",
-          })
-          .do((output) => done(output))(input);
-      },
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: { name: "Dee" },
-      runName: "registry-dispatch-codex-run",
-      cwd,
-      trailstepConfig: parseTrailStepConfig({
-        version: 1,
-        customProviders: {},
-        agents: { small: [{ provider: "codex", model: "gpt-5.5" }] },
-      }),
-      // Unlike the claude registry test above, this mock never returns a
-      // stdout envelope: it writes outputFile directly, exactly as the real
-      // `codex exec -o <outputFile>` process does as a side effect, and
-      // returns only an exit code (stdout is unused for codex).
-      providerWorkingRunner: async (request) => {
-        providerCalls.push(request);
-        await writeFile(request.args.at(-2) ?? "", JSON.stringify({ greeting: "Hello, Dee!" }), {
-          encoding: "utf8",
-        });
-        return { exitCode: 0, stdout: "" };
-      },
-    });
-
-    expect(result.status).toBe("success");
-    if (result.status !== "success") {
-      throw new Error(result.failure.message);
-    }
-    expect(result.output).toEqual({ greeting: "Hello, Dee!" });
-    expect(providerCalls).toHaveLength(1);
-    expect(providerCalls[0]).toMatchObject({
-      command: "codex",
-      args: expect.arrayContaining([
-        "exec",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "-m",
-        "gpt-5.5",
-        "-c",
-        'model_reasoning_effort="medium"',
-      ]),
-      cwd,
-    });
-    expect(providerCalls[0]?.args).toContain("-o");
-  });
-
-  it("dispatches a pi working target through the built-in provider, extracting its message-shaped envelope field", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-pi-"));
-    const providerCalls: ProviderWorkingProcessRequest[] = [];
-
-    const workflow: Workflow<{ name: string }, { greeting: string }> = {
-      id: "registry-dispatch-pi-workflow",
-      inputShape: { name: "string" },
-      outputShape: { greeting: "string" },
-      agents: { writer: { size: "small", thinking: "high" } },
-      start(input) {
-        return step({
-          id: "greet",
-        })
-          .prompt(({ input }) => `Greet ${input.name}.`, {
-            output: { greeting: "string" },
-            agent: "writer",
-          })
-          .do((output) => done(output))(input);
-      },
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: { name: "Pip" },
-      runName: "registry-dispatch-pi-run",
-      cwd,
-      trailstepConfig: parseTrailStepConfig({
-        version: 1,
-        customProviders: {},
-        agents: { small: [{ provider: "pi", model: "openai-codex/gpt-5.5" }] },
-      }),
-      // Simulates the real, empirically confirmed `pi --mode json` shape: a
-      // JSON-lines transcript whose final usable "message" field is a
-      // message-object with a content-block array (not a flat string like
-      // Claude's "result"), proving envelope.ts's field-name parameterization
-      // genuinely varies per vendor.
-      providerWorkingRunner: async (request) => {
-        providerCalls.push(request);
-        const stdout = [
-          JSON.stringify({ type: "session", id: "abc" }),
-          JSON.stringify({
-            type: "turn_end",
-            message: {
-              role: "assistant",
-              content: [
-                { type: "thinking", thinking: "" },
-                { type: "text", text: '{"greeting":"Hello, Pip!"}' },
-              ],
-            },
-          }),
-          JSON.stringify({ type: "agent_end", messages: [] }),
-          JSON.stringify({ type: "agent_settled" }),
-        ].join("\n");
-        return { exitCode: 0, stdout };
-      },
-    });
-
-    expect(result.status).toBe("success");
-    if (result.status !== "success") {
-      throw new Error(result.failure.message);
-    }
-    expect(result.output).toEqual({ greeting: "Hello, Pip!" });
-    expect(providerCalls).toHaveLength(1);
-    expect(providerCalls[0]).toMatchObject({
-      command: "pi",
-      args: expect.arrayContaining(["-p", "--model", "openai-codex/gpt-5.5", "--thinking", "high"]),
-      cwd,
-    });
-    expect(providerCalls[0]?.args).toEqual(expect.arrayContaining(["--mode", "json"]));
-  });
-
-  it("dispatches a gemini working target through the built-in provider, using an injected fake runner (structural-only: the real gemini CLI is not installed here)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-dispatch-gemini-"));
-    const providerCalls: ProviderWorkingProcessRequest[] = [];
-
-    const workflow: Workflow<{ name: string }, { greeting: string }> = {
-      id: "registry-dispatch-gemini-workflow",
-      inputShape: { name: "string" },
-      outputShape: { greeting: "string" },
-      agents: { writer: { size: "small", thinking: "medium" } },
-      start(input) {
-        return step({
-          id: "greet",
-        })
-          .prompt(({ input }) => `Greet ${input.name}.`, {
-            output: { greeting: "string" },
-            agent: "writer",
-          })
-          .do((output) => done(output))(input);
-      },
-    };
-
-    const result = await runWorkflow({
-      workflow,
-      input: { name: "Gigi" },
-      runName: "registry-dispatch-gemini-run",
-      cwd,
-      trailstepConfig: parseTrailStepConfig({
-        version: 1,
-        customProviders: {},
-        agents: { small: [{ provider: "gemini", model: "gemini-2.5-pro" }] },
-      }),
-      // Synthetic stdout shaped like the Gemini CLI's documented
-      // `--output-format json` envelope (a flat "response" string field plus
-      // a "stats" object). Gemini is not installed in this environment, so
-      // this is a structural stub, not a live-process fixture the way the
-      // Claude/Codex/Pi dispatch tests above are.
-      providerWorkingRunner: async (request) => {
-        providerCalls.push(request);
-        const stdout = JSON.stringify({
-          response: '{"greeting":"Hello, Gigi!"}',
-          stats: { models: {}, tools: {} },
-        });
-        return { exitCode: 0, stdout };
-      },
-    });
-
-    expect(result.status).toBe("success");
-    if (result.status !== "success") {
-      throw new Error(result.failure.message);
-    }
-    expect(result.output).toEqual({ greeting: "Hello, Gigi!" });
-    expect(providerCalls).toHaveLength(1);
-    expect(providerCalls[0]).toMatchObject({
-      command: "gemini",
-      args: expect.arrayContaining(["-p", "--yolo", "-m", "gemini-2.5-pro"]),
-      cwd,
-    });
-    expect(providerCalls[0]?.args).toEqual(expect.arrayContaining(["--output-format", "json"]));
-  });
-
-  it("prefers built-in known CLI providers over same-named customProviders after provider registry is moved", async () => {
-    expect(providerRegistry.claude.id).toBe("claude");
-
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-registry-priority-"));
-    const providerCalls: ProviderWorkingProcessRequest[] = [];
-    const legacyRequests: WorkingAgentProcessRequest[] = [];
-
-    const workflow: Workflow<{ name: string }, { greeting: string }> = {
-      id: "registry-priority-workflow",
+      id: "provider-registration-priority-workflow",
       inputShape: { name: "string" },
       outputShape: { greeting: "string" },
       agents: { writer: { size: "small" } },
@@ -770,22 +516,40 @@ describe("registry-vs-customProviders dispatch split", () => {
     const result = await runWorkflow({
       workflow,
       input: { name: "Bea" },
-      runName: "registry-priority-run",
+      runName: "provider-registration-priority-run",
       cwd,
       trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: { claude: { binary: "should-not-run" } },
+        providers: {
+          claude: {
+            source: { type: "local-manifest", path: "./claude.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "claude",
+              displayName: "Claude",
+              working: {
+                supported: true,
+                command: "package-claude",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false },
+              model: { supported: false },
+              thinking: { supported: false },
+            },
+          },
+        },
         agents: { small: [{ provider: "claude" }] },
       }),
-      providerWorkingRunner: async (request) => {
-        providerCalls.push(request);
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({ result: '{"greeting":"Hello, Bea!"}' }),
-        };
-      },
       workingAgentProcessRunner: async (request) => {
-        legacyRequests.push(request);
+        if (request.command === "package-claude") {
+          manifestRequests.push(request);
+          await writeFile(request.outputFile, JSON.stringify({ greeting: "Hello, Bea!" }), "utf8");
+          return { exitCode: 0 };
+        }
+        customRequests.push(request);
         return { exitCode: 1 };
       },
     });
@@ -795,8 +559,8 @@ describe("registry-vs-customProviders dispatch split", () => {
       throw new Error(result.failure.message);
     }
     expect(result.output).toEqual({ greeting: "Hello, Bea!" });
-    expect(providerCalls).toHaveLength(1);
-    expect(legacyRequests).toHaveLength(0);
+    expect(manifestRequests).toHaveLength(1);
+    expect(customRequests).toHaveLength(0);
   });
 
   it("still dispatches a provider name that is only a customProviders key through the command path", async () => {
@@ -846,7 +610,7 @@ describe("registry-vs-customProviders dispatch split", () => {
     expect(legacyRequests[0]?.command).toBe("local-cli");
   });
 
-  it("rejects a target whose provider matches neither the registry nor customProviders with agent_provider_unknown", () => {
+  it("rejects a target whose provider matches neither providers nor customProviders with agent_provider_unknown", () => {
     expect(() =>
       parseTrailStepConfig({
         version: 1,

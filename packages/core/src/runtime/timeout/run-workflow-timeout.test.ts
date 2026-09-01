@@ -43,10 +43,10 @@ describe("workflow step timeouts", () => {
       cwd,
       trailstepConfig: {
         version: 1,
-        customProviders: {},
-        agents: { default: [{ provider: "pi" }] },
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { default: [{ provider: "worker" }] },
       },
-      providerWorkingRunner: async (request) => {
+      workingAgentProcessRunner: async (request) => {
         await new Promise<void>((resolve) => {
           if (request.signal?.aborted) {
             markAbortObserved();

@@ -1,0 +1,44 @@
+{
+  "name": "@trailstep/provider-claude",
+  "version": "0.1.0",
+  "description": "Official Claude provider package for TrailStep.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/chily-john/trailstep.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chily-john/trailstep/issues"
+  },
+  "homepage": "https://github.com/chily-john/trailstep#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "prepack": "pnpm build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check src"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.8",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

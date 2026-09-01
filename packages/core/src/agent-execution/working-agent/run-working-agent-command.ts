@@ -3,10 +3,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolveAgentTargets } from "../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../authoring/step/agent-step.types.js";
+import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { ProviderWorkingRunner } from "../../known-cli-providers/registry/provider-registry.types.js";
 import type { WorkingAgentProcessRunner } from "../../runtime/run-workflow/run-workflow.types.js";
 import {
   resolveStepAgentFiles,

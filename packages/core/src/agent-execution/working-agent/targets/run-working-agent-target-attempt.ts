@@ -5,15 +5,13 @@ import type {
   TrailStepConfig,
 } from "../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
+import type { ProviderWorkingRunner } from "../../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
-import { providerRegistry } from "../../../known-cli-providers/registry/provider-registry.js";
-import type { ProviderWorkingRunner } from "../../../known-cli-providers/registry/provider-registry.types.js";
 import type { WorkingAgentProcessRunner } from "../../../runtime/run-workflow/run-workflow.types.js";
 import type { WorkingAgentFiles } from "../artifacts/resolve-step-agent-files.js";
 import { runCustomWorkingProvider } from "./custom-provider/run-custom-working-provider.js";
 import { runManifestWorkingProvider } from "./manifest-provider/run-manifest-working-provider.js";
-import { runRegistryWorkingProvider } from "./registry-provider/run-registry-working-provider.js";
 
 export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(options: {
   readonly config: TrailStepConfig;
@@ -33,21 +31,6 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
 }): Promise<TOutput> {
   await rm(options.files.outputFile, { force: true });
   await rm(options.files.usageFile, { force: true });
-
-  const provider = providerRegistry[options.target.provider as keyof typeof providerRegistry];
-  if (provider) {
-    return runRegistryWorkingProvider({
-      provider,
-      role: options.role,
-      step: options.step,
-      renderedPrompt: options.renderedPrompt,
-      cwd: options.cwd,
-      providerWorkingRunner: options.providerWorkingRunner,
-      target: options.target,
-      files: options.files,
-      signal: options.signal,
-    });
-  }
 
   if (options.config.providers?.[options.target.provider] !== undefined) {
     return runManifestWorkingProvider({

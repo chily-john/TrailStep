@@ -182,6 +182,66 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
 
+  packages/provider-claude:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.8
+        version: 2.5.8
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.23)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/provider-codex:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.8
+        version: 2.5.8
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.23)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/provider-gemini:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.8
+        version: 2.5.8
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.23)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/provider-pi:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.8
+        version: 2.5.8
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.23)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
+
   packages/testkit:
     devDependencies:
       '@biomejs/biome':

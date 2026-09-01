@@ -54,6 +54,29 @@ export type {
 } from "./authoring/step/continuation.types.js";
 export type { Workflow } from "./authoring/workflow/workflow.types.js";
 export type {
+  ManagedSessionPromptInjectionMode,
+  ProviderAdapter,
+  ProviderInteractiveInvocationSpec,
+  ProviderInteractiveRequest,
+  ProviderManagedSessionPromptDelivery,
+  ProviderModelDiscoveryOutputParser,
+  ProviderModelDiscoverySpec,
+  ProviderModelOverrideSupport,
+  ProviderOutputParsingMetadata,
+  ProviderOutputSpec,
+  ProviderOutputStyle,
+  ProviderPromptFileReferenceStyle,
+  ProviderPromptInputSpec,
+  ProviderSpec,
+  ProviderThinkingOverrideSupport,
+  ProviderWorkingInvocationSpec,
+  ProviderWorkingProcessRequest,
+  ProviderWorkingProcessResult,
+  ProviderWorkingRepairInvocationSpec,
+  ProviderWorkingRequest,
+  ProviderWorkingRunner,
+} from "./cli-provider-runtime/catalog/provider-adapter.types.js";
+export type {
   AgentAdapter,
   AgentAdapterObject,
   AgentAdapterRequest,
@@ -88,33 +111,6 @@ export type {
   DeprecationStatus,
   DeprecationTargetPackage,
 } from "./deprecations/deprecations.types.js";
-export {
-  type ProviderRegistryKey,
-  providerRegistry,
-} from "./known-cli-providers/registry/provider-registry.js";
-export type {
-  ManagedSessionPromptInjectionMode,
-  ProviderAdapter,
-  ProviderInteractiveInvocationSpec,
-  ProviderInteractiveRequest,
-  ProviderManagedSessionPromptDelivery,
-  ProviderModelDiscoveryOutputParser,
-  ProviderModelDiscoverySpec,
-  ProviderModelOverrideSupport,
-  ProviderOutputParsingMetadata,
-  ProviderOutputSpec,
-  ProviderOutputStyle,
-  ProviderPromptFileReferenceStyle,
-  ProviderPromptInputSpec,
-  ProviderSpec,
-  ProviderThinkingOverrideSupport,
-  ProviderWorkingInvocationSpec,
-  ProviderWorkingProcessRequest,
-  ProviderWorkingProcessResult,
-  ProviderWorkingRepairInvocationSpec,
-  ProviderWorkingRequest,
-  ProviderWorkingRunner,
-} from "./known-cli-providers/registry/provider-registry.types.js";
 export {
   parseTrailStepProviderManifest,
   type TrailStepProviderManifest,

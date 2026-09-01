@@ -1,8 +1,7 @@
-import { providerRegistry } from "@trailstep/core";
-
 import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { OFFICIAL_PROVIDER_IDS } from "../../official-provider-specs.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
 import {
   createPackagedTrailStepSkillInstallationMarker,
@@ -28,7 +27,7 @@ interface InitCommandArgs {
 
 const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
 const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage/authoring skill?";
-const PROVIDER_CHOICES = Object.keys(providerRegistry).sort();
+const PROVIDER_CHOICES = [...OFFICIAL_PROVIDER_IDS].sort();
 
 export const initCommand: CliCommand<InitCommandArgs> = {
   name: "init",

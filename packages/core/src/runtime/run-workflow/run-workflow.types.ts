@@ -1,8 +1,8 @@
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
+import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { ProviderWorkingRunner } from "../../known-cli-providers/registry/provider-registry.types.js";
 
 export type TrailStepConfigInput = TrailStepConfig | Readonly<Record<string, unknown>>;
 

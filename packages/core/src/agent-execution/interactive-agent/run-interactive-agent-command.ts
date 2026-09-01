@@ -9,7 +9,6 @@ import type {
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
-import { providerRegistry } from "../../known-cli-providers/registry/provider-registry.js";
 import type { StepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
 import {
   isInteractiveCompleted,
@@ -88,32 +87,61 @@ async function runInteractiveAgentTarget(options: {
   const abortController = new AbortController();
   options.signal?.addEventListener("abort", () => abortController.abort(), { once: true });
 
-  const provider = providerRegistry[options.target.provider as keyof typeof providerRegistry];
-  if (provider) {
+  const manifestProvider = options.config.providers?.[options.target.provider];
+  if (manifestProvider !== undefined) {
+    const interactive = manifestProvider.manifest.interactive;
+    if (!interactive.supported || interactive.command === undefined) {
+      throw new TrailStepFailureError({
+        code: "agent_provider_interactive_unsupported",
+        message: `Provider '${options.target.provider}' cannot run interactive agent steps because its provider manifest does not declare supported interactive execution.`,
+        details: { provider: options.target.provider },
+      });
+    }
+
+    const command = interactive.command;
+    const args = renderCustomProviderArgs({
+      argv: options.target.args ?? ["{{prompt}}"],
+      values: {
+        prompt,
+        promptFile: files.promptFile,
+        ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        ...(thinking === undefined ? {} : { thinking }),
+      },
+      errorCode: "interactive_command_invalid",
+      commandDescription: "Manifest interactive provider command",
+    });
+
+    if (args.includes(files.promptFile)) {
+      await mkdir(dirname(files.promptFile), { recursive: true });
+      await writeFile(files.promptFile, prompt, "utf8");
+    }
+
     return await runProcessUntilExitOrCompletion({
       stepId: options.stepId,
       target: options.target.provider,
       interactiveFile: files.interactiveFile,
       abortController,
       readOutput: async () => await readCompletedOutput(options),
-      runProcess: async () => {
-        await writeFile(files.promptFile, prompt, "utf8");
-        return await provider.runInteractive(
-          {
-            prompt,
-            systemPromptFile: files.promptFile,
-            cwd: files.stepDir,
-            env,
-            signal: abortController.signal,
+      mapSpawnError: (error) =>
+        new TrailStepFailureError({
+          code: "interactive_command_spawn_error",
+          message: `Interactive agent step ${options.stepId} could not start provider '${options.target.provider}'.`,
+          details: {
+            provider: options.target.provider,
             ...(options.target.model === undefined ? {} : { model: options.target.model }),
-            ...(thinking === undefined ? {} : { thinking }),
-            ...(options.target.permissionMode === undefined
-              ? {}
-              : { permissionMode: options.target.permissionMode }),
+            cause: error instanceof Error ? error.message : String(error),
           },
-          options.runner,
-        );
-      },
+        }),
+      runProcess: async () =>
+        await (options.runner ?? spawnInteractiveProcess)({
+          command,
+          args,
+          cwd: files.stepDir,
+          shell: false,
+          stdio: "inherit",
+          env,
+          signal: abortController.signal,
+        }),
     });
   }
 

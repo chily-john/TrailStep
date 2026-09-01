@@ -974,8 +974,8 @@ describe("continuation interactive agent roles", () => {
     await expect(readFile(promptFile, "utf8")).resolves.toContain("Discuss prompt handoff.");
   });
 
-  it("dispatches an interactive target whose provider matches a registry key through the built-in provider", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-registry-"));
+  it("dispatches an interactive target declared as a manifest provider", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-manifest-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-registry-workflow",
@@ -1000,13 +1000,41 @@ describe("continuation interactive agent roles", () => {
     const result = await runWorkflow({
       workflow,
       input: { task: "prompt handoff" },
-      runName: "interactive-registry-run",
+      runName: "interactive-manifest-run",
       cwd,
       trailstepConfig: {
         version: 1,
         customProviders: {},
+        providers: {
+          claude: {
+            source: { type: "local-manifest", path: "./claude.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "claude",
+              displayName: "Claude",
+              working: { supported: false },
+              interactive: { supported: true, command: "claude" },
+              model: { supported: true },
+              thinking: { supported: true, levels: ["high"] },
+            },
+          },
+        },
         agents: {
-          small: [{ provider: "claude", model: "opus", thinking: "high" }],
+          small: [
+            {
+              provider: "claude",
+              model: "opus",
+              thinking: "high",
+              args: [
+                "--model",
+                "{{model}}",
+                "--effort",
+                "{{thinking}}",
+                "--append-system-prompt-file",
+                "{{promptFile}}",
+              ],
+            },
+          ],
         },
       },
       processRunner: async (call) => {
@@ -1022,20 +1050,12 @@ describe("continuation interactive agent roles", () => {
     }
 
     expect(runnerCalls).toHaveLength(1);
-    const registryStepDir = join(result.runDir, "steps", "0001-discuss");
-    const promptFilePath = join(registryStepDir, "prompt.txt");
+    const manifestStepDir = join(result.runDir, "steps", "0001-discuss");
+    const promptFilePath = join(manifestStepDir, "prompt.txt");
     expect(runnerCalls[0]).toMatchObject({
       command: "claude",
-      args: [
-        "--model",
-        "opus",
-        "--effort",
-        "high",
-        "--dangerously-skip-permissions",
-        "--append-system-prompt-file",
-        promptFilePath,
-      ],
-      cwd: registryStepDir,
+      args: ["--model", "opus", "--effort", "high", "--append-system-prompt-file", promptFilePath],
+      cwd: manifestStepDir,
       shell: false,
       stdio: "inherit",
     });
@@ -1044,8 +1064,8 @@ describe("continuation interactive agent roles", () => {
     expect(promptFileContents).toContain("## Original prompt\nDiscuss prompt handoff.");
   });
 
-  it("omits --dangerously-skip-permissions when the resolved target sets permissionMode to prompt", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-registry-"));
+  it("does not add provider-specific permission flags for generic manifest interactive targets", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-manifest-"));
     const runnerCalls: Parameters<InteractiveProcessRunner>[0][] = [];
     const workflow: Workflow<{ task: string }, { exitCode: number }> = {
       id: "interactive-registry-workflow",
@@ -1070,11 +1090,25 @@ describe("continuation interactive agent roles", () => {
     const result = await runWorkflow({
       workflow,
       input: { task: "prompt handoff" },
-      runName: "interactive-registry-run",
+      runName: "interactive-manifest-run",
       cwd,
       trailstepConfig: {
         version: 1,
         customProviders: {},
+        providers: {
+          claude: {
+            source: { type: "local-manifest", path: "./claude.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "claude",
+              displayName: "Claude",
+              working: { supported: false },
+              interactive: { supported: true, command: "claude" },
+              model: { supported: false },
+              thinking: { supported: false },
+            },
+          },
+        },
         agents: {
           small: [{ provider: "claude", permissionMode: "prompt" }],
         },

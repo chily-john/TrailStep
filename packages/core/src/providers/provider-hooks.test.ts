@@ -41,9 +41,12 @@ describe("package-backed provider hook metadata", () => {
       },
     });
 
-    expect(
-      (parsed.providers["hook-agent"]?.manifest as unknown as { hooks?: unknown }).hooks,
-    ).toEqual({
+    const provider = parsed.providers["hook-agent"];
+    expect(provider).toBeDefined();
+    if (provider === undefined) {
+      throw new Error("Expected hook-agent provider to be present.");
+    }
+    expect((provider.manifest as { hooks?: unknown }).hooks).toEqual({
       extractOutput: { supported: true, source: "package" },
       repairOutput: { supported: true, source: "package" },
     });

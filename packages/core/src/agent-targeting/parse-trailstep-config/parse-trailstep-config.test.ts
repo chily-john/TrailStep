@@ -54,7 +54,7 @@ describe("parseTrailStepConfig", () => {
       workflows: {
         review: {
           agents: {
-            reviewer: [{ provider: "claude", thinking: "high" }],
+            reviewer: [{ provider: "local", thinking: "high" }],
           },
         },
       },
@@ -77,7 +77,7 @@ describe("parseTrailStepConfig", () => {
       workflows: {
         review: {
           agents: {
-            reviewer: [{ provider: "claude", thinking: "high" }],
+            reviewer: [{ provider: "local", thinking: "high" }],
           },
         },
       },
@@ -109,7 +109,10 @@ describe("parseTrailStepConfig", () => {
   it("normalizes empty model override strings to omitted values", () => {
     const parsed = parseTrailStepConfig({
       version: 1,
-      customProviders: {},
+      customProviders: {
+        claude: { binary: "claude" },
+        codex: { binary: "codex" },
+      },
       agents: {
         default: [{ provider: "claude", model: "" }],
       },
@@ -131,7 +134,11 @@ describe("parseTrailStepConfig", () => {
   it("expands agent refs from the top-level reusable agents map", () => {
     const parsed = parseTrailStepConfig({
       version: 1,
-      customProviders: {},
+      customProviders: {
+        claude: { binary: "claude" },
+        codex: { binary: "codex" },
+        gemini: { binary: "gemini" },
+      },
       agents: {
         workerA: [{ provider: "claude", model: "haiku" }],
         workerB: [{ provider: "codex" }, { ref: "workerA" }],

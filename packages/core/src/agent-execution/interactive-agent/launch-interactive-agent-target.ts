@@ -6,10 +6,9 @@ import type {
   TrailStepAgentTarget,
   TrailStepConfig,
 } from "../../agent-targeting/targeting.types.js";
+import type { ManagedSessionPromptInjectionMode } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
+import { resolveCliCommandForSpawn } from "../../cli-provider-runtime/process/resolve-cli-command.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
-import { resolveCliCommandForSpawn } from "../../known-cli-providers/process/resolve-cli-command.js";
-import { providerRegistry } from "../../known-cli-providers/registry/provider-registry.js";
-import type { ManagedSessionPromptInjectionMode } from "../../known-cli-providers/registry/provider-registry.types.js";
 import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
@@ -33,9 +32,10 @@ export type LaunchInteractiveAgentTargetResult = InteractiveProcessResult & {
 export async function launchInteractiveAgentTarget(
   options: LaunchInteractiveAgentTargetOptions,
 ): Promise<LaunchInteractiveAgentTargetResult> {
-  const provider = providerRegistry[options.target.provider as keyof typeof providerRegistry];
-  if (provider) {
-    if (!provider.spec.interactive.supported) {
+  const manifestProvider = options.config.providers?.[options.target.provider];
+  if (manifestProvider !== undefined) {
+    const interactive = manifestProvider.manifest.interactive;
+    if (!interactive.supported || interactive.command === undefined) {
       throw new TrailStepFailureError({
         code: "agent_provider_interactive_unsupported",
         message: `Provider '${options.target.provider}' does not support interactive launch.`,
@@ -43,33 +43,43 @@ export async function launchInteractiveAgentTarget(
       });
     }
 
-    const promptInjectionMode: ManagedSessionPromptInjectionMode =
-      provider.spec.interactive.managedSessionPrompt.delivery === "hidden-system-prompt-file"
-        ? "hidden-system-prompt-file"
-        : provider.spec.interactive.managedSessionPrompt.mode;
+    const command = interactive.command;
+    const args = renderCustomProviderArgs({
+      argv: options.target.args ?? ["{{prompt}}"],
+      values: {
+        prompt: options.prompt,
+        promptFile: options.promptFile,
+        ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        ...(options.target.thinking === undefined ? {} : { thinking: options.target.thinking }),
+      },
+      errorCode: "interactive_command_invalid",
+      commandDescription: "Manifest interactive provider command",
+    });
+    const promptInjectionMode: ManagedSessionPromptInjectionMode = args.includes(options.promptFile)
+      ? "visible-prompt-file"
+      : "visible-inline-prompt";
+
+    if (args.includes(options.promptFile)) {
+      await mkdir(dirname(options.promptFile), { recursive: true });
+      await writeFile(options.promptFile, options.prompt, "utf8");
+    }
+
     let result: InteractiveProcessResult;
     try {
-      result = await provider.runInteractive(
-        {
-          prompt: options.prompt,
-          ...(promptInjectionMode === "hidden-system-prompt-file"
-            ? { systemPromptFile: options.promptFile }
-            : {}),
-          cwd: options.cwd,
-          signal: options.signal,
-          ...(options.target.model === undefined ? {} : { model: options.target.model }),
-          ...(options.target.thinking === undefined ? {} : { thinking: options.target.thinking }),
-          ...(options.target.permissionMode === undefined
-            ? {}
-            : { permissionMode: options.target.permissionMode }),
-        },
-        options.runner,
-      );
+      result = await (options.runner ?? spawnInteractiveProcess)({
+        command,
+        args,
+        cwd: options.cwd,
+        shell: false,
+        stdio: "inherit",
+        env: definedProcessEnv(),
+        signal: options.signal,
+      });
     } catch (error) {
       throw mapInteractiveProviderLaunchError({
         error,
         provider: options.target.provider,
-        command: provider.spec.interactive.command,
+        command,
       });
     }
 

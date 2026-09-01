@@ -1,5 +1,6 @@
 import type { TrailStepAgentTarget, TrailStepConfig } from "@trailstep/core";
-import { providerRegistry } from "@trailstep/core";
+
+import { isOfficialProviderId } from "../official-provider-specs.js";
 
 export type AgentSessionResolutionKind =
   | "default-agent"
@@ -72,8 +73,7 @@ export function resolveAgentSessionTarget(options: {
     };
   }
 
-  const builtInProvider = providerRegistry[requestedName as keyof typeof providerRegistry];
-  if (builtInProvider !== undefined) {
+  if (isOfficialProviderId(requestedName)) {
     return {
       requestedName,
       resolutionKind: "built-in-provider",
@@ -100,7 +100,7 @@ export function resolveAgentSessionTarget(options: {
   }
 
   throw new AgentSessionTargetResolutionError(
-    `No openable agent or provider named '${requestedName}' was found. Use a configured agent name, built-in provider name, or custom provider with interactiveArgs.`,
+    `No openable agent or provider named '${requestedName}' was found. Use a configured agent name, official provider name, or custom provider with interactiveArgs.`,
     "target-not-openable",
   );
 }

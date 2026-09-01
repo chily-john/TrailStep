@@ -1,13 +1,10 @@
-import {
-  type ProviderAdapter,
-  type ProviderModelDiscoverySpec,
-  type ProviderRegistryKey,
-  providerRegistry,
-  type TrailStepAgentTarget,
-  type TrailStepCustomProviderConfig,
-  type TrailStepCustomProviderModelOverrideSupport,
-  type TrailStepCustomProviderThinkingOverrideSupport,
-  type WorkflowAgentThinking,
+import type {
+  ProviderModelDiscoverySpec,
+  TrailStepAgentTarget,
+  TrailStepCustomProviderConfig,
+  TrailStepCustomProviderModelOverrideSupport,
+  TrailStepCustomProviderThinkingOverrideSupport,
+  WorkflowAgentThinking,
 } from "@trailstep/core";
 
 import {
@@ -16,6 +13,7 @@ import {
   type TrailStepCliIo,
   type TrailStepCliPrompts,
 } from "../command.types.js";
+import { officialProviderSpecFor } from "../official-provider-specs.js";
 import { discoverPiModelOverrides } from "./pi-model-discovery.js";
 
 const PROVIDER_DEFAULT_CHOICE = "Use provider default";
@@ -135,7 +133,7 @@ async function modelOverrideChoicesForProvider({
 function modelDiscoverySpecForProvider(
   providerSelection: string,
 ): ProviderModelDiscoverySpec | undefined {
-  const modelSupport = registryProviderForSelection(providerSelection)?.spec?.model;
+  const modelSupport = officialProviderSpecFor(providerSelection)?.model;
   return modelSupport?.supported === true ? modelSupport.discovery : undefined;
 }
 
@@ -198,7 +196,7 @@ function thinkingOverrideChoicesForProvider(
     const thinking = customProvider.config.thinking;
     return thinking?.supported === true ? [PROVIDER_DEFAULT_CHOICE, ...thinking.levels] : [];
   }
-  const thinkingSupport = registryProviderForSelection(providerSelection)?.spec?.thinking;
+  const thinkingSupport = officialProviderSpecFor(providerSelection)?.thinking;
   if (thinkingSupport === undefined) {
     return GENERIC_THINKING_OVERRIDE_CHOICES;
   }
@@ -207,24 +205,6 @@ function thinkingOverrideChoicesForProvider(
   }
 
   return [PROVIDER_DEFAULT_CHOICE, ...thinkingSupport.levels];
-}
-
-// Runtime guard for stale or mismatched @trailstep/core builds; current core
-// adapters require spec metadata, but the CLI should not crash if it is absent.
-type ProviderAdapterWithOptionalSpec = Omit<ProviderAdapter, "spec"> & {
-  readonly spec?: ProviderAdapter["spec"];
-};
-
-function registryProviderForSelection(
-  providerSelection: string,
-): ProviderAdapterWithOptionalSpec | undefined {
-  if (!Object.hasOwn(providerRegistry, providerSelection)) {
-    return undefined;
-  }
-
-  return providerRegistry[
-    providerSelection as ProviderRegistryKey
-  ] as ProviderAdapterWithOptionalSpec;
 }
 
 async function promptThinkingOverride(

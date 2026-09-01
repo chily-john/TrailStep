@@ -526,7 +526,7 @@ describe("providersCommand", () => {
     expect(lines.join("\n")).toContain("executes provider package code");
   });
 
-  it("remove reports agents that reference a provider and leaves config unchanged", async ({
+  it("remove reports the exact agent provider path and leaves config unchanged", async ({
     task,
   }) => {
     const cwd = tmpDir(task);
@@ -539,7 +539,7 @@ describe("providersCommand", () => {
         },
       },
       agents: {
-        reviewer: [{ provider: "my-agent" }],
+        default: [{ provider: "my-agent" }],
       },
     };
     await writeJson(configPath, originalConfig);
@@ -553,8 +553,85 @@ describe("providersCommand", () => {
     );
 
     expect(exitCode).toBe(1);
-    expect(errors.join("\n")).toContain("agents.reviewer[0]");
+    expect(errors.join("\n")).toContain("agents.default[0].provider");
     expect(await readJson(configPath)).toEqual(originalConfig);
+  });
+
+  it("remove reports the exact workflow agent provider path and leaves config unchanged", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    const originalConfig = {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: validManifest,
+        },
+      },
+      workflows: {
+        review: {
+          agents: {
+            reviewer: [{ provider: "my-agent" }],
+          },
+        },
+      },
+    };
+    await writeJson(configPath, originalConfig);
+    const errors: string[] = [];
+    const command = resolveCommand(["providers", "remove", "my-agent", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "remove", "my-agent", "--scope", "project"]) as never,
+      { cwd, io: { writeLine: () => undefined, writeError: (line) => errors.push(line) } },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("workflows.review.agents.reviewer[0].provider");
+    expect(await readJson(configPath)).toEqual(originalConfig);
+  });
+
+  it("remove deletes only the unreferenced provider and preserves agent mappings", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await writeJson(configPath, {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: validManifest,
+        },
+        backup: {
+          source: { type: "local-manifest", path: "./providers/backup.trailstep-provider.json" },
+          manifest: { ...validManifest, id: "backup", displayName: "Backup" },
+        },
+      },
+      agents: {
+        default: [{ provider: "backup" }],
+      },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["providers", "remove", "my-agent", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "remove", "my-agent", "--scope", "project"]) as never,
+      { cwd, io: { writeLine: (line) => lines.push(line), writeError: () => undefined } },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Removed provider my-agent");
+    expect(await readJson(configPath)).toEqual({
+      providers: {
+        backup: {
+          source: { type: "local-manifest", path: "./providers/backup.trailstep-provider.json" },
+          manifest: { ...validManifest, id: "backup", displayName: "Backup" },
+        },
+      },
+      agents: {
+        default: [{ provider: "backup" }],
+      },
+    });
   });
 
   it("migrate rewrites legacy customProviders into providers without losing interactiveArgs or env", async ({

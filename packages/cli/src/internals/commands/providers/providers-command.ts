@@ -639,15 +639,15 @@ function collectProviderReferrers(
 ): void {
   if (Array.isArray(value)) {
     value.forEach((item, index) => {
-      if (isRecord(item) && item.provider === provider) {
-        referrers.push({ scope, path: `${path}[${index}]` });
-      }
       collectProviderReferrers(item, `${path}[${index}]`, provider, scope, referrers);
     });
     return;
   }
   if (!isRecord(value)) {
     return;
+  }
+  if (value.provider === provider) {
+    referrers.push({ scope, path: `${path}.provider` });
   }
   for (const [key, child] of Object.entries(value)) {
     collectProviderReferrers(child, `${path}.${key}`, provider, scope, referrers);

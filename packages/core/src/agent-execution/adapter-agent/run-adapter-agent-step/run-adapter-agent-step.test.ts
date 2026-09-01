@@ -491,7 +491,7 @@ describe("agent steps", () => {
 });
 
 describe("provider registration dispatch", () => {
-  it("prefers a config.providers registration over a same-named customProviders entry", async () => {
+  it("dispatches a config.providers registration even when legacy customProviders are also present", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-provider-registration-priority-"));
     const manifestRequests: WorkingAgentProcessRequest[] = [];
     const customRequests: WorkingAgentProcessRequest[] = [];
@@ -520,7 +520,7 @@ describe("provider registration dispatch", () => {
       cwd,
       trailstepConfig: parseTrailStepConfig({
         version: 1,
-        customProviders: { claude: { binary: "should-not-run" } },
+        customProviders: { legacy: { binary: "should-not-run" } },
         providers: {
           claude: {
             source: { type: "local-manifest", path: "./claude.trailstep-provider.json" },

@@ -556,4 +556,74 @@ describe("providersCommand", () => {
     expect(errors.join("\n")).toContain("agents.reviewer[0]");
     expect(await readJson(configPath)).toEqual(originalConfig);
   });
+
+  it("migrate rewrites legacy customProviders into providers without losing interactiveArgs or env", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    const configPath = resolve(cwd, ".trailstep", "config.json");
+    await writeJson(configPath, {
+      customProviders: {
+        local: {
+          binary: "local-agent",
+          args: ["--json"],
+          interactiveArgs: ["--tty", "--session", "{{sessionId}}"],
+          cwd: "./agents/local",
+          env: { API_KEY: "secret", FEATURE_FLAG: "on" },
+          model: { supported: true, flag: "--model" },
+          thinking: { supported: true, flag: "--thinking", levels: ["low", "high"] },
+        },
+      },
+      agents: {
+        default: [{ provider: "local", model: "fast", thinking: "high" }],
+      },
+    });
+    const errors: string[] = [];
+    const lines: string[] = [];
+    const command = resolveCommand(["providers", "migrate", "--scope", "project"]);
+
+    expect(command.name).toBe("providers");
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "migrate", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(errors).toEqual([]);
+    expect(lines.join("\n")).toContain("Migrated customProviders.local to providers.local");
+    expect(await readJson(configPath)).toEqual({
+      providers: {
+        local: {
+          source: { type: "legacy-custom-provider" },
+          manifest: {
+            schemaVersion: 1,
+            id: "local",
+            displayName: "local",
+            working: {
+              supported: true,
+              command: "local-agent",
+              args: ["--json"],
+              prompt: { kind: "prompt-file" },
+              output: { style: "provider-output-file" },
+            },
+            interactive: {
+              supported: true,
+              command: "local-agent",
+              args: ["--tty", "--session", "{{sessionId}}"],
+            },
+            model: { supported: true, flag: "--model" },
+            thinking: { supported: true, flag: "--thinking", levels: ["low", "high"] },
+            cwd: "./agents/local",
+            env: { API_KEY: "secret", FEATURE_FLAG: "on" },
+          },
+        },
+      },
+      agents: {
+        default: [{ provider: "local", model: "fast", thinking: "high" }],
+      },
+    });
+  });
 });

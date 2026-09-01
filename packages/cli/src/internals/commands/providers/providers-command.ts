@@ -19,6 +19,7 @@ import {
   type ProviderPackageRef,
   parseProviderPackageRef,
 } from "../../providers/provider-package-ref.js";
+import { migrateLegacyCustomProvidersConfig } from "../../providers/provider-config-migration.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
@@ -37,6 +38,7 @@ type ProviderManifestWithStoredMetadata = TrailStepProviderManifest & {
 interface TrailStepProviderRegistration {
   readonly source:
     | { readonly type: "local-manifest"; readonly path: string }
+    | { readonly type: "legacy-custom-provider" }
     | {
         readonly type: "npm" | "github" | "local-package";
         readonly packageName: string;
@@ -56,6 +58,7 @@ type ProviderCommandArgs =
   | { readonly action: "list"; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "show"; readonly provider: string; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "test"; readonly provider: string; readonly scope?: WorkflowRegistryScope }
+  | { readonly action: "migrate"; readonly scope?: WorkflowRegistryScope }
   | {
       readonly action: "remove";
       readonly provider: string;
@@ -98,6 +101,10 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       const flags = parseFlags(argv.slice(3));
       return { action: "test", provider, scope: parseOptionalScope(flags.scope) };
     }
+    if (action === "migrate") {
+      const flags = parseFlags(argv.slice(2));
+      return { action: "migrate", scope: parseOptionalScope(flags.scope) };
+    }
     if (action === "remove") {
       const provider = argv[2];
       assertRequiredArg(provider, "trailstep providers remove requires <provider>.");
@@ -106,7 +113,7 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
     }
 
     throw new CliUsageError(
-      "trailstep providers requires inspect, add, list, show, test, or remove.",
+      "trailstep providers requires inspect, add, list, show, test, migrate, or remove.",
     );
   },
   async run(args: ProviderCommandArgs, context: CliCommandContext): Promise<number> {
@@ -125,6 +132,9 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       }
       if (args.action === "test") {
         return await testProvider(args, context);
+      }
+      if (args.action === "migrate") {
+        return await migrateProviders(args, context);
       }
       return await removeProvider(args, context);
     } catch (error) {
@@ -261,6 +271,28 @@ async function testProvider(
   writeProviderHookTrustWarning(context, hooksPresent);
   context.io.writeLine("Prompt execution skipped.");
   return failed ? 1 : 0;
+}
+
+async function migrateProviders(
+  args: Extract<ProviderCommandArgs, { readonly action: "migrate" }>,
+  context: CliCommandContext,
+): Promise<number> {
+  const scope = await resolveScope(args.scope, context);
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  const legacyProviders = toMutableRecord(config.customProviders);
+  const { config: migrated, diagnostics } = migrateLegacyCustomProvidersConfig(config);
+  await writeRawTrailStepConfigFile(configPath, migrated);
+
+  for (const id of Object.keys(legacyProviders).sort()) {
+    if (!diagnostics.some((diagnostic) => diagnostic.includes(`customProviders.${id}`))) {
+      context.io.writeLine(`Migrated customProviders.${id} to providers.${id}`);
+    }
+  }
+  for (const diagnostic of diagnostics) {
+    context.io.writeError(diagnostic);
+  }
+  return 0;
 }
 
 async function removeProvider(
@@ -622,6 +654,48 @@ function collectProviderReferrers(
   }
 }
 
+function parseLegacyProviderManifest(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest | undefined {
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object.`);
+    return undefined;
+  }
+  if (value.schemaVersion !== 1) diagnostics.push(`${path}.schemaVersion must be 1.`);
+  const id = parseRequiredString(`${path}.id`, value.id, diagnostics);
+  const displayName = parseRequiredString(`${path}.displayName`, value.displayName, diagnostics);
+  const working = parseWorking(`${path}.working`, value.working, diagnostics);
+  const interactive = parseLegacyInteractive(`${path}.interactive`, value.interactive, diagnostics);
+  const model = parseLegacySupported(`${path}.model`, value.model, diagnostics);
+  const thinking = parseLegacyThinking(`${path}.thinking`, value.thinking, diagnostics);
+  const env = parseLegacyEnv(`${path}.env`, value.env, diagnostics);
+  if (
+    value.schemaVersion !== 1 ||
+    id === undefined ||
+    displayName === undefined ||
+    working === undefined ||
+    interactive === undefined ||
+    model === undefined ||
+    thinking === undefined ||
+    env === null
+  ) {
+    return undefined;
+  }
+  return {
+    schemaVersion: 1,
+    id,
+    displayName,
+    working,
+    interactive,
+    model,
+    thinking,
+    ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
+    ...(env === undefined ? {} : { env }),
+  } as TrailStepProviderManifest;
+}
+
 function parseProviderManifest(
   path: string,
   value: unknown,
@@ -710,6 +784,23 @@ function parseWorking(
   return { supported: true, command, ...(args === undefined ? {} : { args }), prompt, output };
 }
 
+function parseLegacyInteractive(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["interactive"] | undefined {
+  const parsed = parseSupported(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) return undefined;
+  const command = parseOptionalNonEmptyString(`${path}.command`, value.command, diagnostics);
+  const args = parseOptionalStringArray(`${path}.args`, value.args, diagnostics);
+  if (command === null) return undefined;
+  return {
+    ...parsed,
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+  } as TrailStepProviderManifest["interactive"];
+}
+
 function parseInteractive(
   path: string,
   value: unknown,
@@ -756,6 +847,49 @@ function parseManifestEnvironment(
   };
 }
 
+function parseLegacySupported(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["model"] | undefined {
+  const parsed = parseSupported(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) return undefined;
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  if (flag === null) return undefined;
+  return { ...parsed, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["model"];
+}
+
+function parseLegacyThinking(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["thinking"] | undefined {
+  const parsed = parseSupported(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) return undefined;
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  if (flag === null) return undefined;
+  if (value.levels !== undefined) {
+    if (
+      !Array.isArray(value.levels) ||
+      value.levels.some(
+        (level) =>
+          typeof level !== "string" || !["low", "medium", "high", "xhigh", "max"].includes(level),
+      )
+    ) {
+      diagnostics.push(
+        `${path}.levels must be an array of supported thinking levels when present.`,
+      );
+      return undefined;
+    }
+    return {
+      supported: parsed.supported,
+      ...(flag === undefined ? {} : { flag }),
+      levels: value.levels,
+    } as TrailStepProviderManifest["thinking"];
+  }
+  return { ...parsed, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["thinking"];
+}
+
 function parseThinking(
   path: string,
   value: unknown,
@@ -793,6 +927,27 @@ function parseRequiredString(
   return value;
 }
 
+function parseLegacyEnv(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): Readonly<Record<string, string>> | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+  const env: Record<string, string> = {};
+  for (const [key, envValue] of Object.entries(value)) {
+    if (typeof envValue !== "string") {
+      diagnostics.push(`${path}.${key} must be a string.`);
+    } else {
+      env[key] = envValue;
+    }
+  }
+  return env;
+}
+
 function parseOptionalStringArray(
   path: string,
   value: unknown,
@@ -818,7 +973,10 @@ function readRegistration(
   if (source === undefined) {
     return undefined;
   }
-  const manifest = parseProviderManifest("manifest", value.manifest, diagnostics);
+  const manifest =
+    source.type === "legacy-custom-provider"
+      ? parseLegacyProviderManifest("manifest", value.manifest, diagnostics)
+      : parseProviderManifest("manifest", value.manifest, diagnostics);
   if (manifest === undefined || diagnostics.length > 0) {
     return undefined;
   }
@@ -834,6 +992,9 @@ function readProviderSource(
 ): TrailStepProviderRegistration["source"] | undefined {
   if (source.type === "local-manifest" && typeof source.path === "string") {
     return { type: "local-manifest", path: source.path };
+  }
+  if (source.type === "legacy-custom-provider") {
+    return { type: "legacy-custom-provider" };
   }
   if (
     (source.type === "npm" || source.type === "github" || source.type === "local-package") &&
@@ -856,6 +1017,9 @@ function readProviderSource(
 function formatProviderSource(source: TrailStepProviderRegistration["source"]): string {
   if (source.type === "local-manifest") {
     return `${source.type} ${source.path}`;
+  }
+  if (source.type === "legacy-custom-provider") {
+    return source.type;
   }
   return `${source.type} ${source.packageName}`;
 }
@@ -986,6 +1150,7 @@ async function providerRegistrationHasHooks(
   if (
     registration === undefined ||
     registration.source.type === "local-manifest" ||
+    registration.source.type === "legacy-custom-provider" ||
     registration.source.packageName.length === 0
   ) {
     return false;
@@ -1000,7 +1165,10 @@ async function providerRegistrationHasHooks(
 }
 
 function resolveRegisteredProviderPackageRoot(
-  source: Exclude<TrailStepProviderRegistration["source"], { readonly type: "local-manifest" }>,
+  source: Exclude<
+    TrailStepProviderRegistration["source"],
+    { readonly type: "local-manifest" } | { readonly type: "legacy-custom-provider" }
+  >,
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
 ): string {

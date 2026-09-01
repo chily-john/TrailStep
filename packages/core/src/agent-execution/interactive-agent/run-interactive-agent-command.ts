@@ -88,7 +88,7 @@ async function runInteractiveAgentTarget(options: {
   options.signal?.addEventListener("abort", () => abortController.abort(), { once: true });
 
   const manifestProvider = options.config.providers?.[options.target.provider];
-  if (manifestProvider !== undefined) {
+  if (manifestProvider !== undefined && manifestProvider.source.type !== "legacy-custom-provider") {
     const interactive = manifestProvider.manifest.interactive;
     if (!interactive.supported || interactive.command === undefined) {
       throw new TrailStepFailureError({

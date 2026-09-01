@@ -1,6 +1,7 @@
 import {
   isRecord,
   parseOptionalStringArray,
+  parseOptionalStringRecord,
   throwValidationFailure,
 } from "../agent-targeting/parse-trailstep-config/parse-utils.js";
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
@@ -12,6 +13,7 @@ export interface TrailStepProviderRegistration {
 
 export type TrailStepProviderSource =
   | { readonly type: "local-manifest"; readonly path: string }
+  | { readonly type: "legacy-custom-provider" }
   | {
       readonly type: "npm" | "github" | "local-package";
       readonly packageName: string;
@@ -119,7 +121,10 @@ function parseProviderRegistration(
   }
 
   const source = parseSource(`${path}.source`, value.source, diagnostics);
-  const manifest = parseManifest(`${path}.manifest`, value.manifest, diagnostics);
+  const manifest =
+    source?.type === "legacy-custom-provider"
+      ? parseLegacyCustomProviderManifest(`${path}.manifest`, value.manifest, diagnostics)
+      : parseManifest(`${path}.manifest`, value.manifest, diagnostics);
 
   if (source === undefined || manifest === undefined) {
     return undefined;
@@ -144,6 +149,10 @@ function parseSource(
       return undefined;
     }
     return { type: "local-manifest", path: value.path };
+  }
+
+  if (value.type === "legacy-custom-provider") {
+    return { type: "legacy-custom-provider" };
   }
 
   if (value.type === "npm" || value.type === "github" || value.type === "local-package") {
@@ -171,8 +180,56 @@ function parseSource(
     };
   }
 
-  diagnostics.push(`${path}.type must be local-manifest, npm, github, or local-package.`);
+  diagnostics.push(
+    `${path}.type must be local-manifest, legacy-custom-provider, npm, github, or local-package.`,
+  );
   return undefined;
+}
+
+function parseLegacyCustomProviderManifest(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest | undefined {
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object.`);
+    return undefined;
+  }
+
+  if (value.schemaVersion !== 1) {
+    diagnostics.push(`${path}.schemaVersion must be 1.`);
+  }
+  const id = parseRequiredString(`${path}.id`, value.id, diagnostics);
+  const displayName = parseRequiredString(`${path}.displayName`, value.displayName, diagnostics);
+  const working = parseWorking(`${path}.working`, value.working, diagnostics);
+  const interactive = parseLegacyInteractive(`${path}.interactive`, value.interactive, diagnostics);
+  const model = parseLegacyModel(`${path}.model`, value.model, diagnostics);
+  const thinking = parseLegacyThinking(`${path}.thinking`, value.thinking, diagnostics);
+  const env = parseOptionalStringRecord(`${path}.env`, value.env, diagnostics);
+
+  if (
+    value.schemaVersion !== 1 ||
+    id === undefined ||
+    displayName === undefined ||
+    working === undefined ||
+    interactive === undefined ||
+    model === undefined ||
+    thinking === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: 1,
+    id,
+    displayName,
+    working,
+    interactive,
+    model,
+    thinking,
+    ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
+    ...(env === undefined ? {} : { env }),
+  } as TrailStepProviderManifest;
 }
 
 function parseManifest(
@@ -248,6 +305,27 @@ function parseWorking(
   return { supported: true, command, ...(args === undefined ? {} : { args }), prompt, output };
 }
 
+function parseLegacyInteractive(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["interactive"] | undefined {
+  const parsed = parseSupportedObject(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) {
+    return undefined;
+  }
+  const command = parseOptionalNonEmptyString(`${path}.command`, value.command, diagnostics);
+  const args = parseOptionalStringArray(`${path}.args`, value.args, diagnostics);
+  if (command === null) {
+    return undefined;
+  }
+  return {
+    ...parsed,
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+  } as TrailStepProviderManifest["interactive"];
+}
+
 function parseInteractive(
   path: string,
   value: unknown,
@@ -301,6 +379,60 @@ function parseEnvironment(
     ...(required === undefined ? {} : { required }),
     ...(optional === undefined ? {} : { optional }),
   };
+}
+
+function parseLegacyModel(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["model"] | undefined {
+  const parsed = parseSupportedObject(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) {
+    return undefined;
+  }
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  if (flag === null) {
+    return undefined;
+  }
+  return { ...parsed, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["model"];
+}
+
+function parseLegacyThinking(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderManifest["thinking"] | undefined {
+  if (!isRecord(value) || typeof value.supported !== "boolean") {
+    diagnostics.push(`${path} must be an object with a boolean supported field.`);
+    return undefined;
+  }
+
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  if (flag === null) {
+    return undefined;
+  }
+
+  if (value.levels !== undefined) {
+    if (
+      !Array.isArray(value.levels) ||
+      value.levels.some(
+        (level) =>
+          typeof level !== "string" || !THINKING_LEVELS.has(level as WorkflowAgentThinking),
+      )
+    ) {
+      diagnostics.push(
+        `${path}.levels must be an array of supported thinking levels when present.`,
+      );
+      return undefined;
+    }
+    return {
+      supported: value.supported,
+      ...(flag === undefined ? {} : { flag }),
+      levels: value.levels as WorkflowAgentThinking[],
+    } as TrailStepProviderManifest["thinking"];
+  }
+
+  return { supported: value.supported, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["thinking"];
 }
 
 function parseThinking(

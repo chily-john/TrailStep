@@ -333,7 +333,7 @@ describe("runWorkingAgentCommand", () => {
     expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
   });
 
-  it("prefers a config.providers registration over a same-named customProviders entry", async () => {
+  it("dispatches a config.providers registration even when legacy customProviders are also present", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-config-pi-"));
     const requests: WorkingAgentProcessRequest[] = [];
 
@@ -359,7 +359,7 @@ describe("runWorkingAgentCommand", () => {
       cwd,
       trailstepConfig: parseTrailStepConfig({
         version: 1,
-        customProviders: { pi: { binary: "should-not-run" } },
+        customProviders: { legacy: { binary: "should-not-run" } },
         providers: {
           pi: {
             source: {

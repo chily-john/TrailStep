@@ -33,7 +33,7 @@ export async function launchInteractiveAgentTarget(
   options: LaunchInteractiveAgentTargetOptions,
 ): Promise<LaunchInteractiveAgentTargetResult> {
   const manifestProvider = options.config.providers?.[options.target.provider];
-  if (manifestProvider !== undefined) {
+  if (manifestProvider !== undefined && manifestProvider.source.type !== "legacy-custom-provider") {
     const interactive = manifestProvider.manifest.interactive;
     if (!interactive.supported || interactive.command === undefined) {
       throw new TrailStepFailureError({

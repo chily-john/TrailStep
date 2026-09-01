@@ -32,7 +32,10 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   await rm(options.files.outputFile, { force: true });
   await rm(options.files.usageFile, { force: true });
 
-  if (options.config.providers?.[options.target.provider] !== undefined) {
+  if (
+    options.config.providers?.[options.target.provider] !== undefined &&
+    options.config.providers[options.target.provider]?.source.type !== "legacy-custom-provider"
+  ) {
     return runManifestWorkingProvider({
       config: options.config,
       step: options.step,

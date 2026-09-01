@@ -114,8 +114,7 @@
       "source": {
         "type": "local-package",
         "packageName": "@trailstep/provider-pi",
-        "spec": "./packages/provider-pi",
-        "resolvedVersion": "0.1.0"
+        "spec": "./packages/provider-pi"
       },
       "manifest": {
         "schemaVersion": 1,
@@ -123,12 +122,21 @@
         "displayName": "Pi",
         "working": {
           "supported": true,
-          "command": "pi",
+          "command": "node",
           "args": [
+            "C:/Users/cjohnson_xtivia/AppData/Roaming/npm-global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
             "-p",
-            "{{promptFile}}",
-            "--output-file",
-            "{{outputFile}}"
+            "{{#model}}",
+            "--model",
+            "{{model}}",
+            "{{/model}}",
+            "{{#thinking}}",
+            "--thinking",
+            "{{thinking}}",
+            "{{/thinking}}",
+            "@{{promptFile}}",
+            "--mode",
+            "json"
           ],
           "prompt": {
             "kind": "prompt-file"
@@ -139,7 +147,7 @@
         },
         "interactive": {
           "supported": true,
-          "command": "pi"
+          "command": "node"
         },
         "model": {
           "supported": true
@@ -153,6 +161,12 @@
             "xhigh",
             "max"
           ]
+        },
+        "hooks": {
+          "extractOutput": {
+            "supported": true,
+            "source": "manual-recovery"
+          }
         }
       }
     }

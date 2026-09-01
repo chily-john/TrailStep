@@ -1,13 +1,14 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { withTestCustomProviders } from "../../test/provider-fixtures.js";
 import { loadTrailStepProjectConfig } from "./config.js";
 
 async function writeConfig(cwd: string, value: unknown): Promise<void> {
   await mkdir(join(cwd, ".trailstep"), { recursive: true });
   await writeFile(
     join(cwd, ".trailstep", "config.json"),
-    `${JSON.stringify(value, null, 2)}\n`,
+    `${JSON.stringify(configValue(value), null, 2)}\n`,
     "utf8",
   );
 }
@@ -16,7 +17,7 @@ async function writeLocalConfig(cwd: string, value: unknown): Promise<void> {
   await mkdir(join(cwd, ".trailstep"), { recursive: true });
   await writeFile(
     join(cwd, ".trailstep", "config-local.json"),
-    `${JSON.stringify(value, null, 2)}\n`,
+    `${JSON.stringify(configValue(value), null, 2)}\n`,
     "utf8",
   );
 }
@@ -25,9 +26,35 @@ async function writeUserConfig(homeDir: string, value: unknown): Promise<void> {
   await mkdir(join(homeDir, ".trailstep"), { recursive: true });
   await writeFile(
     join(homeDir, ".trailstep", "config.json"),
-    `${JSON.stringify(value, null, 2)}\n`,
+    `${JSON.stringify(configValue(value), null, 2)}\n`,
     "utf8",
   );
+}
+
+function configValue(value: unknown): unknown {
+  return isRecord(value) && (isRecord(value.customProviders) || containsTestProviderReference(value))
+    ? withTestCustomProviders(value)
+    : value;
+}
+
+function containsTestProviderReference(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(containsTestProviderReference);
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    typeof value.provider === "string" &&
+    ["claude", "codex", "gemini", "pi"].includes(value.provider)
+  ) {
+    return true;
+  }
+  return Object.values(value).some(containsTestProviderReference);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 describe("workflow registry project config", () => {

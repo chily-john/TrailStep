@@ -70,6 +70,31 @@ function fakePrompts(
 }
 
 describe("configureLiteralAgentTarget", () => {
+  it("normalizes official provider package selections to registered provider ids", async () => {
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          {
+            label: "Provider",
+            choices: ["@trailstep/provider-claude", "custom"],
+            answer: "@trailstep/provider-claude",
+          },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Use provider default",
+          },
+          {
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+            answer: "Use provider default",
+          },
+        ]),
+        providerChoices: ["@trailstep/provider-claude"],
+      }),
+    ).resolves.toEqual({ target: { provider: "claude" } });
+  });
+
   it("omits model and thinking overrides when provider defaults are selected", async () => {
     await expect(
       configureLiteralAgentTarget({

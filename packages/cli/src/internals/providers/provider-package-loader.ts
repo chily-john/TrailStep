@@ -35,9 +35,10 @@ export async function loadProviderPackage(
   }
 
   const diagnostics: string[] = [];
+  const rawManifest = provider.manifest;
   const manifest = parseTrailStepProviderManifest(
     "trailstepProvider.manifest",
-    provider.manifest,
+    rawManifest,
     diagnostics,
   );
   if (manifest === undefined || diagnostics.length > 0) {
@@ -47,7 +48,7 @@ export async function loadProviderPackage(
   }
 
   return {
-    manifest,
+    manifest: rawManifest as TrailStepProviderManifest,
     hooksPresent: provider.hooks !== undefined,
     ...(typeof packageJson.name === "string" ? { packageName: packageJson.name } : {}),
     ...(typeof packageJson.version === "string" ? { version: packageJson.version } : {}),

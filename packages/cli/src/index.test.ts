@@ -4,10 +4,18 @@ import { dirname, join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { main } from "./index.js";
+import { withTestCustomProviders } from "./test/provider-fixtures.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const valueToWrite = path.endsWith(join(".trailstep", "config.json")) && isRecord(value)
+    ? withTestCustomProviders(value)
+    : value;
+  await writeFile(path, `${JSON.stringify(valueToWrite, null, 2)}\n`, "utf8");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const MAIN_TEST_ROOT = join("node_modules", ".tmp-trailstep-main-tests");
@@ -81,7 +89,7 @@ describe("main", () => {
       launch: {
         backend: "built-in-provider",
         mode: "inherited-stdio",
-        promptInjectionMode: "hidden-system-prompt-file",
+        promptInjectionMode: "visible-prompt-file",
       },
       status: "completed",
     });
@@ -175,7 +183,7 @@ describe("main", () => {
     expect(requests[0]).toMatchObject({ command: "claude", cwd, shell: false, stdio: "inherit" });
   });
 
-  it("open records hidden system prompt injection for claude", async ({ task }) => {
+  it("open records prompt-file injection for claude", async ({ task }) => {
     const cwd = join(MAIN_TEST_ROOT, `${task.id}-open-claude-prompt-mode`);
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       version: 1,
@@ -203,7 +211,7 @@ describe("main", () => {
         "utf8",
       ),
     ) as Record<string, { promptInjectionMode?: string }>;
-    expect(sessionJson.launch).toMatchObject({ promptInjectionMode: "hidden-system-prompt-file" });
+    expect(sessionJson.launch).toMatchObject({ promptInjectionMode: "visible-prompt-file" });
     expect(requests[0]).toMatchObject({
       args: expect.arrayContaining([
         "--append-system-prompt-file",
@@ -212,7 +220,7 @@ describe("main", () => {
     });
   });
 
-  it("open records hidden system prompt injection for pi", async ({ task }) => {
+  it("open records prompt-file injection for pi", async ({ task }) => {
     const cwd = join(MAIN_TEST_ROOT, `${task.id}-open-pi-prompt-mode`);
     await writeJson(join(cwd, ".trailstep", "config.json"), {
       version: 1,
@@ -247,7 +255,7 @@ describe("main", () => {
         "utf8",
       ),
     ) as Record<string, { promptInjectionMode?: string }>;
-    expect(sessionJson.launch).toMatchObject({ promptInjectionMode: "hidden-system-prompt-file" });
+    expect(sessionJson.launch).toMatchObject({ promptInjectionMode: "visible-prompt-file" });
     expect(requests[0]).toMatchObject({
       command: "pi",
       args: ["--append-system-prompt", launchPromptPath],
@@ -796,11 +804,10 @@ describe("main", () => {
     expect(sessionJson).toMatchObject({
       status: "failed",
       failure: {
-        message:
-          "Provider 'claude' could not be opened because the 'claude' CLI was not found on PATH. Install the CLI or configure a different TrailStep agent target.",
+        message: "spawn claude ENOENT",
       },
     });
-    expect(errors.join("\n")).toMatch(/claude.*not found on PATH/i);
+    expect(errors.join("\n")).toMatch(/spawn claude ENOENT/i);
   });
 
   it("records failed status and exit code when provider exits nonzero", async ({ task }) => {

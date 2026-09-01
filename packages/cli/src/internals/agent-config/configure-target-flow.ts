@@ -14,6 +14,10 @@ import {
   type TrailStepCliPrompts,
 } from "../command.types.js";
 import { officialProviderSpecFor } from "../official-provider-specs.js";
+import {
+  isOfficialProviderPackageName,
+  officialProviderIdForSelection,
+} from "../providers/official-providers.js";
 import { discoverPiModelOverrides } from "./pi-model-discovery.js";
 
 const PROVIDER_DEFAULT_CHOICE = "Use provider default";
@@ -62,7 +66,7 @@ export async function configureLiteralAgentTarget(
   ]);
   const customProvider =
     providerSelection === "custom" ? await promptCustomProvider(options.prompts) : undefined;
-  const provider = customProvider?.name ?? providerSelection;
+  const provider = customProvider?.name ?? officialProviderIdForSelection(providerSelection);
   const modelChoices = await modelOverrideChoicesForProvider({
     providerSelection,
     customProvider,
@@ -133,7 +137,10 @@ async function modelOverrideChoicesForProvider({
 function modelDiscoverySpecForProvider(
   providerSelection: string,
 ): ProviderModelDiscoverySpec | undefined {
-  const modelSupport = officialProviderSpecFor(providerSelection)?.model;
+  if (isOfficialProviderPackageName(providerSelection)) {
+    return undefined;
+  }
+  const modelSupport = officialProviderSpecFor(officialProviderIdForSelection(providerSelection))?.model;
   return modelSupport?.supported === true ? modelSupport.discovery : undefined;
 }
 
@@ -196,7 +203,7 @@ function thinkingOverrideChoicesForProvider(
     const thinking = customProvider.config.thinking;
     return thinking?.supported === true ? [PROVIDER_DEFAULT_CHOICE, ...thinking.levels] : [];
   }
-  const thinkingSupport = officialProviderSpecFor(providerSelection)?.thinking;
+  const thinkingSupport = officialProviderSpecFor(officialProviderIdForSelection(providerSelection))?.thinking;
   if (thinkingSupport === undefined) {
     return GENERIC_THINKING_OVERRIDE_CHOICES;
   }

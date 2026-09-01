@@ -1,13 +1,14 @@
 import { parseTrailStepConfig } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
+import { withTestCustomProviders } from "../../test/provider-fixtures.js";
 import {
   AgentSessionTargetResolutionError,
   resolveAgentSessionTarget,
 } from "./agent-session-target-resolution.js";
 
-function config(value: unknown) {
-  return parseTrailStepConfig(value);
+function config(value: Record<string, unknown>) {
+  return parseTrailStepConfig(withTestCustomProviders(value));
 }
 
 describe("resolveAgentSessionTarget", () => {

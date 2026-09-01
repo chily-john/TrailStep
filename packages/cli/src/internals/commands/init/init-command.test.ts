@@ -16,6 +16,27 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+async function writeProviderPackage(
+  packageRoot: string,
+  options: {
+    readonly packageName: string;
+    readonly version: string;
+    readonly manifest: unknown;
+  },
+): Promise<void> {
+  await writeJson(resolve(packageRoot, "package.json"), {
+    name: options.packageName,
+    version: options.version,
+    type: "module",
+    exports: "./index.mjs",
+  });
+  await writeFile(
+    resolve(packageRoot, "index.mjs"),
+    `export const trailstepProvider = { manifest: ${JSON.stringify(options.manifest)} };\n`,
+    "utf8",
+  );
+}
+
 async function packagedSkillMarker(target: "project" | "user"): Promise<Record<string, string>> {
   const skillMarkdown = await readFile(resolve("trailstep-skill/SKILL.md"));
   return {
@@ -31,6 +52,106 @@ const INTERACTIVE_ARGS_PROMPT =
   "Interactive args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{prompt}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";
 
 describe("initCommand", () => {
+  it("offers official provider packages with add guidance and registers the selected provider", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "project"]);
+    const lines: string[] = [];
+    const packageCommands: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
+    const piManifest = {
+      schemaVersion: 1,
+      id: "pi",
+      displayName: "Pi",
+      working: {
+        supported: true,
+        command: "pi",
+        args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+        prompt: { kind: "prompt-file" },
+        output: { style: "provider-output-file" },
+      },
+      interactive: { supported: false, reason: "Working-agent only." },
+      model: {
+        supported: true,
+        discovery: {
+          command: "pi",
+          args: ["--list-models"],
+          outputParser: "pi-list-models-table",
+        },
+      },
+      thinking: { supported: true, levels: ["low", "medium", "high", "xhigh", "max"] },
+    };
+
+    const exitCode = await command.run(command.parseArgs(["init", "--scope", "project"]) as never, {
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        async text(prompt) {
+          throw new Error(`Unexpected text prompt: ${prompt}`);
+        },
+        async select(prompt, choices) {
+          if (prompt === "Provider") {
+            expect(choices).toContain("@trailstep/provider-pi");
+            expect(choices).toContain("@trailstep/provider-claude");
+            expect(choices).toContain("@trailstep/provider-codex");
+            expect(choices).toContain("@trailstep/provider-gemini");
+            expect(choices).not.toContain("pi");
+            expect(choices.join("\n")).not.toMatch(/detected|not detected/i);
+            return "@trailstep/provider-pi";
+          }
+          if (prompt === "Model override") {
+            return "Use provider default";
+          }
+          if (prompt === "Reasoning/thinking override") {
+            return "Use provider default";
+          }
+          throw new Error(`Unexpected select prompt: ${prompt}`);
+        },
+        async confirm(prompt) {
+          if (prompt === "Configure another agent?") {
+            return false;
+          }
+          if (prompt === "Install the TrailStep usage/authoring skill?") {
+            return false;
+          }
+          throw new Error(`Unexpected confirm prompt: ${prompt}`);
+        },
+      },
+      packageCommandRunner: async (request) => {
+        packageCommands.push(request);
+        await writeProviderPackage(resolve(request.cwd, "node_modules", "@trailstep", "provider-pi"), {
+          packageName: "@trailstep/provider-pi",
+          version: "1.0.0",
+          manifest: piManifest,
+        });
+        return { exitCode: 0, stdout: "added @trailstep/provider-pi@1.0.0" };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(packageCommands).toHaveLength(1);
+    expect(packageCommands[0]?.args).toContain("@trailstep/provider-pi");
+    expect(lines.join("\n")).toContain(
+      "Don't see your provider? Add any TrailStep-compatible provider manifest/package with trailstep providers add <path-or-package>.",
+    );
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
+      providers: {
+        pi: {
+          source: {
+            type: "npm",
+            packageName: "@trailstep/provider-pi",
+            spec: "@trailstep/provider-pi",
+            resolvedVersion: "1.0.0",
+          },
+          manifest: piManifest,
+        },
+      },
+      agents: { default: [{ provider: "pi" }] },
+    });
+  });
+
   it("uses the shared provider-default-first agent setup flow", async ({ task }) => {
     const cwd = join(
       "node_modules",

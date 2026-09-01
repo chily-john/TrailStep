@@ -1,7 +1,20 @@
+import { join } from "node:path";
+
 import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import type { CliCommand, CliCommandContext, TrailStepCliPrompts } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { OFFICIAL_PROVIDER_IDS } from "../../official-provider-specs.js";
+import {
+  createPackageAddCommand,
+  defaultPackageCommandRunner,
+  detectPackageManager,
+  isPnpmWorkspaceRoot,
+} from "../../package-manager/package-manager.js";
+import { loadProviderPackage } from "../../providers/provider-package-loader.js";
+import {
+  isOfficialProviderPackageName,
+  OFFICIAL_PROVIDER_PACKAGES,
+} from "../../providers/official-providers.js";
 import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
 import {
   createPackagedTrailStepSkillInstallationMarker,
@@ -27,7 +40,12 @@ interface InitCommandArgs {
 
 const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
 const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage/authoring skill?";
-const PROVIDER_CHOICES = [...OFFICIAL_PROVIDER_IDS].sort();
+const OFFICIAL_PROVIDER_ADD_GUIDANCE =
+  "Don't see your provider? Add any TrailStep-compatible provider manifest/package with trailstep providers add <path-or-package>.";
+const PROVIDER_CHOICES = [
+  ...OFFICIAL_PROVIDER_PACKAGES.map((provider) => provider.packageName),
+  ...OFFICIAL_PROVIDER_IDS.filter((id) => id !== "pi"),
+].sort();
 
 export const initCommand: CliCommand<InitCommandArgs> = {
   name: "init",
@@ -65,14 +83,11 @@ export const initCommand: CliCommand<InitCommandArgs> = {
 
     const configPath = configPathForScope(scope, context);
     const config = await readRawTrailStepConfigFile(configPath);
-    let nextConfig = await runAgentSetupWizard({
+    context.io.writeLine(OFFICIAL_PROVIDER_ADD_GUIDANCE);
+    let nextConfig = await runAgentSetupWithOfficialProviderRegistration({
       config,
       agentName: "default",
-      prompts: context.prompts,
-      providerChoices: PROVIDER_CHOICES,
-      cwd: context.cwd,
-      io: context.io,
-      packageCommandRunner: context.packageCommandRunner,
+      context,
     });
 
     while (await shouldConfigureAnotherAgent(context)) {
@@ -82,14 +97,10 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         context.prompts,
         "trailstep init requires an agent name.",
       );
-      nextConfig = await runAgentSetupWizard({
+      nextConfig = await runAgentSetupWithOfficialProviderRegistration({
         config: nextConfig,
         agentName: name,
-        prompts: context.prompts,
-        providerChoices: PROVIDER_CHOICES,
-        cwd: context.cwd,
-        io: context.io,
-        packageCommandRunner: context.packageCommandRunner,
+        context,
       });
     }
 
@@ -229,6 +240,91 @@ async function installTrailStepSkillOrThrow(
       `Failed to install TrailStep usage skill after writing TrailStep agent config: ${error instanceof Error ? error.message : "unknown error"}`,
     );
   }
+}
+
+async function runAgentSetupWithOfficialProviderRegistration(options: {
+  readonly config: Record<string, unknown>;
+  readonly agentName: string;
+  readonly context: CliCommandContext;
+}): Promise<Record<string, unknown>> {
+  const basePrompts = options.context.prompts;
+  if (basePrompts === undefined) {
+    throw new CliUsageError("trailstep init requires prompts to configure an agent target.");
+  }
+
+  let selectedProvider: string | undefined;
+  const prompts = wrapPromptsWithProviderCapture(basePrompts, (selection) => {
+    selectedProvider = selection;
+  });
+  const nextConfig = await runAgentSetupWizard({
+    config: options.config,
+    agentName: options.agentName,
+    prompts,
+    providerChoices: PROVIDER_CHOICES,
+    cwd: options.context.cwd,
+    io: options.context.io,
+    packageCommandRunner: options.context.packageCommandRunner,
+  });
+  return selectedProvider !== undefined && isOfficialProviderPackageName(selectedProvider)
+    ? await registerOfficialProviderPackage(nextConfig, selectedProvider, options.context)
+    : nextConfig;
+}
+
+function wrapPromptsWithProviderCapture(
+  prompts: TrailStepCliPrompts,
+  onProviderSelected: (selection: string) => void,
+): TrailStepCliPrompts {
+  return {
+    ...prompts,
+    async select(label, choices) {
+      const selection = await prompts.select(label, choices);
+      if (label === "Provider") {
+        onProviderSelected(selection);
+      }
+      return selection;
+    },
+  };
+}
+
+async function registerOfficialProviderPackage(
+  config: Record<string, unknown>,
+  packageName: string,
+  context: CliCommandContext,
+): Promise<Record<string, unknown>> {
+  const packageManager = await detectPackageManager({ cwd: context.cwd });
+  const command = createPackageAddCommand({
+    packageManager: packageManager.name,
+    saveType: "dependencies",
+    packageSpec: packageName,
+    workspaceRoot:
+      packageManager.name === "pnpm" ? await isPnpmWorkspaceRoot({ cwd: context.cwd }) : false,
+  });
+  const runner = context.packageCommandRunner ?? defaultPackageCommandRunner;
+  const result = await runner({ command: command.command, args: command.args, cwd: context.cwd });
+  if (result.exitCode !== 0) {
+    throw new CliUsageError(
+      `Package install failed for ${packageName} with exit code ${result.exitCode}.${result.stderr ? `\n${result.stderr}` : ""}`,
+    );
+  }
+
+  const provider = await loadProviderPackage(join(context.cwd, "node_modules", ...packageName.split("/")));
+  const providers = toMutableRecord(config.providers);
+  providers[provider.manifest.id] = {
+    source: {
+      type: "npm",
+      packageName,
+      spec: packageName,
+      ...(provider.version === undefined ? {} : { resolvedVersion: provider.version }),
+    },
+    manifest: provider.manifest,
+  };
+  return { ...config, providers };
+}
+
+function toMutableRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? { ...value }
+    : {};
 }
 
 async function shouldConfigureAnotherAgent(context: CliCommandContext): Promise<boolean> {

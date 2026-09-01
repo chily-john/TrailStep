@@ -140,7 +140,9 @@ function modelDiscoverySpecForProvider(
   if (isOfficialProviderPackageName(providerSelection)) {
     return undefined;
   }
-  const modelSupport = officialProviderSpecFor(officialProviderIdForSelection(providerSelection))?.model;
+  const modelSupport = officialProviderSpecFor(
+    officialProviderIdForSelection(providerSelection),
+  )?.model;
   return modelSupport?.supported === true ? modelSupport.discovery : undefined;
 }
 
@@ -203,7 +205,9 @@ function thinkingOverrideChoicesForProvider(
     const thinking = customProvider.config.thinking;
     return thinking?.supported === true ? [PROVIDER_DEFAULT_CHOICE, ...thinking.levels] : [];
   }
-  const thinkingSupport = officialProviderSpecFor(officialProviderIdForSelection(providerSelection))?.thinking;
+  const thinkingSupport = officialProviderSpecFor(
+    officialProviderIdForSelection(providerSelection),
+  )?.thinking;
   if (thinkingSupport === undefined) {
     return GENERIC_THINKING_OVERRIDE_CHOICES;
   }

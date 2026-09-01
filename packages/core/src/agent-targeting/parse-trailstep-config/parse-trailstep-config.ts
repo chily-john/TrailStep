@@ -1,6 +1,6 @@
 import {
-  type TrailStepProviderRegistration,
   parseTrailStepProviderRegistrations,
+  type TrailStepProviderRegistration,
 } from "../../providers/provider-manifest.js";
 import type { TrailStepConfig } from "../targeting.types.js";
 import { expandAgentRefs } from "./expand-agent-refs.js";

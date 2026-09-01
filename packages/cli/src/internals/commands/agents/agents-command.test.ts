@@ -18,9 +18,10 @@ async function readJson(path: string): Promise<unknown> {
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
-  const valueToWrite = path.endsWith(join(".trailstep", "config.json")) && isRecord(value)
-    ? withTestCustomProviders(value)
-    : value;
+  const valueToWrite =
+    path.endsWith(join(".trailstep", "config.json")) && isRecord(value)
+      ? withTestCustomProviders(value)
+      : value;
   await writeFile(path, `${JSON.stringify(valueToWrite, null, 2)}\n`, "utf8");
 }
 

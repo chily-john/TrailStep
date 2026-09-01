@@ -46,6 +46,19 @@ trailstep init --scope project --install-skill
 
 `trailstep init` writes TrailStep config. `--install-skill` installs the packaged TrailStep usage skill; `--no-install-skill` skips it. There is no npm postinstall prompt.
 
+## Providers
+
+Register a provider package or local manifest:
+
+```bash
+trailstep providers add <path-or-package>
+trailstep providers add @trailstep/provider-pi --scope project
+trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
+trailstep providers test pi --scope project
+```
+
+Hook-based provider packages may execute provider package code, so they should be trusted like installed npm dependencies. Use `trailstep providers test` when you want to verify provider registration without running a full workflow.
+
 ## Agents
 
 Open the interactive agent editor:
@@ -75,7 +88,7 @@ trailstep open reviewer
 trailstep open claude
 ```
 
-`trailstep open <name>` resolves a configured agent name first, then a built-in provider, then a custom provider with `interactiveArgs`. Configured agent names win over provider shortcuts for this explicit command. `trailstep open <name>` never runs workflows; use a workflow ref when you want a workflow run.
+`trailstep open <name>` resolves a configured agent name first, then a registered provider with interactive support. Configured agent names win over provider shortcuts for this explicit command. `trailstep open <name>` never runs workflows; use a workflow ref when you want a workflow run.
 
 Bare invocation keeps command and workflow precedence explicit:
 

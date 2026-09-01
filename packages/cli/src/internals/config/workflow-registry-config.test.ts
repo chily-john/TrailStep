@@ -32,7 +32,8 @@ async function writeUserConfig(homeDir: string, value: unknown): Promise<void> {
 }
 
 function configValue(value: unknown): unknown {
-  return isRecord(value) && (isRecord(value.customProviders) || containsTestProviderReference(value))
+  return isRecord(value) &&
+    (isRecord(value.customProviders) || containsTestProviderReference(value))
     ? withTestCustomProviders(value)
     : value;
 }

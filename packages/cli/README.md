@@ -45,6 +45,19 @@ trailstep workflows
 
 </details>
 
+## Provider commands
+
+Register a provider package or local manifest:
+
+```bash
+trailstep providers add <path-or-package>
+trailstep providers add @trailstep/provider-pi --scope project
+trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
+trailstep providers test pi --scope project
+```
+
+Hook-based provider packages may execute provider package code, so they should be trusted like installed npm dependencies. Use `trailstep providers test` as the safe verification path before using a provider in workflows.
+
 ## Common commands
 
 ```bash
@@ -79,7 +92,7 @@ trailstep open reviewer
 trailstep reviewer
 ```
 
-Open a built-in or custom provider shortcut ephemerally when you do not need a named config entry:
+Open a registered provider shortcut ephemerally when you do not need a named config entry:
 
 ```bash
 trailstep open claude

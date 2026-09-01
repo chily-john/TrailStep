@@ -10,12 +10,12 @@ import {
   detectPackageManager,
   isPnpmWorkspaceRoot,
 } from "../../package-manager/package-manager.js";
-import { loadProviderPackage } from "../../providers/provider-package-loader.js";
+import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
 import {
   isOfficialProviderPackageName,
   OFFICIAL_PROVIDER_PACKAGES,
 } from "../../providers/official-providers.js";
-import { promptSelect, promptText } from "../../prompts/prompt-helpers.js";
+import { loadProviderPackage } from "../../providers/provider-package-loader.js";
 import {
   createPackagedTrailStepSkillInstallationMarker,
   hasCurrentTrailStepSkillInstallationMarker,
@@ -307,7 +307,9 @@ async function registerOfficialProviderPackage(
     );
   }
 
-  const provider = await loadProviderPackage(join(context.cwd, "node_modules", ...packageName.split("/")));
+  const provider = await loadProviderPackage(
+    join(context.cwd, "node_modules", ...packageName.split("/")),
+  );
   const providers = toMutableRecord(config.providers);
   providers[provider.manifest.id] = {
     source: {
@@ -322,9 +324,7 @@ async function registerOfficialProviderPackage(
 }
 
 function toMutableRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? { ...value }
-    : {};
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? { ...value } : {};
 }
 
 async function shouldConfigureAnotherAgent(context: CliCommandContext): Promise<boolean> {

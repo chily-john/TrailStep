@@ -394,7 +394,10 @@ function parseLegacyModel(
   if (flag === null) {
     return undefined;
   }
-  return { ...parsed, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["model"];
+  return {
+    ...parsed,
+    ...(flag === undefined ? {} : { flag }),
+  } as TrailStepProviderManifest["model"];
 }
 
 function parseLegacyThinking(
@@ -432,7 +435,10 @@ function parseLegacyThinking(
     } as TrailStepProviderManifest["thinking"];
   }
 
-  return { supported: value.supported, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["thinking"];
+  return {
+    supported: value.supported,
+    ...(flag === undefined ? {} : { flag }),
+  } as TrailStepProviderManifest["thinking"];
 }
 
 function parseThinking(

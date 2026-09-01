@@ -6,6 +6,8 @@ Official Pi provider package for TrailStep.
 
 ```bash
 npm install @trailstep/provider-pi
+trailstep providers add @trailstep/provider-pi --scope project
+trailstep agents set default --provider pi --scope project
 ```
 
 ## Export

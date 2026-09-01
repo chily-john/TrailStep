@@ -65,6 +65,19 @@ trailstep project/take-it-away --input-file feature-request.json
 
 </details>
 
+## Providers in one minute
+
+TrailStep provider registration is package- or manifest-based rather than built into `@trailstep/core`.
+
+```bash
+trailstep providers add <path-or-package>
+trailstep providers add @trailstep/provider-pi --scope project
+trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
+trailstep providers test pi --scope project
+```
+
+Package providers may include hooks that execute provider package code, so they should be trusted like installed npm dependencies. `trailstep providers test` is the safe inspection path when you want to verify provider wiring without running a full workflow.
+
 ## Scopes in one minute
 
 TrailStep writes config at one of three scopes:

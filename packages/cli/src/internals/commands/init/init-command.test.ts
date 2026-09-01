@@ -52,7 +52,9 @@ const INTERACTIVE_ARGS_PROMPT =
   "Interactive args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{prompt}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";
 
 describe("initCommand", () => {
-  it("offers official provider packages with add guidance and registers the selected provider", async ({ task }) => {
+  it("offers official provider packages with add guidance and registers the selected provider", async ({
+    task,
+  }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-init-command-tests",
@@ -121,11 +123,14 @@ describe("initCommand", () => {
       },
       packageCommandRunner: async (request) => {
         packageCommands.push(request);
-        await writeProviderPackage(resolve(request.cwd, "node_modules", "@trailstep", "provider-pi"), {
-          packageName: "@trailstep/provider-pi",
-          version: "1.0.0",
-          manifest: piManifest,
-        });
+        await writeProviderPackage(
+          resolve(request.cwd, "node_modules", "@trailstep", "provider-pi"),
+          {
+            packageName: "@trailstep/provider-pi",
+            version: "1.0.0",
+            manifest: piManifest,
+          },
+        );
         return { exitCode: 0, stdout: "added @trailstep/provider-pi@1.0.0" };
       },
     });

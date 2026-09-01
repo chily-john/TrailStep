@@ -11,6 +11,7 @@ import {
   detectPackageManager,
   isPnpmWorkspaceRoot,
 } from "../../package-manager/package-manager.js";
+import { migrateLegacyCustomProvidersConfig } from "../../providers/provider-config-migration.js";
 import {
   type LoadedProviderPackageDefinition,
   loadProviderPackage,
@@ -19,7 +20,6 @@ import {
   type ProviderPackageRef,
   parseProviderPackageRef,
 } from "../../providers/provider-package-ref.js";
-import { migrateLegacyCustomProvidersConfig } from "../../providers/provider-config-migration.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
@@ -856,7 +856,10 @@ function parseLegacySupported(
   if (parsed === undefined || !isRecord(value)) return undefined;
   const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
   if (flag === null) return undefined;
-  return { ...parsed, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["model"];
+  return {
+    ...parsed,
+    ...(flag === undefined ? {} : { flag }),
+  } as TrailStepProviderManifest["model"];
 }
 
 function parseLegacyThinking(
@@ -887,7 +890,10 @@ function parseLegacyThinking(
       levels: value.levels,
     } as TrailStepProviderManifest["thinking"];
   }
-  return { ...parsed, ...(flag === undefined ? {} : { flag }) } as TrailStepProviderManifest["thinking"];
+  return {
+    ...parsed,
+    ...(flag === undefined ? {} : { flag }),
+  } as TrailStepProviderManifest["thinking"];
 }
 
 function parseThinking(

@@ -592,7 +592,9 @@ describe("providersCommand", () => {
     expect(await readJson(configPath)).toEqual(originalConfig);
   });
 
-  it("remove deletes only the unreferenced provider and preserves agent mappings", async ({ task }) => {
+  it("remove deletes only the unreferenced provider and preserves agent mappings", async ({
+    task,
+  }) => {
     const cwd = tmpDir(task);
     const configPath = resolve(cwd, ".trailstep", "config.json");
     await writeJson(configPath, {

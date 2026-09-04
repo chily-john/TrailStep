@@ -32,6 +32,16 @@ function formatEvent(event: Event): string | undefined {
           : "";
       return `✗ ${event.stepId}${message}`;
     }
+    case "step.display": {
+      const message = typeof event.payload.message === "string" ? event.payload.message : undefined;
+      if (message === undefined) {
+        return undefined;
+      }
+
+      const level = typeof event.payload.level === "string" ? event.payload.level : "info";
+      const marker = level === "warning" || level === "error" ? "!" : "•";
+      return `${marker} ${message}`;
+    }
     default:
       return undefined;
   }

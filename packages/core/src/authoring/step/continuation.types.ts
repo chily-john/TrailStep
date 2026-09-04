@@ -41,12 +41,45 @@ export interface SubPromptOptions<TOutput extends PlainObject = PlainObject> {
   readonly maxSubPrompts?: number;
 }
 
-export type StepDisplayContent = unknown;
+export type StepDisplayLevel = "info" | "warning" | "error" | "debug";
 
-/** Placeholder phase for human-readable/progress UI work. It is a no-op in the current runtime. */
-export interface DisplayPhase {
+export interface StepDisplayObject {
+  readonly message: string;
+  readonly level?: StepDisplayLevel;
+  readonly data?: unknown;
+}
+
+export type StepDisplayValue = string | StepDisplayObject;
+
+export interface StepDisplayContext<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
+  readonly input: TInput;
+  readonly output: TOutput;
+}
+
+export type StepDisplayCallback<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = {
+  bivarianceHack(
+    context: StepDisplayContext<TInput, TOutput>,
+  ): StepDisplayValue | Promise<StepDisplayValue>;
+}["bivarianceHack"];
+
+export type StepDisplayContent<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = StepDisplayValue | StepDisplayCallback<TInput, TOutput>;
+
+/** Ordered phase for durable progress display events. */
+export interface DisplayPhase<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
   readonly kind: "display";
-  readonly content?: StepDisplayContent;
+  readonly content?: StepDisplayContent<TInput, TOutput>;
   readonly options?: PlainObject;
 }
 
@@ -82,7 +115,11 @@ export interface DoPhase<
 export type StepPhase<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
-> = DisplayPhase | WaitPhase | PromptPhase<TInput, TOutput> | DoPhase<TInput, TOutput>;
+> =
+  | DisplayPhase<TInput, TOutput>
+  | WaitPhase
+  | PromptPhase<TInput, TOutput>
+  | DoPhase<TInput, TOutput>;
 
 /** The runtime shape stored in `StepNode.config` -- `StepConfig` plus the resolved `input`. Legacy prompt fields are retained for compatibility; ordered `StepNode.phases` is the canonical execution model. */
 export interface ContinuationStepConfig<

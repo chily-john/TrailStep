@@ -31,7 +31,10 @@ import type {
  * optional (`stepA()`) and defaults to `{}`.
  */
 interface StepBuilder {
-  display(content?: StepDisplayContent, options?: PlainObject): StepBuilder;
+  display(
+    content?: StepDisplayContent<PlainObject, PlainObject>,
+    options?: PlainObject,
+  ): StepBuilder;
   wait(options?: unknown): StepBuilder;
   prompt<TInput extends PlainObject = PlainObject, TOutput extends PlainObject = PlainObject>(
     source: AgentPrompt<TInput> | PromptTemplateSource,
@@ -47,7 +50,7 @@ interface PromptedStepBuilder<
   TOutput extends PlainObject = PlainObject,
 > {
   display(
-    content?: StepDisplayContent,
+    content?: StepDisplayContent<TInput, TOutput>,
     options?: PlainObject,
   ): PromptedStepBuilder<TInput, TOutput>;
   wait(options?: unknown): PromptedStepBuilder<TInput, TOutput>;
@@ -59,7 +62,10 @@ type FluentStepFactory<
   TOutput extends PlainObject = PlainObject,
 > = StepFactory<TInput, TOutput> & {
   catch(onError: StepErrorContinuation): FluentStepFactory<TInput, TOutput>;
-  display(content?: StepDisplayContent, options?: PlainObject): FluentStepFactory<TInput, TOutput>;
+  display(
+    content?: StepDisplayContent<TInput, TOutput>,
+    options?: PlainObject,
+  ): FluentStepFactory<TInput, TOutput>;
   wait(options?: unknown): FluentStepFactory<TInput, TOutput>;
 };
 
@@ -127,7 +133,7 @@ export function step(config: StepConfig): StepBuilder {
 
     factory.catch = (nextOnError: StepErrorContinuation) =>
       buildFactory(phaseTemplates, onOutput, nextOnError);
-    factory.display = (content?: StepDisplayContent, options?: PlainObject) =>
+    factory.display = (content?: StepDisplayContent<TInput, TStepOutput>, options?: PlainObject) =>
       buildFactory([...phaseTemplates, displayPhase(content, options)], onOutput, onError);
     factory.wait = (options?: unknown) =>
       buildFactory([...phaseTemplates, waitPhase(options)], onOutput, onError);
@@ -201,7 +207,10 @@ export function firstPromptPhase(phases: readonly StepPhase[]): PromptPhase | un
   return phases.find((phase): phase is PromptPhase => phase.kind === "prompt");
 }
 
-function displayPhase(content?: StepDisplayContent, options?: PlainObject): DisplayPhase {
+function displayPhase<TInput extends PlainObject, TOutput extends PlainObject>(
+  content?: StepDisplayContent<TInput, TOutput>,
+  options?: PlainObject,
+): DisplayPhase<TInput, TOutput> {
   return {
     kind: "display",
     ...(content === undefined ? {} : { content }),

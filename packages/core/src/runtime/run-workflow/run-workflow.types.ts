@@ -58,6 +58,7 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "step.started"
     | "step.completed"
     | "step.failed"
+    | "step.display"
     | "subPrompt.started"
     | "subPrompt.completed"
     | "subPrompt.failed"

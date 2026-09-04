@@ -2,7 +2,9 @@ import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/
 import type { TrailStepConfig } from "../../../agent-targeting/targeting.types.js";
 import type {
   ContinuationResult,
+  DisplayPhase,
   PromptPhase,
+  StepDisplayValue,
   StepNode,
 } from "../../../authoring/step/continuation.types.js";
 import {
@@ -134,6 +136,25 @@ export async function runContinuation(
                 stepNode,
                 timeoutMs: timeoutPolicy.timeoutMs,
                 signal,
+                emitDisplay: async (phase, output, phaseIndex) => {
+                  const payload = await resolveDisplayPayload({
+                    phase,
+                    input: config.input,
+                    output,
+                    phaseIndex,
+                    stepId: config.id,
+                  });
+
+                  await options.emit(
+                    createEvent({
+                      runId: options.runId,
+                      workflowId: options.workflowId,
+                      stepId: config.id,
+                      type: "step.display",
+                      payload,
+                    }),
+                  );
+                },
                 dispatchPrompt: async (phase) => {
                   const outputSchema = resolveStepOutputSchema(phase);
                   if (!outputSchema) {
@@ -278,14 +299,26 @@ async function runStepPhases(options: {
   readonly stepNode: StepNode;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  readonly emitDisplay: (
+    phase: DisplayPhase,
+    output: PlainObject,
+    phaseIndex: number,
+  ) => Promise<void>;
   readonly dispatchPrompt: (phase: PromptPhase) => Promise<PlainObject>;
 }): Promise<ContinuationResult> {
   const { stepNode } = options;
   let phaseValue = stepNode.config.input;
   let nextNode: ContinuationResult | undefined;
+  const phases = getStepPhases(stepNode);
 
-  for (const phase of getStepPhases(stepNode)) {
-    if (phase.kind === "display" || phase.kind === "wait") {
+  for (const [phaseIndex, phase] of phases.entries()) {
+    if (phase.kind === "display") {
+      await options.emitDisplay(phase, phaseValue, phaseIndex);
+      throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
+      continue;
+    }
+
+    if (phase.kind === "wait") {
       continue;
     }
 
@@ -308,6 +341,69 @@ async function runStepPhases(options: {
   }
 
   return nextNode;
+}
+
+async function resolveDisplayPayload(options: {
+  readonly phase: DisplayPhase;
+  readonly input: PlainObject;
+  readonly output: PlainObject;
+  readonly phaseIndex: number;
+  readonly stepId: string;
+}): Promise<PlainObject> {
+  const { phase, input, output, phaseIndex, stepId } = options;
+  const rawValue =
+    typeof phase.content === "function" ? await phase.content({ input, output }) : phase.content;
+
+  const display = normalizeDisplayValue(rawValue, { stepId, phaseIndex });
+  if (typeof display === "string") {
+    return { message: display, level: "info", phaseIndex };
+  }
+
+  return {
+    message: display.message,
+    level: display.level ?? "info",
+    ...("data" in display ? { data: display.data } : {}),
+    phaseIndex,
+  };
+}
+
+function normalizeDisplayValue(
+  value: unknown,
+  context: { readonly stepId: string; readonly phaseIndex: number },
+): StepDisplayValue {
+  const label = `step ${context.stepId} display phase ${context.phaseIndex}`;
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (!isPlainObject(value) || typeof value.message !== "string") {
+    throw new TypeError(`${label} must resolve to a string or an object with a string message.`);
+  }
+
+  const level = value.level ?? "info";
+  if (!isDisplayLevel(level)) {
+    throw new TypeError(`${label} level must be one of: info, warning, error, debug.`);
+  }
+
+  return {
+    message: value.message,
+    level,
+    ...("data" in value ? { data: value.data } : {}),
+  };
+}
+
+function isDisplayLevel(value: unknown): value is "info" | "warning" | "error" | "debug" {
+  return value === "info" || value === "warning" || value === "error" || value === "debug";
+}
+
+function isPlainObject(value: unknown): value is PlainObject {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
 }
 
 async function runWithStepTimeout<T>(options: {

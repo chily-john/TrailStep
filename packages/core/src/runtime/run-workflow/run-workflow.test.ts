@@ -50,6 +50,55 @@ describe("runWorkflow runtime front-door", () => {
     expect(result.output).toEqual({ answer: "fast" });
   });
 
+  it("persists durable step.display events", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-display-"));
+    const workflow: Workflow<{ task: string }, { ok: boolean }> = {
+      id: "display-events",
+      inputShape: { task: "string" },
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return step({ id: "prepare" })
+          .display(({ input }) => ({
+            message: `Preparing ${input.task}`,
+            data: { task: input.task },
+          }))
+          .do(() => done({ ok: true }))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "worktree" },
+      runName: "display-events-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    const contents = await readFile(join(result.runDir, "events.jsonl"), "utf8");
+    const persistedEvents = contents
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Event);
+
+    expect(persistedEvents.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.display",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(persistedEvents[2]).toMatchObject({
+      stepId: "prepare",
+      payload: {
+        message: "Preparing worktree",
+        level: "info",
+        data: { task: "worktree" },
+        phaseIndex: 0,
+      },
+    });
+  });
+
   it("persists step events before the event sink observes a later event", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];

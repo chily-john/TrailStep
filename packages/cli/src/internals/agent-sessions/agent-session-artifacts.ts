@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -46,7 +47,7 @@ export async function createAgentSessionArtifacts(options: {
   await mkdir(sessionsRoot, { recursive: true });
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const suffix = options.randomSuffix?.() ?? Math.random().toString(16).slice(2, 8);
+    const suffix = options.randomSuffix?.() ?? randomBytes(3).toString("hex");
     const id = `session-${timestamp}-${suffix}`;
     const dir = join(sessionsRoot, id);
 

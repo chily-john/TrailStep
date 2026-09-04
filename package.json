@@ -27,7 +27,7 @@
     "@trailstep/create-flows": "^0.3.0",
     "tsup": "^8.5.0",
     "turbo": "^2.10.10",
-    "typescript": "^5.8.3",
+    "typescript": "^6.0.3",
     "vitest": "^3.2.4"
   }
 }

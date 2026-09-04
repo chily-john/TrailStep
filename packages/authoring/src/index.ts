@@ -1,6 +1,9 @@
 export type {
+  DisplayPhase,
+  DoPhase,
   FailNode,
   PromptOptions,
+  PromptPhase,
   PromptTemplateSource,
   RetryPolicy,
   RetryPolicyInput,
@@ -9,9 +12,12 @@ export type {
   ShapeObject,
   ShapePrimitive,
   StepConfig,
+  StepDisplayContent,
   StepFactory,
+  StepPhase,
   TimeoutPolicy,
   TimeoutPolicyInput,
+  WaitPhase,
   Workflow,
 } from "@trailstep/core";
 export {

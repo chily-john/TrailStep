@@ -1,5 +1,10 @@
 import type { ContinuationResult, StepNode } from "../../../authoring/step/continuation.types.js";
-import { isStepNode } from "../../../authoring/step/step-node.js";
+import {
+  firstPromptPhase,
+  getStepPhases,
+  hasPromptPhase,
+  isStepNode,
+} from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
@@ -57,7 +62,7 @@ export async function replayCompletedSteps<
       };
     }
 
-    if (node.config.prompt !== undefined) {
+    if (hasPromptPhase(node)) {
       const recordedOutput = readPlainPayload(completedEvent, "output");
       if (!recordedOutput) {
         return {
@@ -69,7 +74,8 @@ export async function replayCompletedSteps<
         };
       }
 
-      const outputSchema = resolveStepOutputSchema(node.config);
+      const promptPhase = firstPromptPhase(getStepPhases(node));
+      const outputSchema = promptPhase ? resolveStepOutputSchema(promptPhase) : undefined;
       if (!outputSchema) {
         return {
           status: "failure",
@@ -88,7 +94,7 @@ export async function replayCompletedSteps<
       }).stepDir;
       const completedNode = node;
       node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        completedNode.onOutput(validatedOutput, completedNode.config.input),
+        replayStepPhases(completedNode, validatedOutput),
       );
     } else {
       const stepDir = resolveStepArtifactPaths({
@@ -98,7 +104,7 @@ export async function replayCompletedSteps<
       }).stepDir;
       const completedNode = node;
       node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        completedNode.onOutput(completedNode.config.input, completedNode.config.input),
+        replayStepPhases(completedNode),
       );
     }
   }
@@ -114,6 +120,42 @@ export async function replayCompletedSteps<
   }
 
   return { status: "success", node };
+}
+
+async function replayStepPhases(
+  stepNode: StepNode,
+  recordedPromptOutput?: PlainObject,
+): Promise<ContinuationResult> {
+  let phaseValue = stepNode.config.input;
+  let usedRecordedPromptOutput = false;
+  let nextNode: ContinuationResult | undefined;
+
+  for (const phase of getStepPhases(stepNode)) {
+    if (phase.kind === "display" || phase.kind === "wait") {
+      continue;
+    }
+
+    if (nextNode !== undefined) {
+      throw new Error(`step ${stepNode.config.id} has executable phases after a do phase`);
+    }
+
+    if (phase.kind === "prompt") {
+      if (recordedPromptOutput === undefined || usedRecordedPromptOutput) {
+        throw new Error(`step ${stepNode.config.id} has no recorded output to replay prompt phase`);
+      }
+      phaseValue = recordedPromptOutput;
+      usedRecordedPromptOutput = true;
+      continue;
+    }
+
+    nextNode = await phase.onOutput(phaseValue, stepNode.config.input);
+  }
+
+  if (nextNode === undefined) {
+    throw new Error(`step ${stepNode.config.id} has no do phase`);
+  }
+
+  return nextNode;
 }
 
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {

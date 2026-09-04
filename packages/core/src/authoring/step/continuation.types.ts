@@ -41,21 +41,27 @@ export interface SubPromptOptions<TOutput extends PlainObject = PlainObject> {
   readonly maxSubPrompts?: number;
 }
 
-/** The runtime shape stored in `StepNode.config` -- `StepConfig` plus `PromptOptions` (when a prompt was given) plus the resolved `input` and `prompt` source. */
-export interface ContinuationStepConfig<
+export type StepDisplayContent = unknown;
+
+/** Placeholder phase for human-readable/progress UI work. It is a no-op in the current runtime. */
+export interface DisplayPhase {
+  readonly kind: "display";
+  readonly content?: StepDisplayContent;
+  readonly options?: PlainObject;
+}
+
+/** Placeholder phase for future human/external waits. It is a no-op in the current runtime. */
+export interface WaitPhase {
+  readonly kind: "wait";
+  readonly options?: unknown;
+}
+
+export interface PromptPhase<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
-> {
-  readonly id: string;
-  readonly input: TInput;
-  readonly output?: ShapeInput<TOutput>;
-  readonly prompt?: AgentPrompt<TInput> | PromptTemplateSource;
-  readonly agent?: string;
-  readonly mode?: "working" | "interactive";
-  readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
-  readonly maxSubPrompts?: number;
-  readonly retry?: RetryPolicyInput;
-  readonly timeout?: TimeoutPolicyInput;
+> extends PromptOptions<TOutput> {
+  readonly kind: "prompt";
+  readonly prompt: AgentPrompt<TInput> | PromptTemplateSource;
 }
 
 export type StepContinuation<
@@ -64,6 +70,42 @@ export type StepContinuation<
 > = {
   bivarianceHack(output: TOutput, input: TInput): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
+
+export interface DoPhase<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
+  readonly kind: "do";
+  readonly onOutput: StepContinuation<TInput, TOutput>;
+}
+
+export type StepPhase<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = DisplayPhase | WaitPhase | PromptPhase<TInput, TOutput> | DoPhase<TInput, TOutput>;
+
+/** The runtime shape stored in `StepNode.config` -- `StepConfig` plus the resolved `input`. Legacy prompt fields are retained for compatibility; ordered `StepNode.phases` is the canonical execution model. */
+export interface ContinuationStepConfig<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
+  readonly id: string;
+  readonly input: TInput;
+  /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
+  readonly output?: ShapeInput<TOutput>;
+  /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
+  readonly prompt?: AgentPrompt<TInput> | PromptTemplateSource;
+  /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
+  readonly agent?: string;
+  /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
+  readonly mode?: "working" | "interactive";
+  /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
+  readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
+  /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
+  readonly maxSubPrompts?: number;
+  readonly retry?: RetryPolicyInput;
+  readonly timeout?: TimeoutPolicyInput;
+}
 
 export type StepErrorContinuation = {
   bivarianceHack(error: Failure): ContinuationResult;
@@ -75,7 +117,9 @@ export interface StepNode<
 > {
   readonly kind: "step";
   readonly config: ContinuationStepConfig<TInput, TOutput>;
-  /** Receives the step's own input as the second argument, alongside its output as the first. */
+  /** Ordered phase pipeline. This is the canonical runtime representation for authored nodes. Optional only so legacy StepNode-shaped objects can still be translated at runtime. */
+  readonly phases?: readonly StepPhase<TInput, TOutput>[];
+  /** @deprecated Prefer the `do` phase in `StepNode.phases`. Retained for compatibility with existing callers. */
   readonly onOutput: StepContinuation<TInput, TOutput>;
   readonly onError?: StepErrorContinuation;
 }

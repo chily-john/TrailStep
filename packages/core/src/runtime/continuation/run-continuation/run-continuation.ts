@@ -1,7 +1,17 @@
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
 import type { TrailStepConfig } from "../../../agent-targeting/targeting.types.js";
-import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
-import { isDoneNode, isFailNode, isStepNode } from "../../../authoring/step/step-node.js";
+import type {
+  ContinuationResult,
+  PromptPhase,
+  StepNode,
+} from "../../../authoring/step/continuation.types.js";
+import {
+  firstPromptPhase,
+  getStepPhases,
+  isDoneNode,
+  isFailNode,
+  isStepNode,
+} from "../../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
@@ -81,7 +91,8 @@ export async function runContinuation(
 
     const stepNode = node;
     const { config } = stepNode;
-    const hasPrompt = config.prompt !== undefined;
+    const phases = getStepPhases(stepNode);
+    const hasPrompt = phases.some((phase) => phase.kind === "prompt");
     const timeoutPolicy = resolveTimeoutPolicy({
       global: trailstepConfig?.settings?.timeout,
       workflow:
@@ -90,6 +101,7 @@ export async function runContinuation(
       step: config.timeout,
     });
     const maxSubPrompts =
+      firstPromptPhase(phases)?.maxSubPrompts ??
       config.maxSubPrompts ??
       trailstepConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
 
@@ -118,52 +130,52 @@ export async function runContinuation(
             config.id,
             stepDir,
             async () => {
-              let paramForNext: PlainObject;
+              const nextNode = await runStepPhases({
+                stepNode,
+                timeoutMs: timeoutPolicy.timeoutMs,
+                signal,
+                dispatchPrompt: async (phase) => {
+                  const outputSchema = resolveStepOutputSchema(phase);
+                  if (!outputSchema) {
+                    throw new Error(`step ${config.id} with a prompt requires an output shape`);
+                  }
 
-              if (hasPrompt) {
-                const outputSchema = resolveStepOutputSchema(config);
-                if (!outputSchema) {
-                  throw new Error(`step ${config.id} with a prompt requires an output shape`);
-                }
-
-                const rawOutput = await dispatchAgentStep({
-                  config: config as typeof config & { prompt: NonNullable<typeof config.prompt> },
-                  outputSchema,
-                  interactiveOutputMode:
-                    config.mode === "interactive" && config.output !== undefined
-                      ? "json"
-                      : "session-file",
-                  runId: options.runId,
-                  workflowId: options.workflowId,
-                  emit: options.emit,
-                  workflowAgents: options.workflowAgents,
-                  runDir: options.runDir,
-                  cwd: options.cwd,
-                  trailstepConfig,
-                  workingAgentProcessRunner: options.workingAgentProcessRunner,
-                  providerWorkingRunner: options.providerWorkingRunner,
-                  processRunner: options.processRunner,
-                  stepIndex,
-                  signal,
-                });
-                throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
-                paramForNext = outputSchema.assert(rawOutput, `step ${config.id} output`);
-
-                await options.emit(
-                  createEvent({
+                  const rawOutput = await dispatchAgentStep({
+                    config: { ...config, ...phase },
+                    outputSchema,
+                    interactiveOutputMode:
+                      phase.mode === "interactive" && phase.output !== undefined
+                        ? "json"
+                        : "session-file",
                     runId: options.runId,
                     workflowId: options.workflowId,
-                    stepId: config.id,
-                    type: "step.completed",
-                    payload: { output: paramForNext },
-                  }),
-                );
-              } else {
-                paramForNext = config.input;
-              }
+                    emit: options.emit,
+                    workflowAgents: options.workflowAgents,
+                    runDir: options.runDir,
+                    cwd: options.cwd,
+                    trailstepConfig,
+                    workingAgentProcessRunner: options.workingAgentProcessRunner,
+                    providerWorkingRunner: options.providerWorkingRunner,
+                    processRunner: options.processRunner,
+                    stepIndex,
+                    signal,
+                  });
+                  throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
+                  const output = outputSchema.assert(rawOutput, `step ${config.id} output`);
 
-              const nextNode = await stepNode.onOutput(paramForNext, config.input);
-              throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
+                  await options.emit(
+                    createEvent({
+                      runId: options.runId,
+                      workflowId: options.workflowId,
+                      stepId: config.id,
+                      type: "step.completed",
+                      payload: { output },
+                    }),
+                  );
+
+                  return output;
+                },
+              });
 
               if (isFailNode(nextNode)) {
                 await options.emit(
@@ -260,6 +272,42 @@ export async function runContinuation(
       }
     }
   }
+}
+
+async function runStepPhases(options: {
+  readonly stepNode: StepNode;
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+  readonly dispatchPrompt: (phase: PromptPhase) => Promise<PlainObject>;
+}): Promise<ContinuationResult> {
+  const { stepNode } = options;
+  let phaseValue = stepNode.config.input;
+  let nextNode: ContinuationResult | undefined;
+
+  for (const phase of getStepPhases(stepNode)) {
+    if (phase.kind === "display" || phase.kind === "wait") {
+      continue;
+    }
+
+    if (nextNode !== undefined) {
+      throw new Error(`step ${stepNode.config.id} has executable phases after a do phase`);
+    }
+
+    if (phase.kind === "prompt") {
+      phaseValue = await options.dispatchPrompt(phase);
+      throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
+      continue;
+    }
+
+    nextNode = await phase.onOutput(phaseValue, stepNode.config.input);
+    throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
+  }
+
+  if (nextNode === undefined) {
+    throw new Error(`step ${stepNode.config.id} has no do phase`);
+  }
+
+  return nextNode;
 }
 
 async function runWithStepTimeout<T>(options: {

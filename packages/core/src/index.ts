@@ -40,17 +40,23 @@ export {
 export type {
   ContinuationResult,
   ContinuationStepConfig,
+  DisplayPhase,
   DoneNode,
+  DoPhase,
   FailNode,
   PromptOptions,
+  PromptPhase,
   PromptTemplateSource,
   StepConfig,
   StepContinuation,
+  StepDisplayContent,
   StepErrorContinuation,
   StepFactory,
   StepNode,
+  StepPhase,
   SubPromptFactory,
   SubPromptOptions,
+  WaitPhase,
 } from "./authoring/step/continuation.types.js";
 export type { Workflow } from "./authoring/workflow/workflow.types.js";
 export type {

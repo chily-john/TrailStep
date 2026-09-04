@@ -21,12 +21,10 @@ import { runInteractiveAgentCommand } from "../interactive-agent/run-interactive
 import { runWorkingAgentCommand } from "../working-agent/run-working-agent-command.js";
 
 /**
- * Runs a `.prompt(...)` step's agent dispatch: resolves the workflow agent
- * role, renders the prompt, and executes it in adapter, working, or
- * interactive mode. Only called when `config.prompt` is defined — a step
- * with no prompt is never dispatched at all (see `runContinuation` in
- * `engine.ts`, which calls `stepNode.onOutput` directly on the step's input
- * in that case).
+ * Runs a prompt phase's agent dispatch: resolves the workflow agent role,
+ * renders the prompt, and executes it in adapter, working, or interactive
+ * mode. Steps with no prompt phase are never dispatched at all; their do
+ * phase receives the step input directly.
  */
 export async function dispatchAgentStep(options: {
   readonly config: ContinuationStepConfig & {

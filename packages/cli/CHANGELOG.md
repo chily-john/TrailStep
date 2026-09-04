@@ -1,5 +1,17 @@
 # @trailstep/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- 05fcb88: Publish provider-agnostic runtime support, provider package registration flows, and official provider packages.
+
+### Patch Changes
+
+- Updated dependencies [7c4875c]
+- Updated dependencies [05fcb88]
+  - @trailstep/core@0.2.0
+
 ## 0.3.2
 
 ### Patch Changes

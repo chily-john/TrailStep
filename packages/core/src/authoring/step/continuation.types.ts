@@ -16,6 +16,8 @@ export interface PromptTemplateSource {
 /** The object passed to `step(...)`. Always relevant, regardless of whether `.prompt(...)` is called. */
 export interface StepConfig {
   readonly id: string;
+  readonly title?: string;
+  readonly description?: string;
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
 }
@@ -127,6 +129,8 @@ export interface ContinuationStepConfig<
   TOutput extends PlainObject = PlainObject,
 > {
   readonly id: string;
+  readonly title?: string;
+  readonly description?: string;
   readonly input: TInput;
   /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
   readonly output?: ShapeInput<TOutput>;

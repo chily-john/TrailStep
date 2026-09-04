@@ -17,6 +17,65 @@ function event(overrides: Partial<Event>): Event {
 }
 
 describe("createTerminalEventLogger", () => {
+  it("prints step title and kind when a title is present", () => {
+    const lines: string[] = [];
+    const logger = createTerminalEventLogger({
+      writeLine: (line) => lines.push(line),
+      writeError: (line) => lines.push(line),
+    });
+
+    logger(
+      event({
+        type: "step.started",
+        stepId: "delegate-turn",
+        payload: { stepName: "delegate-turn", title: "Delegate turn", kind: "agent" },
+      }),
+    );
+
+    expect(lines).toEqual(["→ Delegate turn (agent)"]);
+  });
+
+  it("prints step descriptions under the started line", () => {
+    const lines: string[] = [];
+    const logger = createTerminalEventLogger({
+      writeLine: (line) => lines.push(line),
+      writeError: (line) => lines.push(line),
+    });
+
+    logger(
+      event({
+        type: "step.started",
+        stepId: "delegate-turn",
+        payload: {
+          stepName: "delegate-turn",
+          title: "Delegate turn",
+          description: "Runs one continued delegate-agent turn.",
+          kind: "agent",
+        },
+      }),
+    );
+
+    expect(lines).toEqual(["→ Delegate turn (agent)", "  Runs one continued delegate-agent turn."]);
+  });
+
+  it("falls back to the step id behavior when no title is present", () => {
+    const lines: string[] = [];
+    const logger = createTerminalEventLogger({
+      writeLine: (line) => lines.push(line),
+      writeError: (line) => lines.push(line),
+    });
+
+    logger(
+      event({
+        type: "step.started",
+        stepId: "delegate-turn",
+        payload: { stepName: "delegate-turn", kind: "agent" },
+      }),
+    );
+
+    expect(lines).toEqual(["→ delegate-turn (agent)"]);
+  });
+
   it("prints display messages with level markers", () => {
     const lines: string[] = [];
     const logger = createTerminalEventLogger({

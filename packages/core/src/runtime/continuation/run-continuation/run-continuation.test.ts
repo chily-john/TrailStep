@@ -98,6 +98,52 @@ describe("runContinuation", () => {
     expect(events[1]).toMatchObject({ payload: {} });
   });
 
+  it("includes optional step title and description in step.started payload", async () => {
+    const events: Event[] = [];
+    const node = step({
+      id: "delegate-turn",
+      title: "Delegate turn",
+      description: "Runs one continued delegate-agent turn.",
+    })
+      .prompt("Delegate the turn.", {
+        output: jsonSchema<{ readonly summary: string } & Record<string, unknown>>({
+          type: "object",
+          properties: { summary: { type: "string" } },
+          required: ["summary"],
+          additionalProperties: false,
+        }),
+        adapter: async ({ tools }) => {
+          await tools[0]?.call({ summary: "done" });
+        },
+      })
+      .do(() => done({ ok: true }))({});
+
+    const result = await runContinuation({
+      node,
+      runId: "step-metadata-run",
+      workflowId: "step-metadata-workflow",
+      emit: async (event) => {
+        events.push(event);
+      },
+      maxSteps: 1000,
+      initialSource: "test",
+      workflowAgents: {},
+      runDir: ".",
+      cwd: process.cwd(),
+    });
+
+    expect(result.status).toBe("success");
+    expect(events[0]).toMatchObject({
+      stepId: "delegate-turn",
+      payload: {
+        stepName: "delegate-turn",
+        title: "Delegate turn",
+        description: "Runs one continued delegate-agent turn.",
+        kind: "agent",
+      },
+    });
+  });
+
   it("emits ordered display phases before prompt, after prompt, and after do", async () => {
     const events: Event[] = [];
     const trace: string[] = [];

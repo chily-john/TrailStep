@@ -113,7 +113,12 @@ export async function runContinuation(
         workflowId: options.workflowId,
         stepId: config.id,
         type: "step.started",
-        payload: { stepName: config.id, kind: hasPrompt ? "agent" : "code" },
+        payload: {
+          stepName: config.id,
+          ...(config.title === undefined ? {} : { title: config.title }),
+          ...(config.description === undefined ? {} : { description: config.description }),
+          kind: hasPrompt ? "agent" : "code",
+        },
       }),
     );
 

@@ -4,23 +4,32 @@ import type { TrailStepCliIo } from "../../command.types.js";
 
 export function createTerminalEventLogger(io: TrailStepCliIo): (event: Event) => void {
   return (event) => {
-    const line = formatEvent(event);
-    if (line !== undefined) {
-      io.writeLine(line);
+    const lines = formatEvent(event);
+    if (lines !== undefined) {
+      for (const line of lines) {
+        io.writeLine(line);
+      }
     }
   };
 }
 
-function formatEvent(event: Event): string | undefined {
+function formatEvent(event: Event): readonly string[] | undefined {
   switch (event.type) {
     case "step.started": {
       const stepName =
-        typeof event.payload.stepName === "string" ? event.payload.stepName : event.stepId;
+        typeof event.payload.title === "string"
+          ? event.payload.title
+          : typeof event.payload.stepName === "string"
+            ? event.payload.stepName
+            : event.stepId;
       const kind = typeof event.payload.kind === "string" ? ` (${event.payload.kind})` : "";
-      return `→ ${stepName}${kind}`;
+      const line = `→ ${stepName}${kind}`;
+      return typeof event.payload.description === "string"
+        ? [line, `  ${event.payload.description}`]
+        : [line];
     }
     case "step.completed":
-      return `✓ ${event.stepId}`;
+      return [`✓ ${event.stepId}`];
     case "step.failed": {
       const failure = event.payload.failure;
       const message =
@@ -30,7 +39,7 @@ function formatEvent(event: Event): string | undefined {
         typeof failure.message === "string"
           ? `: ${failure.message}`
           : "";
-      return `✗ ${event.stepId}${message}`;
+      return [`✗ ${event.stepId}${message}`];
     }
     case "step.display": {
       const message = typeof event.payload.message === "string" ? event.payload.message : undefined;
@@ -40,7 +49,7 @@ function formatEvent(event: Event): string | undefined {
 
       const level = typeof event.payload.level === "string" ? event.payload.level : "info";
       const marker = level === "warning" || level === "error" ? "!" : "•";
-      return `${marker} ${message}`;
+      return [`${marker} ${message}`];
     }
     default:
       return undefined;

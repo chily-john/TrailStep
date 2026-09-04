@@ -6,6 +6,20 @@ export const trailstepProvider = {
     working: {
       supported: true,
       command: "claude",
+      args: [
+        "-p",
+        "--output-format",
+        "json",
+        "{{#model}}",
+        "--model",
+        "{{model}}",
+        "{{/model}}",
+        "{{#thinking}}",
+        "--effort",
+        "{{thinking}}",
+        "{{/thinking}}",
+        "@{{promptFile}}",
+      ],
       prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
       output: {
         style: "stdout-json-envelope",

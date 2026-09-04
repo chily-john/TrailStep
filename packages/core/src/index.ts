@@ -113,10 +113,21 @@ export type {
 } from "./deprecations/deprecations.types.js";
 export {
   parseTrailStepProviderManifest,
+  type TrailStepProviderEnvironmentManifest,
+  type TrailStepProviderInteractiveManifest,
   type TrailStepProviderManifest,
+  type TrailStepProviderModelDiscoveryManifest,
+  type TrailStepProviderModelManifest,
+  type TrailStepProviderOutputManifest,
+  type TrailStepProviderOutputParsingManifest,
+  type TrailStepProviderOutputStyle,
   type TrailStepProviderPackageDefinition,
+  type TrailStepProviderPromptFileReferenceStyle,
+  type TrailStepProviderPromptManifest,
   type TrailStepProviderRegistration,
   type TrailStepProviderSource,
+  type TrailStepProviderThinkingManifest,
+  type TrailStepProviderWorkingManifest,
 } from "./providers/provider-manifest.js";
 export {
   defaultRunsRoot,

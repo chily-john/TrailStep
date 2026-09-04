@@ -6,19 +6,30 @@ export const spawnWorkingAgentProcess: WorkingAgentProcessRunner = async ({
   command,
   args,
   cwd,
+  stdio,
   signal,
 }) => {
   return await new Promise((resolve, reject) => {
+    let stdout = "";
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      stdio: "inherit",
+      stdio: stdio === "pipe" ? ["ignore", "pipe", "inherit"] : "inherit",
       detached: process.platform !== "win32",
     });
 
+    if (child.stdout !== null) {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+    }
+
     signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
-    child.on("close", (code) => resolve({ exitCode: code ?? 1 }));
+    child.on("close", (code) =>
+      resolve({ exitCode: code ?? 1, ...(stdio === "pipe" ? { stdout } : {}) }),
+    );
   });
 };
 

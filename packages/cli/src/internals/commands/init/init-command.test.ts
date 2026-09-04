@@ -99,6 +99,9 @@ describe("initCommand", () => {
             expect(choices).toContain("@trailstep/provider-claude");
             expect(choices).toContain("@trailstep/provider-codex");
             expect(choices).toContain("@trailstep/provider-gemini");
+            expect(choices).not.toContain("claude");
+            expect(choices).not.toContain("codex");
+            expect(choices).not.toContain("gemini");
             expect(choices).not.toContain("pi");
             expect(choices.join("\n")).not.toMatch(/detected|not detected/i);
             return "@trailstep/provider-pi";
@@ -176,7 +179,7 @@ describe("initCommand", () => {
         async select(prompt, choices) {
           selections.push({ prompt, choices });
           if (prompt === "Provider") {
-            expect(choices).toContain("claude");
+            expect(choices).toContain("@trailstep/provider-claude");
             return "claude";
           }
           if (prompt === "Model override") {
@@ -229,7 +232,7 @@ describe("initCommand", () => {
         },
         async select(prompt, choices) {
           if (prompt === "Provider") {
-            expect(choices).toContain("codex");
+            expect(choices).toContain("@trailstep/provider-codex");
             return "codex";
           }
           if (prompt === "Model override") {
@@ -400,7 +403,7 @@ describe("initCommand", () => {
         },
         async select(prompt, choices) {
           if (prompt === "Provider") {
-            expect(choices).toContain("claude");
+            expect(choices).toContain("@trailstep/provider-claude");
             return "claude";
           }
           if (prompt === "Model override") {
@@ -773,7 +776,7 @@ describe("initCommand", () => {
           },
           async select(prompt, choices) {
             if (prompt === "Provider") {
-              expect(choices).toContain("claude");
+              expect(choices).toContain("@trailstep/provider-claude");
               return "claude";
             }
             if (prompt === "Model override") {

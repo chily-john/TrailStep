@@ -27,12 +27,16 @@ const validManifest = {
     supported: true,
     command: "echo-provider",
     args: ["--prompt", "{{promptFile}}", "--output", "{{outputFile}}"],
-    prompt: { kind: "prompt-file" },
-    output: { style: "provider-output-file" },
+    prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+    output: { style: "stdout-json-envelope", parsing: { resultField: "result" } },
   },
-  interactive: { supported: false, reason: "Working-agent only." },
-  model: { supported: false },
-  thinking: { supported: true, levels: ["low", "medium"] },
+  interactive: {
+    supported: false,
+    reason: "Working-agent only.",
+    modelFlag: "--model",
+  },
+  model: { supported: true, flag: "--model" },
+  thinking: { supported: true, flag: "--thinking", levels: ["low", "medium"] },
 } as const;
 
 describe("provider package loader", () => {

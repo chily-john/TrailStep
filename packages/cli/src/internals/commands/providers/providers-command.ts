@@ -56,7 +56,7 @@ type ProviderCommandArgs =
   | { readonly action: "inspect"; readonly path: string }
   | { readonly action: "add"; readonly path: string; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "list"; readonly scope?: WorkflowRegistryScope }
-  | { readonly action: "show"; readonly provider: string; readonly scope?: WorkflowRegistryScope }
+  | { readonly action: "show"; readonly provider?: string; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "test"; readonly provider: string; readonly scope?: WorkflowRegistryScope }
   | { readonly action: "migrate"; readonly scope?: WorkflowRegistryScope }
   | {
@@ -90,10 +90,7 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       return { action: "list", scope: parseOptionalScope(flags.scope) };
     }
     if (action === "show") {
-      const provider = argv[2];
-      assertRequiredArg(provider, "trailstep providers show requires <provider>.");
-      const flags = parseFlags(argv.slice(3));
-      return { action: "show", provider, scope: parseOptionalScope(flags.scope) };
+      return parseShowArgs(argv.slice(2));
     }
     if (action === "test") {
       const provider = argv[2];
@@ -111,9 +108,12 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
       const flags = parseFlags(argv.slice(3));
       return { action: "remove", provider, scope: parseOptionalScope(flags.scope) };
     }
+    if (action === undefined || action === "--scope" || !isProviderSubcommand(action)) {
+      return parseShowArgs(argv.slice(1));
+    }
 
     throw new CliUsageError(
-      "trailstep providers requires inspect, add, list, show, test, migrate, or remove.",
+      "trailstep providers requires inspect, add, list, show, test, migrate, remove, or no subcommand for provider details.",
     );
   },
   async run(args: ProviderCommandArgs, context: CliCommandContext): Promise<number> {
@@ -146,6 +146,22 @@ export const providersCommand: CliCommand<ProviderCommandArgs> = {
     }
   },
 };
+
+function parseShowArgs(
+  argv: readonly string[],
+): Extract<ProviderCommandArgs, { readonly action: "show" }> {
+  const provider = argv[0]?.startsWith("--") ? undefined : argv[0];
+  const flags = parseFlags(provider === undefined ? argv : argv.slice(1));
+  return {
+    action: "show",
+    ...(provider === undefined ? {} : { provider }),
+    scope: parseOptionalScope(flags.scope),
+  };
+}
+
+function isProviderSubcommand(value: string): boolean {
+  return ["inspect", "add", "list", "show", "test", "migrate", "remove"].includes(value);
+}
 
 async function inspectProvider(path: string, context: CliCommandContext): Promise<number> {
   const provider = (await localSourceExists(path, context))
@@ -199,10 +215,12 @@ async function showProvider(
 ): Promise<number> {
   const scope = await resolveScope(args.scope, context);
   const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
-  const rawRegistration = toMutableRecord(config.providers)[args.provider];
+  const providers = toMutableRecord(config.providers);
+  const provider = await resolveShowProvider(args.provider, providers, scope, context);
+  const rawRegistration = providers[provider];
   const registration = readRegistration(rawRegistration);
   if (registration === undefined) {
-    throw new CliUsageError(`Provider ${args.provider} does not exist in ${scope} config.`);
+    throw new CliUsageError(`Provider ${provider} does not exist in ${scope} config.`);
   }
   writeManifestDetails(
     registration.manifest,
@@ -211,6 +229,31 @@ async function showProvider(
   );
   context.io.writeLine(`Source: ${formatProviderSource(registration.source)}`);
   return 0;
+}
+
+async function resolveShowProvider(
+  provider: string | undefined,
+  providers: Record<string, unknown>,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<string> {
+  if (provider !== undefined) {
+    return provider;
+  }
+
+  const providerIds = Object.keys(providers).sort();
+  if (providerIds.length === 0) {
+    throw new CliUsageError(`No providers registered in ${scope} config.`);
+  }
+  if (providerIds.length === 1) {
+    return providerIds[0] as string;
+  }
+  if (context.prompts === undefined) {
+    throw new CliUsageError(
+      "trailstep providers requires <provider> when multiple providers are registered.",
+    );
+  }
+  return context.prompts.select("Provider", providerIds);
 }
 
 async function testProvider(
@@ -730,8 +773,8 @@ function parseManifestSnapshot(
   const displayName = parseRequiredString(`${path}.displayName`, value.displayName, diagnostics);
   const working = parseWorking(`${path}.working`, value.working, diagnostics);
   const interactive = parseInteractive(`${path}.interactive`, value.interactive, diagnostics);
-  const model = parseSupported(`${path}.model`, value.model, diagnostics);
-  const thinking = parseThinking(`${path}.thinking`, value.thinking, diagnostics);
+  const model = parseLegacySupported(`${path}.model`, value.model, diagnostics);
+  const thinking = parseLegacyThinking(`${path}.thinking`, value.thinking, diagnostics);
   const env = parseManifestEnvironment(`${path}.env`, value.env, diagnostics);
   if (
     value.schemaVersion !== 1 ||
@@ -769,19 +812,77 @@ function parseWorking(
   if (!value.supported) return { supported: false };
   const command = parseRequiredString(`${path}.command`, value.command, diagnostics);
   const args = parseOptionalStringArray(`${path}.args`, value.args, diagnostics);
-  const prompt =
-    isRecord(value.prompt) && value.prompt.kind === "prompt-file"
-      ? { kind: "prompt-file" as const }
-      : undefined;
-  if (prompt === undefined) diagnostics.push(`${path}.prompt.kind must be prompt-file.`);
-  const output =
-    isRecord(value.output) && value.output.style === "provider-output-file"
-      ? { style: "provider-output-file" as const }
-      : undefined;
-  if (output === undefined) diagnostics.push(`${path}.output.style must be provider-output-file.`);
+  const prompt = parsePromptSnapshot(`${path}.prompt`, value.prompt, diagnostics);
+  const output = parseOutputSnapshot(`${path}.output`, value.output, diagnostics);
   if (command === undefined || args === null || prompt === undefined || output === undefined)
     return undefined;
   return { supported: true, command, ...(args === undefined ? {} : { args }), prompt, output };
+}
+
+function parsePromptSnapshot(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): NonNullable<TrailStepProviderManifest["working"]["prompt"]> | undefined {
+  if (!isRecord(value) || value.kind !== "prompt-file") {
+    diagnostics.push(`${path}.kind must be prompt-file.`);
+    return undefined;
+  }
+  if (value.reference !== undefined && value.reference !== "at-prefixed-argument") {
+    diagnostics.push(`${path}.reference must be at-prefixed-argument when present.`);
+    return undefined;
+  }
+  return {
+    kind: "prompt-file",
+    ...(value.reference === undefined ? {} : { reference: value.reference }),
+  };
+}
+
+function parseOutputSnapshot(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): NonNullable<TrailStepProviderManifest["working"]["output"]> | undefined {
+  if (!isRecord(value) || !isProviderOutputStyle(value.style)) {
+    diagnostics.push(
+      `${path}.style must be provider-output-file, stdout-json-envelope, or stdout-jsonl-transcript.`,
+    );
+    return undefined;
+  }
+  const parsing = parseOutputParsingSnapshot(`${path}.parsing`, value.parsing, diagnostics);
+  if (parsing === null) return undefined;
+  return { style: value.style, ...(parsing === undefined ? {} : { parsing }) };
+}
+
+function parseOutputParsingSnapshot(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+):
+  | NonNullable<NonNullable<TrailStepProviderManifest["working"]["output"]>["parsing"]>
+  | undefined
+  | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+  const resultField = parseOptionalNonEmptyString(
+    `${path}.resultField`,
+    value.resultField,
+    diagnostics,
+  );
+  return resultField === null || resultField === undefined ? undefined : { resultField };
+}
+
+function isProviderOutputStyle(
+  value: unknown,
+): value is NonNullable<TrailStepProviderManifest["working"]["output"]>["style"] {
+  return (
+    value === "provider-output-file" ||
+    value === "stdout-json-envelope" ||
+    value === "stdout-jsonl-transcript"
+  );
 }
 
 function parseLegacyInteractive(
@@ -809,8 +910,36 @@ function parseInteractive(
   const parsed = parseSupported(path, value, diagnostics);
   if (parsed === undefined || !isRecord(value)) return undefined;
   const command = parseOptionalNonEmptyString(`${path}.command`, value.command, diagnostics);
-  if (command === null) return undefined;
-  return { ...parsed, ...(command === undefined ? {} : { command }) };
+  const args = parseOptionalStringArray(`${path}.args`, value.args, diagnostics);
+  const systemPromptFileFlag = parseOptionalNonEmptyString(
+    `${path}.systemPromptFileFlag`,
+    value.systemPromptFileFlag,
+    diagnostics,
+  );
+  const modelFlag = parseOptionalNonEmptyString(`${path}.modelFlag`, value.modelFlag, diagnostics);
+  const permissionBypassFlag = parseOptionalNonEmptyString(
+    `${path}.permissionBypassFlag`,
+    value.permissionBypassFlag,
+    diagnostics,
+  );
+  if (
+    command === null ||
+    systemPromptFileFlag === null ||
+    modelFlag === null ||
+    permissionBypassFlag === null
+  )
+    return undefined;
+  return {
+    ...parsed,
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+    ...(typeof value.requiresSystemPromptFile === "boolean"
+      ? { requiresSystemPromptFile: value.requiresSystemPromptFile }
+      : {}),
+    ...(systemPromptFileFlag === undefined ? {} : { systemPromptFileFlag }),
+    ...(modelFlag === undefined ? {} : { modelFlag }),
+    ...(permissionBypassFlag === undefined ? {} : { permissionBypassFlag }),
+  } as TrailStepProviderManifest["interactive"];
 }
 
 function parseSupported(
@@ -894,31 +1023,6 @@ function parseLegacyThinking(
     ...parsed,
     ...(flag === undefined ? {} : { flag }),
   } as TrailStepProviderManifest["thinking"];
-}
-
-function parseThinking(
-  path: string,
-  value: unknown,
-  diagnostics: string[],
-): TrailStepProviderManifest["thinking"] | undefined {
-  const parsed = parseSupported(path, value, diagnostics);
-  if (parsed === undefined) return undefined;
-  if (isRecord(value) && value.levels !== undefined) {
-    if (
-      !Array.isArray(value.levels) ||
-      value.levels.some(
-        (level) =>
-          typeof level !== "string" || !["low", "medium", "high", "xhigh", "max"].includes(level),
-      )
-    ) {
-      diagnostics.push(
-        `${path}.levels must be an array of supported thinking levels when present.`,
-      );
-      return undefined;
-    }
-    return { supported: parsed.supported, levels: value.levels };
-  }
-  return parsed;
 }
 
 function parseRequiredString(

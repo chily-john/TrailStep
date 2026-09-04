@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
 import type { CliCommand, CliCommandContext, TrailStepCliPrompts } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
-import { OFFICIAL_PROVIDER_IDS } from "../../official-provider-specs.js";
 import {
   createPackageAddCommand,
   defaultPackageCommandRunner,
@@ -42,10 +41,7 @@ const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
 const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage/authoring skill?";
 const OFFICIAL_PROVIDER_ADD_GUIDANCE =
   "Don't see your provider? Add any TrailStep-compatible provider manifest/package with trailstep providers add <path-or-package>.";
-const PROVIDER_CHOICES = [
-  ...OFFICIAL_PROVIDER_PACKAGES.map((provider) => provider.packageName),
-  ...OFFICIAL_PROVIDER_IDS.filter((id) => id !== "pi"),
-].sort();
+const PROVIDER_CHOICES = OFFICIAL_PROVIDER_PACKAGES.map((provider) => provider.packageName).sort();
 
 export const initCommand: CliCommand<InitCommandArgs> = {
   name: "init",

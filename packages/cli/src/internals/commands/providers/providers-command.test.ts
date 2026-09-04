@@ -491,6 +491,66 @@ describe("providersCommand", () => {
     expect(workingAgentProcessRunner).not.toHaveBeenCalled();
   });
 
+  it("providers without a subcommand selects and shows a registered provider", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: validManifest,
+        },
+        backup: {
+          source: { type: "local-manifest", path: "./providers/backup.trailstep-provider.json" },
+          manifest: { ...validManifest, id: "backup", displayName: "Backup" },
+        },
+      },
+    });
+    const lines: string[] = [];
+    const promptLabels: string[] = [];
+    const command = resolveCommand(["providers"]);
+
+    const exitCode = await command.run(command.parseArgs(["providers"]) as never, {
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async (label) => {
+          promptLabels.push(label);
+          return label === "Scope" ? "project" : "backup";
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(promptLabels).toEqual(["Scope", "Provider"]);
+    expect(lines).toContain("Id: backup");
+    expect(lines).toContain("Display name: Backup");
+    expect(lines).toContain("Source: local-manifest ./providers/backup.trailstep-provider.json");
+  });
+
+  it("providers accepts a provider id shorthand for show", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      providers: {
+        "my-agent": {
+          source: { type: "local-manifest", path: "./providers/my-agent.trailstep-provider.json" },
+          manifest: validManifest,
+        },
+      },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["providers", "my-agent", "--scope", "project"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["providers", "my-agent", "--scope", "project"]) as never,
+      { cwd, io: { writeLine: (line) => lines.push(line), writeError: () => undefined } },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain("Id: my-agent");
+    expect(lines).toContain("Source: local-manifest ./providers/my-agent.trailstep-provider.json");
+  });
+
   it("show warns when a registered provider declares executable package hooks", async ({
     task,
   }) => {

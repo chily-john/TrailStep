@@ -5,9 +5,20 @@ import type {
   TrailStepConfig,
 } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
-import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
+import {
+  extractEnvelopeOutput,
+  extractEnvelopeText,
+} from "../../../../cli-provider-runtime/envelopes/envelope.js";
+import type {
+  WorkflowAgentRole,
+  WorkflowAgentThinking,
+} from "../../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
+import type {
+  TrailStepProviderManifest,
+  TrailStepProviderOutputManifest,
+} from "../../../../providers/provider-manifest.js";
 import type {
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
@@ -28,9 +39,15 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly signal?: AbortSignal;
 }): Promise<TOutput> {
   const registration = options.config.providers?.[options.target.provider];
-  const working = registration?.manifest.working;
+  const manifest = registration?.manifest;
+  const working = manifest?.working;
 
-  if (working === undefined || !working.supported || working.command === undefined) {
+  if (
+    manifest === undefined ||
+    working === undefined ||
+    !working.supported ||
+    working.command === undefined
+  ) {
     throw new TrailStepFailureError({
       code: "agent_provider_unavailable",
       message: `Working agent target '${options.target.provider}' does not reference a supported manifest working provider.`,
@@ -39,17 +56,27 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   }
 
   const thinking = options.target.thinking ?? options.role.thinking;
+  const model = optionalNonEmptyString(options.target.model);
   const args = renderCustomProviderArgs({
-    argv: working.args ?? ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+    argv:
+      working.args ??
+      defaultManifestWorkingArgs({
+        manifest,
+        promptFile: options.files.promptFile,
+        outputFile: options.files.outputFile,
+        model,
+        thinking,
+      }),
     values: {
       promptFile: options.files.promptFile,
       outputFile: options.files.outputFile,
-      ...(options.target.model === undefined ? {} : { model: options.target.model }),
+      ...(model === undefined ? {} : { model }),
       ...(thinking === undefined ? {} : { thinking }),
     },
     errorCode: "agent_provider_invalid",
     commandDescription: "Manifest working provider command",
   });
+  const captureStdout = working.output?.style !== "provider-output-file";
 
   let result: WorkingAgentProcessResult;
   try {
@@ -58,10 +85,10 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       args,
       cwd: options.cwd,
       shell: false,
-      stdio: "inherit",
+      stdio: captureStdout ? "pipe" : "inherit",
       promptFile: options.files.promptFile,
       outputFile: options.files.outputFile,
-      ...(options.target.model === undefined ? {} : { model: options.target.model }),
+      ...(model === undefined ? {} : { model }),
       signal: options.signal,
     });
   } catch (error) {
@@ -70,7 +97,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
       details: {
         target: options.target.provider,
-        ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        ...(model === undefined ? {} : { model }),
         cause: error instanceof Error ? error.message : String(error),
       },
     });
@@ -84,16 +111,18 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
         exitCode: result.exitCode,
         provider: working.command,
         target: options.target.provider,
-        ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        ...(model === undefined ? {} : { model }),
       },
     });
   }
 
-  await writeHookExtractedOutput({
+  await writeCapturedStdoutOutput({
     provider: options.target.provider,
     stepId: options.step.id,
     outputFile: options.files.outputFile,
+    captureMode: options.step.output.captureMode,
     stdout: (result as WorkingAgentProcessResult & { readonly stdout?: string }).stdout,
+    output: working.output,
     extractOutputHook: registration?.manifest.hooks?.extractOutput,
   });
 
@@ -104,27 +133,120 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   });
 }
 
-async function writeHookExtractedOutput(options: {
+async function writeCapturedStdoutOutput(options: {
   readonly provider: string;
   readonly stepId: string;
   readonly outputFile: string;
+  readonly captureMode?: "json" | "raw-text";
   readonly stdout?: string;
+  readonly output?: TrailStepProviderOutputManifest;
   readonly extractOutputHook?: unknown;
 }): Promise<void> {
-  if (!isRecord(options.extractOutputHook) || options.stdout === undefined) {
+  if (options.stdout === undefined) {
     return;
   }
 
-  const extracted = extractJsonObject(options.stdout);
-  if (extracted === undefined) {
-    throw new TrailStepFailureError({
-      code: "agent_provider_output_invalid",
-      message: `Working agent step ${options.stepId} provider '${options.provider}' could not extract JSON output from stdout using declared hook metadata.`,
-      details: { provider: options.provider },
-    });
+  if (
+    options.output?.style === "stdout-json-envelope" ||
+    options.output?.style === "stdout-jsonl-transcript"
+  ) {
+    await writeEnvelopeOutput({ ...options, stdout: options.stdout });
+    return;
   }
 
-  await writeFile(options.outputFile, `${JSON.stringify(extracted)}\n`, "utf8");
+  if (isRecord(options.extractOutputHook)) {
+    const extracted = extractJsonObject(options.stdout);
+    if (extracted === undefined) {
+      throw new TrailStepFailureError({
+        code: "agent_provider_output_invalid",
+        message: `Working agent step ${options.stepId} provider '${options.provider}' could not extract JSON output from stdout using declared hook metadata.`,
+        details: { provider: options.provider },
+      });
+    }
+
+    await writeFile(options.outputFile, `${JSON.stringify(extracted)}\n`, "utf8");
+  }
+}
+
+async function writeEnvelopeOutput(options: {
+  readonly provider: string;
+  readonly stepId: string;
+  readonly outputFile: string;
+  readonly captureMode?: "json" | "raw-text";
+  readonly stdout: string;
+  readonly output?: TrailStepProviderOutputManifest;
+}): Promise<void> {
+  try {
+    const resultField = options.output?.parsing?.resultField ?? "result";
+    if (options.captureMode === "raw-text") {
+      const text = extractEnvelopeText(options.stdout, { resultField });
+      await writeFile(options.outputFile, text, "utf8");
+      return;
+    }
+
+    const extracted = extractEnvelopeOutput(options.stdout, { resultField });
+    await writeFile(options.outputFile, `${JSON.stringify(extracted)}\n`, "utf8");
+  } catch (error) {
+    throw new TrailStepFailureError({
+      code: "agent_provider_output_invalid",
+      message: `Working agent step ${options.stepId} provider '${options.provider}' could not parse stdout envelope output.`,
+      details: {
+        provider: options.provider,
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
+}
+
+function defaultManifestWorkingArgs(options: {
+  readonly manifest: TrailStepProviderManifest;
+  readonly promptFile: string;
+  readonly outputFile: string;
+  readonly model?: string;
+  readonly thinking?: WorkflowAgentThinking;
+}): readonly string[] {
+  const args: string[] = [];
+
+  if (options.model !== undefined && options.manifest.model.supported) {
+    args.push(...renderFlaggedValue(options.manifest.model.flag, options.model));
+  }
+
+  if (options.thinking !== undefined && options.manifest.thinking.supported) {
+    args.push(...renderFlaggedValue(options.manifest.thinking.flag, options.thinking));
+  }
+
+  if (options.manifest.working.prompt?.reference === "at-prefixed-argument") {
+    args.push(`@${options.promptFile}`);
+  } else {
+    args.push("--prompt-file", options.promptFile);
+  }
+
+  if (options.manifest.working.output?.style === "provider-output-file") {
+    args.push("--output-file", options.outputFile);
+  }
+
+  return args;
+}
+
+function renderFlaggedValue(flag: string | undefined, value: string): readonly string[] {
+  if (flag === undefined) {
+    return [];
+  }
+
+  const parts = flag.split(/\s+/u).filter(Boolean);
+  if (parts.length === 0) {
+    return [];
+  }
+
+  if (parts.length === 2) {
+    return [parts[0] as string, `${parts[1] as string}=${value}`];
+  }
+
+  return [...parts, value];
+}
+
+function optionalNonEmptyString(value: string | undefined): string | undefined {
+  return value === undefined || value.length === 0 ? undefined : value;
 }
 
 function extractJsonObject(stdout: string): Record<string, unknown> | undefined {

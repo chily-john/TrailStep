@@ -1,8 +1,64 @@
 import { describe, expect, it } from "vitest";
 import { TrailStepFailureError } from "../contracts/failures/failure.js";
-import { parseTrailStepProviderRegistrations } from "./provider-manifest.js";
+import {
+  parseTrailStepProviderManifest,
+  parseTrailStepProviderRegistrations,
+} from "./provider-manifest.js";
 
 describe("provider manifest validation", () => {
+  it("preserves provider-specific package manifest invocation fields", () => {
+    const diagnostics: string[] = [];
+
+    const manifest = parseTrailStepProviderManifest(
+      "trailstepProvider.manifest",
+      {
+        schemaVersion: 1,
+        id: "claude",
+        displayName: "Claude",
+        working: {
+          supported: true,
+          command: "claude",
+          prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+          output: {
+            style: "stdout-json-envelope",
+            parsing: { resultField: "result" },
+          },
+        },
+        interactive: {
+          supported: true,
+          command: "claude",
+          requiresSystemPromptFile: true,
+          systemPromptFileFlag: "--append-system-prompt-file",
+          modelFlag: "--model",
+          permissionBypassFlag: "--dangerously-skip-permissions",
+        },
+        model: { supported: true, flag: "--model" },
+        thinking: {
+          supported: true,
+          flag: "--effort",
+          levels: ["low", "medium", "high", "xhigh", "max"],
+        },
+      },
+      diagnostics,
+    );
+
+    expect(diagnostics).toEqual([]);
+    expect(manifest).toMatchObject({
+      working: {
+        prompt: { reference: "at-prefixed-argument" },
+        output: { style: "stdout-json-envelope", parsing: { resultField: "result" } },
+      },
+      interactive: {
+        requiresSystemPromptFile: true,
+        systemPromptFileFlag: "--append-system-prompt-file",
+        modelFlag: "--model",
+        permissionBypassFlag: "--dangerously-skip-permissions",
+      },
+      model: { flag: "--model" },
+      thinking: { flag: "--effort", levels: ["low", "medium", "high", "xhigh", "max"] },
+    });
+  });
+
   it("reports actionable diagnostics for malformed provider manifests", () => {
     try {
       parseTrailStepProviderRegistrations(

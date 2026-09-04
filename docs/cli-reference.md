@@ -51,11 +51,15 @@ trailstep init --scope project --install-skill
 Register a provider package or local manifest:
 
 ```bash
+trailstep providers
+trailstep providers pi --scope project
 trailstep providers add <path-or-package>
 trailstep providers add @trailstep/provider-pi --scope project
 trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
 trailstep providers test pi --scope project
 ```
+
+`trailstep providers` shows registered provider details, prompting for scope/provider as needed. `trailstep providers <provider>` is shorthand for `trailstep providers show <provider>`.
 
 Hook-based provider packages may execute provider package code, so they should be trusted like installed npm dependencies. Use `trailstep providers test` when you want to verify provider registration without running a full workflow.
 

@@ -14,7 +14,25 @@ describe("@trailstep/provider-pi exports", () => {
         working: {
           supported: true,
           command: "pi",
-          prompt: { kind: "prompt-file" },
+          args: [
+            "-p",
+            "--mode",
+            "json",
+            "{{#model}}",
+            "--model",
+            "{{model}}",
+            "{{/model}}",
+            "{{#thinking}}",
+            "--thinking",
+            "{{thinking}}",
+            "{{/thinking}}",
+            "@{{promptFile}}",
+          ],
+          prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+          output: {
+            style: "stdout-jsonl-transcript",
+            parsing: { resultField: "message" },
+          },
         },
         interactive: {
           supported: true,

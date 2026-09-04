@@ -6,9 +6,25 @@ export const trailstepProvider = {
     working: {
       supported: true,
       command: "pi",
-      args: ["-p", "{{promptFile}}", "--output-file", "{{outputFile}}"],
-      prompt: { kind: "prompt-file" },
-      output: { style: "provider-output-file" },
+      args: [
+        "-p",
+        "--mode",
+        "json",
+        "{{#model}}",
+        "--model",
+        "{{model}}",
+        "{{/model}}",
+        "{{#thinking}}",
+        "--thinking",
+        "{{thinking}}",
+        "{{/thinking}}",
+        "@{{promptFile}}",
+      ],
+      prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+      output: {
+        style: "stdout-jsonl-transcript",
+        parsing: { resultField: "message" },
+      },
     },
     interactive: {
       supported: true,

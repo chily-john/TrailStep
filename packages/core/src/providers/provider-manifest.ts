@@ -43,18 +43,44 @@ export interface TrailStepProviderManifest {
   readonly hooks?: Record<string, unknown>;
 }
 
+export type TrailStepProviderPromptFileReferenceStyle = "at-prefixed-argument";
+
+export interface TrailStepProviderPromptManifest {
+  readonly kind: "prompt-file";
+  readonly reference?: TrailStepProviderPromptFileReferenceStyle;
+}
+
+export type TrailStepProviderOutputStyle =
+  | "provider-output-file"
+  | "stdout-json-envelope"
+  | "stdout-jsonl-transcript";
+
+export interface TrailStepProviderOutputParsingManifest {
+  readonly resultField?: string;
+}
+
+export interface TrailStepProviderOutputManifest {
+  readonly style: TrailStepProviderOutputStyle;
+  readonly parsing?: TrailStepProviderOutputParsingManifest;
+}
+
 export interface TrailStepProviderWorkingManifest {
   readonly supported: boolean;
   readonly command?: string;
   readonly args?: readonly string[];
-  readonly prompt?: { readonly kind: "prompt-file" };
-  readonly output?: { readonly style: "provider-output-file" };
+  readonly prompt?: TrailStepProviderPromptManifest;
+  readonly output?: TrailStepProviderOutputManifest;
 }
 
 export interface TrailStepProviderInteractiveManifest {
   readonly supported: boolean;
   readonly reason?: string;
   readonly command?: string;
+  readonly args?: readonly string[];
+  readonly requiresSystemPromptFile?: boolean;
+  readonly systemPromptFileFlag?: string;
+  readonly modelFlag?: string;
+  readonly permissionBypassFlag?: string;
 }
 
 export interface TrailStepProviderEnvironmentManifest {
@@ -62,12 +88,23 @@ export interface TrailStepProviderEnvironmentManifest {
   readonly optional?: readonly string[];
 }
 
+export interface TrailStepProviderModelDiscoveryManifest {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly outputParser: string;
+}
+
 export interface TrailStepProviderModelManifest {
   readonly supported: boolean;
+  readonly reason?: string;
+  readonly flag?: string;
+  readonly discovery?: TrailStepProviderModelDiscoveryManifest;
 }
 
 export interface TrailStepProviderThinkingManifest {
   readonly supported: boolean;
+  readonly reason?: string;
+  readonly flag?: string;
   readonly levels?: readonly WorkflowAgentThinking[];
 }
 
@@ -249,7 +286,7 @@ function parseManifest(
   const displayName = parseRequiredString(`${path}.displayName`, value.displayName, diagnostics);
   const working = parseWorking(`${path}.working`, value.working, diagnostics);
   const interactive = parseInteractive(`${path}.interactive`, value.interactive, diagnostics);
-  const model = parseSupportedObject(`${path}.model`, value.model, diagnostics);
+  const model = parseModel(`${path}.model`, value.model, diagnostics);
   const thinking = parseThinking(`${path}.thinking`, value.thinking, diagnostics);
   const env = parseEnvironment(`${path}.env`, value.env, diagnostics);
 
@@ -336,10 +373,37 @@ function parseInteractive(
     return undefined;
   }
   const command = parseOptionalNonEmptyString(`${path}.command`, value.command, diagnostics);
-  if (command === null) {
+  const args = parseOptionalStringArray(`${path}.args`, value.args, diagnostics);
+  const systemPromptFileFlag = parseOptionalNonEmptyString(
+    `${path}.systemPromptFileFlag`,
+    value.systemPromptFileFlag,
+    diagnostics,
+  );
+  const modelFlag = parseOptionalNonEmptyString(`${path}.modelFlag`, value.modelFlag, diagnostics);
+  const permissionBypassFlag = parseOptionalNonEmptyString(
+    `${path}.permissionBypassFlag`,
+    value.permissionBypassFlag,
+    diagnostics,
+  );
+  if (
+    command === null ||
+    systemPromptFileFlag === null ||
+    modelFlag === null ||
+    permissionBypassFlag === null
+  ) {
     return undefined;
   }
-  return { ...parsed, ...(command === undefined ? {} : { command }) };
+  return {
+    ...parsed,
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+    ...(typeof value.requiresSystemPromptFile === "boolean"
+      ? { requiresSystemPromptFile: value.requiresSystemPromptFile }
+      : {}),
+    ...(systemPromptFileFlag === undefined ? {} : { systemPromptFileFlag }),
+    ...(modelFlag === undefined ? {} : { modelFlag }),
+    ...(permissionBypassFlag === undefined ? {} : { permissionBypassFlag }),
+  };
 }
 
 function parseSupportedObject(
@@ -441,13 +505,60 @@ function parseLegacyThinking(
   } as TrailStepProviderManifest["thinking"];
 }
 
+function parseModel(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderModelManifest | undefined {
+  const parsed = parseSupportedObject(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) {
+    return undefined;
+  }
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  const discovery = parseModelDiscovery(`${path}.discovery`, value.discovery, diagnostics);
+  if (flag === null || discovery === null) {
+    return undefined;
+  }
+  return {
+    ...parsed,
+    ...(flag === undefined ? {} : { flag }),
+    ...(discovery === undefined ? {} : { discovery }),
+  };
+}
+
+function parseModelDiscovery(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderModelDiscoveryManifest | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+  const command = parseRequiredString(`${path}.command`, value.command, diagnostics);
+  const args = parseRequiredStringArray(`${path}.args`, value.args, diagnostics);
+  const outputParser = parseRequiredString(`${path}.outputParser`, value.outputParser, diagnostics);
+  if (command === undefined || args === undefined || outputParser === undefined) {
+    return null;
+  }
+  return { command, args, outputParser };
+}
+
 function parseThinking(
   path: string,
   value: unknown,
   diagnostics: string[],
 ): TrailStepProviderThinkingManifest | undefined {
-  if (!isRecord(value) || typeof value.supported !== "boolean") {
-    diagnostics.push(`${path} must be an object with a boolean supported field.`);
+  const parsed = parseSupportedObject(path, value, diagnostics);
+  if (parsed === undefined || !isRecord(value)) {
+    return undefined;
+  }
+
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  if (flag === null) {
     return undefined;
   }
 
@@ -464,34 +575,87 @@ function parseThinking(
       );
       return undefined;
     }
-    return { supported: value.supported, levels: value.levels as WorkflowAgentThinking[] };
+    return {
+      ...parsed,
+      ...(flag === undefined ? {} : { flag }),
+      levels: value.levels as WorkflowAgentThinking[],
+    };
   }
 
-  return { supported: value.supported };
+  return { ...parsed, ...(flag === undefined ? {} : { flag }) };
 }
 
 function parsePrompt(
   path: string,
   value: unknown,
   diagnostics: string[],
-): { readonly kind: "prompt-file" } | undefined {
+): TrailStepProviderPromptManifest | undefined {
   if (!isRecord(value) || value.kind !== "prompt-file") {
     diagnostics.push(`${path}.kind must be prompt-file.`);
     return undefined;
   }
-  return { kind: "prompt-file" };
+  if (value.reference !== undefined && value.reference !== "at-prefixed-argument") {
+    diagnostics.push(`${path}.reference must be at-prefixed-argument when present.`);
+    return undefined;
+  }
+  return {
+    kind: "prompt-file",
+    ...(value.reference === undefined ? {} : { reference: value.reference }),
+  };
 }
 
 function parseOutput(
   path: string,
   value: unknown,
   diagnostics: string[],
-): { readonly style: "provider-output-file" } | undefined {
-  if (!isRecord(value) || value.style !== "provider-output-file") {
-    diagnostics.push(`${path}.style must be provider-output-file.`);
+): TrailStepProviderOutputManifest | undefined {
+  if (!isRecord(value) || !isProviderOutputStyle(value.style)) {
+    diagnostics.push(
+      `${path}.style must be provider-output-file, stdout-json-envelope, or stdout-jsonl-transcript.`,
+    );
     return undefined;
   }
-  return { style: "provider-output-file" };
+  const parsing = parseOutputParsing(`${path}.parsing`, value.parsing, diagnostics);
+  if (parsing === null) {
+    return undefined;
+  }
+  return {
+    style: value.style,
+    ...(parsing === undefined ? {} : { parsing }),
+  };
+}
+
+function parseOutputParsing(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderOutputParsingManifest | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+  const resultField = parseOptionalNonEmptyString(
+    `${path}.resultField`,
+    value.resultField,
+    diagnostics,
+  );
+  if (resultField === null) {
+    return null;
+  }
+  return {
+    ...(resultField === undefined ? {} : { resultField }),
+  };
+}
+
+function isProviderOutputStyle(value: unknown): value is TrailStepProviderOutputStyle {
+  return (
+    value === "provider-output-file" ||
+    value === "stdout-json-envelope" ||
+    value === "stdout-jsonl-transcript"
+  );
 }
 
 function parseRequiredString(
@@ -501,6 +665,18 @@ function parseRequiredString(
 ): string | undefined {
   if (typeof value !== "string" || value.length === 0) {
     diagnostics.push(`${path} must be a non-empty string.`);
+    return undefined;
+  }
+  return value;
+}
+
+function parseRequiredStringArray(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): readonly string[] | undefined {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    diagnostics.push(`${path} must be an array of strings.`);
     return undefined;
   }
   return value;

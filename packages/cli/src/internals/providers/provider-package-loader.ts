@@ -48,7 +48,7 @@ export async function loadProviderPackage(
   }
 
   return {
-    manifest: rawManifest as TrailStepProviderManifest,
+    manifest,
     hooksPresent: provider.hooks !== undefined,
     ...(typeof packageJson.name === "string" ? { packageName: packageJson.name } : {}),
     ...(typeof packageJson.version === "string" ? { version: packageJson.version } : {}),

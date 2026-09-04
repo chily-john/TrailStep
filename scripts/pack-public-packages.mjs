@@ -20,6 +20,9 @@ const publicPackages = [
     requiredFiles: ["trailstep-skill/SKILL.md"],
   },
   { name: "@trailstep/create-flows", directory: "packages/create-flows" },
+  { name: "@trailstep/provider-claude", directory: "packages/provider-claude" },
+  { name: "@trailstep/provider-codex", directory: "packages/provider-codex" },
+  { name: "@trailstep/provider-gemini", directory: "packages/provider-gemini" },
   { name: "@trailstep/provider-pi", directory: "packages/provider-pi" },
 ];
 const unpublishedPackageNames = ["@trailstep/testkit", "@trailstep/dashboard"];
@@ -54,6 +57,9 @@ function assertExplicitPackageSet() {
       "packages/authoring",
       "packages/cli",
       "packages/create-flows",
+      "packages/provider-claude",
+      "packages/provider-codex",
+      "packages/provider-gemini",
       "packages/provider-pi",
     ],
     "dry-run package directories must be the explicit public release set",

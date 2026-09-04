@@ -29,7 +29,7 @@ export interface WorkingAgentProcessRequest {
   readonly args: readonly string[];
   readonly cwd: string;
   readonly shell: false;
-  readonly stdio: "inherit";
+  readonly stdio: "inherit" | "pipe";
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
@@ -38,6 +38,7 @@ export interface WorkingAgentProcessRequest {
 
 export interface WorkingAgentProcessResult {
   readonly exitCode: number;
+  readonly stdout?: string;
 }
 
 export type WorkingAgentProcessRunner = (

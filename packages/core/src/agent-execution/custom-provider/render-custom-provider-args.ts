@@ -99,11 +99,8 @@ function renderRange(options: {
     }
 
     if (arg.includes("{{") || arg.includes("}}")) {
-      throw templateError({
-        code: options.errorCode,
-        message: `${options.commandDescription} placeholders and conditional blocks must be whole argv values.`,
-        details: { arg },
-      });
+      rendered.push(renderInterpolatedArg({ ...options, arg }));
+      continue;
     }
 
     rendered.push(arg);
@@ -142,6 +139,49 @@ function parseTemplateToken(
   }
 
   return undefined;
+}
+
+function renderInterpolatedArg(options: {
+  readonly arg: string;
+  readonly values: PlaceholderValues;
+  readonly errorCode: string;
+  readonly commandDescription: string;
+}): string {
+  let foundTemplateToken = false;
+  const rendered = options.arg.replaceAll(
+    /\{\{([#/]?)([A-Za-z][A-Za-z0-9]*)\}\}/gu,
+    (match: string, prefix: string, name: string) => {
+      foundTemplateToken = true;
+
+      if (prefix !== "") {
+        throw templateError({
+          code: options.errorCode,
+          message: `${options.commandDescription} conditional blocks must be whole argv values.`,
+          details: { arg: options.arg, token: match },
+        });
+      }
+
+      if (!PLACEHOLDER_NAMES.has(name as PlaceholderName)) {
+        throw templateError({
+          code: options.errorCode,
+          message: `${options.commandDescription} template token ${match} is not supported.`,
+          details: { arg: options.arg },
+        });
+      }
+
+      return renderPlaceholder({ ...options, name: name as PlaceholderName });
+    },
+  );
+
+  if (!foundTemplateToken || rendered.includes("{{") || rendered.includes("}}")) {
+    throw templateError({
+      code: options.errorCode,
+      message: `${options.commandDescription} has malformed template syntax.`,
+      details: { arg: options.arg },
+    });
+  }
+
+  return rendered;
 }
 
 function findConditionalClose(options: {

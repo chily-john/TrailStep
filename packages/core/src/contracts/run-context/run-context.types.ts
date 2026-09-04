@@ -7,7 +7,7 @@ export interface RunContextWorkingAgentProcessRequest {
   readonly args: readonly string[];
   readonly cwd: string;
   readonly shell: false;
-  readonly stdio: "inherit";
+  readonly stdio: "inherit" | "pipe";
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
@@ -15,6 +15,7 @@ export interface RunContextWorkingAgentProcessRequest {
 
 export interface RunContextWorkingAgentProcessResult {
   readonly exitCode: number;
+  readonly stdout?: string;
 }
 
 export type RunContextWorkingAgentProcessRunner = (

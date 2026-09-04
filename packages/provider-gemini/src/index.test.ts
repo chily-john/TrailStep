@@ -14,6 +14,16 @@ describe("@trailstep/provider-gemini exports", () => {
         working: {
           supported: true,
           command: "gemini",
+          args: [
+            "-p",
+            "@{{promptFile}}",
+            "--output-format",
+            "json",
+            "{{#model}}",
+            "-m",
+            "{{model}}",
+            "{{/model}}",
+          ],
           prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
           output: {
             style: "stdout-json-envelope",

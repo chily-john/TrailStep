@@ -56,6 +56,7 @@ export interface TrailStepMainOptions {
   eventSink?: (event: Event) => void | Promise<void>;
   env?: Record<string, string | undefined>;
   processRunner?: InteractiveProcessRunner;
+  agentSessionTerminalRunner?: InteractiveProcessRunner;
   workingAgentProcessRunner?: WorkingAgentProcessRunner;
   skillsCliResolver?: SkillsCliResolver;
   skillsCliProcessRunner?: SkillsCliProcessRunner;
@@ -82,6 +83,7 @@ export async function main(options: TrailStepMainOptions = {}): Promise<number> 
     eventSink: options.eventSink,
     env: options.env ?? process?.env ?? {},
     processRunner: options.processRunner,
+    agentSessionTerminalRunner: options.agentSessionTerminalRunner,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     skillsCliResolver: options.skillsCliResolver,
     skillsCliProcessRunner: options.skillsCliProcessRunner,

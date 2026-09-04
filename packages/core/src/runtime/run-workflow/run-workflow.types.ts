@@ -1,8 +1,8 @@
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
+import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { ProviderWorkingRunner } from "../../known-cli-providers/registry/provider-registry.types.js";
 
 export type TrailStepConfigInput = TrailStepConfig | Readonly<Record<string, unknown>>;
 
@@ -29,7 +29,7 @@ export interface WorkingAgentProcessRequest {
   readonly args: readonly string[];
   readonly cwd: string;
   readonly shell: false;
-  readonly stdio: "inherit";
+  readonly stdio: "inherit" | "pipe";
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
@@ -38,6 +38,7 @@ export interface WorkingAgentProcessRequest {
 
 export interface WorkingAgentProcessResult {
   readonly exitCode: number;
+  readonly stdout?: string;
 }
 
 export type WorkingAgentProcessRunner = (

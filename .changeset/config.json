@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@trailstep/testkit", "@trailstep/dashboard"]
+  "ignore": ["@trailstep/testkit", "@trailstep/dashboard", "@trailstep/create-flows"]
 }

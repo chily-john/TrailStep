@@ -56,3 +56,65 @@ Use direct refs for local files, registered refs for named project or user workf
 - local run artifacts are runtime outputs, not source of truth.
 - Use `trailstep continue` for normal continuation and `trailstep retry` for failed steps instead of adding a custom resume path.
 - Keep reusable workflow behavior in workflow source and package exports, not in generated run directories.
+
+## Author a provider
+
+Use this when creating a TrailStep-compatible provider; this is provider authoring guidance, not a custom provider wizard.
+
+Author either a manifest-only provider or a hook-based provider package.
+
+Authoritative docs:
+
+- provider manifest and package contract: `../README.md#provider-commands`
+- package export convention: `../../core/README.md#provider-package-export-convention`
+
+### Manifest-only provider
+
+Create a `my-provider.trailstep-provider.json` file with serializable data only:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "example",
+  "displayName": "Example Provider"
+}
+```
+
+### Hook-based provider package
+
+Export `trailstepProvider` from the package root and keep hooks beside the manifest:
+
+```ts
+export const trailstepProvider = {
+  manifest: {
+    schemaVersion: 1,
+    id: "example",
+    displayName: "Example Provider",
+  },
+  hooks: {
+    beforeWorkingAgent: async () => undefined,
+  },
+};
+```
+
+Do not embed functions in manifests.
+
+Hook-based provider packages may execute provider package code and should be trusted like installed npm dependencies.
+
+Treat stale custom provider terminology as legacy or migration-only wording.
+
+### Checklist
+
+- provider id
+- display metadata
+- working invocation
+- prompt delivery
+- output parsing
+- model flags
+- thinking flags
+- env requirements
+- interactive support
+- repair support
+- resume support
+- `trailstep providers inspect <path-or-package>`
+- `trailstep providers test <provider> --scope project`

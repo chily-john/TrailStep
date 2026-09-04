@@ -1,6 +1,4 @@
-import { type ProviderAdapter, providerRegistry } from "@trailstep/core";
 import { describe, expect, it, vi } from "vitest";
-
 import type { TrailStepCliPrompts } from "../command.types.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
 
@@ -72,6 +70,31 @@ function fakePrompts(
 }
 
 describe("configureLiteralAgentTarget", () => {
+  it("normalizes official provider package selections to registered provider ids", async () => {
+    await expect(
+      configureLiteralAgentTarget({
+        prompts: fakePrompts([
+          {
+            label: "Provider",
+            choices: ["@trailstep/provider-claude", "custom"],
+            answer: "@trailstep/provider-claude",
+          },
+          {
+            label: "Model override",
+            choices: ["Use provider default", "Type manually"],
+            answer: "Use provider default",
+          },
+          {
+            label: "Reasoning/thinking override",
+            choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
+            answer: "Use provider default",
+          },
+        ]),
+        providerChoices: ["@trailstep/provider-claude"],
+      }),
+    ).resolves.toEqual({ target: { provider: "claude" } });
+  });
+
   it("omits model and thinking overrides when provider defaults are selected", async () => {
     await expect(
       configureLiteralAgentTarget({
@@ -222,34 +245,6 @@ describe("configureLiteralAgentTarget", () => {
     expect(writeError).toHaveBeenCalledWith(
       "Warning: Could not discover Pi models; continuing with manual model entry.",
     );
-  });
-
-  it("falls back instead of crashing when provider metadata is missing at runtime", async () => {
-    const originalPiProvider = providerRegistry.pi;
-    providerRegistry.pi = { ...originalPiProvider, spec: undefined } as unknown as ProviderAdapter;
-
-    try {
-      await expect(
-        configureLiteralAgentTarget({
-          prompts: fakePrompts([
-            { label: "Provider", choices: ["pi", "custom"], answer: "pi" },
-            {
-              label: "Model override",
-              choices: ["Use provider default", "Type manually"],
-              answer: "Use provider default",
-            },
-            {
-              label: "Reasoning/thinking override",
-              choices: ["Use provider default", "low", "medium", "high", "xhigh", "max"],
-              answer: "Use provider default",
-            },
-          ]),
-          providerChoices: ["pi"],
-        }),
-      ).resolves.toEqual({ target: { provider: "pi" } });
-    } finally {
-      providerRegistry.pi = originalPiProvider;
-    }
   });
 
   it("custom provider wizard collects standardized provider concepts", async () => {

@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "agents": {
+    "grillingAgent": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4-mini",
+        "thinking": "medium"
+      }
+    ],
+    "featureWriter": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4-mini",
+        "thinking": "medium"
+      }
+    ],
+    "planner": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ],
+    "reviewer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ],
+    "storyExplorer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.3-codex-spark",
+        "thinking": "low"
+      }
+    ],
+    "testWriter": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4",
+        "thinking": "medium"
+      }
+    ],
+    "storyImplementer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.4",
+        "thinking": "medium"
+      }
+    ],
+    "storyDoctor": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ],
+    "validator": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.3-codex-spark",
+        "thinking": "low"
+      }
+    ],
+    "storyReviewer": [
+      {
+        "provider": "pi",
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "high"
+      }
+    ]
+  },
+  "workflows": {
+    "project": {
+      "grillItAway": "@trailstep/create-flows#grillItAway",
+      "takeItAway": "@trailstep/create-flows#takeItAway"
+    }
+  },
+  "workflowMetadata": {
+    "project": {
+      "grillItAway": {
+        "kind": "package",
+        "sourceType": "npm",
+        "packageName": "@trailstep/create-flows",
+        "requestedSpec": "@trailstep/create-flows@latest",
+        "requestedRange": "latest",
+        "installScope": "project",
+        "targetRef": "@trailstep/create-flows#grillItAway",
+        "workflowName": "grillItAway",
+        "exportName": "grillItAway",
+        "resolvedVersion": "0.1.0",
+        "installOwnership": "trailstep-installed"
+      },
+      "takeItAway": {
+        "kind": "package",
+        "sourceType": "npm",
+        "packageName": "@trailstep/create-flows",
+        "requestedSpec": "@trailstep/create-flows@latest",
+        "requestedRange": "latest",
+        "installScope": "project",
+        "targetRef": "@trailstep/create-flows#takeItAway",
+        "workflowName": "takeItAway",
+        "exportName": "takeItAway",
+        "resolvedVersion": "0.1.0",
+        "installOwnership": "trailstep-installed"
+      }
+    }
+  },
+  "providers": {
+    "pi": {
+      "source": {
+        "type": "local-package",
+        "packageName": "@trailstep/provider-pi",
+        "spec": "./packages/provider-pi"
+      },
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "pi",
+        "displayName": "Pi",
+        "working": {
+          "supported": true,
+          "command": "node",
+          "args": [
+            "C:/Users/cjohnson_xtivia/AppData/Roaming/npm-global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
+            "-p",
+            "{{#model}}",
+            "--model",
+            "{{model}}",
+            "{{/model}}",
+            "{{#thinking}}",
+            "--thinking",
+            "{{thinking}}",
+            "{{/thinking}}",
+            "@{{promptFile}}",
+            "--mode",
+            "json"
+          ],
+          "prompt": {
+            "kind": "prompt-file"
+          },
+          "output": {
+            "style": "provider-output-file"
+          }
+        },
+        "interactive": {
+          "supported": true,
+          "command": "node"
+        },
+        "model": {
+          "supported": true
+        },
+        "thinking": {
+          "supported": true,
+          "levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "hooks": {
+          "extractOutput": {
+            "supported": true,
+            "source": "manual-recovery"
+          }
+        }
+      }
+    }
+  }
+}

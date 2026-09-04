@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
+import { TEST_CUSTOM_PROVIDERS } from "../../../test/provider-fixtures.js";
 import { resolveCommand } from "../../command-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 
@@ -974,6 +975,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1041,6 +1043,7 @@ describe("addCommand", () => {
       "Named agent for workflow role reviewer",
     ]);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1062,6 +1065,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1123,6 +1127,7 @@ describe("addCommand", () => {
       "Named agent for workflow role reviewer",
     ]);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1143,6 +1148,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1214,6 +1220,7 @@ describe("addCommand", () => {
       "Named agent for workflow role reviewer",
     ]);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1233,6 +1240,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1293,6 +1301,7 @@ describe("addCommand", () => {
       "Named agent for workflow role reviewer",
     ]);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
         reviewerAgent: [{ provider: "claude", model: "sonnet" }],
       },
@@ -1313,6 +1322,7 @@ describe("addCommand", () => {
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeJson(join(cwd, ".trailstep", "config.json"), {
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
     });
     await writeFile(join(cwd, "workflows", "review.mjs"), reviewerAgentWorkflowSource, "utf8");
@@ -1357,6 +1367,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      customProviders: TEST_CUSTOM_PROVIDERS,
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });

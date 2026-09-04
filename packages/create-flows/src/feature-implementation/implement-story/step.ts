@@ -10,7 +10,7 @@ import {
 
 export const implementStoryStep = step({ id: "implement-story" })
   .prompt<ImplementStoryInput, ImplementStoryOutput>(implementStoryPrompt, {
-    agent: "implementer",
+    agent: "storyImplementer",
     output: implementStoryOutput,
   })
   .do(async (promptOutput, input) => {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { TEST_CUSTOM_PROVIDERS, withTestCustomProviders } from "../../../test/provider-fixtures.js";
 import type { TrailStepCliPrompts } from "../../command.types.js";
 
 import { CliUsageError } from "../../command.types.js";
@@ -12,12 +13,38 @@ function tmpDir(task: { readonly id: string }): string {
 }
 
 async function readJson(path: string): Promise<unknown> {
-  return JSON.parse(await readFile(path, "utf8")) as unknown;
+  return stripTestCustomProviders(JSON.parse(await readFile(path, "utf8")) as unknown);
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const valueToWrite =
+    path.endsWith(join(".trailstep", "config.json")) && isRecord(value)
+      ? withTestCustomProviders(value)
+      : value;
+  await writeFile(path, `${JSON.stringify(valueToWrite, null, 2)}\n`, "utf8");
+}
+
+function stripTestCustomProviders(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.customProviders)) {
+    return value;
+  }
+
+  const customProviders = { ...value.customProviders };
+  for (const key of Object.keys(TEST_CUSTOM_PROVIDERS)) {
+    delete customProviders[key];
+  }
+  const stripped = { ...value };
+  if (Object.keys(customProviders).length === 0) {
+    delete stripped.customProviders;
+  } else {
+    stripped.customProviders = customProviders;
+  }
+  return stripped;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function scriptedPrompts(

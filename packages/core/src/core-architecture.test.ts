@@ -51,6 +51,48 @@ describe("core architecture invariants", () => {
       expect(directoryNames).not.toEqual(expect.arrayContaining(["utils", "helpers", "common"]));
     }
   });
+
+  it("does not keep built-in provider implementations or registry exports in core", async () => {
+    const sourceRoot = path.resolve(import.meta.dirname);
+    const legacyProvidersRoot = path.join(
+      sourceRoot,
+      ["known", "cli", "providers"].join("-"),
+      "official",
+    );
+
+    const concreteOfficialProviderFiles = [
+      path.join(legacyProvidersRoot, "claude", "claude-provider.ts"),
+      path.join(legacyProvidersRoot, "codex", "codex-provider.ts"),
+      path.join(legacyProvidersRoot, "gemini", "gemini-provider.ts"),
+      path.join(legacyProvidersRoot, "pi", "pi-provider.ts"),
+    ];
+
+    expect(
+      concreteOfficialProviderFiles
+        .filter((file) => existsSync(file))
+        .map((file) => path.relative(sourceRoot, file)),
+    ).toEqual([]);
+
+    const legacyOfficialImportSegment = `${["known", "cli", "providers"].join("-")}/official/`;
+    const legacyRegistryImportSegment = `${["known", "cli", "providers"].join("-")}/registry/${["provider", "registry"].join("-")}`;
+
+    const sourceFiles = await listSourceFiles(sourceRoot);
+    await Promise.all(
+      sourceFiles.map(async (file) => {
+        const contents = await readFile(file, "utf8");
+        expect(contents, path.relative(sourceRoot, file)).not.toContain(
+          legacyOfficialImportSegment,
+        );
+        expect(contents, path.relative(sourceRoot, file)).not.toContain(
+          legacyRegistryImportSegment,
+        );
+      }),
+    );
+
+    const publicEntrypoint = await readFile(path.join(sourceRoot, "index.ts"), "utf8");
+    expect(publicEntrypoint).not.toContain(["provider", "Registry"].join(""));
+    expect(publicEntrypoint).not.toContain(["Provider", "RegistryKey"].join(""));
+  });
 });
 
 async function listSourceFiles(directory: string): Promise<string[]> {

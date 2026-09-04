@@ -70,6 +70,23 @@ describe("buildWorkingAgentArgs", () => {
     ]);
   });
 
+  it("renders inline placeholders in provider-specific argument values", () => {
+    const args = buildWorkingAgentArgs({
+      argv: [
+        "@{{promptFile}}",
+        "{{#thinking}}",
+        "-c",
+        "model_reasoning_effort={{thinking}}",
+        "{{/thinking}}",
+      ],
+      promptFile: "/run/prompt.md",
+      outputFile: "/run/output.json",
+      thinking: "xhigh",
+    });
+
+    expect(args).toEqual(["@/run/prompt.md", "-c", "model_reasoning_effort=xhigh"]);
+  });
+
   it("rejects unguarded missing optional placeholders", () => {
     expect(() =>
       buildWorkingAgentArgs({

@@ -3,23 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-
 import {
   Document,
   done,
   jsonSchema,
   parseTrailStepConfig,
+  parseTrailStepProviderManifest,
   runWorkflow,
   step,
+  type TrailStepAgentTarget,
+  type TrailStepProviderManifest,
   type Workflow,
   type WorkingAgentProcessRequest,
+  type WorkingAgentProcessRunner,
 } from "../../index.js";
-import { providerRegistry } from "../../known-cli-providers/registry/provider-registry.js";
-import type {
-  ProviderAdapter,
-  ProviderWorkingProcessRequest,
-  ProviderWorkingRequest,
-} from "../../known-cli-providers/registry/provider-registry.types.js";
 import { createRunDirectory } from "../../runtime/artifacts/run-storage.js";
 import { createRunContext } from "../../runtime/run-context/create-run-context.js";
 import { runContextStorage } from "../../runtime/run-context/run-context-storage.js";
@@ -205,9 +202,29 @@ describe("runWorkingAgentCommand", () => {
       trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
+        providers: {
+          pi: {
+            source: { type: "local-manifest", path: "./pi.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "pi",
+              displayName: "Pi",
+              working: {
+                supported: true,
+                command: "pi",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false },
+              model: { supported: false },
+              thinking: { supported: false },
+            },
+          },
+        },
         agents: { medium: [{ provider: "pi" }] },
       }),
-      providerWorkingRunner: async () => {
+      workingAgentProcessRunner: async () => {
         throw new Error("spawn ENAMETOOLONG");
       },
     });
@@ -226,6 +243,322 @@ describe("runWorkingAgentCommand", () => {
         },
       ],
     });
+  });
+
+  it("runs a manifest-only working provider with rendered args and reads the provider output file", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-manifest-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-manifest-provider-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "manifest dispatch" },
+      runName: "working-agent-manifest-provider-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        providers: {
+          "echo-agent": {
+            source: { type: "local-manifest", path: "./echo-agent.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "echo-agent",
+              displayName: "Echo Agent",
+              working: {
+                supported: true,
+                command: "echo-agent",
+                args: [
+                  "--prompt-file",
+                  "{{promptFile}}",
+                  "--output-file",
+                  "{{outputFile}}",
+                  "--model",
+                  "{{model}}",
+                  "--thinking",
+                  "{{thinking}}",
+                ],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false, reason: "No interactive mode" },
+              model: { supported: true },
+              thinking: { supported: true, levels: ["high"] },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "echo-agent", model: "tiny", thinking: "high" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        await writeFile(request.outputFile, JSON.stringify({ answer: "from manifest" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({ answer: "from manifest" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      command: "echo-agent",
+      cwd,
+      shell: false,
+      stdio: "inherit",
+      model: "tiny",
+    });
+    expect(requests[0]?.args).toEqual([
+      "--prompt-file",
+      requests[0]?.promptFile,
+      "--output-file",
+      requests[0]?.outputFile,
+      "--model",
+      "tiny",
+      "--thinking",
+      "high",
+    ]);
+    expect(requests[0]?.promptFile).toContain(join("steps", "0001-review", "prompt.md"));
+    expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
+  });
+
+  it("runs stdout-envelope manifest providers without dropping parsed invocation fields", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-manifest-envelope-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-manifest-provider-envelope-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "manifest envelope" },
+      runName: "working-agent-manifest-provider-envelope-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        providers: {
+          claude: {
+            source: { type: "local-package", packageName: "@trailstep/provider-claude", spec: "." },
+            manifest: {
+              schemaVersion: 1,
+              id: "claude",
+              displayName: "Claude",
+              working: {
+                supported: true,
+                command: "claude",
+                prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+                output: {
+                  style: "stdout-json-envelope",
+                  parsing: { resultField: "result" },
+                },
+              },
+              interactive: {
+                supported: true,
+                command: "claude",
+                requiresSystemPromptFile: true,
+                systemPromptFileFlag: "--append-system-prompt-file",
+              },
+              model: { supported: true, flag: "--model" },
+              thinking: { supported: true, flag: "--effort", levels: ["high"] },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "claude", model: "sonnet", thinking: "high" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ result: JSON.stringify({ answer: "from stdout envelope" }) }),
+        };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({ answer: "from stdout envelope" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ command: "claude", cwd, stdio: "pipe", model: "sonnet" });
+    expect(requests[0]?.args).toEqual([
+      "--model",
+      "sonnet",
+      "--effort",
+      "high",
+      `@${requests[0]?.promptFile}`,
+    ]);
+  });
+
+  it("dispatches a config.providers registration even when legacy customProviders are also present", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-config-pi-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-config-pi-provider-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "config provider" },
+      runName: "working-agent-config-pi-provider-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: { legacy: { binary: "should-not-run" } },
+        providers: {
+          pi: {
+            source: {
+              type: "npm",
+              packageName: "@trailstep/provider-pi",
+              spec: "@trailstep/provider-pi",
+              resolvedVersion: "0.1.0",
+            },
+            manifest: {
+              schemaVersion: 1,
+              id: "pi",
+              displayName: "Pi",
+              working: {
+                supported: true,
+                command: "project-pi",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: true, command: "pi" },
+              model: { supported: true },
+              thinking: { supported: true, levels: ["low", "medium", "high", "xhigh", "max"] },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "pi" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        await writeFile(
+          request.outputFile,
+          JSON.stringify({ answer: "from config provider" }),
+          "utf8",
+        );
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ answer: "from config provider" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ command: "project-pi", cwd });
+  });
+
+  it("uses package-backed output hooks to transform stdout into the step output for working-agent runs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-package-hooks-"));
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-package-hooks-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "package hook parsing" },
+      runName: "working-agent-package-hooks-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {},
+        providers: {
+          "hook-agent": {
+            source: {
+              type: "local-package",
+              packageName: "@example/hook-agent",
+              spec: "./providers/hook-agent",
+              resolvedVersion: "1.2.3",
+            },
+            manifest: {
+              schemaVersion: 1,
+              id: "hook-agent",
+              displayName: "Hook Agent",
+              working: {
+                supported: true,
+                command: "hook-agent",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false, reason: "Working-agent only." },
+              model: { supported: false },
+              thinking: { supported: false },
+              hooks: {
+                extractOutput: { supported: true, source: "package" },
+              },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "hook-agent" }] },
+      }),
+      workingAgentProcessRunner: async () => ({
+        exitCode: 0,
+        stdout: 'FINAL ANSWER: {"answer":"parsed from stdout hook"}',
+      }),
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ answer: "parsed from stdout hook" });
   });
 
   it("runs custom working conditional args without empty model or thinking overrides", async () => {
@@ -297,21 +630,9 @@ describe("runWorkingAgentCommand", () => {
     expect(requests[0]?.args).not.toContain("--thinking");
   });
 
-  it("does not pass an empty model override to built-in provider invocation", async () => {
+  it("does not pass an empty model override to manifest provider invocation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-empty-model-"));
-    const originalClaudeProvider = providerRegistry.claude;
-    let receivedRequest: ProviderWorkingRequest | undefined;
-    const fakeClaudeProvider: ProviderAdapter = {
-      id: "claude",
-      spec: originalClaudeProvider.spec,
-      async runWorking(request) {
-        receivedRequest = request;
-        await writeFile(request.outputFile, JSON.stringify({ answer: "provider default" }), "utf8");
-      },
-      async runInteractive() {
-        return { exitCode: 0 };
-      },
-    };
+    let receivedRequest: WorkingAgentProcessRequest | undefined;
 
     const workflow: Workflow<{ task: string }, { answer: string }> = {
       id: "working-agent-empty-model-workflow",
@@ -328,78 +649,40 @@ describe("runWorkingAgentCommand", () => {
       },
     };
 
-    providerRegistry.claude = fakeClaudeProvider;
-    try {
-      const result = await runWorkflow({
-        workflow,
-        input: { task: "provider default" },
-        runName: "working-agent-empty-model-run",
-        cwd,
-        trailstepConfig: {
-          version: 1,
-          customProviders: {},
-          agents: { medium: [{ provider: "claude", model: "" }] },
-        },
-      });
-
-      expect(result.status).toBe("success");
-      if (result.status !== "success") {
-        throw new Error(result.failure.message);
-      }
-      if (receivedRequest === undefined) {
-        throw new Error("Expected fake claude provider to receive a working request.");
-      }
-      expect("model" in receivedRequest).toBe(false);
-    } finally {
-      providerRegistry.claude = originalClaudeProvider;
-    }
-  });
-});
-
-describe("provider output repair (session-resumable providers only)", () => {
-  function buildReviewWorkflow(): Workflow<{ task: string }, { answer: string }> {
-    return {
-      id: "working-agent-repair-workflow",
-      inputShape: { task: "string" },
-      outputShape: { answer: "string" },
-      agents: { reviewer: { size: "medium" } },
-      start(input) {
-        return step({ id: "review" })
-          .prompt(({ input }) => `Review ${input.task}.`, {
-            output: { answer: "string" },
-            agent: "reviewer",
-          })
-          .do((output) => done(output))(input);
-      },
-    };
-  }
-
-  it("resumes the same claude session once to repair a malformed final answer, and accepts a well-formed repair reply as the step's output", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-repair-ok-"));
-    const calls: ProviderWorkingProcessRequest[] = [];
-
     const result = await runWorkflow({
-      workflow: buildReviewWorkflow(),
-      input: { task: "repair" },
-      runName: "working-agent-repair-ok-run",
+      workflow,
+      input: { task: "provider default" },
+      runName: "working-agent-empty-model-run",
       cwd,
       trailstepConfig: parseTrailStepConfig({
         version: 1,
         customProviders: {},
-        agents: { medium: [{ provider: "claude" }] },
+        providers: {
+          claude: {
+            source: { type: "local-manifest", path: "./claude.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "claude",
+              displayName: "Claude",
+              working: {
+                supported: true,
+                command: "claude",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false },
+              model: { supported: true },
+              thinking: { supported: false },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "claude", model: "" }] },
       }),
-      providerWorkingRunner: async (request) => {
-        calls.push(request);
-        if (calls.length === 1) {
-          return {
-            exitCode: 0,
-            stdout: JSON.stringify({
-              session_id: "session-repair-ok",
-              result: "Sure! I finished the review but forgot to format it as JSON.",
-            }),
-          };
-        }
-        return { exitCode: 0, stdout: JSON.stringify({ result: '{"answer":"looks good"}' }) };
+      workingAgentProcessRunner: async (request) => {
+        receivedRequest = request;
+        await writeFile(request.outputFile, JSON.stringify({ answer: "provider default" }), "utf8");
+        return { exitCode: 0 };
       },
     });
 
@@ -407,85 +690,158 @@ describe("provider output repair (session-resumable providers only)", () => {
     if (result.status !== "success") {
       throw new Error(result.failure.message);
     }
-    expect(result.output).toEqual({ answer: "looks good" });
-
-    expect(calls).toHaveLength(2);
-    expect(calls[0]?.args).not.toContain("--resume");
-    expect(calls[1]?.args).toEqual(
-      expect.arrayContaining(["--resume", "session-repair-ok", "-p", "--output-format", "json"]),
-    );
-    expect(calls[1]?.stdin).toContain("Do not redo the task");
-    expect(calls[1]?.stdin).toContain(
-      "Sure! I finished the review but forgot to format it as JSON.",
-    );
+    if (receivedRequest === undefined) {
+      throw new Error("Expected manifest provider to receive a working request.");
+    }
+    expect("model" in receivedRequest).toBe(false);
   });
 
-  it("falls through to agent_target_exhausted when the repair attempt also returns malformed output (no second repair, no infinite loop)", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-repair-fail-"));
-    const calls: ProviderWorkingProcessRequest[] = [];
+  it("runs the official Claude provider package manifest through config parsing and stdout-envelope dispatch", async () => {
+    const provider = await loadOfficialProviderPackage("claude");
+    expect(provider.hooks).toMatchObject({
+      repairOutput: { supported: true, source: "package" },
+    });
 
-    const result = await runWorkflow({
-      workflow: buildReviewWorkflow(),
-      input: { task: "repair-fail" },
-      runName: "working-agent-repair-fail-run",
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-official-claude-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+    const result = await runOfficialProviderWorkflow({
       cwd,
-      trailstepConfig: parseTrailStepConfig({
-        version: 1,
-        customProviders: {},
-        agents: { medium: [{ provider: "claude" }] },
-      }),
-      providerWorkingRunner: async (request) => {
-        calls.push(request);
+      provider,
+      target: { provider: "claude", model: "sonnet", thinking: "high" },
+      runner: async (request) => {
+        requests.push(request);
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ session_id: "session-repair-fail", result: "Still prose." }),
+          stdout: JSON.stringify({ result: JSON.stringify({ answer: "claude ok" }) }),
         };
       },
     });
 
-    expect(calls).toHaveLength(2);
-    expect(result.status).toBe("failure");
-    if (result.status !== "failure") {
-      throw new Error("Expected the step to fail once the repair attempt also produced prose");
-    }
-    expect(result.failure.code).toBe("agent_target_exhausted");
-    expect(result.failure.details).toMatchObject({
-      attempts: [{ target: "claude", code: "agent_provider_output_invalid" }],
-    });
+    expect(result.output).toEqual({ answer: "claude ok" });
+    expect(requests[0]).toMatchObject({ command: "claude", cwd, stdio: "pipe", model: "sonnet" });
+    expect(requests[0]?.args).toEqual([
+      "-p",
+      "--output-format",
+      "json",
+      "--model",
+      "sonnet",
+      "--effort",
+      "high",
+      `@${requests[0]?.promptFile}`,
+    ]);
   });
 
-  it("leaves a provider without repairOutput (e.g. gemini) failing immediately on malformed output, even when a session id is present", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-no-repair-"));
-    const calls: ProviderWorkingProcessRequest[] = [];
-
-    const result = await runWorkflow({
-      workflow: buildReviewWorkflow(),
-      input: { task: "no-repair" },
-      runName: "working-agent-no-repair-run",
+  it("runs the official Gemini provider package manifest through config parsing and stdout-envelope dispatch", async () => {
+    const provider = await loadOfficialProviderPackage("gemini");
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-official-gemini-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+    const result = await runOfficialProviderWorkflow({
       cwd,
-      trailstepConfig: parseTrailStepConfig({
-        version: 1,
-        customProviders: {},
-        agents: { medium: [{ provider: "gemini" }] },
-      }),
-      providerWorkingRunner: async (request) => {
-        calls.push(request);
+      provider,
+      target: { provider: "gemini", model: "gemini-2.5-pro" },
+      runner: async (request) => {
+        requests.push(request);
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ session_id: "session-gemini", response: "not json prose" }),
+          stdout: JSON.stringify({ response: JSON.stringify({ answer: "gemini ok" }) }),
         };
       },
     });
 
-    expect(calls).toHaveLength(1);
-    expect(result.status).toBe("failure");
-    if (result.status !== "failure") {
-      throw new Error("Expected the gemini target to fail immediately without a repair attempt");
-    }
-    expect(result.failure.code).toBe("agent_target_exhausted");
-    expect(result.failure.details).toMatchObject({
-      attempts: [{ target: "gemini", code: "agent_provider_output_invalid" }],
+    expect(result.output).toEqual({ answer: "gemini ok" });
+    expect(requests[0]).toMatchObject({
+      command: "gemini",
+      cwd,
+      stdio: "pipe",
+      model: "gemini-2.5-pro",
     });
+    expect(requests[0]?.args).toEqual([
+      "-p",
+      `@${requests[0]?.promptFile}`,
+      "--output-format",
+      "json",
+      "-m",
+      "gemini-2.5-pro",
+    ]);
+  });
+
+  it("runs the official Codex provider package manifest with exec, -o, model, and thinking flags", async () => {
+    const provider = await loadOfficialProviderPackage("codex");
+    expect(provider.manifest.thinking.levels).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(provider.manifest.thinking.levels).not.toContain("max");
+
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-official-codex-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+    const result = await runOfficialProviderWorkflow({
+      cwd,
+      provider,
+      target: { provider: "codex", model: "gpt-5", thinking: "xhigh" },
+      runner: async (request) => {
+        requests.push(request);
+        await writeFile(request.outputFile, JSON.stringify({ answer: "codex ok" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.output).toEqual({ answer: "codex ok" });
+    expect(requests[0]).toMatchObject({ command: "codex", cwd, stdio: "inherit", model: "gpt-5" });
+    expect(requests[0]?.args).toEqual([
+      "exec",
+      "-o",
+      requests[0]?.outputFile,
+      "-m",
+      "gpt-5",
+      "-c",
+      "model_reasoning_effort=xhigh",
+      `@${requests[0]?.promptFile}`,
+    ]);
+    expect(requests[0]?.args).not.toContain("--output-file");
+  });
+
+  it("runs the official Pi provider package manifest with -p, JSON mode, and model/thinking overrides", async () => {
+    const provider = await loadOfficialProviderPackage("pi");
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-official-pi-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+    const result = await runOfficialProviderWorkflow({
+      cwd,
+      provider,
+      target: { provider: "pi", model: "google/gemini-2.5-pro", thinking: "max" },
+      runner: async (request) => {
+        requests.push(request);
+        return {
+          exitCode: 0,
+          stdout: [
+            JSON.stringify({ type: "agent_start" }),
+            JSON.stringify({
+              type: "turn_end",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: JSON.stringify({ answer: "pi ok" }) }],
+              },
+            }),
+            JSON.stringify({ type: "agent_settled" }),
+          ].join("\n"),
+        };
+      },
+    });
+
+    expect(result.output).toEqual({ answer: "pi ok" });
+    expect(requests[0]).toMatchObject({
+      command: "pi",
+      cwd,
+      stdio: "pipe",
+      model: "google/gemini-2.5-pro",
+    });
+    expect(requests[0]?.args).toEqual([
+      "-p",
+      "--mode",
+      "json",
+      "--model",
+      "google/gemini-2.5-pro",
+      "--thinking",
+      "max",
+      `@${requests[0]?.promptFile}`,
+    ]);
   });
 });
 
@@ -658,59 +1014,87 @@ describe("raw-text capture mode", () => {
         "# Notes\n\nSome free-form prose, not JSON.",
       );
     });
-
-    it("captures a registered CLI provider's raw stdout as a Document without throwing agent_target_exhausted", async () => {
-      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-provider-doc-e2e-"));
-
-      const workflow: Workflow<{ topic: string }, { path: string; content: string }> = {
-        id: "working-agent-provider-document-workflow",
-        inputShape: { topic: "string" },
-        outputShape: { path: "string", content: "string" },
-        agents: { writer: { size: "medium" } },
-        start(input) {
-          return step({ id: "write" })
-            .prompt(({ input }) => `Write notes about ${input.topic}.`, {
-              output: Document,
-              agent: "writer",
-            })
-            .do((doc) => done({ path: doc.path, content: doc.content }))(input);
-        },
-      };
-
-      const result = await runWorkflow({
-        workflow,
-        input: { topic: "raw-text capture" },
-        runName: "working-agent-provider-document-run",
-        cwd,
-        trailstepConfig: parseTrailStepConfig({
-          version: 1,
-          customProviders: {},
-          agents: { medium: [{ provider: "claude" }] },
-        }),
-        providerWorkingRunner: async () => ({
-          exitCode: 0,
-          stdout: JSON.stringify({
-            type: "result",
-            is_error: false,
-            result: "# Notes\n\nSome free-form prose, not JSON.",
-          }),
-        }),
-      });
-
-      expect(result.status).toBe("success");
-      if (result.status !== "success") {
-        throw new Error(result.failure.message);
-      }
-
-      const documentPath = join(result.runDir, "steps", "0001-write", "document-1.md");
-      expect(result.output).toEqual({
-        path: documentPath,
-        content: "# Notes\n\nSome free-form prose, not JSON.",
-      });
-
-      await expect(readFile(documentPath, "utf8")).resolves.toBe(
-        "# Notes\n\nSome free-form prose, not JSON.",
-      );
-    });
   });
 });
+
+type OfficialProviderId = "claude" | "codex" | "gemini" | "pi";
+
+interface LoadedOfficialProviderPackage {
+  readonly id: OfficialProviderId;
+  readonly manifest: TrailStepProviderManifest;
+  readonly hooks?: unknown;
+}
+
+async function loadOfficialProviderPackage(
+  id: OfficialProviderId,
+): Promise<LoadedOfficialProviderPackage> {
+  const moduleUrl = new URL(`../../../../provider-${id}/src/index.ts`, import.meta.url).href;
+  const imported = (await import(moduleUrl)) as {
+    readonly trailstepProvider?: { readonly manifest?: unknown; readonly hooks?: unknown };
+  };
+
+  const diagnostics: string[] = [];
+  const manifest = parseTrailStepProviderManifest(
+    `@trailstep/provider-${id}.manifest`,
+    imported.trailstepProvider?.manifest,
+    diagnostics,
+  );
+
+  expect(diagnostics).toEqual([]);
+  if (manifest === undefined) {
+    throw new Error(`Expected @trailstep/provider-${id} to export a valid manifest.`);
+  }
+
+  return { id, manifest, hooks: imported.trailstepProvider?.hooks };
+}
+
+async function runOfficialProviderWorkflow(options: {
+  readonly cwd: string;
+  readonly provider: LoadedOfficialProviderPackage;
+  readonly target: TrailStepAgentTarget;
+  readonly runner: WorkingAgentProcessRunner;
+}): Promise<{ readonly output: { readonly answer: string } }> {
+  const workflow: Workflow<{ task: string }, { answer: string }> = {
+    id: `official-${options.provider.id}-provider-workflow`,
+    inputShape: { task: "string" },
+    outputShape: { answer: "string" },
+    agents: { reviewer: { size: "medium" } },
+    start(input) {
+      return step({ id: "review" })
+        .prompt(({ input }) => `Review ${input.task}.`, {
+          output: { answer: "string" },
+          agent: "reviewer",
+        })
+        .do((output) => done(output))(input);
+    },
+  };
+
+  const result = await runWorkflow({
+    workflow,
+    input: { task: options.provider.id },
+    runName: `official-${options.provider.id}-provider-run`,
+    cwd: options.cwd,
+    trailstepConfig: parseTrailStepConfig({
+      version: 1,
+      providers: {
+        [options.provider.id]: {
+          source: {
+            type: "local-package",
+            packageName: `@trailstep/provider-${options.provider.id}`,
+            spec: ".",
+          },
+          manifest: options.provider.manifest,
+        },
+      },
+      agents: { medium: [options.target] },
+    }),
+    workingAgentProcessRunner: options.runner,
+  });
+
+  expect(result.status).toBe("success");
+  if (result.status !== "success") {
+    throw new Error(result.failure.message);
+  }
+
+  return result;
+}

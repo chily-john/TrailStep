@@ -1,12 +1,16 @@
 import type { Document } from "@trailstep/authoring";
-import { done, fail, state, step } from "@trailstep/authoring";
+import { fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
-import { implementStoryStep } from "../implement-story/step.js";
+import { openPullRequestStep } from "../open-pull-request/step.js";
+import {
+  defaultTakeItAwayWorkflowOptions,
+  type TakeItAwayWorkflowOptions,
+} from "../shared/input-schema.js";
 import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
 import {
   type ActiveStoryStartCommit,
-  recordActiveStoryStartCommit,
   resetActiveStoryStartCommit,
+  resetStoryLocalStateForNextStory,
   STORY_STATE_KEYS,
 } from "../shared/story-state.js";
 import { runGit } from "./run-git.js";
@@ -16,22 +20,40 @@ export interface CommitReviewedStoryInput extends Record<string, unknown> {
   readonly implementationSummary?: string;
 }
 
+type StoryCommitResult =
+  | { readonly ok: true; readonly warning?: string }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly message: string;
+      readonly details: Record<string, unknown>;
+    };
+
 export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
   async (input: CommitReviewedStoryInput): Promise<ContinuationResult> => {
     const activeStory =
       (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? input.currentStory;
 
-    if (storyAutoCommitEnabled()) {
+    if (await storyAutoCommitEnabled()) {
       const commitResult = await commitReviewedStoryChanges(
         activeStory,
         input.implementationSummary,
       );
-      if (!commitResult.ok) {
-        return fail({
-          code: commitResult.code,
-          message: commitResult.message,
-          details: commitResult.details,
-        });
+      if (commitResult.ok) {
+        if (commitResult.warning) {
+          await appendWorkflowWarning(commitResult.warning);
+        }
+      } else {
+        const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
+        if (storyQueue.length > 0) {
+          return fail({
+            code: commitResult.code,
+            message: commitResult.message,
+            details: commitResult.details,
+          });
+        }
+
+        await appendWorkflowWarning(commitResult.message);
       }
     }
 
@@ -39,23 +61,17 @@ export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
   },
 );
 
-function storyAutoCommitEnabled(): boolean {
-  const mode = process.env.TRAILSTEP_STORY_COMMIT_MODE;
-  return ["1", "true", "enabled", "worktree"].includes(mode?.toLowerCase() ?? "");
+async function storyAutoCommitEnabled(): Promise<boolean> {
+  const options =
+    (await state.get<TakeItAwayWorkflowOptions | null>(STORY_STATE_KEYS.workflowOptions)) ??
+    defaultTakeItAwayWorkflowOptions();
+  return options.autoCommit;
 }
 
 async function commitReviewedStoryChanges(
   activeStory: Document,
   implementationSummary: string | undefined,
-): Promise<
-  | { readonly ok: true }
-  | {
-      readonly ok: false;
-      readonly code: string;
-      readonly message: string;
-      readonly details: Record<string, unknown>;
-    }
-> {
+): Promise<StoryCommitResult> {
   const cwd = state.cwd;
   if (!cwd) {
     return {
@@ -100,6 +116,8 @@ async function commitReviewedStoryChanges(
     };
   }
 
+  const storyTitle = extractStoryTitle(activeStory.content, 1);
+
   if (staged.stdout.trim().length === 0) {
     const baseline = await state.get<ActiveStoryStartCommit | null>(
       STORY_STATE_KEYS.activeStoryStartCommit,
@@ -109,21 +127,21 @@ async function commitReviewedStoryChanges(
       return { ok: true };
     }
 
+    const headSubject = await runGit(["log", "-1", "--format=%s"], cwd);
+    if (
+      headSubject.ok &&
+      headSubject.stdout === truncateCommitSubject(`trailstep: ${storyTitle}`)
+    ) {
+      return { ok: true };
+    }
+
     return {
-      ok: false,
-      code: "story_commit_empty",
-      message:
-        "The story passed review, but there are no staged or already-committed changes since the story baseline to commit.",
-      details: {
-        storyPath: activeStory.path,
-        storyStartCommit: baseline?.commit,
-        head: head.ok ? head.stdout : undefined,
-        gitError: head.ok ? undefined : head.error,
-      },
+      ok: true,
+      warning:
+        "The story passed review, but there were no staged or already-committed changes since the story baseline to commit.",
     };
   }
 
-  const storyTitle = extractStoryTitle(activeStory.content, 1);
   const commit = await runGit(
     [
       "commit",
@@ -153,13 +171,17 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     ...completed,
     extractStoryTitle(activeStory.content, completed.length + 1),
   ];
-  await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
 
   const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
   const [nextStory, ...remaining] = storyQueue;
+  const [nextStoryContext = "", ...remainingStoryContexts] =
+    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
 
   if (!nextStory) {
+    await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
     await state.set(STORY_STATE_KEYS.activeStory, null);
+    await state.set(STORY_STATE_KEYS.activeStoryContext, null);
+    await state.set(STORY_STATE_KEYS.storyContextQueue, []);
     await resetActiveStoryStartCommit();
     const featureDoc = await state.get<Document>("featureDoc");
     const implementationDoc = await state.get<Document>("implementationDoc");
@@ -171,14 +193,77 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
       completedStories: updatedCompleted,
       summary: `Implemented and reviewed ${updatedCompleted.length} ${updatedCompleted.length === 1 ? "story" : "stories"}.`,
     };
-    return done(output);
+    return openPullRequestStep(output);
   }
 
+  if (!(await storyAutoCommitEnabled())) {
+    const cleanBoundary = await verifyCleanBoundaryBeforeNextStory(activeStory);
+    if (!cleanBoundary.ok) {
+      return fail({
+        code: cleanBoundary.code,
+        message: cleanBoundary.message,
+        details: cleanBoundary.details,
+      });
+    }
+  }
+
+  await resetStoryLocalStateForNextStory();
+  await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
   await state.set(STORY_STATE_KEYS.storyQueue, remaining);
+  await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
-  await resetActiveStoryStartCommit();
-  await recordActiveStoryStartCommit();
-  return implementStoryStep({ currentStory: nextStory, attempt: 1 });
+  await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
+  const { storyRouterStep } = await import("../story-router/step.js");
+  return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
+}
+
+async function appendWorkflowWarning(warning: string): Promise<void> {
+  const warnings = (await state.get<string[] | null>(STORY_STATE_KEYS.workflowWarnings)) ?? [];
+  await state.set(STORY_STATE_KEYS.workflowWarnings, [...warnings, warning]);
+}
+
+async function verifyCleanBoundaryBeforeNextStory(activeStory: Document): Promise<
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly message: string;
+      readonly details: Record<string, unknown>;
+    }
+> {
+  const cwd = state.cwd;
+  if (!cwd) {
+    return {
+      ok: false,
+      code: "story_boundary_missing_cwd",
+      message:
+        "Cannot advance to the next story because the workflow cwd is unavailable. Commit or restore a clean story boundary from a valid checkout, then retry.",
+      details: { storyPath: activeStory.path },
+    };
+  }
+
+  const status = await runGit(["status", "--short"], cwd);
+  if (!status.ok) {
+    return {
+      ok: false,
+      code: "story_boundary_status_failed",
+      message:
+        "Cannot advance to the next story because TrailStep could not inspect `git status --short`. Fix git status inspection, commit or restore a clean story boundary, then retry.",
+      details: { storyPath: activeStory.path, cwd, gitError: status.error },
+    };
+  }
+
+  if (status.stdout.trim().length > 0) {
+    return {
+      ok: false,
+      code: "story_boundary_dirty_without_auto_commit",
+      message:
+        "Cannot advance to the next story because auto-commit is disabled and the reviewed story left uncommitted changes. Commit, stash, or otherwise restore a clean story boundary, then retry the workflow.",
+      details: { storyPath: activeStory.path, cwd, statusShort: status.stdout },
+    };
+  }
+
+  return { ok: true };
 }
 
 function truncateCommitSubject(subject: string): string {

@@ -1,4 +1,5 @@
 import { defineWorkflow, shape } from "@trailstep/authoring";
+import { featureImplementationAgents } from "../feature-implementation/shared/agent-roles.js";
 import { takeItAwayOutput } from "../feature-implementation/shared/output-schema.js";
 import { grillStep } from "./grill/step.js";
 
@@ -13,27 +14,7 @@ export const grillItAway = defineWorkflow({
       thinking: "medium",
       description: "Grills the user until it understands the requested feature.",
     },
-    featureWriter: {
-      size: "medium",
-      thinking: "medium",
-      description: "Turns a conversation/feature request into a standalone feature doc.",
-    },
-    planner: {
-      size: "large",
-      thinking: "high",
-      description:
-        "Creates or improves the implementation doc: architecture-aware, TDD/vertical-slice/tracer-bullet story design.",
-    },
-    reviewer: {
-      size: "large",
-      thinking: "high",
-      description: "Reviews isolated implementation docs and story diffs against methodology.",
-    },
-    implementer: {
-      size: "medium",
-      thinking: "medium",
-      description: "Implements one story at a time using strict behavioral-red TDD.",
-    },
+    ...featureImplementationAgents,
   },
   start() {
     return grillStep();

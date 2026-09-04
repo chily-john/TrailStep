@@ -18,6 +18,9 @@ npx trailstep --help
 ## Commands
 
 ```bash
+trailstep
+trailstep <agent-or-provider>
+trailstep open [agent-or-provider]
 trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]
 trailstep agents
 trailstep agents set <name> --provider <provider> [--model <model>] [--thinking <level>] --scope <local|project|global>
@@ -43,6 +46,23 @@ trailstep init --scope project --install-skill
 
 `trailstep init` writes TrailStep config. `--install-skill` installs the packaged TrailStep usage skill; `--no-install-skill` skips it. There is no npm postinstall prompt.
 
+## Providers
+
+Register a provider package or local manifest:
+
+```bash
+trailstep providers
+trailstep providers pi --scope project
+trailstep providers add <path-or-package>
+trailstep providers add @trailstep/provider-pi --scope project
+trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
+trailstep providers test pi --scope project
+```
+
+`trailstep providers` shows registered provider details, prompting for scope/provider as needed. `trailstep providers <provider>` is shorthand for `trailstep providers show <provider>`.
+
+Hook-based provider packages may execute provider package code, so they should be trusted like installed npm dependencies. Use `trailstep providers test` when you want to verify provider registration without running a full workflow.
+
 ## Agents
 
 Open the interactive agent editor:
@@ -61,6 +81,27 @@ trailstep agents set reviewer --provider claude --model sonnet --thinking high -
 `--model` is a model override and `--thinking` is a reasoning/thinking override. Omit either one to use provider defaults.
 
 Custom provider args can use `{{promptFile}}`, `{{outputFile}}`, `{{model}}`, and `{{thinking}}`; interactive args may also use `{{prompt}}`. Guard optional overrides with `{{#model}} ... {{/model}}` and `{{#thinking}} ... {{/thinking}}`.
+
+## Managed agent sessions
+
+`trailstep open [agent-or-provider]` is the canonical command for a standalone managed agent session. With no name, it opens the first configured default target, `agents.default[0]`. If no default exists, run `trailstep init` to create initial config or `trailstep agents` to add/edit agent mappings.
+
+```bash
+trailstep open
+trailstep open reviewer
+trailstep open claude
+```
+
+`trailstep open <name>` resolves a configured agent name first, then a registered provider with interactive support. Configured agent names win over provider shortcuts for this explicit command. `trailstep open <name>` never runs workflows; use a workflow ref when you want a workflow run.
+
+Bare invocation keeps command and workflow precedence explicit:
+
+- Known subcommands, such as `agents`, `add`, and `workflows`, remain subcommands.
+- `trailstep <agent-or-provider>` opens an unambiguous configured agent or provider shortcut as a standalone session.
+- Bare names that resolve only as workflows still run workflows.
+- Bare names that resolve as both a workflow and an agent/provider fail with ambiguity guidance; use `trailstep open <name>` for the standalone session or an explicit workflow ref for the workflow.
+
+Standalone sessions are not workflow runs or workflow steps. They write artifacts under `.trailstep/sessions/<session-id>/`, including `session.json` and `launch-prompt.md`; workflow runs continue to use `.trailstep/runs/<runName>/`. MVP limitations: only the first configured target in an agent entry is launched, the terminal backend inherits stdio, transcripts are not captured, node-pty/send-input/multi-session management is not implemented yet, and providers without hidden/system prompt injection use a recorded visible prompt fallback.
 
 ## Workflow refs
 
@@ -134,4 +175,4 @@ Local-file workflow refs are not package update targets. GitHub-sourced workflow
 
 ## Artifacts
 
-Runs write `.trailstep/runs/<runName>/` directories for inspection and replay. Set `TRAILSTEP_RUNS_ROOT` to override the runs root for a command/session. Treat run directories as generated output; do not manually edit them to recover workflow state.
+Workflow runs write `.trailstep/runs/<runName>/` directories for inspection and replay. Standalone managed agent sessions write `.trailstep/sessions/<session-id>/` instead and are not workflow runs. Set `TRAILSTEP_RUNS_ROOT` to override the runs root for a command/session. Treat generated artifact directories as output; do not manually edit them to recover workflow state.

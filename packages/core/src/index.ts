@@ -1,3 +1,8 @@
+export type {
+  LaunchInteractiveAgentTargetOptions,
+  LaunchInteractiveAgentTargetResult,
+} from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
+export { launchInteractiveAgentTarget } from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
 export { parseTrailStepConfig } from "./agent-targeting/parse-trailstep-config/parse-trailstep-config.js";
 export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 export type {
@@ -49,6 +54,29 @@ export type {
 } from "./authoring/step/continuation.types.js";
 export type { Workflow } from "./authoring/workflow/workflow.types.js";
 export type {
+  ManagedSessionPromptInjectionMode,
+  ProviderAdapter,
+  ProviderInteractiveInvocationSpec,
+  ProviderInteractiveRequest,
+  ProviderManagedSessionPromptDelivery,
+  ProviderModelDiscoveryOutputParser,
+  ProviderModelDiscoverySpec,
+  ProviderModelOverrideSupport,
+  ProviderOutputParsingMetadata,
+  ProviderOutputSpec,
+  ProviderOutputStyle,
+  ProviderPromptFileReferenceStyle,
+  ProviderPromptInputSpec,
+  ProviderSpec,
+  ProviderThinkingOverrideSupport,
+  ProviderWorkingInvocationSpec,
+  ProviderWorkingProcessRequest,
+  ProviderWorkingProcessResult,
+  ProviderWorkingRepairInvocationSpec,
+  ProviderWorkingRequest,
+  ProviderWorkingRunner,
+} from "./cli-provider-runtime/catalog/provider-adapter.types.js";
+export type {
   AgentAdapter,
   AgentAdapterObject,
   AgentAdapterRequest,
@@ -84,30 +112,23 @@ export type {
   DeprecationTargetPackage,
 } from "./deprecations/deprecations.types.js";
 export {
-  type ProviderRegistryKey,
-  providerRegistry,
-} from "./known-cli-providers/registry/provider-registry.js";
-export type {
-  ProviderAdapter,
-  ProviderInteractiveInvocationSpec,
-  ProviderInteractiveRequest,
-  ProviderModelDiscoveryOutputParser,
-  ProviderModelDiscoverySpec,
-  ProviderModelOverrideSupport,
-  ProviderOutputParsingMetadata,
-  ProviderOutputSpec,
-  ProviderOutputStyle,
-  ProviderPromptFileReferenceStyle,
-  ProviderPromptInputSpec,
-  ProviderSpec,
-  ProviderThinkingOverrideSupport,
-  ProviderWorkingInvocationSpec,
-  ProviderWorkingProcessRequest,
-  ProviderWorkingProcessResult,
-  ProviderWorkingRepairInvocationSpec,
-  ProviderWorkingRequest,
-  ProviderWorkingRunner,
-} from "./known-cli-providers/registry/provider-registry.types.js";
+  parseTrailStepProviderManifest,
+  type TrailStepProviderEnvironmentManifest,
+  type TrailStepProviderInteractiveManifest,
+  type TrailStepProviderManifest,
+  type TrailStepProviderModelDiscoveryManifest,
+  type TrailStepProviderModelManifest,
+  type TrailStepProviderOutputManifest,
+  type TrailStepProviderOutputParsingManifest,
+  type TrailStepProviderOutputStyle,
+  type TrailStepProviderPackageDefinition,
+  type TrailStepProviderPromptFileReferenceStyle,
+  type TrailStepProviderPromptManifest,
+  type TrailStepProviderRegistration,
+  type TrailStepProviderSource,
+  type TrailStepProviderThinkingManifest,
+  type TrailStepProviderWorkingManifest,
+} from "./providers/provider-manifest.js";
 export {
   defaultRunsRoot,
   readRunEvents,

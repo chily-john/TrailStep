@@ -4,12 +4,27 @@ import { join } from "node:path";
 
 const root = process.cwd();
 
-const packageDirectories = ["core", "authoring", "cli", "create-flows", "testkit", "dashboard"];
+const packageDirectories = [
+  "core",
+  "authoring",
+  "cli",
+  "create-flows",
+  "provider-claude",
+  "provider-codex",
+  "provider-gemini",
+  "provider-pi",
+  "testkit",
+  "dashboard",
+];
 const publishablePackageNames = [
   "@trailstep/core",
   "@trailstep/authoring",
   "@trailstep/cli",
   "@trailstep/create-flows",
+  "@trailstep/provider-claude",
+  "@trailstep/provider-codex",
+  "@trailstep/provider-gemini",
+  "@trailstep/provider-pi",
 ];
 const unpublishedPackageNames = ["@trailstep/testkit", "@trailstep/dashboard"];
 const expectedRepository = {

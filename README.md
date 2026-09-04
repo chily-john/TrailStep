@@ -20,7 +20,12 @@ Then start the interactive terminal setup from your project root:
 trailstep init
 ```
 
-Choose **project** scope for team-shared config, pick the agent/provider you want TrailStep to use, and say yes when asked to install the TrailStep usage skill.
+Choose **project** scope for team-shared config, pick the agent/provider you want TrailStep to use, and say yes when asked to install the TrailStep usage skill. You can then open that default agent as a standalone managed session:
+
+```bash
+trailstep
+trailstep open
+```
 
 Add the public reusable workflow package through the same interactive TUI:
 
@@ -43,6 +48,8 @@ trailstep workflows
 trailstep project/grill-it-away
 ```
 
+Standalone `trailstep open [agent-or-provider]` sessions write `.trailstep/sessions/<session-id>/` artifacts and are separate from workflow runs, which write `.trailstep/runs/<runName>/`.
+
 <details>
 <summary>Need a scriptable flag-based setup?</summary>
 
@@ -57,6 +64,19 @@ trailstep project/take-it-away --input-file feature-request.json
 ```
 
 </details>
+
+## Providers in one minute
+
+TrailStep provider registration is package- or manifest-based rather than built into `@trailstep/core`.
+
+```bash
+trailstep providers add <path-or-package>
+trailstep providers add @trailstep/provider-pi --scope project
+trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
+trailstep providers test pi --scope project
+```
+
+Package providers may include hooks that execute provider package code, so they should be trusted like installed npm dependencies. `trailstep providers test` is the safe inspection path when you want to verify provider wiring without running a full workflow.
 
 ## Scopes in one minute
 
@@ -149,6 +169,8 @@ The same primitives power larger reusable workflow packages. `@trailstep/create-
 
 - **`grill-it-away`**: starts interactively, asks clarifying questions, then turns the result into an implementation workflow.
 - **`take-it-away`**: starts from an existing conversation or feature request and runs the implementation workflow directly.
+
+These create-flows are durable and retry-aware: story routing is recorded in `.trailstep/runs/<runName>/` so interrupted implementation work can resume with `trailstep retry` or `trailstep continue` instead of restarting planning.
 
 At a high level, those workflows expand the simple step pattern into a multi-stage coding process:
 

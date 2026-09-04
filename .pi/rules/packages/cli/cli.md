@@ -2,11 +2,12 @@
 kind: rules
 paths:
   - packages/cli/
-summary: `@trailstep/cli` package for workflow discovery, workflow package installation, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning and target-version deprecation preflight, agent/config initialization/loading, interactive continuation/cancellation, run listing, JSON input loading, retry, and local workflow execution.
+summary: `@trailstep/cli` package for workflow discovery, workflow package installation, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning and target-version deprecation preflight, agent/config initialization/loading, standalone agent sessions, interactive continuation/cancellation, run listing, JSON input loading, retry, and local workflow execution.
 triggers:
   - '@trailstep/cli'
   - CLI package
   - agent config
+  - trailstep open
   - command
   - workflow discovery
   - local execution
@@ -18,7 +19,7 @@ Enter here for user-facing command behavior, executable packaging, workflow pack
 
 ## Areas
 
-- `src/`: Enter when changing the CLI entrypoint, command registry, command parsing/output, discovery, agent-config initialization/helpers, workflow package installation, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning/target-version deprecation preflight, interactive continuation/cancellation, run listing, config loading, input loading, retry handling, or tests.
+- `src/`: Enter when changing the CLI entrypoint, command registry, command parsing/output, discovery, agent-config initialization/helpers, standalone agent sessions, workflow package installation, workflow registration, workflow skill distribution, skill checks, doctor deprecation scanning, update command self-update planning/target-version deprecation preflight, interactive continuation/cancellation, run listing, config loading, input loading, retry handling, or tests.
 - `package.json`: Enter when `bin`, exports, package metadata, dependencies, or build scripts for `@trailstep/cli` change.
 - `README.md`: Enter when publish-facing command usage guidance changes.
 
@@ -32,6 +33,7 @@ Enter here for user-facing command behavior, executable packaging, workflow pack
 - Global, project, and local config can contribute run config; project/local config may also register project workflow refs, while global config may register global workflow refs. Missing config is allowed until a workflow actually needs configured agents.
 - `.trailstep/config-local.json` is an optional, gitignored local project-scope override merged after project and global config; agent entries merge by name, `workflows` merges one level deeper by namespace bucket, and other top-level keys are replaced by later scope. There is no separate global-local override.
 - `trailstep init [--scope <local|project|global>]` interactively writes literal agent config entries; it starts with `default`, can add named agents/custom providers, and prompts for scope when omitted.
+- `trailstep open [agent-or-provider]` opens standalone managed sessions from configured agents, built-in providers, or interactive custom providers; empty argv opens the default agent, while bare simple non-command tokens open only when they do not resolve as workflows.
 - `trailstep add --scope local` registers into `.trailstep/config-local.json` instead of the shared `.trailstep/config.json`; use it for machine-specific agent targets or workflow registrations that should not be committed.
 - `trailstep add` registers direct workflow files/exports, selected bundle workflows, versioned npm package specs, or explicit `github:<owner>/<repo>` package specs into local/project/global config and can distribute generated workflow skills with `--project-skill` or `--user-skill`. `--scope`, `--namespace`, and `--name` are all optional: scope prompts (single-select) when omitted unless `--yes` uses project scope; multi-workflow sources prompt for one or more workflows unless `--yes` selects all; namespace defaults to `"project"` for local/project scope or `"global"` for global scope; name defaults to the workflow's own `id`. Namespace `"project"`/`"global"` are scope-reserved — using either with a mismatched scope is rejected because the entry would be unresolvable. With `--yes`, registration conflicts fail unless `--force` replaces them.
 - `trailstep remove <namespace>/<name>` deletes a registration, searching local, project, then global config unless `--scope` narrows it; it errors instead of guessing when a ref matches more than one scope.

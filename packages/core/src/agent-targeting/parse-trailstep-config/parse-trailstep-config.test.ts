@@ -3,6 +3,39 @@ import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import { parseTrailStepConfig } from "./parse-trailstep-config.js";
 
 describe("parseTrailStepConfig", () => {
+  it("parses top-level provider registrations and validates agent targets against providers", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      providers: {
+        "echo-agent": {
+          source: { type: "local-manifest", path: "./echo-provider.json" },
+          manifest: {
+            schemaVersion: 1,
+            id: "echo-agent",
+            displayName: "Echo Agent",
+            working: {
+              supported: true,
+              command: "echo-agent",
+              args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+              prompt: { kind: "prompt-file" },
+              output: { style: "provider-output-file" },
+            },
+            interactive: { supported: false, reason: "No interactive mode" },
+            model: { supported: false },
+            thinking: { supported: false },
+          },
+        },
+      },
+      agents: {
+        default: [{ provider: "echo-agent" }],
+      },
+    });
+
+    expect(parsed.providers["echo-agent"]?.manifest.displayName).toBe("Echo Agent");
+    expect(parsed.agents.default).toEqual([{ provider: "echo-agent" }]);
+    expect(parsed.customProviders).toEqual({});
+  });
+
   it("parses literal unified agent entries and custom providers", () => {
     const parsed = parseTrailStepConfig({
       version: 1,
@@ -21,7 +54,7 @@ describe("parseTrailStepConfig", () => {
       workflows: {
         review: {
           agents: {
-            reviewer: [{ provider: "claude", thinking: "high" }],
+            reviewer: [{ provider: "local", thinking: "high" }],
           },
         },
       },
@@ -44,7 +77,7 @@ describe("parseTrailStepConfig", () => {
       workflows: {
         review: {
           agents: {
-            reviewer: [{ provider: "claude", thinking: "high" }],
+            reviewer: [{ provider: "local", thinking: "high" }],
           },
         },
       },
@@ -73,10 +106,78 @@ describe("parseTrailStepConfig", () => {
     });
   });
 
+  it("exposes legacy customProviders through the unified providers path after parsing", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {
+        local: {
+          binary: "local-agent",
+          args: ["--json"],
+          interactiveArgs: ["--tty"],
+          env: { API_KEY: "secret" },
+          cwd: "./agents/local",
+        },
+      },
+      agents: {
+        default: [{ provider: "local" }],
+      },
+    });
+
+    expect(parsed.providers).toHaveProperty("local");
+    expect(parsed.agents.default).toEqual([{ provider: "local" }]);
+  });
+
+  it("fails when providers and customProviders declare the same provider id", () => {
+    try {
+      parseTrailStepConfig({
+        version: 1,
+        providers: {
+          local: {
+            source: { type: "local-manifest", path: "./providers/local.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "local",
+              displayName: "Local Provider",
+              working: {
+                supported: true,
+                command: "local-agent",
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false, reason: "No interactive mode" },
+              model: { supported: false },
+              thinking: { supported: false },
+            },
+          },
+        },
+        customProviders: {
+          local: {
+            binary: "legacy-local-agent",
+          },
+        },
+        agents: {
+          default: [{ provider: "local" }],
+        },
+      });
+      throw new Error("Expected parseTrailStepConfig to reject duplicate provider ids.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TrailStepFailureError);
+      expect((error as TrailStepFailureError).failure.code).toBe("validation_failed");
+      expect((error as TrailStepFailureError).failure.details).toEqual({
+        diagnostics: [
+          "providers.local conflicts with legacy customProviders.local. Rename one provider id or migrate customProviders.local to providers.local.",
+        ],
+      });
+    }
+  });
+
   it("normalizes empty model override strings to omitted values", () => {
     const parsed = parseTrailStepConfig({
       version: 1,
-      customProviders: {},
+      customProviders: {
+        claude: { binary: "claude" },
+        codex: { binary: "codex" },
+      },
       agents: {
         default: [{ provider: "claude", model: "" }],
       },
@@ -98,7 +199,11 @@ describe("parseTrailStepConfig", () => {
   it("expands agent refs from the top-level reusable agents map", () => {
     const parsed = parseTrailStepConfig({
       version: 1,
-      customProviders: {},
+      customProviders: {
+        claude: { binary: "claude" },
+        codex: { binary: "codex" },
+        gemini: { binary: "gemini" },
+      },
       agents: {
         workerA: [{ provider: "claude", model: "haiku" }],
         workerB: [{ provider: "codex" }, { ref: "workerA" }],

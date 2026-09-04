@@ -6,10 +6,10 @@ export function resolveAgentTargets(
 ): readonly TrailStepAgentTarget[] {
   const workflowMappings = options.config.workflows?.[options.workflowId]?.agents;
 
+  const topLevelAgentKeys = uniqueAgentKeys([options.roleName, options.roleSize, "default"]);
   const targetLists = [
     workflowMappings?.[options.roleName],
-    options.config.agents[options.roleSize],
-    options.config.agents.default,
+    ...topLevelAgentKeys.map((key) => options.config.agents[key]),
   ];
 
   const targets = targetLists.flatMap((targets) =>
@@ -29,4 +29,8 @@ export function resolveAgentTargets(
       workflowId: options.workflowId,
     },
   });
+}
+
+function uniqueAgentKeys(keys: readonly string[]): readonly string[] {
+  return keys.filter((key, index) => keys.indexOf(key) === index);
 }

@@ -107,14 +107,12 @@ export async function resolveWorkflowPackageUpdateTargets({
     addPackageTarget(targetsByInstallKey, resolved.target, registeredRef);
   }
 
-  return {
-    targets: await Promise.all(
-      [...targetsByInstallKey.values()].map((target) =>
-        createWorkflowPackageUpdateTarget({ target, packageCommandRunner }),
-      ),
-    ),
-    skips,
-  };
+  const targets: WorkflowPackageUpdateTarget[] = [];
+  for (const target of targetsByInstallKey.values()) {
+    targets.push(await createWorkflowPackageUpdateTarget({ target, packageCommandRunner }));
+  }
+
+  return { targets, skips };
 }
 
 function entriesForWorkflow(

@@ -1,5 +1,13 @@
 # @trailstep/authoring
 
+## 0.1.3
+
+### Patch Changes
+
+- Updated dependencies [7c4875c]
+- Updated dependencies [05fcb88]
+  - @trailstep/core@0.2.0
+
 ## 0.1.2
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/provider-pi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official Pi provider package for TrailStep.",
   "license": "Apache-2.0",
   "type": "module",

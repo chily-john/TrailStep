@@ -55,6 +55,6 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@trailstep/authoring": "^0.1.2"
+    "@trailstep/authoring": "^0.1.3"
   }
 }

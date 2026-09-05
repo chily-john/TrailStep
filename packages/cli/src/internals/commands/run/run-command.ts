@@ -69,6 +69,19 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       return 0;
     }
 
+    if (result.status === "waiting") {
+      io.writeLine(`Workflow waiting: ${result.runId}`);
+      io.writeLine("");
+      io.writeLine(`Waiting for ${result.wait.waitId}:`);
+      io.writeLine(`  ${result.wait.message}`);
+      io.writeLine("");
+      io.writeLine("Answer with:");
+      io.writeLine(
+        `  trailstep answer ${result.runId} ${result.wait.waitId} --json '{"approved":true}'`,
+      );
+      return 0;
+    }
+
     io.writeError(
       `Workflow failed: ${resolvedWorkflow.id} at ${result.runDir}: ${result.failure.message}`,
     );

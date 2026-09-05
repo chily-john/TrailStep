@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { done, jsonSchema, step } from "../../../authoring/authoring.js";
@@ -167,8 +170,7 @@ describe("runContinuation", () => {
         trace.push("display:before");
         return `Delegating: ${input.task}`;
       })
-      .wait({ reason: "future hook" })
-      .display("After wait")
+      .display("After first display")
       .prompt<
         { readonly task: string } & Record<string, unknown>,
         { readonly summary: string; readonly changedFiles: readonly string[] } & Record<
@@ -200,7 +202,6 @@ describe("runContinuation", () => {
 
     expect(node.phases?.map((phase) => phase.kind)).toEqual([
       "display",
-      "wait",
       "display",
       "prompt",
       "display",
@@ -246,18 +247,18 @@ describe("runContinuation", () => {
         payload: { message: "Delegating: ordered display", level: "info", phaseIndex: 0 },
       }),
       expect.objectContaining({
-        payload: { message: "After wait", level: "info", phaseIndex: 2 },
+        payload: { message: "After first display", level: "info", phaseIndex: 1 },
       }),
       expect.objectContaining({
         payload: {
           message: "Delegate summarized",
           level: "info",
           data: { changedFiles: ["a.ts"] },
-          phaseIndex: 4,
+          phaseIndex: 3,
         },
       }),
       expect.objectContaining({
-        payload: { message: "Delegate turn finished", level: "warning", phaseIndex: 6 },
+        payload: { message: "Delegate turn finished", level: "warning", phaseIndex: 5 },
       }),
     ]);
   });
@@ -290,6 +291,116 @@ describe("runContinuation", () => {
       "step bad-display display phase 0 must resolve to a string or an object with a string message",
     );
     expect(events.map((event) => event.type)).toEqual(["step.started", "step.failed"]);
+  });
+
+  it("makes multiple satisfied wait outputs addressable by id in do", async () => {
+    const runDir = await mkdtemp(join(tmpdir(), "trailstep-core-multiple-waits-"));
+    const approvalDir = join(runDir, "steps", "0001-review", "waits", "approval");
+    const ticketDir = join(runDir, "steps", "0001-review", "waits", "ticket");
+    await mkdir(approvalDir, { recursive: true });
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(join(approvalDir, "answer.json"), JSON.stringify({ approved: true }), "utf8");
+    await writeFile(join(ticketDir, "answer.json"), JSON.stringify({ ticket: "OPS-1" }), "utf8");
+    const events: Event[] = [];
+    const node = step({ id: "review" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve?",
+        output: { approved: "boolean" },
+      })
+      .wait({
+        id: "ticket",
+        kind: "input",
+        message: "Ticket?",
+        output: { ticket: "string" },
+      })
+      .do(({ waits }) =>
+        done({ approved: waits.approval?.approved, ticket: waits.ticket?.ticket }),
+      )({});
+
+    const result = await runContinuation({
+      node,
+      runId: "multiple-waits-run",
+      workflowId: "multiple-waits-workflow",
+      emit: async (event) => {
+        events.push(event);
+      },
+      maxSteps: 1000,
+      initialSource: "test",
+      workflowAgents: {},
+      runDir,
+      cwd: process.cwd(),
+    });
+
+    expect(result).toEqual({ status: "success", output: { approved: true, ticket: "OPS-1" } });
+    expect(events.map((event) => event.type)).toEqual([
+      "step.started",
+      "wait.satisfied",
+      "wait.satisfied",
+      "step.completed",
+    ]);
+  });
+
+  it("fails clearly when a step reaches duplicate wait ids", async () => {
+    const runDir = await mkdtemp(join(tmpdir(), "trailstep-core-duplicate-wait-"));
+    const answerDir = join(runDir, "steps", "0001-review", "waits", "approval");
+    await mkdir(answerDir, { recursive: true });
+    await writeFile(join(answerDir, "answer.json"), JSON.stringify({ approved: true }), "utf8");
+    const node = step({ id: "review" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "First approval?",
+        output: { approved: "boolean" },
+      })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Second approval?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ ok: true }))({});
+
+    const result = await runContinuation({
+      node,
+      runId: "duplicate-wait-run",
+      workflowId: "duplicate-wait-workflow",
+      emit: async () => {},
+      maxSteps: 1000,
+      initialSource: "test",
+      workflowAgents: {},
+      runDir,
+      cwd: process.cwd(),
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected runContinuation to fail.");
+    }
+    expect(result.failure.message).toContain("duplicate wait id 'approval'");
+  });
+
+  it("fails clearly when a wait is missing an output shape", async () => {
+    const result = await runContinuation({
+      node: step({ id: "approval" })
+        .wait({ id: "approval", kind: "input", message: "Approve?" } as never)
+        .do(() => done({ ok: true }))({}),
+      runId: "missing-wait-output-run",
+      workflowId: "missing-wait-output-workflow",
+      emit: async () => {},
+      maxSteps: 1000,
+      initialSource: "test",
+      workflowAgents: {},
+      runDir: await mkdtemp(join(tmpdir(), "trailstep-core-missing-wait-output-")),
+      cwd: process.cwd(),
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected runContinuation to fail.");
+    }
+    expect(result.failure.message).toContain("requires an output shape");
   });
 
   it("still requires an output shape for working prompted steps", async () => {

@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentAdapter, AgentAdapterRequest } from "./contracts/agents/agent-adapter.types.js";
 import * as core from "./index.js";
-import { jsonSchema, runWorkflow, selectLatestUnresolvedFailure, subPrompt } from "./index.js";
+import {
+  done,
+  jsonSchema,
+  runWorkflow,
+  selectLatestUnresolvedFailure,
+  step,
+  subPrompt,
+} from "./index.js";
 
 describe("@trailstep/core public API", () => {
   it("exports TrailStep config and failure APIs", () => {
@@ -86,8 +93,20 @@ describe("@trailstep/core public API", () => {
         mode: "interactive",
         maxSubPrompts: 3,
       } satisfies import("./index.js").PromptOptions<{ answer: string }>;
+      const waitOptions = {
+        id: "approval",
+        kind: "input",
+        message: "Approve?",
+        output: { approved: "boolean" },
+      } satisfies import("./index.js").WaitDefinition<{ approved: boolean }>;
+      step({ id: "approval" })
+        .prompt<{ task: string }, { answer: string }>("Answer.", { output })
+        .wait(({ output }) => ({ ...waitOptions, message: `Approve ${output.answer}?` }))
+        .do(({ output, waits }, input) =>
+          done({ final: `${input.task}:${output.answer}:${waits.approval?.approved}` }),
+        );
 
-      return { promptOptions, subPromptOptions, subPromptOptionsWithMode };
+      return { promptOptions, subPromptOptions, subPromptOptionsWithMode, waitOptions };
     };
 
     expect(assertPublicSubPromptTypes).toBeTypeOf("function");

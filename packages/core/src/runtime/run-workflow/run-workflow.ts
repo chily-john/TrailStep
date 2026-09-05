@@ -232,6 +232,16 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       return await failWorkflow(continuationResult.failure);
     }
 
+    if (continuationResult.status === "waiting") {
+      return {
+        status: "waiting",
+        runId,
+        runDir,
+        wait: continuationResult.wait,
+        events,
+      } as unknown as Result<TOutput>;
+    }
+
     const current = continuationResult.output;
 
     const outputSchema = options.workflow.outputShape

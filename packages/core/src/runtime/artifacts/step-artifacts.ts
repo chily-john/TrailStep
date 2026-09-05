@@ -1,5 +1,17 @@
 import { join } from "node:path";
 
+export interface WaitArtifactPaths {
+  readonly requestFile: string;
+  readonly answerFile: string;
+}
+
+export interface ResolvedWaitArtifactPaths {
+  readonly waitDir: string;
+  readonly requestFile: string;
+  readonly answerFile: string;
+  readonly runRelative: WaitArtifactPaths;
+}
+
 export interface StepArtifactPaths {
   readonly artifactStepId: string;
   readonly stepDir: string;
@@ -34,6 +46,25 @@ export function resolveStepArtifactPaths(options: {
     sessionDescriptionFile: join(stepDir, "session-description.md"),
     runRelativeStepDir,
     runRelativeSessionDescriptionFile,
+  };
+}
+
+export function resolveWaitArtifactPaths(options: {
+  readonly runDir: string;
+  readonly stepArtifactId: string;
+  readonly waitId: string;
+}): ResolvedWaitArtifactPaths {
+  const runRelativeWaitDir = `steps/${options.stepArtifactId}/waits/${options.waitId}`;
+  const waitDir = join(options.runDir, "steps", options.stepArtifactId, "waits", options.waitId);
+
+  return {
+    waitDir,
+    requestFile: join(waitDir, "request.json"),
+    answerFile: join(waitDir, "answer.json"),
+    runRelative: {
+      requestFile: `${runRelativeWaitDir}/request.json`,
+      answerFile: `${runRelativeWaitDir}/answer.json`,
+    },
   };
 }
 

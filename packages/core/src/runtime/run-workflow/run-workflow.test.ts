@@ -99,6 +99,113 @@ describe("runWorkflow runtime front-door", () => {
     });
   });
 
+  it("pauses at a wait before a prompt without dispatching the prompt", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-wait-before-prompt-"));
+    const workflow: Workflow<{ task: string }, { ok: boolean }> = {
+      id: "wait-before-prompt",
+      inputShape: { task: "string" },
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return step({ id: "publish" })
+          .wait({
+            id: "approval",
+            kind: "input",
+            message: "Approve this change?",
+            output: { approved: "boolean" },
+          })
+          .prompt("This should not run.", {
+            output: { ok: "boolean" },
+            adapter: async () => {
+              throw new Error("prompt should not run before wait is answered");
+            },
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "release" },
+      runName: "wait-before-prompt-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("waiting");
+    if (result.status !== "waiting") {
+      throw new Error("Expected workflow to wait.");
+    }
+    expect(result.wait).toEqual({
+      stepId: "publish",
+      waitId: "approval",
+      message: "Approve this change?",
+      artifactPaths: {
+        requestFile: "steps/0001-publish/waits/approval/request.json",
+        answerFile: "steps/0001-publish/waits/approval/answer.json",
+      },
+    });
+    await expect(
+      readFile(join(result.runDir, result.wait.artifactPaths.requestFile), "utf8"),
+    ).resolves.toContain("Approve this change?");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "wait.started",
+    ]);
+  });
+
+  it("pauses at a wait after a prompt and lets the wait callback read prompt output", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-wait-after-prompt-"));
+    const workflow: Workflow<{ task: string }, { final: string }> = {
+      id: "wait-after-prompt",
+      inputShape: { task: "string" },
+      outputShape: { final: "string" },
+      start(input) {
+        return step({ id: "draft" })
+          .prompt<{ task: string }, { draft: string }>(({ input }) => `Draft ${input.task}.`, {
+            output: { draft: "string" },
+            adapter: async ({ tools }) => {
+              await tools[0]?.call({ draft: "v1" });
+            },
+          })
+          .wait(({ output }) => ({
+            id: "approval",
+            kind: "input",
+            message: `Approve ${output.draft}?`,
+            output: { approved: "boolean" },
+          }))
+          .do((context) => {
+            const waitContext = context as unknown as {
+              readonly output: { readonly draft: string };
+              readonly waits: { readonly approval?: { readonly approved?: boolean } };
+            };
+            return done({
+              final: `${waitContext.output.draft}:${String(waitContext.waits.approval?.approved)}`,
+            });
+          })(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "copy" },
+      runName: "wait-after-prompt-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("waiting");
+    if (result.status !== "waiting") {
+      throw new Error("Expected workflow to wait.");
+    }
+    expect(result.wait.message).toBe("Approve v1?");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "agent.toolCall",
+      "step.completed",
+      "wait.started",
+    ]);
+  });
+
   it("persists step events before the event sink observes a later event", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];

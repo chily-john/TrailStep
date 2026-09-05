@@ -1,6 +1,7 @@
 import type { CliCommand } from "./command.types.js";
 import { addCommand } from "./commands/add/add-command.js";
 import { agentsCommand } from "./commands/agents/agents-command.js";
+import { answerCommand } from "./commands/answer/answer-command.js";
 import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
@@ -39,6 +40,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "agents") {
     return agentsCommand;
+  }
+
+  if (argv[0] === "answer") {
+    return answerCommand;
   }
 
   if (argv[0] === "providers") {

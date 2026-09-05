@@ -85,10 +85,45 @@ export interface DisplayPhase<
   readonly options?: PlainObject;
 }
 
-/** Placeholder phase for future human/external waits. It is a no-op in the current runtime. */
-export interface WaitPhase {
+export interface WaitDefinition<TWaitOutput extends PlainObject = PlainObject> {
+  readonly id: string;
+  readonly kind: "input";
+  readonly message: string;
+  readonly output: ShapeInput<TWaitOutput>;
+}
+
+export interface StepWaitContext<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
+  readonly input: TInput;
+  readonly output: TOutput;
+  readonly waits: Readonly<Record<string, PlainObject>>;
+}
+
+export type WaitCallback<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+  TWaitOutput extends PlainObject = PlainObject,
+> = {
+  bivarianceHack(
+    context: StepWaitContext<TInput, TOutput>,
+  ): WaitDefinition<TWaitOutput> | Promise<WaitDefinition<TWaitOutput>>;
+}["bivarianceHack"];
+
+export type WaitInput<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+  TWaitOutput extends PlainObject = PlainObject,
+> = WaitDefinition<TWaitOutput> | WaitCallback<TInput, TOutput, TWaitOutput>;
+
+/** Ordered durable pause phase for human/external input waits. */
+export interface WaitPhase<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
   readonly kind: "wait";
-  readonly options?: unknown;
+  readonly wait: WaitInput<TInput, TOutput>;
 }
 
 export interface PromptPhase<
@@ -99,11 +134,26 @@ export interface PromptPhase<
   readonly prompt: AgentPrompt<TInput> | PromptTemplateSource;
 }
 
+export type StepContinuationOutput<TOutput extends PlainObject = PlainObject> = TOutput & {
+  readonly output: TOutput;
+  readonly waits: Readonly<Record<string, PlainObject>>;
+};
+
 export type StepContinuation<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > = {
   bivarianceHack(output: TOutput, input: TInput): ContinuationResult | Promise<ContinuationResult>;
+}["bivarianceHack"];
+
+export type StepContextContinuation<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = {
+  bivarianceHack(
+    output: StepContinuationOutput<TOutput>,
+    input: TInput,
+  ): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
 
 export interface DoPhase<
@@ -119,7 +169,7 @@ export type StepPhase<
   TOutput extends PlainObject = PlainObject,
 > =
   | DisplayPhase<TInput, TOutput>
-  | WaitPhase
+  | WaitPhase<TInput, TOutput>
   | PromptPhase<TInput, TOutput>
   | DoPhase<TInput, TOutput>;
 

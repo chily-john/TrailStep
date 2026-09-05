@@ -59,6 +59,9 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "step.completed"
     | "step.failed"
     | "step.display"
+    | "wait.started"
+    | "wait.satisfied"
+    | "wait.failed"
     | "subPrompt.started"
     | "subPrompt.completed"
     | "subPrompt.failed"
@@ -69,6 +72,16 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
   readonly timestamp: string;
   readonly schemaVersion: "v0";
   readonly payload: TPayload;
+}
+
+export interface WaitResultDetails {
+  readonly stepId: string;
+  readonly waitId: string;
+  readonly message: string;
+  readonly artifactPaths: {
+    readonly requestFile: string;
+    readonly answerFile: string;
+  };
 }
 
 export type Result<TOutput extends PlainObject = PlainObject> =
@@ -85,7 +98,17 @@ export type Result<TOutput extends PlainObject = PlainObject> =
       readonly runDir: string;
       readonly failure: Failure;
       readonly events: readonly Event[];
-    };
+    }
+  | ({
+      readonly status: "waiting";
+      readonly runId: string;
+      readonly runDir: string;
+      readonly wait: WaitResultDetails;
+      readonly events: readonly Event[];
+    } & {
+      /** Type-only compatibility for existing non-success branches; waiting results do not carry a runtime failure. */
+      readonly failure: never;
+    });
 
 interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends PlainObject> {
   readonly workflow: Workflow<TInput, TOutput>;

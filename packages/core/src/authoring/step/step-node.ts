@@ -11,12 +11,14 @@ import type {
   PromptPhase,
   PromptTemplateSource,
   StepConfig,
+  StepContextContinuation,
   StepContinuation,
   StepDisplayContent,
   StepErrorContinuation,
   StepFactory,
   StepNode,
   StepPhase,
+  WaitInput,
   WaitPhase,
 } from "../step/continuation.types.js";
 
@@ -35,11 +37,14 @@ interface StepBuilder {
     content?: StepDisplayContent<PlainObject, PlainObject>,
     options?: PlainObject,
   ): StepBuilder;
-  wait(options?: unknown): StepBuilder;
+  wait(wait: WaitInput<PlainObject, PlainObject>): StepBuilder;
   prompt<TInput extends PlainObject = PlainObject, TOutput extends PlainObject = PlainObject>(
     source: AgentPrompt<TInput> | PromptTemplateSource,
     options?: PromptOptions<TOutput>,
   ): PromptedStepBuilder<TInput, TOutput>;
+  do<TInput extends PlainObject = PlainObject>(
+    onOutput: StepContextContinuation<TInput, TInput>,
+  ): FluentStepFactory<TInput, TInput>;
   do<TInput extends PlainObject = PlainObject>(
     onOutput: StepContinuation<TInput, TInput>,
   ): FluentStepFactory<TInput, TInput>;
@@ -53,7 +58,8 @@ interface PromptedStepBuilder<
     content?: StepDisplayContent<TInput, TOutput>,
     options?: PlainObject,
   ): PromptedStepBuilder<TInput, TOutput>;
-  wait(options?: unknown): PromptedStepBuilder<TInput, TOutput>;
+  wait(wait: WaitInput<TInput, TOutput>): PromptedStepBuilder<TInput, TOutput>;
+  do(onOutput: StepContextContinuation<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
   do(onOutput: StepContinuation<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
 }
 
@@ -66,7 +72,7 @@ type FluentStepFactory<
     content?: StepDisplayContent<TInput, TOutput>,
     options?: PlainObject,
   ): FluentStepFactory<TInput, TOutput>;
-  wait(options?: unknown): FluentStepFactory<TInput, TOutput>;
+  wait(wait: WaitInput<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
 };
 
 export function step(config: StepConfig): StepBuilder {
@@ -74,8 +80,8 @@ export function step(config: StepConfig): StepBuilder {
     display(content, options) {
       return makeBuilder([...phaseTemplates, displayPhase(content, options)]);
     },
-    wait(options) {
-      return makeBuilder([...phaseTemplates, waitPhase(options)]);
+    wait(wait) {
+      return makeBuilder([...phaseTemplates, waitPhase(wait)]);
     },
     prompt<TInput extends PlainObject = PlainObject, TStepOutput extends PlainObject = PlainObject>(
       source: AgentPrompt<TInput> | PromptTemplateSource,
@@ -101,8 +107,8 @@ export function step(config: StepConfig): StepBuilder {
     display(content, options) {
       return makePromptedBuilder([...phaseTemplates, displayPhase(content, options)]);
     },
-    wait(options) {
-      return makePromptedBuilder([...phaseTemplates, waitPhase(options)]);
+    wait(wait) {
+      return makePromptedBuilder([...phaseTemplates, waitPhase(wait)]);
     },
     do(onOutput) {
       return buildFactory([...phaseTemplates, doPhase(onOutput)], onOutput);
@@ -111,7 +117,7 @@ export function step(config: StepConfig): StepBuilder {
 
   const buildFactory = <TInput extends PlainObject, TStepOutput extends PlainObject>(
     phaseTemplates: readonly StepPhase<TInput, TStepOutput>[],
-    onOutput: StepContinuation<TInput, TStepOutput>,
+    onOutput: StepContinuation<TInput, TStepOutput> | StepContextContinuation<TInput, TStepOutput>,
     onError?: StepErrorContinuation,
   ): FluentStepFactory<TInput, TStepOutput> => {
     const factory = ((input?: TInput): StepNode<TInput, TStepOutput> => {
@@ -126,7 +132,7 @@ export function step(config: StepConfig): StepBuilder {
           input: input ?? ({} as TInput),
         } as ContinuationStepConfig<TInput, TStepOutput>,
         phases,
-        onOutput,
+        onOutput: onOutput as StepContinuation<TInput, TStepOutput>,
         onError,
       };
     }) as FluentStepFactory<TInput, TStepOutput>;
@@ -135,8 +141,8 @@ export function step(config: StepConfig): StepBuilder {
       buildFactory(phaseTemplates, onOutput, nextOnError);
     factory.display = (content?: StepDisplayContent<TInput, TStepOutput>, options?: PlainObject) =>
       buildFactory([...phaseTemplates, displayPhase(content, options)], onOutput, onError);
-    factory.wait = (options?: unknown) =>
-      buildFactory([...phaseTemplates, waitPhase(options)], onOutput, onError);
+    factory.wait = (wait: WaitInput<TInput, TStepOutput>) =>
+      buildFactory([...phaseTemplates, waitPhase(wait)], onOutput, onError);
 
     return factory;
   };
@@ -218,10 +224,12 @@ function displayPhase<TInput extends PlainObject, TOutput extends PlainObject>(
   };
 }
 
-function waitPhase(options?: unknown): WaitPhase {
+function waitPhase<TInput extends PlainObject, TOutput extends PlainObject>(
+  wait: WaitInput<TInput, TOutput>,
+): WaitPhase<TInput, TOutput> {
   return {
     kind: "wait",
-    ...(options === undefined ? {} : { options }),
+    wait,
   };
 }
 
@@ -237,9 +245,9 @@ function promptPhase<TInput extends PlainObject, TOutput extends PlainObject>(
 }
 
 function doPhase<TInput extends PlainObject, TOutput extends PlainObject>(
-  onOutput: StepContinuation<TInput, TOutput>,
+  onOutput: StepContinuation<TInput, TOutput> | StepContextContinuation<TInput, TOutput>,
 ): DoPhase<TInput, TOutput> {
-  return { kind: "do", onOutput };
+  return { kind: "do", onOutput: onOutput as StepContinuation<TInput, TOutput> };
 }
 
 function promptOptionsForConfig<TInput extends PlainObject, TOutput extends PlainObject>(

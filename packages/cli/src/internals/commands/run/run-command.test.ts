@@ -32,6 +32,29 @@ async function writeDirectWorkflowFile(cwd: string): Promise<void> {
   );
 }
 
+async function writeWaitingWorkflowFile(cwd: string): Promise<void> {
+  const workflowDir = join(cwd, "workflows");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    join(workflowDir, "waiting.mjs"),
+    `import { done, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value) => value,
+    };
+    export default {
+      id: 'waiting',
+      input: schema,
+      output: schema,
+      start: (input) => step({ id: 'publish' })
+        .wait({ id: 'approval', kind: 'input', message: 'Approve this change?', output: { approved: 'boolean' } })
+        .do(() => done({ ok: true }))(input),
+    };`,
+    "utf8",
+  );
+}
+
 async function writeAmbiguousDirectWorkflowFile(cwd: string): Promise<void> {
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
@@ -288,6 +311,32 @@ describe("run command", () => {
     );
     expect(lines.join("\n")).toContain(resolve(cwd, "workflows", "review.mjs"));
     expect(lines.join("\n")).toContain(runDir);
+  });
+
+  it("prints a clear waiting message and exits successfully when a workflow waits", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeWaitingWorkflowFile(cwd);
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["./workflows/waiting.mjs", "delegate-run", "--input", "{}"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    expect(errors).toEqual([]);
+    expect(lines.join("\n")).toContain("Workflow waiting: delegate-run");
+    expect(lines.join("\n")).toContain("Waiting for approval:");
+    expect(lines.join("\n")).toContain("Approve this change?");
+    expect(lines.join("\n")).toContain(
+      "trailstep answer delegate-run approval --json '{\"approved\":true}'",
+    );
   });
 
   it("runs a directly referenced workflow file into TRAILSTEP_RUNS_ROOT", async ({ task }) => {

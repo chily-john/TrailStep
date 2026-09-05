@@ -1,11 +1,15 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
 import type { TrailStepConfig } from "../../../agent-targeting/targeting.types.js";
+import { normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type {
   ContinuationResult,
   DisplayPhase,
   PromptPhase,
   StepDisplayValue,
   StepNode,
+  WaitDefinition,
+  WaitPhase,
 } from "../../../authoring/step/continuation.types.js";
 import {
   firstPromptPhase,
@@ -22,7 +26,11 @@ import type {
   Event,
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
-import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
+import {
+  resolveStepArtifactPaths,
+  resolveWaitArtifactPaths,
+  type WaitArtifactPaths,
+} from "../../artifacts/step-artifacts.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
@@ -48,9 +56,17 @@ export interface RunContinuationOptions {
   readonly processRunner?: RunWorkflowOptions["processRunner"];
 }
 
+export interface WaitingWait {
+  readonly stepId: string;
+  readonly waitId: string;
+  readonly message: string;
+  readonly artifactPaths: WaitArtifactPaths;
+}
+
 export type RunContinuationResult =
   | { readonly status: "success"; readonly output: PlainObject }
-  | { readonly status: "failure"; readonly failure: Failure };
+  | { readonly status: "failure"; readonly failure: Failure }
+  | { readonly status: "waiting"; readonly wait: WaitingWait };
 
 export async function runContinuation(
   options: RunContinuationOptions,
@@ -123,21 +139,21 @@ export async function runContinuation(
     );
 
     try {
-      const stepDir = resolveStepArtifactPaths({
+      const stepArtifacts = resolveStepArtifactPaths({
         runDir: options.runDir,
         stepId: config.id,
         stepIndex,
-      }).stepDir;
+      });
 
-      const nextNode = await runWithStepTimeout({
+      const stepResult = await runWithStepTimeout({
         stepId: config.id,
         timeoutMs: timeoutPolicy.timeoutMs,
         run: async (signal) =>
           await withStepContext(
             config.id,
-            stepDir,
+            stepArtifacts.stepDir,
             async () => {
-              const nextNode = await runStepPhases({
+              const phaseResult = await runStepPhases({
                 stepNode,
                 timeoutMs: timeoutPolicy.timeoutMs,
                 signal,
@@ -159,6 +175,21 @@ export async function runContinuation(
                       payload,
                     }),
                   );
+                },
+                handleWait: async (phase, output, phaseIndex, waits) => {
+                  return await handleWaitPhase({
+                    phase,
+                    input: config.input,
+                    output,
+                    waits,
+                    phaseIndex,
+                    stepId: config.id,
+                    stepArtifactId: stepArtifacts.artifactStepId,
+                    runDir: options.runDir,
+                    runId: options.runId,
+                    workflowId: options.workflowId,
+                    emit: options.emit,
+                  });
                 },
                 dispatchPrompt: async (phase) => {
                   const outputSchema = resolveStepOutputSchema(phase);
@@ -203,6 +234,11 @@ export async function runContinuation(
                 },
               });
 
+              if (phaseResult.status === "waiting") {
+                return phaseResult;
+              }
+
+              const nextNode = phaseResult.node;
               if (isFailNode(nextNode)) {
                 await options.emit(
                   createEvent({
@@ -213,7 +249,7 @@ export async function runContinuation(
                     payload: { failure: nextNode.failure },
                   }),
                 );
-                return nextNode;
+                return phaseResult;
               }
 
               if (!hasPrompt) {
@@ -232,12 +268,17 @@ export async function runContinuation(
               }
 
               throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
-              return nextNode;
+              return phaseResult;
             },
             { maxSubPrompts },
           ),
       });
 
+      if (stepResult.status === "waiting") {
+        return stepResult;
+      }
+
+      const nextNode = stepResult.node;
       if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
         const failure = continuationFailure(`step ${config.id}`);
         await options.emit(
@@ -300,6 +341,14 @@ export async function runContinuation(
   }
 }
 
+type RunStepPhasesResult =
+  | { readonly status: "continued"; readonly node: ContinuationResult }
+  | { readonly status: "waiting"; readonly wait: WaitingWait };
+
+type HandleWaitResult =
+  | { readonly status: "satisfied"; readonly waitId: string; readonly output: PlainObject }
+  | { readonly status: "waiting"; readonly wait: WaitingWait };
+
 async function runStepPhases(options: {
   readonly stepNode: StepNode;
   readonly timeoutMs?: number;
@@ -309,12 +358,21 @@ async function runStepPhases(options: {
     output: PlainObject,
     phaseIndex: number,
   ) => Promise<void>;
+  readonly handleWait: (
+    phase: WaitPhase,
+    output: PlainObject,
+    phaseIndex: number,
+    waits: Readonly<Record<string, PlainObject>>,
+  ) => Promise<HandleWaitResult>;
   readonly dispatchPrompt: (phase: PromptPhase) => Promise<PlainObject>;
-}): Promise<ContinuationResult> {
+}): Promise<RunStepPhasesResult> {
   const { stepNode } = options;
   let phaseValue = stepNode.config.input;
   let nextNode: ContinuationResult | undefined;
+  const waitOutputs: Record<string, PlainObject> = {};
+  const seenWaitIds = new Set<string>();
   const phases = getStepPhases(stepNode);
+  assertNoDuplicateStaticWaitIds(phases, stepNode.config.id);
 
   for (const [phaseIndex, phase] of phases.entries()) {
     if (phase.kind === "display") {
@@ -324,6 +382,19 @@ async function runStepPhases(options: {
     }
 
     if (phase.kind === "wait") {
+      const waitResult = await options.handleWait(phase, phaseValue, phaseIndex, waitOutputs);
+      const waitId = waitResult.status === "waiting" ? waitResult.wait.waitId : waitResult.waitId;
+      if (seenWaitIds.has(waitId)) {
+        throw new Error(`step ${stepNode.config.id} has duplicate wait id '${waitId}'`);
+      }
+      seenWaitIds.add(waitId);
+
+      if (waitResult.status === "waiting") {
+        return waitResult;
+      }
+
+      waitOutputs[waitResult.waitId] = waitResult.output;
+      throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
       continue;
     }
 
@@ -337,7 +408,10 @@ async function runStepPhases(options: {
       continue;
     }
 
-    nextNode = await phase.onOutput(phaseValue, stepNode.config.input);
+    nextNode = await phase.onOutput(
+      withWaitsDoContext(phaseValue, waitOutputs),
+      stepNode.config.input,
+    );
     throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
   }
 
@@ -345,7 +419,209 @@ async function runStepPhases(options: {
     throw new Error(`step ${stepNode.config.id} has no do phase`);
   }
 
-  return nextNode;
+  return { status: "continued", node: nextNode };
+}
+
+function assertNoDuplicateStaticWaitIds(phases: readonly unknown[], stepId: string): void {
+  const seenWaitIds = new Set<string>();
+  for (const phase of phases) {
+    if (!isPlainObject(phase) || phase.kind !== "wait") {
+      continue;
+    }
+    const wait = phase.wait;
+    if (typeof wait === "function" || !isPlainObject(wait) || typeof wait.id !== "string") {
+      continue;
+    }
+    if (seenWaitIds.has(wait.id)) {
+      throw new Error(`step ${stepId} has duplicate wait id '${wait.id}'`);
+    }
+    seenWaitIds.add(wait.id);
+  }
+}
+
+async function handleWaitPhase(options: {
+  readonly phase: WaitPhase;
+  readonly input: PlainObject;
+  readonly output: PlainObject;
+  readonly waits: Readonly<Record<string, PlainObject>>;
+  readonly phaseIndex: number;
+  readonly stepId: string;
+  readonly stepArtifactId: string;
+  readonly runDir: string;
+  readonly runId: string;
+  readonly workflowId: string;
+  readonly emit: (event: Event) => Promise<void>;
+}): Promise<HandleWaitResult> {
+  const wait = await resolveWaitDefinition(options.phase, {
+    input: options.input,
+    output: options.output,
+    waits: options.waits,
+  });
+  validateWaitDefinition(wait, options.stepId, options.phaseIndex);
+
+  const artifactPaths = resolveWaitArtifactPaths({
+    runDir: options.runDir,
+    stepArtifactId: options.stepArtifactId,
+    waitId: wait.id,
+  });
+  const request = {
+    stepId: options.stepId,
+    waitId: wait.id,
+    kind: wait.kind,
+    message: wait.message,
+    outputSchema: normalizeShape(wait.output).jsonSchema,
+  };
+
+  await mkdir(artifactPaths.waitDir, { recursive: true });
+  await writeFile(artifactPaths.requestFile, `${JSON.stringify(request, null, 2)}\n`, "utf8");
+
+  const answerText = await readTextIfExists(artifactPaths.answerFile);
+  if (answerText.status === "missing") {
+    const waiting = {
+      stepId: options.stepId,
+      waitId: wait.id,
+      message: wait.message,
+      artifactPaths: artifactPaths.runRelative,
+    };
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.started",
+        payload: {
+          waitId: wait.id,
+          kind: wait.kind,
+          message: wait.message,
+          artifactPaths: artifactPaths.runRelative,
+        },
+      }),
+    );
+    return { status: "waiting", wait: waiting };
+  }
+
+  try {
+    const parsedAnswer: unknown = JSON.parse(answerText.value);
+    const output = normalizeShape(wait.output).assert(
+      parsedAnswer,
+      `step ${options.stepId} wait ${wait.id} answer`,
+    );
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.satisfied",
+        payload: {
+          waitId: wait.id,
+          kind: wait.kind,
+          message: wait.message,
+          artifactPaths: artifactPaths.runRelative,
+          output,
+        },
+      }),
+    );
+    return { status: "satisfied", waitId: wait.id, output };
+  } catch (error) {
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.failed",
+        payload: {
+          waitId: wait.id,
+          kind: wait.kind,
+          message: wait.message,
+          artifactPaths: artifactPaths.runRelative,
+          failure: stepExecutionFailure(error),
+        },
+      }),
+    );
+    throw error;
+  }
+}
+
+async function resolveWaitDefinition(
+  phase: WaitPhase,
+  context: {
+    readonly input: PlainObject;
+    readonly output: PlainObject;
+    readonly waits: Readonly<Record<string, PlainObject>>;
+  },
+): Promise<WaitDefinition> {
+  return typeof phase.wait === "function" ? await phase.wait(context) : phase.wait;
+}
+
+function validateWaitDefinition(wait: WaitDefinition, stepId: string, phaseIndex: number): void {
+  const label = `step ${stepId} wait phase ${phaseIndex}`;
+  if (!isPlainObject(wait)) {
+    throw new TypeError(`${label} must resolve to a wait object.`);
+  }
+
+  if (typeof wait.id !== "string" || wait.id.trim().length === 0) {
+    throw new TypeError(`${label} requires a non-empty string id.`);
+  }
+
+  if (wait.id === "." || wait.id === ".." || wait.id.includes("/") || wait.id.includes("\\")) {
+    throw new TypeError(`${label} id must be a single path-safe segment.`);
+  }
+
+  if (wait.kind !== "input") {
+    throw new TypeError(`${label} kind must be "input".`);
+  }
+
+  if (typeof wait.message !== "string" || wait.message.trim().length === 0) {
+    throw new TypeError(`${label} requires a non-empty string message.`);
+  }
+
+  if (!("output" in wait) || wait.output === undefined) {
+    throw new TypeError(`${label} requires an output shape.`);
+  }
+
+  normalizeShape(wait.output);
+}
+
+async function readTextIfExists(
+  path: string,
+): Promise<{ readonly status: "found"; readonly value: string } | { readonly status: "missing" }> {
+  try {
+    return { status: "found", value: await readFile(path, "utf8") };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { status: "missing" };
+    }
+    throw error;
+  }
+}
+
+function withWaitsDoContext(
+  output: PlainObject,
+  waits: Readonly<Record<string, PlainObject>>,
+): PlainObject {
+  return new Proxy(output, {
+    get(target, property, receiver) {
+      if (property === "output") {
+        return target;
+      }
+      if (property === "waits") {
+        return waits;
+      }
+      return Reflect.get(target, property, receiver);
+    },
+    has(target, property) {
+      return property === "output" || property === "waits" || Reflect.has(target, property);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (property === "output") {
+        return { configurable: true, enumerable: false, value: target };
+      }
+      if (property === "waits") {
+        return { configurable: true, enumerable: false, value: waits };
+      }
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
 }
 
 async function resolveDisplayPayload(options: {
@@ -400,6 +676,10 @@ function normalizeDisplayValue(
 
 function isDisplayLevel(value: unknown): value is "info" | "warning" | "error" | "debug" {
   return value === "info" || value === "warning" || value === "error" || value === "debug";
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function isPlainObject(value: unknown): value is PlainObject {

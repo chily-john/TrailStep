@@ -1,8 +1,14 @@
-import { Document, state, step } from "@trailstep/authoring";
+import { Document, type StepFactory, state, step } from "@trailstep/authoring";
 import { reviewImplementationDocStep } from "../review-implementation-doc/step.js";
-import { createOrImproveImplementationDocPrompt } from "./prompt.js";
+import {
+  type CreateOrImproveImplementationDocInput,
+  createOrImproveImplementationDocPrompt,
+} from "./prompt.js";
 
-export const createOrImproveImplementationDocStep = step({
+export const createOrImproveImplementationDocStep: StepFactory<
+  CreateOrImproveImplementationDocInput,
+  Document
+> = step({
   id: "create-or-improve-implementation-doc",
 })
   .prompt(createOrImproveImplementationDocPrompt, {

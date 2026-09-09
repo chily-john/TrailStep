@@ -87,7 +87,11 @@ export async function runSubPrompt<
     throw failureError;
   }
 
-  const renderedPrompt = await resolvePromptSource(source, resolvedInput, context.cwd);
+  const renderedPrompt = await resolvePromptSource(
+    source,
+    resolvedInput,
+    context.projectCwd ?? context.cwd,
+  );
   const fingerprint = fingerprintSubPrompt({ input: resolvedInput, prompt: renderedPrompt });
   const cachedEvent = findCompletedSubPromptEvent(
     context.events?.() ?? [],

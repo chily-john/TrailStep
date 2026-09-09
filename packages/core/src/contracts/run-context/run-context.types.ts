@@ -80,7 +80,12 @@ export interface RunContext {
   readonly path: string;
   readonly workflowId?: string;
   readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
+  /** Root used for workflow/config-relative resolution and default artifact storage. */
+  readonly projectCwd?: string;
+  /** Current execution cwd. In step context this includes any step-level cwd override. */
   readonly cwd?: string;
+  /** Alias for `cwd`, exposed to make execution-vs-project cwd intent explicit. */
+  readonly executionCwd?: string;
   readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunContextWorkingAgentProcessRunner;
   readonly providerWorkingRunner?: RunContextProviderWorkingRunner;
@@ -91,6 +96,8 @@ export interface RunContext {
     readonly id: string;
     readonly dir: string;
     readonly maxSubPrompts?: unknown;
+    readonly cwd?: string;
+    readonly executionCwd?: string;
     nextDocumentIndex(): number;
     nextSubPromptIndex(): number;
   };

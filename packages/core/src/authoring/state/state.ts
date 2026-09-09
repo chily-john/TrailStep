@@ -24,4 +24,10 @@ export const state = {
   get cwd(): string | undefined {
     return currentRunContext().cwd;
   },
+  get executionCwd(): string | undefined {
+    return currentRunContext().executionCwd ?? currentRunContext().cwd;
+  },
+  get projectCwd(): string | undefined {
+    return currentRunContext().projectCwd;
+  },
 };

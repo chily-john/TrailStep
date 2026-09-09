@@ -3,21 +3,39 @@ import type {
   AgentPrompt,
 } from "../../contracts/agents/agent-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
+import type { RunContextState } from "../../contracts/run-context/run-context.types.js";
 import type { PlainObject, ShapeInput } from "../../contracts/shapes/shape.types.js";
 import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
 
-/** A local text file to load a prompt's content from, resolved relative to the workflow's `cwd` at dispatch time. */
+/** A local text file to load a prompt's content from, resolved relative to the workflow/project `cwd` at dispatch time. */
 export interface PromptTemplateSource {
   readonly kind: "promptTemplate";
   readonly path: string;
 }
+
+export interface StepCwdContext<TInput extends PlainObject = PlainObject> {
+  readonly input: TInput;
+  readonly state: RunContextState;
+  readonly workflow: {
+    readonly id: string;
+  };
+}
+
+export type StepCwdCallback<TInput extends PlainObject = PlainObject> = {
+  bivarianceHack(context: StepCwdContext<TInput>): unknown | Promise<unknown>;
+}["bivarianceHack"];
+
+export type StepCwdInput<TInput extends PlainObject = PlainObject> =
+  | string
+  | StepCwdCallback<TInput>;
 
 /** The object passed to `step(...)`. Always relevant, regardless of whether `.prompt(...)` is called. */
 export interface StepConfig {
   readonly id: string;
   readonly title?: string;
   readonly description?: string;
+  readonly cwd?: StepCwdInput;
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
 }
@@ -244,6 +262,7 @@ export interface ContinuationStepConfig<
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
   /** @deprecated Prefer the ordered prompt phase in `StepNode.phases`. */
   readonly maxSubPrompts?: number;
+  readonly cwd?: StepCwdInput<TInput>;
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
 }

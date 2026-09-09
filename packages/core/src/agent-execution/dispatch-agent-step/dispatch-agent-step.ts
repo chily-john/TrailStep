@@ -37,6 +37,7 @@ export async function dispatchAgentStep(options: {
   readonly emit: (event: Event) => Promise<void>;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
+  readonly projectCwd: string;
   readonly cwd: string;
   readonly trailstepConfig: TrailStepConfig | undefined;
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
@@ -54,7 +55,7 @@ export async function dispatchAgentStep(options: {
     stepId: config.id,
   });
 
-  const renderedPrompt = await resolvePromptSource(config.prompt, config.input, options.cwd);
+  const renderedPrompt = await resolvePromptSource(config.prompt, config.input, options.projectCwd);
   const agentMode = config.mode ?? "working";
 
   const agentStep = {
@@ -98,6 +99,7 @@ export async function dispatchAgentStep(options: {
       stepId: config.id,
       renderedPrompt,
       runDir: options.runDir,
+      cwd: options.cwd,
       runner: options.processRunner,
       outputSchema,
       outputMode: options.interactiveOutputMode,
@@ -154,7 +156,7 @@ export async function dispatchAgentStep(options: {
 
 /**
  * Resolves a step's prompt source to a rendered string. A `promptTemplate(...)`
- * source is read from disk relative to the workflow's `cwd`; a thrown/rejected
+ * source is read from disk relative to the workflow/project `cwd`; a thrown/rejected
  * read propagates up through the same try/catch that already wraps step
  * dispatch, so an unreadable file becomes a normal step failure. Any other
  * source (string or callback) renders synchronously via `renderAgentPrompt`.

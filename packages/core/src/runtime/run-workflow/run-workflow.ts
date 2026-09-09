@@ -25,6 +25,7 @@ import {
 import { replayToRetryFailure } from "../retry/replay-to-retry-failure.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
+import { resolveAndValidateRunCwds } from "./cwd.js";
 import { initializeRun } from "./initialize-run.js";
 import { parseTrailStepConfigInput } from "./trailstep-config-input.js";
 
@@ -67,7 +68,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     options.trailstepConfig === undefined
       ? undefined
       : parseTrailStepConfigInput(options.trailstepConfig);
-  const cwd = options.cwd ?? process.cwd();
+  const { projectCwd, cwd } = await resolveAndValidateRunCwds(options);
   const events: Event[] = [...previousEvents];
 
   const emit = async (event: Event): Promise<void> => {
@@ -82,7 +83,9 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     runDir,
     workflowId: options.workflow.id,
     workflowAgents: options.workflow.agents ?? {},
+    projectCwd,
     cwd,
+    executionCwd: cwd,
     trailstepConfig,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     providerWorkingRunner: options.providerWorkingRunner,
@@ -269,6 +272,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       workflowAgents: options.workflow.agents ?? {},
       workflowTimeout: options.workflow.timeout,
       runDir,
+      projectCwd,
       cwd,
       trailstepConfig,
       workingAgentProcessRunner: options.workingAgentProcessRunner,

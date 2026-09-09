@@ -8,6 +8,7 @@ import type {
   ContinuationResult,
   DisplayPhase,
   PromptPhase,
+  StepCwdInput,
   StepDisplayValue,
   StepNode,
   WaitCheckResult,
@@ -36,7 +37,9 @@ import {
 } from "../../artifacts/step-artifacts.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
+import { runContextStorage } from "../../run-context/run-context-storage.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
+import { validateDirectoryCwd } from "../../run-workflow/cwd.js";
 import type { TimeoutPolicyInput } from "../../timeout/timeout-policy.js";
 import { resolveTimeoutPolicy } from "../../timeout/timeout-policy.js";
 import { resolveStepOutputSchema } from "../resolve-step-output-schema/resolve-step-output-schema.js";
@@ -52,6 +55,7 @@ export interface RunContinuationOptions {
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowTimeout?: TimeoutPolicyInput;
   readonly runDir: string;
+  readonly projectCwd?: string;
   readonly cwd: string;
   readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunWorkflowOptions["workingAgentProcessRunner"];
@@ -181,6 +185,13 @@ export async function runContinuation(
     }
 
     try {
+      const stepCwd = await resolveStepExecutionCwd({
+        stepId: config.id,
+        workflowId: options.workflowId,
+        defaultCwd: options.cwd,
+        input: config.input,
+        cwdInput: config.cwd,
+      });
       const stepArtifacts = resolveStepArtifactPaths({
         runDir: options.runDir,
         stepId: config.id,
@@ -272,7 +283,8 @@ export async function runContinuation(
                     emit: options.emit,
                     workflowAgents: options.workflowAgents,
                     runDir: options.runDir,
-                    cwd: options.cwd,
+                    projectCwd: options.projectCwd ?? options.cwd,
+                    cwd: stepCwd,
                     trailstepConfig,
                     workingAgentProcessRunner: options.workingAgentProcessRunner,
                     providerWorkingRunner: options.providerWorkingRunner,
@@ -333,7 +345,7 @@ export async function runContinuation(
               throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
               return phaseResult;
             },
-            { maxSubPrompts },
+            { maxSubPrompts, cwd: stepCwd, executionCwd: stepCwd },
           ),
       });
 
@@ -411,6 +423,50 @@ type RunStepPhasesResult =
 type HandleWaitResult =
   | { readonly status: "satisfied"; readonly waitId: string; readonly output: PlainObject }
   | { readonly status: "waiting"; readonly wait: WaitingWait };
+
+async function resolveStepExecutionCwd(options: {
+  readonly stepId: string;
+  readonly workflowId: string;
+  readonly defaultCwd: string;
+  readonly input: PlainObject;
+  readonly cwdInput: StepCwdInput | undefined;
+}): Promise<string> {
+  if (options.cwdInput === undefined) {
+    return options.defaultCwd;
+  }
+
+  const cwd =
+    typeof options.cwdInput === "function"
+      ? await resolveStepCwdCallback(options.cwdInput, options)
+      : options.cwdInput;
+
+  if (typeof cwd !== "string") {
+    throw new TypeError(`step ${options.stepId} cwd must resolve to a string.`);
+  }
+
+  await validateDirectoryCwd(cwd, `step ${options.stepId} cwd`);
+  return cwd;
+}
+
+async function resolveStepCwdCallback(
+  cwdInput: Exclude<StepCwdInput, string>,
+  options: {
+    readonly stepId: string;
+    readonly workflowId: string;
+    readonly input: PlainObject;
+  },
+): Promise<unknown> {
+  const context = runContextStorage.getStore();
+  if (!context) {
+    throw new Error(`step ${options.stepId} cwd callback requires an active run context.`);
+  }
+
+  return await cwdInput({
+    input: options.input,
+    state: context.state,
+    workflow: { id: options.workflowId },
+  });
+}
 
 async function runStepPhases(options: {
   readonly stepNode: StepNode;

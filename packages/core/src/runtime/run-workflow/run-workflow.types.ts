@@ -117,6 +117,9 @@ export type Result<TOutput extends PlainObject = PlainObject> =
 
 interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends PlainObject> {
   readonly workflow: Workflow<TInput, TOutput>;
+  /** Root used for workflow/config-relative resolution and default artifact storage. Defaults to `cwd` for backward compatibility, then `process.cwd()`. */
+  readonly projectCwd?: string;
+  /** Default execution cwd for steps and agent processes. Defaults to `projectCwd`. */
   readonly cwd?: string;
   readonly runsRoot?: string;
   readonly eventSink?: (event: Event) => void | Promise<void>;

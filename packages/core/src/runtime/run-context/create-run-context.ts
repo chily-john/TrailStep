@@ -14,7 +14,9 @@ export function createRunContext(options: {
   readonly runDir: string;
   readonly workflowId?: string;
   readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
+  readonly projectCwd?: string;
   readonly cwd?: string;
+  readonly executionCwd?: string;
   readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunContextWorkingAgentProcessRunner;
   readonly providerWorkingRunner?: RunContextProviderWorkingRunner;
@@ -56,7 +58,9 @@ export function createRunContext(options: {
     path: options.runDir,
     workflowId: options.workflowId,
     workflowAgents: options.workflowAgents,
+    projectCwd: options.projectCwd,
     cwd: options.cwd,
+    executionCwd: options.executionCwd ?? options.cwd,
     trailstepConfig: options.trailstepConfig,
     workingAgentProcessRunner: options.workingAgentProcessRunner,
     providerWorkingRunner: options.providerWorkingRunner,

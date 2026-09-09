@@ -21,7 +21,8 @@ export const runOrOpenCommand: CliCommand<RunCommandArgs> = {
       isSimpleBareAgentOrProviderToken(token) &&
       !isKnownSubcommand(token) &&
       args.workflowRunName === undefined &&
-      args.input === undefined
+      args.input === undefined &&
+      args.inputOverrides === undefined
     ) {
       const config = await loadTrailStepConfig(context.cwd, { homeDir: context.homeDir });
       const workflow = await resolveWorkflowForBareToken(token, {
@@ -139,6 +140,8 @@ const KNOWN_SUBCOMMANDS = new Set([
   "cancel",
   "runs",
   "retry",
+  "input-template",
+  "output",
   "doctor",
   "update",
   "agents",

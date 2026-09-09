@@ -37,6 +37,7 @@ export {
   state,
   step,
   subPrompt,
+  workflow,
 } from "./authoring/authoring.js";
 export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
@@ -82,6 +83,7 @@ export type {
   WaitPendingResult,
   WaitPhase,
 } from "./authoring/step/continuation.types.js";
+export type { DeepReadonly, WorkflowInputApi } from "./authoring/workflow/workflow.js";
 export type { Workflow } from "./authoring/workflow/workflow.types.js";
 export type {
   ManagedSessionPromptInjectionMode,

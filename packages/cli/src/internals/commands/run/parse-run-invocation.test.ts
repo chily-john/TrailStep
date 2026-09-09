@@ -52,10 +52,28 @@ describe("parseRunInvocation", () => {
     ).toThrow(/trailstep retry/i);
   });
 
-  it("keeps clear usage errors for unknown options", () => {
+  it("parses generated input flags and --set assignments", () => {
+    expect(
+      parseRunInvocation([
+        "@acme/trailstep-workflows:reviewFeature",
+        "--task",
+        "Investigate",
+        "--set",
+        "nested.value=true",
+      ]),
+    ).toMatchObject({
+      workflowId: "@acme/trailstep-workflows:reviewFeature",
+      inputOverrides: [
+        { kind: "flag", path: "task", rawValue: "Investigate", source: "--task" },
+        { kind: "set", path: "nested.value", rawValue: "true", source: "--set nested.value" },
+      ],
+    });
+  });
+
+  it("keeps clear usage errors for input flags without values", () => {
     expect(() =>
       parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--bogus"]),
-    ).toThrow(/Unknown option: --bogus/);
+    ).toThrow(/Missing value for --bogus/);
   });
 
   it("keeps clear usage errors for conflicting input options", () => {

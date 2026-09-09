@@ -43,3 +43,4 @@ export type {
 } from "./step/continuation.types.js";
 export { done, fail, isDoneNode, isFailNode, isStepNode, step } from "./step/step-node.js";
 export { subPrompt } from "./step/sub-prompt.js";
+export { type DeepReadonly, type WorkflowInputApi, workflow } from "./workflow/workflow.js";

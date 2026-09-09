@@ -14,6 +14,7 @@ import {
   selectLatestUnresolvedFailure,
   step,
   subPrompt,
+  workflow,
 } from "./index.js";
 
 describe("@trailstep/core public API", () => {
@@ -38,6 +39,7 @@ describe("@trailstep/core public API", () => {
     expect(jsonSchema).toBeTypeOf("function");
     expect(notify.progress).toBeTypeOf("function");
     expect(selectLatestUnresolvedFailure).toBeTypeOf("function");
+    expect(workflow.input).toBeTypeOf("function");
 
     type PublicLatestUnresolvedFailure = import("./index.js").LatestUnresolvedFailure;
     const retryTarget = null as unknown as PublicLatestUnresolvedFailure;

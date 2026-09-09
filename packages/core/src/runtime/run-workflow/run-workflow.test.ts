@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { done, notify, step } from "../../authoring/authoring.js";
+import { done, notify, step, workflow as workflowInput } from "../../authoring/authoring.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 import { runWorkflow } from "./run-workflow.js";
@@ -14,6 +14,49 @@ async function reportCreatedWorktree(path: string): Promise<void> {
 }
 
 describe("runWorkflow runtime front-door", () => {
+  it("lets steps read immutable workflow input through the ambient workflow API", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-workflow-input-"));
+    type Input = { task: string; nested: { count: number } };
+    const typedWorkflow = workflowInput.withInput<Input>();
+    const workflow: Workflow<Input, { task: string; count: number }> = {
+      id: "ambient-workflow-input",
+      input: {
+        validate: (value): value is Input => typeof value === "object" && value !== null,
+        diagnostics: () => [],
+        assert: (value) => value as Input,
+        jsonSchema: { type: "object" },
+      },
+      outputShape: { task: "string", count: "number" },
+      start(input) {
+        return step({ id: "read-input" }).do(async () => {
+          const fullInput = await workflowInput.input<Input>();
+          const directTask = await workflowInput.inputValue<Input, "task">("task");
+          const task = await typedWorkflow.inputValue("task");
+          try {
+            (fullInput as { nested: { count: number } }).nested.count = 99;
+          } catch {
+            // Frozen input throws in strict ESM; either way, source input must remain unchanged.
+          }
+          const reread = await typedWorkflow.input();
+          return done({ task: `${directTask}:${task}`, count: reread.nested.count });
+        })(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "Investigate", nested: { count: 1 } },
+      runName: "ambient-workflow-input-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ task: "Investigate:Investigate", count: 1 });
+  });
+
   it("accepts an already-flattened non-empty TrailStepConfig without reparsing it as raw entries", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-flattened-config-"));
     const workflow: Workflow<{ task: string }, { answer: string }> = {

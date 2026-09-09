@@ -6,7 +6,9 @@ import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
+import { inputTemplateCommand } from "./commands/input-template/input-template-command.js";
 import { openCommand } from "./commands/open/open-command.js";
+import { outputCommand } from "./commands/output/output-command.js";
 import { providersCommand } from "./commands/providers/providers-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
 import { retryCommand } from "./commands/retry/retry-command.js";
@@ -52,6 +54,14 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "workflows") {
     return workflowsCommand;
+  }
+
+  if (argv[0] === "input-template") {
+    return inputTemplateCommand;
+  }
+
+  if (argv[0] === "output") {
+    return outputCommand;
   }
 
   if (argv[0] === "retry") {

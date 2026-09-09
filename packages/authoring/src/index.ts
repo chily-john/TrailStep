@@ -2,6 +2,7 @@ export type {
   CheckWaitCallback,
   CheckWaitContext,
   CheckWaitHelpers,
+  DeepReadonly,
   DisplayPhase,
   DoPhase,
   FailNode,
@@ -43,6 +44,7 @@ export type {
   WaitPendingResult,
   WaitPhase,
   Workflow,
+  WorkflowInputApi,
 } from "@trailstep/core";
 export {
   Document,
@@ -59,6 +61,7 @@ export {
   shape,
   state,
   step,
+  workflow,
 } from "@trailstep/core";
 export { defineWorkflow } from "./workflow-builder/workflow-builder.js";
 export type {

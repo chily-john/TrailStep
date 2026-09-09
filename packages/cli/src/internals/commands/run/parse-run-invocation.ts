@@ -28,5 +28,8 @@ export function parseRunInvocation(argv: readonly string[]): RunCommandArgs {
     ...(workflowRunName === undefined ? {} : { workflowRunName }),
     ...(workflow === undefined ? {} : { workflow }),
     ...(parsedOptions?.input !== undefined ? { input: parsedOptions.input } : {}),
+    ...(parsedOptions?.inputOverrides !== undefined
+      ? { inputOverrides: parsedOptions.inputOverrides }
+      : {}),
   };
 }

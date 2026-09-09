@@ -5,6 +5,7 @@ import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
+import { writeRunWorkflowRef } from "../wait-run-helpers.js";
 import { generateRunName } from "./generate-run-name.js";
 import { loadJsonInput } from "./load-run-input.js";
 import { parseRunInvocation } from "./parse-run-invocation.js";
@@ -63,6 +64,8 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       input: input ?? {},
       runName: workflowRunName,
     });
+
+    await writeRunWorkflowRef(result.runDir, args.workflowId);
 
     if (result.status === "success") {
       io.writeLine(`Workflow completed: ${resolvedWorkflow.id} at ${result.runDir}`);

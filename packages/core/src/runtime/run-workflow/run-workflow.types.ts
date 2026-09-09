@@ -133,17 +133,27 @@ export type RunWorkflowOptions<
         readonly runName: string;
         readonly resume?: undefined;
         readonly retry?: undefined;
+        readonly continue?: undefined;
       }
     | {
         readonly resume: { readonly runDir: string };
         readonly input?: undefined;
         readonly runName?: undefined;
         readonly retry?: undefined;
+        readonly continue?: undefined;
       }
     | {
         readonly retry: { readonly runDir: string; readonly kind: "manual" | "automatic" };
         readonly input?: undefined;
         readonly runName?: undefined;
         readonly resume?: undefined;
+        readonly continue?: undefined;
+      }
+    | {
+        readonly continue: { readonly runDir: string };
+        readonly input?: undefined;
+        readonly runName?: undefined;
+        readonly resume?: undefined;
+        readonly retry?: undefined;
       }
   );

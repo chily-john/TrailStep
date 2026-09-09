@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main } from "../../../index.js";
@@ -11,6 +11,67 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 function nodeTmpContinueTestsDir(name: string): string {
   return join("node_modules", ".tmp-trailstep-continue-tests", name);
+}
+
+async function writeWaitingWorkflowFile(
+  cwd: string,
+  options: { dynamicWait?: boolean; promptBeforeWait?: boolean } = {},
+): Promise<void> {
+  await rm(cwd, { recursive: true, force: true });
+  const workflowDir = join(cwd, "workflows");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    join(workflowDir, "waiting.mjs"),
+    `import { readFile, writeFile } from 'node:fs/promises';
+    import { join } from 'node:path';
+    import { done, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value) => value,
+    };
+    async function incrementCount(cwd, file) {
+      const path = join(cwd, file);
+      let count = 0;
+      try { count = Number(await readFile(path, 'utf8')); } catch {}
+      await writeFile(path, String(count + 1), 'utf8');
+    }
+    async function incrementPromptCount(cwd) {
+      await incrementCount(cwd, 'prompt-count.txt');
+    }
+    async function incrementWaitCount(cwd) {
+      await incrementCount(cwd, 'wait-count.txt');
+    }
+    export default {
+      id: 'waiting',
+      input: schema,
+      output: schema,
+      start: (input) => ${
+        options.promptBeforeWait
+          ? `step({ id: 'publish' })
+        .prompt(() => 'Draft release notes.', {
+          output: { draft: 'string' },
+          adapter: async ({ input, tools }) => {
+            await incrementPromptCount(input.cwd);
+            await tools[0]?.call({ draft: 'v1' });
+          },
+        })
+        .wait({ id: 'approval', kind: 'input', message: 'Approve this change?', output: { approved: 'boolean' } })
+        .do(({ output, waits }) => done({ ok: waits.approval.approved, draft: output.draft }))(input)`
+          : `step({ id: 'publish' })
+        .wait(${
+          options.dynamicWait
+            ? `async () => {
+          await incrementWaitCount(input.cwd);
+          return { id: 'approval', kind: 'input', message: 'Approve this change?', output: { approved: 'boolean' } };
+        }`
+            : `{ id: 'approval', kind: 'input', message: 'Approve this change?', output: { approved: 'boolean' } }`
+        })
+        .do(({ waits }) => done({ ok: waits.approval.approved }))(input)`
+      },
+    };`,
+    "utf8",
+  );
 }
 
 function interactiveProtocol(options: {
@@ -52,6 +113,201 @@ function interactiveProtocol(options: {
 }
 
 describe("continue command", () => {
+  it("answers and continues a waiting workflow run", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-success");
+    await writeWaitingWorkflowFile(cwd);
+    await expect(
+      main({
+        argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    await expect(
+      main({
+        argv: ["answer", "wait-run", "approval", "--json", '{"approved":true}', "--continue"],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    const events = await readFile(
+      join(cwd, ".trailstep", "runs", "wait-run", "events.jsonl"),
+      "utf8",
+    );
+    await expect(
+      readFile(
+        join(
+          cwd,
+          ".trailstep",
+          "runs",
+          "wait-run",
+          "steps",
+          "0001-publish",
+          "waits",
+          "approval",
+          "answer.json",
+        ),
+        "utf8",
+      ),
+    ).resolves.toContain('"approved": true');
+    expect(events).toContain("wait.satisfied");
+    expect(events).toContain("workflow.completed");
+    expect(events).toContain('"ok":true');
+  });
+
+  it("rejects invalid answer JSON before writing an answer", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-invalid-json");
+    await writeWaitingWorkflowFile(cwd);
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["answer", "wait-run", "approval", "--json", "{"],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    expect(errors.join("\n")).toMatch(/invalid/i);
+  });
+
+  it("fails clearly when a wait answer does not match the wait schema", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-schema-invalid");
+    await writeWaitingWorkflowFile(cwd);
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    await main({
+      argv: ["answer", "wait-run", "approval", "--json", '{"approved":"yes"}'],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["continue", "wait-run"],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    expect(errors.join("\n")).toMatch(/schema validation|must be boolean/i);
+  });
+
+  it("leaves a waiting workflow waiting when no answer exists", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-no-answer");
+    await writeWaitingWorkflowFile(cwd);
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["continue", "wait-run"],
+        cwd,
+        env: {},
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    expect(lines.join("\n")).toMatch(/still waiting|missing answer/i);
+  });
+
+  it("does not rerun a wait callback while continuing", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-callback");
+    await writeWaitingWorkflowFile(cwd, { dynamicWait: true });
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    await expect(readFile(join(cwd, "wait-count.txt"), "utf8")).resolves.toBe("1");
+
+    await expect(
+      main({
+        argv: ["answer", "wait-run", "approval", "--json", '{"approved":true}', "--continue"],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    await expect(readFile(join(cwd, "wait-count.txt"), "utf8")).resolves.toBe("1");
+  });
+
+  it("does not rerun a prompt before a wait while continuing", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-after-prompt");
+    await writeWaitingWorkflowFile(cwd, { promptBeforeWait: true });
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    await expect(readFile(join(cwd, "prompt-count.txt"), "utf8")).resolves.toBe("1");
+
+    await expect(
+      main({
+        argv: ["answer", "wait-run", "approval", "--json", '{"approved":true}', "--continue"],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    await expect(readFile(join(cwd, "prompt-count.txt"), "utf8")).resolves.toBe("1");
+    const events = await readFile(
+      join(cwd, ".trailstep", "runs", "wait-run", "events.jsonl"),
+      "utf8",
+    );
+    expect(events).toContain('"draft":"v1"');
+  });
+
+  it("fails clearly when answering a nonexistent wait", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-missing");
+    await writeWaitingWorkflowFile(cwd);
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["answer", "wait-run", "missing", "--json", '{"approved":true}'],
+        cwd,
+        env: {},
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    expect(errors.join("\n")).toMatch(/pending wait not found/i);
+  });
+
   it("continues from inline JSON when it matches the stored schema", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-continue-tests", `${task.id}-json`);
     const runDir = join(cwd, ".trailstep", "runs", "interactive-run");

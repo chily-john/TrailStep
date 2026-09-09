@@ -1,10 +1,20 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 
-import { jsonSchema, type PlainObject } from "@trailstep/core";
+import { type Event, jsonSchema, type PlainObject, runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import { loadTrailStepConfig } from "../../config/config.js";
+import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { CliInputError } from "../run/load-run-input.js";
+import { createTerminalEventLogger } from "../run/terminal-event-logger.js";
+import {
+  findLatestPendingWait,
+  readEventsForRun,
+  readRunWorkflowRef,
+  readWaitAnswerFile,
+  resolveRunDirectory,
+} from "../wait-run-helpers.js";
 import { findActiveInteractiveSessions } from "./active-interactive-sessions.js";
 import type { ContinueCommandArgs } from "./continue-command.types.js";
 import { parseContinueInvocation } from "./parse-continue-invocation.js";
@@ -22,9 +32,9 @@ interface InteractiveSessionProtocol {
   readonly sessionDescriptionFile?: string;
 }
 
-type SubmittedOutputArgs = Exclude<
+type SubmittedOutputArgs = Extract<
   ContinueCommandArgs,
-  { readonly mode: "interactive-file" } | { readonly mode: "select" }
+  { readonly mode: "session-file" } | { readonly mode: "json-file" } | { readonly mode: "json" }
 >;
 
 interface ContinueTarget {
@@ -36,6 +46,10 @@ export const continueCommand: CliCommand<ContinueCommandArgs> = {
   name: "continue",
   parseArgs: parseContinueInvocation,
   async run(args, context) {
+    if (args.mode === "run") {
+      return await continueWaitingRun(args.runNameOrRunDir, context);
+    }
+
     const target = await resolveContinueTarget(args, context);
     const interactive = await loadInteractiveSession(target.interactiveFile);
     validateInteractiveSessionPaths(target.interactiveFile, interactive);
@@ -53,6 +67,113 @@ export const continueCommand: CliCommand<ContinueCommandArgs> = {
   },
 };
 
+async function continueWaitingRun(
+  runNameOrRunDir: string,
+  context: CliCommandContext,
+): Promise<number> {
+  const resolvedRun = await resolveRunDirectory(runNameOrRunDir, context);
+  const events = await readEventsForRun(resolvedRun.runDir);
+  const startedEvent = events.find((event) => event.type === "workflow.started");
+  if (!startedEvent) {
+    context.io.writeError(`Run has no workflow.started event: ${resolvedRun.runDir}`);
+    return 1;
+  }
+
+  const pendingWait = findLatestPendingWait(events);
+  if (!pendingWait) {
+    context.io.writeError(`Run is not waiting: ${resolvedRun.runDir}`);
+    return 1;
+  }
+
+  const answerFile = readWaitAnswerFile(pendingWait);
+  if (!answerFile) {
+    context.io.writeError(
+      `Pending wait ${String(pendingWait.payload.waitId ?? "<missing>")} has no answer artifact.`,
+    );
+    return 1;
+  }
+
+  try {
+    await readFile(resolve(resolvedRun.runDir, answerFile), "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      context.io.writeLine(
+        `Workflow still waiting: ${basename(resolvedRun.runDir)} (${String(
+          pendingWait.payload.waitId ?? "<missing>",
+        )})`,
+      );
+      context.io.writeLine(`Missing answer: ${answerFile}`);
+      return 0;
+    }
+    throw error;
+  }
+
+  const workflowRef =
+    (await readRunWorkflowRef(resolvedRun.runDir)) ?? readWorkflowRef(startedEvent);
+  if (!workflowRef) {
+    context.io.writeError(
+      `Run ${basename(resolvedRun.runDir)} does not record a workflowRef and cannot be continued.`,
+    );
+    return 1;
+  }
+
+  const trailstepConfig = await loadTrailStepConfig(context.cwd, { homeDir: context.homeDir });
+  const resolvedWorkflow = await resolveWorkflowReference(workflowRef, {
+    cwd: context.cwd,
+    homeDir: context.homeDir,
+  });
+  if (!resolvedWorkflow) {
+    context.io.writeError(
+      `Workflow not found for continue: ${workflowRef}. Run trailstep workflows to see available workflows.`,
+    );
+    return 1;
+  }
+
+  const terminalEventLogger = createTerminalEventLogger(context.io);
+  const eventSink = (event: Event): void | Promise<void> => {
+    terminalEventLogger(event);
+    return context.eventSink?.(event);
+  };
+  const result = await runWorkflow({
+    workflow: resolvedWorkflow.workflow,
+    cwd: context.cwd,
+    eventSink,
+    ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
+    ...(context.workingAgentProcessRunner === undefined
+      ? {}
+      : { workingAgentProcessRunner: context.workingAgentProcessRunner }),
+    ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
+    continue: { runDir: resolvedRun.runDir },
+  });
+
+  if (result.status === "success") {
+    context.io.writeLine(`Workflow completed: ${resolvedWorkflow.id} at ${result.runDir}`);
+    return 0;
+  }
+
+  if (result.status === "waiting") {
+    context.io.writeLine(`Workflow waiting: ${result.runId}`);
+    context.io.writeLine("");
+    context.io.writeLine(`Waiting for ${result.wait.waitId}:`);
+    context.io.writeLine(`  ${result.wait.message}`);
+    return 0;
+  }
+
+  context.io.writeError(
+    `Workflow failed: ${resolvedWorkflow.id} at ${result.runDir}: ${result.failure.message}`,
+  );
+  return 1;
+}
+
+function readWorkflowRef(startedEvent: Event): string | undefined {
+  const workflowRef = startedEvent.payload.workflowRef;
+  if (typeof workflowRef === "string" && workflowRef.length > 0) {
+    return workflowRef;
+  }
+
+  return startedEvent.workflowId;
+}
+
 async function resolveContinueTarget(
   args: ContinueCommandArgs,
   context: CliCommandContext,
@@ -64,6 +185,10 @@ async function resolveContinueTarget(
 
   if (args.mode === "interactive-file") {
     return { interactiveFile: args.path, outputArgs: { mode: "selected" } };
+  }
+
+  if (args.mode === "run") {
+    throw new CliInputError("Run continue is handled before interactive continue resolution.");
   }
 
   const interactiveFile = context.env?.TRAILSTEP_INTERACTIVE_FILE;
@@ -347,4 +472,8 @@ async function safeWriteJson(path: string, value: unknown): Promise<void> {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }

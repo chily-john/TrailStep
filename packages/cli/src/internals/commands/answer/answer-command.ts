@@ -1,16 +1,22 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { readRunEvents } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
-import { resolveRunsRoot } from "../../runs-root.js";
+import { continueCommand } from "../continue/continue-command.js";
+import {
+  findPendingWaitById,
+  readEventsForRun,
+  readWaitAnswerFile,
+  resolveRunDirectory,
+} from "../wait-run-helpers.js";
 
 export interface AnswerCommandArgs {
-  readonly runName: string;
+  readonly runNameOrRunDir: string;
   readonly waitId: string;
   readonly json?: string;
   readonly jsonFile?: string;
+  readonly continueAfterAnswer?: boolean;
 }
 
 export const answerCommand: CliCommand<AnswerCommandArgs> = {
@@ -19,50 +25,51 @@ export const answerCommand: CliCommand<AnswerCommandArgs> = {
     return parseAnswerInvocation(argv);
   },
   async run(args: AnswerCommandArgs, context: CliCommandContext): Promise<number> {
-    const runDir = join(resolveRunsRoot(context), args.runName);
-    const events = await readRunEvents(runDir);
-    const waitStarted = events
-      .slice()
-      .reverse()
-      .find(
-        (event) =>
-          event.type === "wait.started" &&
-          typeof event.payload.waitId === "string" &&
-          event.payload.waitId === args.waitId,
-      );
+    const resolvedRun = await resolveRunDirectory(args.runNameOrRunDir, context);
+    const events = await readEventsForRun(resolvedRun.runDir);
+    const waitStarted = findPendingWaitById(events, args.waitId);
 
     if (!waitStarted) {
-      context.io.writeError(`Wait not found: ${args.waitId} in run ${args.runName}.`);
+      context.io.writeError(
+        `Pending wait not found: ${args.waitId} in run ${args.runNameOrRunDir}.`,
+      );
       return 1;
     }
 
-    const artifactPaths = waitStarted.payload.artifactPaths;
-    const answerFile =
-      isArtifactPaths(artifactPaths) && typeof artifactPaths.answerFile === "string"
-        ? artifactPaths.answerFile
-        : undefined;
+    const answerFile = readWaitAnswerFile(waitStarted);
     if (!answerFile) {
-      context.io.writeError(`Wait ${args.waitId} in run ${args.runName} has no answer artifact.`);
+      context.io.writeError(
+        `Wait ${args.waitId} in run ${args.runNameOrRunDir} has no answer artifact.`,
+      );
       return 1;
     }
 
     const answer = await loadAnswerJson(args, context.cwd);
-    const outputPath = join(runDir, answerFile);
+    const outputPath = join(resolvedRun.runDir, answerFile);
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, `${JSON.stringify(answer, null, 2)}\n`, "utf8");
     context.io.writeLine(`Wrote wait answer: ${outputPath}`);
+
+    if (args.continueAfterAnswer) {
+      return await continueCommand.run(
+        { mode: "run", runNameOrRunDir: args.runNameOrRunDir },
+        context,
+      );
+    }
+
     return 0;
   },
 };
 
 function parseAnswerInvocation(argv: readonly string[]): AnswerCommandArgs {
-  const [, runName, waitId, ...rest] = argv;
-  if (!runName || !waitId) {
-    throw new CliUsageError("trailstep answer requires <runName> <waitId>.");
+  const [, runNameOrRunDir, waitId, ...rest] = argv;
+  if (!runNameOrRunDir || !waitId) {
+    throw new CliUsageError("trailstep answer requires <runNameOrRunDir> <waitId>.");
   }
 
   let json: string | undefined;
   let jsonFile: string | undefined;
+  let continueAfterAnswer = false;
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--json") {
@@ -73,6 +80,10 @@ function parseAnswerInvocation(argv: readonly string[]): AnswerCommandArgs {
     if (arg === "--json-file") {
       jsonFile = requireValue(rest, index, "--json-file");
       index += 1;
+      continue;
+    }
+    if (arg === "--continue") {
+      continueAfterAnswer = true;
       continue;
     }
     throw new CliUsageError(`Unknown trailstep answer option: ${arg}`);
@@ -86,10 +97,11 @@ function parseAnswerInvocation(argv: readonly string[]): AnswerCommandArgs {
   }
 
   return {
-    runName,
+    runNameOrRunDir,
     waitId,
     ...(json === undefined ? {} : { json }),
     ...(jsonFile === undefined ? {} : { jsonFile }),
+    ...(continueAfterAnswer ? { continueAfterAnswer } : {}),
   };
 }
 
@@ -103,15 +115,27 @@ function requireValue(args: readonly string[], index: number, flag: string): str
 
 async function loadAnswerJson(args: AnswerCommandArgs, cwd: string): Promise<unknown> {
   const text = args.json ?? (await readFile(join(cwd, args.jsonFile ?? ""), "utf8"));
+  let answer: unknown;
   try {
-    return JSON.parse(text);
+    answer = JSON.parse(text);
   } catch (error) {
     throw new CliUsageError(
       `Wait answer JSON is invalid: ${error instanceof Error ? error.message : "parse failed"}`,
     );
   }
+
+  if (!isPlainObject(answer)) {
+    throw new CliUsageError("Wait answer JSON must be a plain JSON object.");
+  }
+
+  return answer;
 }
 
-function isArtifactPaths(value: unknown): value is { readonly answerFile: string } {
-  return typeof value === "object" && value !== null && "answerFile" in value;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
 }

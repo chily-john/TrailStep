@@ -12,7 +12,8 @@ export async function initializeRun<TInput extends PlainObject, TOutput extends 
   readonly runDir: string;
   readonly previousEvents: readonly Event[];
 }> {
-  const existingRunDir = options.resume?.runDir ?? options.retry?.runDir;
+  const existingRunDir =
+    options.resume?.runDir ?? options.retry?.runDir ?? options.continue?.runDir;
   if (existingRunDir) {
     const previousEvents = await readRunEvents(existingRunDir);
     const startedEvent = previousEvents.find((event) => event.type === "workflow.started");

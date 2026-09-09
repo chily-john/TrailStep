@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/dispatch-agent-step.js";
 import type { TrailStepConfig } from "../../../agent-targeting/targeting.types.js";
-import { normalizeShape } from "../../../authoring/shape/json-schema.js";
+import { jsonSchema, normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type {
   ContinuationResult,
   DisplayPhase,
@@ -54,6 +55,25 @@ export interface RunContinuationOptions {
   readonly workingAgentProcessRunner?: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner?: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner?: RunWorkflowOptions["processRunner"];
+  readonly resumeWait?: ResumeWaitOptions;
+}
+
+export interface ResumeWaitOptions {
+  readonly stepId: string;
+  readonly stepIndex: number;
+  readonly phaseIndex: number;
+  readonly phaseValue: PlainObject;
+  readonly waitOutputs: Readonly<Record<string, PlainObject>>;
+  readonly seenWaitIds: readonly string[];
+  readonly wait: ResumedWaitDetails;
+}
+
+export interface ResumedWaitDetails {
+  readonly waitId: string;
+  readonly kind: "input";
+  readonly message: string;
+  readonly artifactPaths: WaitArtifactPaths;
+  readonly outputSchema: Record<string, unknown>;
 }
 
 export interface WaitingWait {
@@ -78,6 +98,7 @@ export async function runContinuation(
   // ever recorded, successful or failed), not restart at 1 -- otherwise their
   // artifact directories collide with/shadow the pre-resume steps' dirs.
   let executedSteps = options.initialExecutedSteps ?? 0;
+  let pendingResumeWait = options.resumeWait;
   const trailstepConfig = options.trailstepConfig;
 
   while (true) {
@@ -96,19 +117,32 @@ export async function runContinuation(
       };
     }
 
-    if (executedSteps >= options.maxSteps) {
-      return {
-        status: "failure",
-        failure: stepExecutionFailure(
-          new Error(`workflow exceeded maxSteps guard (${options.maxSteps})`),
-        ),
-      };
-    }
-    executedSteps += 1;
-    const stepIndex = executedSteps;
-
     const stepNode = node;
     const { config } = stepNode;
+    const resumeWait = pendingResumeWait;
+    if (resumeWait !== undefined && resumeWait.stepId !== config.id) {
+      return {
+        status: "failure",
+        failure: continuationFailure(`wait resume for step ${resumeWait.stepId}`),
+      };
+    }
+
+    let stepIndex: number;
+    if (resumeWait === undefined) {
+      if (executedSteps >= options.maxSteps) {
+        return {
+          status: "failure",
+          failure: stepExecutionFailure(
+            new Error(`workflow exceeded maxSteps guard (${options.maxSteps})`),
+          ),
+        };
+      }
+      executedSteps += 1;
+      stepIndex = executedSteps;
+    } else {
+      stepIndex = resumeWait.stepIndex;
+      pendingResumeWait = undefined;
+    }
     const phases = getStepPhases(stepNode);
     const hasPrompt = phases.some((phase) => phase.kind === "prompt");
     const timeoutPolicy = resolveTimeoutPolicy({
@@ -123,20 +157,22 @@ export async function runContinuation(
       config.maxSubPrompts ??
       trailstepConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
 
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: config.id,
-        type: "step.started",
-        payload: {
-          stepName: config.id,
-          ...(config.title === undefined ? {} : { title: config.title }),
-          ...(config.description === undefined ? {} : { description: config.description }),
-          kind: hasPrompt ? "agent" : "code",
-        },
-      }),
-    );
+    if (resumeWait === undefined) {
+      await options.emit(
+        createEvent({
+          runId: options.runId,
+          workflowId: options.workflowId,
+          stepId: config.id,
+          type: "step.started",
+          payload: {
+            stepName: config.id,
+            ...(config.title === undefined ? {} : { title: config.title }),
+            ...(config.description === undefined ? {} : { description: config.description }),
+            kind: hasPrompt ? "agent" : "code",
+          },
+        }),
+      );
+    }
 
     try {
       const stepArtifacts = resolveStepArtifactPaths({
@@ -157,6 +193,17 @@ export async function runContinuation(
                 stepNode,
                 timeoutMs: timeoutPolicy.timeoutMs,
                 signal,
+                ...(resumeWait === undefined
+                  ? {}
+                  : {
+                      resume: {
+                        startPhaseIndex: resumeWait.phaseIndex,
+                        phaseValue: resumeWait.phaseValue,
+                        waitOutputs: resumeWait.waitOutputs,
+                        seenWaitIds: resumeWait.seenWaitIds,
+                        wait: resumeWait.wait,
+                      },
+                    }),
                 emitDisplay: async (phase, output, phaseIndex) => {
                   const payload = await resolveDisplayPayload({
                     phase,
@@ -191,6 +238,15 @@ export async function runContinuation(
                     emit: options.emit,
                   });
                 },
+                handleResumedWait: async (wait) =>
+                  await handleResumedWaitPhase({
+                    wait,
+                    stepId: config.id,
+                    runDir: options.runDir,
+                    runId: options.runId,
+                    workflowId: options.workflowId,
+                    emit: options.emit,
+                  }),
                 dispatchPrompt: async (phase) => {
                   const outputSchema = resolveStepOutputSchema(phase);
                   if (!outputSchema) {
@@ -364,17 +420,28 @@ async function runStepPhases(options: {
     phaseIndex: number,
     waits: Readonly<Record<string, PlainObject>>,
   ) => Promise<HandleWaitResult>;
+  readonly handleResumedWait: (wait: ResumedWaitDetails) => Promise<HandleWaitResult>;
   readonly dispatchPrompt: (phase: PromptPhase) => Promise<PlainObject>;
+  readonly resume?: {
+    readonly startPhaseIndex: number;
+    readonly phaseValue: PlainObject;
+    readonly waitOutputs: Readonly<Record<string, PlainObject>>;
+    readonly seenWaitIds: readonly string[];
+    readonly wait: ResumedWaitDetails;
+  };
 }): Promise<RunStepPhasesResult> {
   const { stepNode } = options;
-  let phaseValue = stepNode.config.input;
+  let phaseValue = options.resume?.phaseValue ?? stepNode.config.input;
   let nextNode: ContinuationResult | undefined;
-  const waitOutputs: Record<string, PlainObject> = {};
-  const seenWaitIds = new Set<string>();
+  const waitOutputs: Record<string, PlainObject> = { ...(options.resume?.waitOutputs ?? {}) };
+  const seenWaitIds = new Set<string>(options.resume?.seenWaitIds ?? []);
   const phases = getStepPhases(stepNode);
   assertNoDuplicateStaticWaitIds(phases, stepNode.config.id);
 
   for (const [phaseIndex, phase] of phases.entries()) {
+    if (phaseIndex < (options.resume?.startPhaseIndex ?? 0)) {
+      continue;
+    }
     if (phase.kind === "display") {
       await options.emitDisplay(phase, phaseValue, phaseIndex);
       throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
@@ -382,7 +449,10 @@ async function runStepPhases(options: {
     }
 
     if (phase.kind === "wait") {
-      const waitResult = await options.handleWait(phase, phaseValue, phaseIndex, waitOutputs);
+      const waitResult =
+        options.resume !== undefined && phaseIndex === options.resume.startPhaseIndex
+          ? await options.handleResumedWait(options.resume.wait)
+          : await options.handleWait(phase, phaseValue, phaseIndex, waitOutputs);
       const waitId = waitResult.status === "waiting" ? waitResult.wait.waitId : waitResult.waitId;
       if (seenWaitIds.has(waitId)) {
         throw new Error(`step ${stepNode.config.id} has duplicate wait id '${waitId}'`);
@@ -469,6 +539,7 @@ async function handleWaitPhase(options: {
     waitId: wait.id,
     kind: wait.kind,
     message: wait.message,
+    phaseIndex: options.phaseIndex,
     outputSchema: normalizeShape(wait.output).jsonSchema,
   };
 
@@ -493,6 +564,7 @@ async function handleWaitPhase(options: {
           waitId: wait.id,
           kind: wait.kind,
           message: wait.message,
+          phaseIndex: options.phaseIndex,
           artifactPaths: artifactPaths.runRelative,
         },
       }),
@@ -502,6 +574,9 @@ async function handleWaitPhase(options: {
 
   try {
     const parsedAnswer: unknown = JSON.parse(answerText.value);
+    if (!isPlainObject(parsedAnswer)) {
+      throw new TypeError(`step ${options.stepId} wait ${wait.id} answer must be a plain object`);
+    }
     const output = normalizeShape(wait.output).assert(
       parsedAnswer,
       `step ${options.stepId} wait ${wait.id} answer`,
@@ -516,6 +591,7 @@ async function handleWaitPhase(options: {
           waitId: wait.id,
           kind: wait.kind,
           message: wait.message,
+          phaseIndex: options.phaseIndex,
           artifactPaths: artifactPaths.runRelative,
           output,
         },
@@ -533,6 +609,7 @@ async function handleWaitPhase(options: {
           waitId: wait.id,
           kind: wait.kind,
           message: wait.message,
+          phaseIndex: options.phaseIndex,
           artifactPaths: artifactPaths.runRelative,
           failure: stepExecutionFailure(error),
         },
@@ -540,6 +617,79 @@ async function handleWaitPhase(options: {
     );
     throw error;
   }
+}
+
+async function handleResumedWaitPhase(options: {
+  readonly wait: ResumedWaitDetails;
+  readonly stepId: string;
+  readonly runDir: string;
+  readonly runId: string;
+  readonly workflowId: string;
+  readonly emit: (event: Event) => Promise<void>;
+}): Promise<HandleWaitResult> {
+  const answerFile = joinRunPath(options.runDir, options.wait.artifactPaths.answerFile);
+  const answerText = await readTextIfExists(answerFile);
+  if (answerText.status === "missing") {
+    return {
+      status: "waiting",
+      wait: {
+        stepId: options.stepId,
+        waitId: options.wait.waitId,
+        message: options.wait.message,
+        artifactPaths: options.wait.artifactPaths,
+      },
+    };
+  }
+
+  try {
+    const parsedAnswer: unknown = JSON.parse(answerText.value);
+    if (!isPlainObject(parsedAnswer)) {
+      throw new TypeError(
+        `step ${options.stepId} wait ${options.wait.waitId} answer must be a plain object`,
+      );
+    }
+    const output = jsonSchema<PlainObject>(options.wait.outputSchema).assert(
+      parsedAnswer,
+      `step ${options.stepId} wait ${options.wait.waitId} answer`,
+    );
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.satisfied",
+        payload: {
+          waitId: options.wait.waitId,
+          kind: options.wait.kind,
+          message: options.wait.message,
+          artifactPaths: options.wait.artifactPaths,
+          output,
+        },
+      }),
+    );
+    return { status: "satisfied", waitId: options.wait.waitId, output };
+  } catch (error) {
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.failed",
+        payload: {
+          waitId: options.wait.waitId,
+          kind: options.wait.kind,
+          message: options.wait.message,
+          artifactPaths: options.wait.artifactPaths,
+          failure: stepExecutionFailure(error),
+        },
+      }),
+    );
+    throw error;
+  }
+}
+
+function joinRunPath(runDir: string, runRelativePath: string): string {
+  return join(runDir, ...runRelativePath.split("/"));
 }
 
 async function resolveWaitDefinition(

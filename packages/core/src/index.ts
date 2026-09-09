@@ -38,6 +38,9 @@ export {
   subPrompt,
 } from "./authoring/authoring.js";
 export type {
+  CheckWaitCallback,
+  CheckWaitContext,
+  CheckWaitHelpers,
   ContinuationResult,
   ContinuationStepConfig,
   DisplayPhase,
@@ -65,8 +68,13 @@ export type {
   SubPromptFactory,
   SubPromptOptions,
   WaitCallback,
+  WaitCheckResult,
   WaitDefinition,
+  WaitDoneResult,
   WaitInput,
+  WaitOptions,
+  WaitPendingInput,
+  WaitPendingResult,
   WaitPhase,
 } from "./authoring/step/continuation.types.js";
 export type { Workflow } from "./authoring/workflow/workflow.types.js";

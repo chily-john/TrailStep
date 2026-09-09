@@ -4,11 +4,13 @@ import { dispatchAgentStep } from "../../../agent-execution/dispatch-agent-step/
 import type { TrailStepConfig } from "../../../agent-targeting/targeting.types.js";
 import { jsonSchema, normalizeShape } from "../../../authoring/shape/json-schema.js";
 import type {
+  CheckWaitHelpers,
   ContinuationResult,
   DisplayPhase,
   PromptPhase,
   StepDisplayValue,
   StepNode,
+  WaitCheckResult,
   WaitDefinition,
   WaitPhase,
 } from "../../../authoring/step/continuation.types.js";
@@ -68,9 +70,11 @@ export interface ResumeWaitOptions {
   readonly wait: ResumedWaitDetails;
 }
 
+type WaitKind = "input" | "check";
+
 export interface ResumedWaitDetails {
   readonly waitId: string;
-  readonly kind: "input";
+  readonly kind: WaitKind;
   readonly message: string;
   readonly artifactPaths: WaitArtifactPaths;
   readonly outputSchema: Record<string, unknown>;
@@ -79,7 +83,9 @@ export interface ResumedWaitDetails {
 export interface WaitingWait {
   readonly stepId: string;
   readonly waitId: string;
+  readonly kind?: WaitKind;
   readonly message: string;
+  readonly retryAfterSeconds?: number;
   readonly artifactPaths: WaitArtifactPaths;
 }
 
@@ -223,13 +229,14 @@ export async function runContinuation(
                     }),
                   );
                 },
-                handleWait: async (phase, output, phaseIndex, waits) => {
+                handleWait: async (phase, output, phaseIndex, waits, previousWaitId) => {
                   return await handleWaitPhase({
                     phase,
                     input: config.input,
                     output,
                     waits,
                     phaseIndex,
+                    previousWaitId,
                     stepId: config.id,
                     stepArtifactId: stepArtifacts.artifactStepId,
                     runDir: options.runDir,
@@ -419,6 +426,7 @@ async function runStepPhases(options: {
     output: PlainObject,
     phaseIndex: number,
     waits: Readonly<Record<string, PlainObject>>,
+    previousWaitId?: string,
   ) => Promise<HandleWaitResult>;
   readonly handleResumedWait: (wait: ResumedWaitDetails) => Promise<HandleWaitResult>;
   readonly dispatchPrompt: (phase: PromptPhase) => Promise<PlainObject>;
@@ -451,7 +459,15 @@ async function runStepPhases(options: {
     if (phase.kind === "wait") {
       const waitResult =
         options.resume !== undefined && phaseIndex === options.resume.startPhaseIndex
-          ? await options.handleResumedWait(options.resume.wait)
+          ? options.resume.wait.kind === "check"
+            ? await options.handleWait(
+                phase,
+                phaseValue,
+                phaseIndex,
+                waitOutputs,
+                options.resume.wait.waitId,
+              )
+            : await options.handleResumedWait(options.resume.wait)
           : await options.handleWait(phase, phaseValue, phaseIndex, waitOutputs);
       const waitId = waitResult.status === "waiting" ? waitResult.wait.waitId : waitResult.waitId;
       if (seenWaitIds.has(waitId)) {
@@ -515,6 +531,7 @@ async function handleWaitPhase(options: {
   readonly output: PlainObject;
   readonly waits: Readonly<Record<string, PlainObject>>;
   readonly phaseIndex: number;
+  readonly previousWaitId?: string;
   readonly stepId: string;
   readonly stepArtifactId: string;
   readonly runDir: string;
@@ -522,6 +539,13 @@ async function handleWaitPhase(options: {
   readonly workflowId: string;
   readonly emit: (event: Event) => Promise<void>;
 }): Promise<HandleWaitResult> {
+  if (options.phase.options !== undefined) {
+    return await handleCheckWaitPhase({
+      ...options,
+      phase: options.phase as WaitPhase & { readonly options: NonNullable<WaitPhase["options"]> },
+    });
+  }
+
   const wait = await resolveWaitDefinition(options.phase, {
     input: options.input,
     output: options.output,
@@ -619,6 +643,163 @@ async function handleWaitPhase(options: {
   }
 }
 
+async function handleCheckWaitPhase(options: {
+  readonly phase: WaitPhase & { readonly options: NonNullable<WaitPhase["options"]> };
+  readonly input: PlainObject;
+  readonly output: PlainObject;
+  readonly waits: Readonly<Record<string, PlainObject>>;
+  readonly phaseIndex: number;
+  readonly previousWaitId?: string;
+  readonly stepId: string;
+  readonly stepArtifactId: string;
+  readonly runDir: string;
+  readonly runId: string;
+  readonly workflowId: string;
+  readonly emit: (event: Event) => Promise<void>;
+}): Promise<HandleWaitResult> {
+  const outputSchema = normalizeShape(options.phase.options.output);
+  const defaultWaitId = options.previousWaitId ?? `check-${options.phaseIndex}`;
+  let waitId = defaultWaitId;
+
+  try {
+    if (typeof options.phase.wait !== "function") {
+      throw new TypeError(
+        `step ${options.stepId} check wait phase ${options.phaseIndex} requires a callback.`,
+      );
+    }
+
+    const check = options.phase.wait as (context: {
+      readonly input: PlainObject;
+      readonly output: PlainObject;
+      readonly waits: Readonly<Record<string, PlainObject>>;
+      readonly wait: CheckWaitHelpers<PlainObject>;
+    }) => WaitCheckResult | Promise<WaitCheckResult>;
+    const result = await check({
+      input: options.input,
+      output: options.output,
+      waits: options.waits,
+      wait: createCheckWaitHelpers(),
+    });
+    validateCheckWaitResult(result, options.stepId, options.phaseIndex);
+
+    if (result.status === "pending") {
+      validatePendingWait(result, options.stepId, options.phaseIndex);
+      waitId = result.id;
+      const artifactPaths = resolveWaitArtifactPaths({
+        runDir: options.runDir,
+        stepArtifactId: options.stepArtifactId,
+        waitId,
+      });
+      const request = {
+        stepId: options.stepId,
+        waitId,
+        kind: "check",
+        message: result.message,
+        phaseIndex: options.phaseIndex,
+        ...(result.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: result.retryAfterSeconds }),
+        outputSchema: outputSchema.jsonSchema,
+      };
+
+      await mkdir(artifactPaths.waitDir, { recursive: true });
+      await writeFile(artifactPaths.requestFile, `${JSON.stringify(request, null, 2)}\n`, "utf8");
+
+      await options.emit(
+        createEvent({
+          runId: options.runId,
+          workflowId: options.workflowId,
+          stepId: options.stepId,
+          type: "wait.started",
+          payload: {
+            waitId,
+            kind: "check",
+            message: result.message,
+            phaseIndex: options.phaseIndex,
+            ...(result.retryAfterSeconds === undefined
+              ? {}
+              : { retryAfterSeconds: result.retryAfterSeconds }),
+            artifactPaths: artifactPaths.runRelative,
+          },
+        }),
+      );
+
+      return {
+        status: "waiting",
+        wait: {
+          stepId: options.stepId,
+          waitId,
+          kind: "check",
+          message: result.message,
+          ...(result.retryAfterSeconds === undefined
+            ? {}
+            : { retryAfterSeconds: result.retryAfterSeconds }),
+          artifactPaths: artifactPaths.runRelative,
+        },
+      };
+    }
+
+    const output = outputSchema.assert(
+      result.output,
+      `step ${options.stepId} check wait ${waitId} output`,
+    );
+    const artifactPaths = resolveWaitArtifactPaths({
+      runDir: options.runDir,
+      stepArtifactId: options.stepArtifactId,
+      waitId,
+    });
+    await mkdir(artifactPaths.waitDir, { recursive: true });
+    await writeFile(
+      artifactPaths.requestFile,
+      `${JSON.stringify(
+        {
+          stepId: options.stepId,
+          waitId,
+          kind: "check",
+          phaseIndex: options.phaseIndex,
+          outputSchema: outputSchema.jsonSchema,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.satisfied",
+        payload: {
+          waitId,
+          kind: "check",
+          phaseIndex: options.phaseIndex,
+          artifactPaths: artifactPaths.runRelative,
+          output,
+        },
+      }),
+    );
+    return { status: "satisfied", waitId, output };
+  } catch (error) {
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "wait.failed",
+        payload: {
+          waitId,
+          kind: "check",
+          phaseIndex: options.phaseIndex,
+          failure: stepExecutionFailure(error),
+        },
+      }),
+    );
+    throw error;
+  }
+}
+
 async function handleResumedWaitPhase(options: {
   readonly wait: ResumedWaitDetails;
   readonly stepId: string;
@@ -700,7 +881,88 @@ async function resolveWaitDefinition(
     readonly waits: Readonly<Record<string, PlainObject>>;
   },
 ): Promise<WaitDefinition> {
-  return typeof phase.wait === "function" ? await phase.wait(context) : phase.wait;
+  if (typeof phase.wait !== "function") {
+    return phase.wait;
+  }
+
+  const resolveInputWait = phase.wait as (context: {
+    readonly input: PlainObject;
+    readonly output: PlainObject;
+    readonly waits: Readonly<Record<string, PlainObject>>;
+  }) => WaitDefinition | Promise<WaitDefinition>;
+  return await resolveInputWait(context);
+}
+
+function createCheckWaitHelpers<TWaitOutput extends PlainObject>(): CheckWaitHelpers<TWaitOutput> {
+  return {
+    done(output) {
+      return { status: "done", output };
+    },
+    pending(input) {
+      return {
+        status: "pending",
+        id: input.id,
+        message: input.message,
+        ...(input.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: input.retryAfterSeconds }),
+      };
+    },
+  };
+}
+
+function validateCheckWaitResult(
+  result: unknown,
+  stepId: string,
+  phaseIndex: number,
+): asserts result is WaitCheckResult {
+  const label = `step ${stepId} check wait phase ${phaseIndex}`;
+  if (!isPlainObject(result)) {
+    throw new TypeError(`${label} must return wait.done(...) or wait.pending(...).`);
+  }
+
+  if (result.status !== "done" && result.status !== "pending") {
+    throw new TypeError(`${label} must return wait.done(...) or wait.pending(...).`);
+  }
+
+  if (result.status === "done" && !("output" in result)) {
+    throw new TypeError(`${label} wait.done(...) requires output.`);
+  }
+}
+
+function validatePendingWait(
+  pending: WaitCheckResult,
+  stepId: string,
+  phaseIndex: number,
+): asserts pending is Extract<WaitCheckResult, { readonly status: "pending" }> {
+  const label = `step ${stepId} check wait phase ${phaseIndex}`;
+  if (pending.status !== "pending") {
+    throw new TypeError(`${label} expected a pending result.`);
+  }
+
+  if (typeof pending.id !== "string" || pending.id.trim().length === 0) {
+    throw new TypeError(`${label} pending result requires a non-empty string id.`);
+  }
+
+  if (
+    pending.id === "." ||
+    pending.id === ".." ||
+    pending.id.includes("/") ||
+    pending.id.includes("\\")
+  ) {
+    throw new TypeError(`${label} pending result id must be a single path-safe segment.`);
+  }
+
+  if (typeof pending.message !== "string" || pending.message.trim().length === 0) {
+    throw new TypeError(`${label} pending result requires a non-empty string message.`);
+  }
+
+  if (
+    pending.retryAfterSeconds !== undefined &&
+    (!Number.isFinite(pending.retryAfterSeconds) || pending.retryAfterSeconds < 0)
+  ) {
+    throw new TypeError(`${label} pending retryAfterSeconds must be a non-negative number.`);
+  }
 }
 
 function validateWaitDefinition(wait: WaitDefinition, stepId: string, phaseIndex: number): void {

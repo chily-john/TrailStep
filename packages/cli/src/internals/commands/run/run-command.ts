@@ -77,11 +77,19 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       io.writeLine("");
       io.writeLine(`Waiting for ${result.wait.waitId}:`);
       io.writeLine(`  ${result.wait.message}`);
+      if (result.wait.retryAfterSeconds !== undefined) {
+        io.writeLine(`  Retry after: ${result.wait.retryAfterSeconds}s`);
+      }
       io.writeLine("");
-      io.writeLine("Answer with:");
-      io.writeLine(
-        `  trailstep answer ${result.runId} ${result.wait.waitId} --json '{"approved":true}'`,
-      );
+      if (result.wait.kind === "check") {
+        io.writeLine("Continue check with:");
+        io.writeLine(`  trailstep continue ${result.runId}`);
+      } else {
+        io.writeLine("Answer with:");
+        io.writeLine(
+          `  trailstep answer ${result.runId} ${result.wait.waitId} --json '{"approved":true}'`,
+        );
+      }
       return 0;
     }
 

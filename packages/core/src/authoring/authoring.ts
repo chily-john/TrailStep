@@ -13,6 +13,9 @@ export { promptTemplate } from "./prompt-template/prompt-template.js";
 export { type JsonSchemaObject, jsonSchema, normalizeShape, shape } from "./shape/json-schema.js";
 export { state } from "./state/state.js";
 export type {
+  CheckWaitCallback,
+  CheckWaitContext,
+  CheckWaitHelpers,
   StepContextContinuation,
   StepContinuationOutput,
   StepDisplayCallback,
@@ -25,8 +28,13 @@ export type {
   SubPromptFactory,
   SubPromptOptions,
   WaitCallback,
+  WaitCheckResult,
   WaitDefinition,
+  WaitDoneResult,
   WaitInput,
+  WaitOptions,
+  WaitPendingInput,
+  WaitPendingResult,
 } from "./step/continuation.types.js";
 export { done, fail, isDoneNode, isFailNode, isStepNode, step } from "./step/step-node.js";
 export { subPrompt } from "./step/sub-prompt.js";

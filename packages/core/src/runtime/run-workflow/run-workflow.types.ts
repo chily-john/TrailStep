@@ -77,7 +77,9 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
 export interface WaitResultDetails {
   readonly stepId: string;
   readonly waitId: string;
+  readonly kind?: "input" | "check";
   readonly message: string;
+  readonly retryAfterSeconds?: number;
   readonly artifactPaths: {
     readonly requestFile: string;
     readonly answerFile: string;

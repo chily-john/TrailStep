@@ -92,6 +92,37 @@ export interface WaitDefinition<TWaitOutput extends PlainObject = PlainObject> {
   readonly output: ShapeInput<TWaitOutput>;
 }
 
+export interface WaitOptions<TWaitOutput extends PlainObject = PlainObject> {
+  readonly output: ShapeInput<TWaitOutput>;
+}
+
+export interface WaitPendingInput {
+  readonly id: string;
+  readonly message: string;
+  readonly retryAfterSeconds?: number;
+}
+
+export interface WaitPendingResult {
+  readonly status: "pending";
+  readonly id: string;
+  readonly message: string;
+  readonly retryAfterSeconds?: number;
+}
+
+export interface WaitDoneResult<TWaitOutput extends PlainObject = PlainObject> {
+  readonly status: "done";
+  readonly output: TWaitOutput;
+}
+
+export type WaitCheckResult<TWaitOutput extends PlainObject = PlainObject> =
+  | WaitDoneResult<TWaitOutput>
+  | WaitPendingResult;
+
+export interface CheckWaitHelpers<TWaitOutput extends PlainObject = PlainObject> {
+  done(output: TWaitOutput): WaitDoneResult<TWaitOutput>;
+  pending(input: WaitPendingInput): WaitPendingResult;
+}
+
 export interface StepWaitContext<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
@@ -99,6 +130,14 @@ export interface StepWaitContext<
   readonly input: TInput;
   readonly output: TOutput;
   readonly waits: Readonly<Record<string, PlainObject>>;
+}
+
+export interface CheckWaitContext<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+  TWaitOutput extends PlainObject = PlainObject,
+> extends StepWaitContext<TInput, TOutput> {
+  readonly wait: CheckWaitHelpers<TWaitOutput>;
 }
 
 export type WaitCallback<
@@ -111,19 +150,30 @@ export type WaitCallback<
   ): WaitDefinition<TWaitOutput> | Promise<WaitDefinition<TWaitOutput>>;
 }["bivarianceHack"];
 
+export type CheckWaitCallback<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+  TWaitOutput extends PlainObject = PlainObject,
+> = {
+  bivarianceHack(
+    context: CheckWaitContext<TInput, TOutput, TWaitOutput>,
+  ): WaitCheckResult<TWaitOutput> | Promise<WaitCheckResult<TWaitOutput>>;
+}["bivarianceHack"];
+
 export type WaitInput<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
   TWaitOutput extends PlainObject = PlainObject,
 > = WaitDefinition<TWaitOutput> | WaitCallback<TInput, TOutput, TWaitOutput>;
 
-/** Ordered durable pause phase for human/external input waits. */
+/** Ordered durable pause phase for human/external input/check waits. */
 export interface WaitPhase<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > {
   readonly kind: "wait";
-  readonly wait: WaitInput<TInput, TOutput>;
+  readonly wait: WaitInput<TInput, TOutput> | CheckWaitCallback<TInput, TOutput>;
+  readonly options?: WaitOptions;
 }
 
 export interface PromptPhase<

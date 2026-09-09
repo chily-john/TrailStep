@@ -25,7 +25,7 @@ export interface ReplayToWaitingStepResult {
   readonly seenWaitIds: readonly string[];
   readonly wait: {
     readonly waitId: string;
-    readonly kind: "input";
+    readonly kind: "input" | "check";
     readonly message: string;
     readonly artifactPaths: { readonly requestFile: string; readonly answerFile: string };
     readonly outputSchema: Record<string, unknown>;
@@ -176,7 +176,7 @@ async function readResumedWaitDetails(
       readonly status: "success";
       readonly wait: {
         readonly waitId: string;
-        readonly kind: "input";
+        readonly kind: "input" | "check";
         readonly message: string;
         readonly artifactPaths: { readonly requestFile: string; readonly answerFile: string };
         readonly outputSchema: Record<string, unknown>;
@@ -220,12 +220,13 @@ async function readResumedWaitDetails(
     };
   }
 
+  const kind = request.kind === "check" ? "check" : "input";
   const message = typeof waitEvent.payload.message === "string" ? waitEvent.payload.message : "";
   return {
     status: "success",
     wait: {
       waitId,
-      kind: "input",
+      kind,
       message,
       artifactPaths,
       outputSchema: request.outputSchema,
@@ -418,9 +419,19 @@ async function waitPhaseMatches(
     return false;
   }
 
+  if (phase.options !== undefined) {
+    return false;
+  }
+
   const wait =
     typeof phase.wait === "function"
-      ? await phase.wait({
+      ? await (
+          phase.wait as (waitContext: {
+            readonly input: PlainObject;
+            readonly output: PlainObject;
+            readonly waits: Readonly<Record<string, PlainObject>>;
+          }) => unknown | Promise<unknown>
+        )({
           input: context.input,
           output: context.phaseValue,
           waits: context.waitOutputs,

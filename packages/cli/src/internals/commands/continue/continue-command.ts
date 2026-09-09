@@ -85,27 +85,29 @@ async function continueWaitingRun(
     return 1;
   }
 
-  const answerFile = readWaitAnswerFile(pendingWait);
-  if (!answerFile) {
-    context.io.writeError(
-      `Pending wait ${String(pendingWait.payload.waitId ?? "<missing>")} has no answer artifact.`,
-    );
-    return 1;
-  }
-
-  try {
-    await readFile(resolve(resolvedRun.runDir, answerFile), "utf8");
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      context.io.writeLine(
-        `Workflow still waiting: ${basename(resolvedRun.runDir)} (${String(
-          pendingWait.payload.waitId ?? "<missing>",
-        )})`,
+  if (!isCheckWait(pendingWait)) {
+    const answerFile = readWaitAnswerFile(pendingWait);
+    if (!answerFile) {
+      context.io.writeError(
+        `Pending wait ${String(pendingWait.payload.waitId ?? "<missing>")} has no answer artifact.`,
       );
-      context.io.writeLine(`Missing answer: ${answerFile}`);
-      return 0;
+      return 1;
     }
-    throw error;
+
+    try {
+      await readFile(resolve(resolvedRun.runDir, answerFile), "utf8");
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        context.io.writeLine(
+          `Workflow still waiting: ${basename(resolvedRun.runDir)} (${String(
+            pendingWait.payload.waitId ?? "<missing>",
+          )})`,
+        );
+        context.io.writeLine(`Missing answer: ${answerFile}`);
+        return 0;
+      }
+      throw error;
+    }
   }
 
   const workflowRef =
@@ -156,6 +158,9 @@ async function continueWaitingRun(
     context.io.writeLine("");
     context.io.writeLine(`Waiting for ${result.wait.waitId}:`);
     context.io.writeLine(`  ${result.wait.message}`);
+    if (result.wait.retryAfterSeconds !== undefined) {
+      context.io.writeLine(`  Retry after: ${result.wait.retryAfterSeconds}s`);
+    }
     return 0;
   }
 
@@ -163,6 +168,10 @@ async function continueWaitingRun(
     `Workflow failed: ${resolvedWorkflow.id} at ${result.runDir}: ${result.failure.message}`,
   );
   return 1;
+}
+
+function isCheckWait(event: Event): boolean {
+  return event.payload.kind === "check";
 }
 
 function readWorkflowRef(startedEvent: Event): string | undefined {

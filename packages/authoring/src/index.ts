@@ -1,4 +1,7 @@
 export type {
+  CheckWaitCallback,
+  CheckWaitContext,
+  CheckWaitHelpers,
   DisplayPhase,
   DoPhase,
   FailNode,
@@ -26,8 +29,13 @@ export type {
   TimeoutPolicy,
   TimeoutPolicyInput,
   WaitCallback,
+  WaitCheckResult,
   WaitDefinition,
+  WaitDoneResult,
   WaitInput,
+  WaitOptions,
+  WaitPendingInput,
+  WaitPendingResult,
   WaitPhase,
   Workflow,
 } from "@trailstep/core";

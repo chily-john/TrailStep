@@ -2,6 +2,7 @@ import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js"
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type {
+  CheckWaitCallback,
   ContinuationStepConfig,
   DisplayPhase,
   DoneNode,
@@ -19,6 +20,7 @@ import type {
   StepNode,
   StepPhase,
   WaitInput,
+  WaitOptions,
   WaitPhase,
 } from "../step/continuation.types.js";
 
@@ -38,6 +40,10 @@ interface StepBuilder {
     options?: PlainObject,
   ): StepBuilder;
   wait(wait: WaitInput<PlainObject, PlainObject>): StepBuilder;
+  wait<TWaitOutput extends PlainObject = PlainObject>(
+    wait: CheckWaitCallback<PlainObject, PlainObject, TWaitOutput>,
+    options: WaitOptions<TWaitOutput>,
+  ): StepBuilder;
   prompt<TInput extends PlainObject = PlainObject, TOutput extends PlainObject = PlainObject>(
     source: AgentPrompt<TInput> | PromptTemplateSource,
     options?: PromptOptions<TOutput>,
@@ -59,6 +65,10 @@ interface PromptedStepBuilder<
     options?: PlainObject,
   ): PromptedStepBuilder<TInput, TOutput>;
   wait(wait: WaitInput<TInput, TOutput>): PromptedStepBuilder<TInput, TOutput>;
+  wait<TWaitOutput extends PlainObject = PlainObject>(
+    wait: CheckWaitCallback<TInput, TOutput, TWaitOutput>,
+    options: WaitOptions<TWaitOutput>,
+  ): PromptedStepBuilder<TInput, TOutput>;
   do(onOutput: StepContextContinuation<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
   do(onOutput: StepContinuation<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
 }
@@ -73,6 +83,10 @@ type FluentStepFactory<
     options?: PlainObject,
   ): FluentStepFactory<TInput, TOutput>;
   wait(wait: WaitInput<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
+  wait<TWaitOutput extends PlainObject = PlainObject>(
+    wait: CheckWaitCallback<TInput, TOutput, TWaitOutput>,
+    options: WaitOptions<TWaitOutput>,
+  ): FluentStepFactory<TInput, TOutput>;
 };
 
 export function step(config: StepConfig): StepBuilder {
@@ -80,8 +94,11 @@ export function step(config: StepConfig): StepBuilder {
     display(content, options) {
       return makeBuilder([...phaseTemplates, displayPhase(content, options)]);
     },
-    wait(wait) {
-      return makeBuilder([...phaseTemplates, waitPhase(wait)]);
+    wait(
+      wait: WaitInput<PlainObject, PlainObject> | CheckWaitCallback<PlainObject, PlainObject>,
+      options?: WaitOptions,
+    ) {
+      return makeBuilder([...phaseTemplates, waitPhase(wait, options)]);
     },
     prompt<TInput extends PlainObject = PlainObject, TStepOutput extends PlainObject = PlainObject>(
       source: AgentPrompt<TInput> | PromptTemplateSource,
@@ -107,8 +124,11 @@ export function step(config: StepConfig): StepBuilder {
     display(content, options) {
       return makePromptedBuilder([...phaseTemplates, displayPhase(content, options)]);
     },
-    wait(wait) {
-      return makePromptedBuilder([...phaseTemplates, waitPhase(wait)]);
+    wait(
+      wait: WaitInput<TInput, TStepOutput> | CheckWaitCallback<TInput, TStepOutput>,
+      options?: WaitOptions,
+    ) {
+      return makePromptedBuilder([...phaseTemplates, waitPhase(wait, options)]);
     },
     do(onOutput) {
       return buildFactory([...phaseTemplates, doPhase(onOutput)], onOutput);
@@ -141,8 +161,10 @@ export function step(config: StepConfig): StepBuilder {
       buildFactory(phaseTemplates, onOutput, nextOnError);
     factory.display = (content?: StepDisplayContent<TInput, TStepOutput>, options?: PlainObject) =>
       buildFactory([...phaseTemplates, displayPhase(content, options)], onOutput, onError);
-    factory.wait = (wait: WaitInput<TInput, TStepOutput>) =>
-      buildFactory([...phaseTemplates, waitPhase(wait)], onOutput, onError);
+    factory.wait = (
+      wait: WaitInput<TInput, TStepOutput> | CheckWaitCallback<TInput, TStepOutput>,
+      options?: WaitOptions,
+    ) => buildFactory([...phaseTemplates, waitPhase(wait, options)], onOutput, onError);
 
     return factory;
   };
@@ -225,11 +247,13 @@ function displayPhase<TInput extends PlainObject, TOutput extends PlainObject>(
 }
 
 function waitPhase<TInput extends PlainObject, TOutput extends PlainObject>(
-  wait: WaitInput<TInput, TOutput>,
+  wait: WaitInput<TInput, TOutput> | CheckWaitCallback<TInput, TOutput>,
+  options?: WaitOptions,
 ): WaitPhase<TInput, TOutput> {
   return {
     kind: "wait",
     wait,
+    ...(options === undefined ? {} : { options }),
   };
 }
 

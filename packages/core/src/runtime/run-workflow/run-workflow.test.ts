@@ -206,6 +206,207 @@ describe("runWorkflow runtime front-door", () => {
     ]);
   });
 
+  it("completes a check wait immediately", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-check-wait-done-"));
+    let checkCalls = 0;
+    const workflow: Workflow<{ sha: string }, { status: string; url: string }> = {
+      id: "check-wait-done",
+      inputShape: { sha: "string" },
+      outputShape: { status: "string", url: "string" },
+      start(input) {
+        return step({ id: "ci" })
+          .wait(
+            async ({ input, wait }) => {
+              checkCalls += 1;
+              return wait.done({ status: "passed", url: `https://ci.example/${input.sha}` });
+            },
+            { output: { status: "string", url: "string" } },
+          )
+          .do(({ waits }) => {
+            const result = waits["check-0"] as { status: string; url: string } | undefined;
+            return done({ status: result?.status ?? "missing", url: result?.url ?? "missing" });
+          })(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { sha: "abc123" },
+      runName: "check-wait-done-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(checkCalls).toBe(1);
+    expect(result.output).toEqual({ status: "passed", url: "https://ci.example/abc123" });
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "wait.satisfied",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(result.events[2]).toMatchObject({
+      payload: { waitId: "check-0", kind: "check", output: result.output },
+    });
+  });
+
+  it("reruns a pending check wait on continue and completes later", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-check-wait-pending-"));
+    let checkCalls = 0;
+    const workflow: Workflow<{ sha: string }, { status: string }> = {
+      id: "check-wait-pending",
+      inputShape: { sha: "string" },
+      outputShape: { status: "string" },
+      start(input) {
+        return step({ id: "ci" })
+          .wait(
+            async ({ wait }) => {
+              checkCalls += 1;
+              if (checkCalls === 1) {
+                return wait.pending({
+                  id: "ci",
+                  message: "Waiting for CI to pass",
+                  retryAfterSeconds: 30,
+                });
+              }
+
+              return wait.done({ status: "passed" });
+            },
+            { output: { status: "string" } },
+          )
+          .do(({ waits }) => done({ status: String(waits.ci?.status) }))(input);
+      },
+    };
+
+    const first = await runWorkflow({
+      workflow,
+      input: { sha: "abc123" },
+      runName: "check-wait-pending-run",
+      cwd,
+    });
+
+    expect(first.status).toBe("waiting");
+    if (first.status !== "waiting") {
+      throw new Error("Expected first run to wait.");
+    }
+    expect(checkCalls).toBe(1);
+    expect(first.wait).toMatchObject({
+      stepId: "ci",
+      waitId: "ci",
+      message: "Waiting for CI to pass",
+    });
+    expect(first.events.at(-1)).toMatchObject({
+      type: "wait.started",
+      payload: { kind: "check", retryAfterSeconds: 30 },
+    });
+    await expect(
+      readFile(join(first.runDir, first.wait.artifactPaths.requestFile), "utf8"),
+    ).resolves.toContain('"retryAfterSeconds": 30');
+
+    const second = await runWorkflow({
+      workflow,
+      continue: { runDir: first.runDir },
+      cwd,
+    });
+
+    expect(second.status).toBe("success");
+    if (second.status !== "success") {
+      throw new Error(second.failure.message);
+    }
+    expect(checkCalls).toBe(2);
+    expect(second.output).toEqual({ status: "passed" });
+    expect(second.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "wait.started",
+      "workflow.resumed",
+      "wait.satisfied",
+      "step.completed",
+      "workflow.completed",
+    ]);
+  });
+
+  it("turns thrown check wait errors into clear failures", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-check-wait-error-"));
+    const workflow: Workflow<{ sha: string }, { ok: boolean }> = {
+      id: "check-wait-error",
+      inputShape: { sha: "string" },
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return step({ id: "ci" })
+          .wait(
+            async () => {
+              throw new Error("CI API unavailable");
+            },
+            { output: { ok: "boolean" } },
+          )
+          .do(() => done({ ok: true }))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { sha: "abc123" },
+      runName: "check-wait-error-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected check wait to fail.");
+    }
+    expect(result.failure.message).toContain("CI API unavailable");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "wait.failed",
+      "step.failed",
+      "workflow.failed",
+    ]);
+  });
+
+  it("schema-validates check wait output", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-check-wait-schema-"));
+    const workflow: Workflow<{ sha: string }, { status: string }> = {
+      id: "check-wait-schema",
+      inputShape: { sha: "string" },
+      outputShape: { status: "string" },
+      start(input) {
+        return step({ id: "ci" })
+          .wait(async ({ wait }) => wait.done({ status: 200 } as never), {
+            output: { status: "string" },
+          })
+          .do(() => done({ status: "unreachable" }))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { sha: "abc123" },
+      runName: "check-wait-schema-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected check wait to fail validation.");
+    }
+    expect(result.failure.message).toContain(
+      "step ci check wait check-0 output failed schema validation",
+    );
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "wait.failed",
+      "step.failed",
+      "workflow.failed",
+    ]);
+  });
+
   it("persists step events before the event sink observes a later event", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
     let eventsAtFirstStepCompletion: readonly Event[] = [];

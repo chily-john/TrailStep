@@ -74,6 +74,45 @@ async function writeWaitingWorkflowFile(
   );
 }
 
+async function writeCheckWaitingWorkflowFile(cwd: string): Promise<void> {
+  await rm(cwd, { recursive: true, force: true });
+  const workflowDir = join(cwd, "workflows");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    join(workflowDir, "check-waiting.mjs"),
+    `import { readFile, writeFile } from 'node:fs/promises';
+    import { join } from 'node:path';
+    import { done, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value) => value,
+    };
+    async function incrementCount(cwd) {
+      const path = join(cwd, 'check-count.txt');
+      let count = 0;
+      try { count = Number(await readFile(path, 'utf8')); } catch {}
+      await writeFile(path, String(count + 1), 'utf8');
+      return count + 1;
+    }
+    export default {
+      id: 'check-waiting',
+      input: schema,
+      output: schema,
+      start: (input) => step({ id: 'ci' })
+        .wait(async ({ wait }) => {
+          const count = await incrementCount(input.cwd);
+          if (count === 1) {
+            return wait.pending({ id: 'ci', message: 'Waiting for CI', retryAfterSeconds: 30 });
+          }
+          return wait.done({ ok: true });
+        }, { output: { ok: 'boolean' } })
+        .do(({ waits }) => done({ ok: waits.ci.ok }))(input),
+    };`,
+    "utf8",
+  );
+}
+
 function interactiveProtocol(options: {
   runDir: string;
   stepDir: string;
@@ -232,6 +271,39 @@ describe("continue command", () => {
     ).resolves.toBe(0);
 
     expect(lines.join("\n")).toMatch(/still waiting|missing answer/i);
+  });
+
+  it("reruns a check wait without requiring an answer file", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "check-wait");
+    await writeCheckWaitingWorkflowFile(cwd);
+    await main({
+      argv: ["./workflows/check-waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    await expect(readFile(join(cwd, "check-count.txt"), "utf8")).resolves.toBe("1");
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["continue", "wait-run"],
+        cwd,
+        env: {},
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    await expect(readFile(join(cwd, "check-count.txt"), "utf8")).resolves.toBe("2");
+    expect(lines.join("\n")).toContain("Workflow completed:");
+    expect(lines.join("\n")).toContain("check-waiting.mjs");
+    const events = await readFile(
+      join(cwd, ".trailstep", "runs", "wait-run", "events.jsonl"),
+      "utf8",
+    );
+    expect(events).toContain('"retryAfterSeconds":30');
+    expect(events).toContain("wait.satisfied");
+    expect(events).toContain("workflow.completed");
   });
 
   it("does not rerun a wait callback while continuing", async ({ task }) => {

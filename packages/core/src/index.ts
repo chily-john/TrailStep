@@ -29,6 +29,7 @@ export {
   list,
   loadFragments,
   normalizeShape,
+  notify,
   promptSections,
   promptTemplate,
   section,
@@ -37,6 +38,7 @@ export {
   step,
   subPrompt,
 } from "./authoring/authoring.js";
+export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
   CheckWaitCallback,
   CheckWaitContext,

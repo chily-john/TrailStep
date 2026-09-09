@@ -9,6 +9,7 @@ import * as core from "./index.js";
 import {
   done,
   jsonSchema,
+  notify,
   runWorkflow,
   selectLatestUnresolvedFailure,
   step,
@@ -35,6 +36,7 @@ describe("@trailstep/core public API", () => {
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
     expect(runWorkflow).toBeTypeOf("function");
     expect(jsonSchema).toBeTypeOf("function");
+    expect(notify.progress).toBeTypeOf("function");
     expect(selectLatestUnresolvedFailure).toBeTypeOf("function");
 
     type PublicLatestUnresolvedFailure = import("./index.js").LatestUnresolvedFailure;

@@ -95,4 +95,27 @@ describe("createTerminalEventLogger", () => {
       "• Debug detail",
     ]);
   });
+
+  it("prints notify progress, warning, and artifact events", () => {
+    const lines: string[] = [];
+    const logger = createTerminalEventLogger({
+      writeLine: (line) => lines.push(line),
+      writeError: (line) => lines.push(line),
+    });
+
+    logger(event({ type: "step.progress", payload: { message: "Created worktree" } }));
+    logger(event({ type: "step.warning", payload: { message: "Validation failed, retrying" } }));
+    logger(
+      event({
+        type: "step.artifact",
+        payload: { name: "Research notes", path: "notes.md", mediaType: "text/markdown" },
+      }),
+    );
+
+    expect(lines).toEqual([
+      "• Created worktree",
+      "! Validation failed, retrying",
+      "↳ Artifact: Research notes — notes.md",
+    ]);
+  });
 });

@@ -51,6 +51,23 @@ function formatEvent(event: Event): readonly string[] | undefined {
       const marker = level === "warning" || level === "error" ? "!" : "•";
       return [`${marker} ${message}`];
     }
+    case "step.progress": {
+      const message = typeof event.payload.message === "string" ? event.payload.message : undefined;
+      return message === undefined ? undefined : [`• ${message}`];
+    }
+    case "step.warning": {
+      const message = typeof event.payload.message === "string" ? event.payload.message : undefined;
+      return message === undefined ? undefined : [`! ${message}`];
+    }
+    case "step.artifact": {
+      const name = typeof event.payload.name === "string" ? event.payload.name : undefined;
+      const path = typeof event.payload.path === "string" ? event.payload.path : undefined;
+      if (name === undefined || path === undefined) {
+        return undefined;
+      }
+
+      return [`↳ Artifact: ${name} — ${path}`];
+    }
     default:
       return undefined;
   }

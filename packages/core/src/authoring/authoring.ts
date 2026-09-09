@@ -3,6 +3,8 @@
 // the package entry point) have a single place to import from.
 
 export { Document, document } from "./document/document.js";
+export type { NotifyApi, NotifyArtifact } from "./notify/notify.js";
+export { notify } from "./notify/notify.js";
 export {
   list,
   loadFragments,

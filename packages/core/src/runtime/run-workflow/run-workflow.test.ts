@@ -4,10 +4,14 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { done, step } from "../../authoring/authoring.js";
+import { done, notify, step } from "../../authoring/authoring.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 import { runWorkflow } from "./run-workflow.js";
+
+async function reportCreatedWorktree(path: string): Promise<void> {
+  await notify.progress("Created worktree", { path });
+}
 
 describe("runWorkflow runtime front-door", () => {
   it("accepts an already-flattened non-empty TrailStepConfig without reparsing it as raw entries", async () => {
@@ -97,6 +101,84 @@ describe("runWorkflow runtime front-door", () => {
         phaseIndex: 0,
       },
     });
+  });
+
+  it("persists durable notify events emitted by code steps and helpers", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-notify-"));
+    const workflow: Workflow<{ path: string }, { ok: boolean }> = {
+      id: "notify-events",
+      inputShape: { path: "string" },
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return step({ id: "prepare" }).do(
+          async (stepInput: { readonly path: string } & Record<string, unknown>) => {
+            const { path } = stepInput;
+            await notify.progress("Preparing worktree", { path });
+            await reportCreatedWorktree(path);
+            await notify.warning("Validation failed, retrying");
+            await notify.artifact("Research notes", {
+              path: "notes.md",
+              mediaType: "text/markdown",
+              data: { source: "research" },
+            });
+            return done({ ok: true });
+          },
+        )(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { path: "feature-worktree" },
+      runName: "notify-events-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    const contents = await readFile(join(result.runDir, "events.jsonl"), "utf8");
+    const persistedEvents = contents
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Event);
+
+    expect(persistedEvents.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.progress",
+      "step.progress",
+      "step.warning",
+      "step.artifact",
+      "step.completed",
+      "workflow.completed",
+    ]);
+    expect(persistedEvents[2]).toMatchObject({
+      stepId: "prepare",
+      payload: { message: "Preparing worktree", data: { path: "feature-worktree" } },
+    });
+    expect(persistedEvents[3]).toMatchObject({
+      stepId: "prepare",
+      payload: { message: "Created worktree", data: { path: "feature-worktree" } },
+    });
+    expect(persistedEvents[4]).toMatchObject({
+      stepId: "prepare",
+      payload: { message: "Validation failed, retrying" },
+    });
+    expect(persistedEvents[5]).toMatchObject({
+      stepId: "prepare",
+      payload: {
+        name: "Research notes",
+        path: "notes.md",
+        mediaType: "text/markdown",
+        data: { source: "research" },
+      },
+    });
+  });
+
+  it("throws clearly when notify is called outside a TrailStep run", async () => {
+    await expect(notify.progress("No active run")).rejects.toThrow(
+      "notify.* called outside an active TrailStep run.",
+    );
   });
 
   it("pauses at a wait before a prompt without dispatching the prompt", async () => {

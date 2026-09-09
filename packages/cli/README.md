@@ -69,6 +69,7 @@ trailstep agents
 trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--workflow <workflow>] [--project-skill] [--user-skill] [--yes] [--dry-run]
 trailstep workflows
 trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
+trailstep watch <runNameOrRunDir> [--jsonl]
 trailstep continue
 trailstep retry <workflow-ref> <runName>
 trailstep update [--all | --project | --workflows | --workflow <name>] [--yes]

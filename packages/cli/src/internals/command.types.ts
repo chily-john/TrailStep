@@ -25,6 +25,7 @@ export const usageText = [
   "  trailstep workflows",
   "  trailstep input-template <workflow-ref>",
   "  trailstep output <runNameOrRunDir> [--json] [--field <path>]",
+  "  trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--follow | --no-follow]",
   "  trailstep continue",
   "  trailstep continue <runNameOrRunDir>",
   "  trailstep continue --interactive-file <path>",

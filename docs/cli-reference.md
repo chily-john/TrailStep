@@ -30,6 +30,7 @@ trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>]
 trailstep remove <namespace>/<name> [--scope <local|project|global>]
 trailstep workflows
 trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
+trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--follow | --no-follow]
 trailstep continue [--interactive-file <path> | --session-file <path> | --json-file <path> | --json '<json>']
 trailstep cancel [--reason '<text>']
 trailstep retry <workflow-ref> <runName>
@@ -141,6 +142,18 @@ trailstep remove project/review --scope project
 ```
 
 Removal deletes the registration and only uninstalls orphaned TrailStep-owned package installs. User-owned installs, still-referenced packages, and missing or stale metadata are preserved.
+
+## Watch run events
+
+Watch streams `.trailstep/runs/<run>/events.jsonl` from the beginning and follows by default until a terminal workflow event or pending wait is observed:
+
+```bash
+trailstep watch delegate-run
+trailstep watch delegate-run --jsonl
+trailstep watch .trailstep/runs/delegate-run --no-follow
+```
+
+Use `--jsonl` for parent agents that need machine-readable live events. `--json` is also accepted and emits one compact event JSON object per line.
 
 ## Continue, cancel, and retry
 

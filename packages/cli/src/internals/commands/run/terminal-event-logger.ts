@@ -14,6 +14,11 @@ export function createTerminalEventLogger(io: TrailStepCliIo): (event: Event) =>
 }
 
 function formatEvent(event: Event): readonly string[] | undefined {
+  if (readEventType(event) === "workflow.cancelled") {
+    const reason = typeof event.payload.reason === "string" ? `: ${event.payload.reason}` : "";
+    return [`⊘ Workflow cancelled${reason}`];
+  }
+
   switch (event.type) {
     case "step.started": {
       const stepName =
@@ -68,7 +73,34 @@ function formatEvent(event: Event): readonly string[] | undefined {
 
       return [`↳ Artifact: ${name} — ${path}`];
     }
+    case "wait.started": {
+      const message = typeof event.payload.message === "string" ? event.payload.message : undefined;
+      const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
+      const label = waitId ? `Waiting for ${waitId}` : "Waiting";
+      return message === undefined ? [`? ${label}`] : [`? ${label}: ${message}`];
+    }
+    case "wait.satisfied": {
+      const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
+      return [waitId ? `✓ Wait satisfied: ${waitId}` : "✓ Wait satisfied"];
+    }
+    case "workflow.completed":
+      return ["✓ Workflow completed"];
+    case "workflow.failed": {
+      const failure = event.payload.failure;
+      const message =
+        typeof failure === "object" &&
+        failure !== null &&
+        "message" in failure &&
+        typeof failure.message === "string"
+          ? `: ${failure.message}`
+          : "";
+      return [`✗ Workflow failed${message}`];
+    }
     default:
       return undefined;
   }
+}
+
+function readEventType(event: Event): string {
+  return event.type;
 }

@@ -18,7 +18,8 @@
   "trailstep": {
     "workflows": {
       "takeItAway": "./dist/index.js#takeItAway",
-      "grillItAway": "./dist/index.js#grillItAway"
+      "grillItAway": "./dist/index.js#grillItAway",
+      "delegate": "./dist/index.js#delegate"
     }
   },
   "main": "./dist/index.js",

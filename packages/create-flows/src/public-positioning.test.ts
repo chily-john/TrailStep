@@ -38,6 +38,7 @@ describe("public package positioning", () => {
     expect(packageJson.trailstep?.workflows).toEqual({
       takeItAway: "./dist/index.js#takeItAway",
       grillItAway: "./dist/index.js#grillItAway",
+      delegate: "./dist/index.js#delegate",
     });
 
     expect(readme).toMatch(/public/i);
@@ -45,6 +46,7 @@ describe("public package positioning", () => {
     expect(readme).toMatch(/general-purpose/i);
     expect(readme).toContain("@trailstep/create-flows#takeItAway");
     expect(readme).toContain("@trailstep/create-flows#grillItAway");
+    expect(readme).toContain("@trailstep/create-flows#delegate");
 
     const forbiddenPublicPhraseSources = [
       ["Per", "sonal collection"],

@@ -34,11 +34,11 @@ export function selectLatestUnresolvedFailure(
       continue;
     }
 
-    if (event.type === "workflow.completed") {
+    if (event.type === "workflow.completed" || event.type === "workflow.cancelled") {
       return undefined;
     }
 
-    if (event.type === "step.completed") {
+    if (event.type === "step.completed" || event.type === "step.cancelled") {
       rememberTerminalStep(event, laterTerminalStepIds);
       continue;
     }

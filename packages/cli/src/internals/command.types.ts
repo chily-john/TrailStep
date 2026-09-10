@@ -33,6 +33,7 @@ export const usageText = [
   "  trailstep continue --json-file <path>",
   "  trailstep continue --json '<json>'",
   "  trailstep answer <runNameOrRunDir> <waitId> [--json '<json>' | --json-file <path>] [--continue]",
+  "  trailstep cancel <runNameOrRunDir> [--reason '<text>']",
   "  trailstep cancel [--reason '<text>']",
   "  trailstep doctor",
   "  trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",

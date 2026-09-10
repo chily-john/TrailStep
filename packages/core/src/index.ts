@@ -167,6 +167,13 @@ export {
   readRunState,
   writeRunState,
 } from "./runtime/artifacts/run-storage.js";
+export type { CancellationMarker } from "./runtime/cancellation/cancellation.js";
+export {
+  CANCELLATION_MARKER_FILE,
+  cancellationMarkerPath,
+  readCancellationMarker,
+  writeCancellationMarker,
+} from "./runtime/cancellation/cancellation.js";
 export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export type {

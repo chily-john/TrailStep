@@ -3,6 +3,7 @@ import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import type { CancellationMarker } from "../cancellation/cancellation.js";
 
 export type TrailStepConfigInput = TrailStepConfig | Readonly<Record<string, unknown>>;
 
@@ -54,11 +55,13 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "workflow.started"
     | "workflow.resumed"
     | "workflow.retryStarted"
+    | "workflow.cancelRequested"
     | "workflow.failed"
     | "workflow.cancelled"
     | "step.started"
     | "step.completed"
     | "step.failed"
+    | "step.cancelled"
     | "step.display"
     | "step.progress"
     | "step.warning"
@@ -113,6 +116,16 @@ export type Result<TOutput extends PlainObject = PlainObject> =
       readonly events: readonly Event[];
     } & {
       /** Type-only compatibility for existing non-success branches; waiting results do not carry a runtime failure. */
+      readonly failure: never;
+    })
+  | ({
+      readonly status: "cancelled";
+      readonly runId: string;
+      readonly runDir: string;
+      readonly cancellation: CancellationMarker;
+      readonly events: readonly Event[];
+    } & {
+      /** Type-only compatibility for existing non-success branches; cancelled results do not carry a runtime failure. */
       readonly failure: never;
     });
 

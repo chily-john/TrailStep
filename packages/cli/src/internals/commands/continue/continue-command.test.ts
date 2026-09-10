@@ -273,6 +273,44 @@ describe("continue command", () => {
     expect(lines.join("\n")).toMatch(/still waiting|missing answer/i);
   });
 
+  it("reports a cancelled waiting workflow without resuming", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-cancelled");
+    await writeWaitingWorkflowFile(cwd, { dynamicWait: true });
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    await expect(readFile(join(cwd, "wait-count.txt"), "utf8")).resolves.toBe("1");
+    await main({
+      argv: ["cancel", "wait-run"],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["continue", "wait-run"],
+        cwd,
+        env: {},
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    expect(lines.join("\n")).toContain("Workflow cancelled: wait-run");
+    await expect(readFile(join(cwd, "wait-count.txt"), "utf8")).resolves.toBe("1");
+    const events = await readFile(
+      join(cwd, ".trailstep", "runs", "wait-run", "events.jsonl"),
+      "utf8",
+    );
+    expect(events).toContain("workflow.cancelRequested");
+    expect(events).toContain("workflow.cancelled");
+    expect(events).not.toContain("workflow.completed");
+  });
+
   it("reruns a check wait without requiring an answer file", async ({ task }) => {
     const cwd = join(nodeTmpContinueTestsDir(task.id), "check-wait");
     await writeCheckWaitingWorkflowFile(cwd);

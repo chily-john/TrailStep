@@ -35,6 +35,14 @@ import {
   resolveWaitArtifactPaths,
   type WaitArtifactPaths,
 } from "../../artifacts/step-artifacts.js";
+import {
+  type CancellationMarker,
+  cancellationPayload,
+  isWorkflowCancellationError,
+  readCancellationMarker,
+  throwIfCancellationRequested,
+  WorkflowCancellationError,
+} from "../../cancellation/cancellation.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
 import { runContextStorage } from "../../run-context/run-context-storage.js";
@@ -96,7 +104,8 @@ export interface WaitingWait {
 export type RunContinuationResult =
   | { readonly status: "success"; readonly output: PlainObject }
   | { readonly status: "failure"; readonly failure: Failure }
-  | { readonly status: "waiting"; readonly wait: WaitingWait };
+  | { readonly status: "waiting"; readonly wait: WaitingWait }
+  | { readonly status: "cancelled"; readonly cancellation: CancellationMarker };
 
 export async function runContinuation(
   options: RunContinuationOptions,
@@ -112,6 +121,11 @@ export async function runContinuation(
   const trailstepConfig = options.trailstepConfig;
 
   while (true) {
+    const pendingCancellation = await readCancellationMarker(options.runDir);
+    if (pendingCancellation !== undefined) {
+      return { status: "cancelled", cancellation: pendingCancellation };
+    }
+
     if (isDoneNode(node)) {
       return { status: "success", output: node.output };
     }
@@ -198,9 +212,10 @@ export async function runContinuation(
         stepIndex,
       });
 
-      const stepResult = await runWithStepTimeout({
+      const stepResult = await runWithStepControl({
         stepId: config.id,
         timeoutMs: timeoutPolicy.timeoutMs,
+        readCancellation: async () => await readCancellationMarker(options.runDir),
         run: async (signal) =>
           await withStepContext(
             config.id,
@@ -210,6 +225,7 @@ export async function runContinuation(
                 stepNode,
                 timeoutMs: timeoutPolicy.timeoutMs,
                 signal,
+                readCancellation: async () => await readCancellationMarker(options.runDir),
                 ...(resumeWait === undefined
                   ? {}
                   : {
@@ -375,6 +391,19 @@ export async function runContinuation(
       node = nextNode;
       source = `step ${config.id}`;
     } catch (error) {
+      if (isWorkflowCancellationError(error)) {
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: options.workflowId,
+            stepId: config.id,
+            type: "step.cancelled",
+            payload: cancellationPayload(error.cancellation),
+          }),
+        );
+        return { status: "cancelled", cancellation: error.cancellation };
+      }
+
       const failure = stepExecutionFailure(error);
 
       await options.emit(
@@ -472,6 +501,7 @@ async function runStepPhases(options: {
   readonly stepNode: StepNode;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  readonly readCancellation: () => Promise<CancellationMarker | undefined>;
   readonly emitDisplay: (
     phase: DisplayPhase,
     output: PlainObject,
@@ -506,8 +536,11 @@ async function runStepPhases(options: {
     if (phaseIndex < (options.resume?.startPhaseIndex ?? 0)) {
       continue;
     }
+    throwIfCancellationRequested(await options.readCancellation());
+
     if (phase.kind === "display") {
       await options.emitDisplay(phase, phaseValue, phaseIndex);
+      throwIfCancellationRequested(await options.readCancellation());
       throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
       continue;
     }
@@ -532,10 +565,12 @@ async function runStepPhases(options: {
       seenWaitIds.add(waitId);
 
       if (waitResult.status === "waiting") {
+        throwIfCancellationRequested(await options.readCancellation());
         return waitResult;
       }
 
       waitOutputs[waitResult.waitId] = waitResult.output;
+      throwIfCancellationRequested(await options.readCancellation());
       throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
       continue;
     }
@@ -546,6 +581,7 @@ async function runStepPhases(options: {
 
     if (phase.kind === "prompt") {
       phaseValue = await options.dispatchPrompt(phase);
+      throwIfCancellationRequested(await options.readCancellation());
       throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
       continue;
     }
@@ -554,6 +590,7 @@ async function runStepPhases(options: {
       withWaitsDoContext(phaseValue, waitOutputs),
       stepNode.config.input,
     );
+    throwIfCancellationRequested(await options.readCancellation());
     throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
   }
 
@@ -1159,32 +1196,97 @@ function isPlainObject(value: unknown): value is PlainObject {
   );
 }
 
-async function runWithStepTimeout<T>(options: {
+async function runWithStepControl<T>(options: {
   readonly stepId: string;
   readonly timeoutMs?: number;
-  readonly run: (signal?: AbortSignal) => Promise<T>;
+  readonly readCancellation: () => Promise<CancellationMarker | undefined>;
+  readonly run: (signal: AbortSignal) => Promise<T>;
 }): Promise<T> {
-  if (options.timeoutMs === undefined) {
-    return await options.run();
+  const initialCancellation = await options.readCancellation();
+  if (initialCancellation !== undefined) {
+    throw new WorkflowCancellationError(initialCancellation);
   }
 
-  const timeoutMs = options.timeoutMs;
   const abortController = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => {
+  let stopCancellationWatch: (() => void) | undefined;
+
+  const runPromise = options.run(abortController.signal);
+  void runPromise.catch(() => undefined);
+
+  const cancellationPromise = new Promise<never>((_, reject) => {
+    stopCancellationWatch = watchCancellation(options.readCancellation, (result) => {
       abortController.abort();
-      reject(stepTimeoutFailure(options.stepId, timeoutMs));
-    }, timeoutMs);
+      if ("error" in result) {
+        reject(result.error);
+        return;
+      }
+      reject(new WorkflowCancellationError(result.cancellation));
+    });
   });
 
+  const raced: Array<Promise<T> | Promise<never>> = [runPromise, cancellationPromise];
+
+  if (options.timeoutMs !== undefined) {
+    const timeoutMs = options.timeoutMs;
+    raced.push(
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          abortController.abort();
+          reject(stepTimeoutFailure(options.stepId, timeoutMs));
+        }, timeoutMs);
+      }),
+    );
+  }
+
   try {
-    return await Promise.race([options.run(abortController.signal), timeoutPromise]);
+    return await Promise.race(raced);
   } finally {
+    stopCancellationWatch?.();
     if (timeout !== undefined) {
       clearTimeout(timeout);
     }
   }
+}
+
+function watchCancellation(
+  readCancellation: () => Promise<CancellationMarker | undefined>,
+  onCancel: (
+    result: { readonly cancellation: CancellationMarker } | { readonly error: unknown },
+  ) => void,
+): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const poll = async (): Promise<void> => {
+    if (stopped) {
+      return;
+    }
+
+    try {
+      const cancellation = await readCancellation();
+      if (cancellation !== undefined) {
+        stopped = true;
+        onCancel({ cancellation });
+        return;
+      }
+    } catch (error) {
+      stopped = true;
+      onCancel({ error });
+      return;
+    }
+
+    timer = setTimeout(() => void poll(), 100);
+  };
+
+  timer = setTimeout(() => void poll(), 0);
+
+  return () => {
+    stopped = true;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  };
 }
 
 function throwIfStepTimedOut(

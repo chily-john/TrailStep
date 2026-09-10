@@ -11,6 +11,7 @@ export interface RunContextWorkingAgentProcessRequest {
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface RunContextWorkingAgentProcessResult {
@@ -26,6 +27,7 @@ export interface RunContextProviderWorkingProcessRequest {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface RunContextProviderWorkingProcessResult {
@@ -51,11 +53,13 @@ export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
     | "workflow.started"
     | "workflow.resumed"
     | "workflow.retryStarted"
+    | "workflow.cancelRequested"
     | "workflow.failed"
     | "workflow.cancelled"
     | "step.started"
     | "step.completed"
     | "step.failed"
+    | "step.cancelled"
     | "step.display"
     | "step.progress"
     | "step.warning"

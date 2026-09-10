@@ -7,14 +7,37 @@ export function parseCancelInvocation(argv: readonly string[]): CancelCommandArg
   }
 
   const [, ...args] = argv;
-  if (args.length === 0) {
-    return {};
+  let runNameOrRunDir: string | undefined;
+  let reason: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--reason") {
+      const value = args[index + 1];
+      if (!value) {
+        throw new CliUsageError("Expected a value after --reason.");
+      }
+      reason = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg?.startsWith("--")) {
+      throw new CliUsageError(
+        "Expected: cancel <runNameOrRunDir> [--reason '<text>'] or cancel [--reason '<text>'].",
+      );
+    }
+
+    if (runNameOrRunDir !== undefined) {
+      throw new CliUsageError(
+        "Expected: cancel <runNameOrRunDir> [--reason '<text>'] or cancel [--reason '<text>'].",
+      );
+    }
+    runNameOrRunDir = arg;
   }
 
-  const [flag, value] = args;
-  if (args.length === 2 && flag === "--reason" && value) {
-    return { reason: value };
-  }
-
-  throw new CliUsageError("Expected: cancel [--reason '<text>'].");
+  return {
+    ...(runNameOrRunDir === undefined ? {} : { runNameOrRunDir }),
+    ...(reason === undefined ? {} : { reason }),
+  };
 }

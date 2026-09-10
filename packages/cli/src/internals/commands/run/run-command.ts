@@ -96,6 +96,11 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       return 0;
     }
 
+    if (result.status === "cancelled") {
+      io.writeLine(`Workflow cancelled: ${result.runId}`);
+      return 0;
+    }
+
     io.writeError(
       `Workflow failed: ${resolvedWorkflow.id} at ${result.runDir}: ${result.failure.message}`,
     );

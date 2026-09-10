@@ -7,7 +7,7 @@ import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 
-type RunSummaryStatus = "active" | "completed" | "failed" | "unknown";
+type RunSummaryStatus = "active" | "completed" | "failed" | "cancelled" | "unknown";
 
 interface RunSummary {
   readonly runId: string;
@@ -115,11 +115,11 @@ function summarizeReadableRun(options: {
   const workflowId =
     lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
 
-  if (terminalStatus === "completed") {
+  if (terminalStatus === "completed" || terminalStatus === "cancelled") {
     return {
       runId: options.runId,
       runDir: options.runDir,
-      status: "completed",
+      status: terminalStatus,
       workflowId,
       lastTimestamp: lastEvent?.timestamp,
     };
@@ -145,7 +145,9 @@ function summarizeReadableRun(options: {
   };
 }
 
-function selectTerminalStatus(events: readonly Event[]): "completed" | "failed" | undefined {
+function selectTerminalStatus(
+  events: readonly Event[],
+): "completed" | "failed" | "cancelled" | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type === "workflow.completed") {
@@ -154,6 +156,10 @@ function selectTerminalStatus(events: readonly Event[]): "completed" | "failed" 
 
     if (event?.type === "workflow.failed") {
       return "failed";
+    }
+
+    if (event?.type === "workflow.cancelled") {
+      return "cancelled";
     }
   }
 

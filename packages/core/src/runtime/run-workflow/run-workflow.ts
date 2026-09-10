@@ -9,6 +9,12 @@ import type {
   RunWorkflowOptions,
 } from "../../runtime/run-workflow/run-workflow.types.js";
 import { appendEvent } from "../artifacts/run-storage.js";
+import {
+  type CancellationMarker,
+  cancellationPayload,
+  isWorkflowCancellationError,
+  readCancellationMarker,
+} from "../cancellation/cancellation.js";
 import { runContinuation } from "../continuation/run-continuation/run-continuation.js";
 import { createEvent } from "../events/create-run-event.js";
 import { isFailureLikeError } from "../failures/failure-like.js";
@@ -93,6 +99,38 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     events: () => events,
   });
 
+  const cancelWorkflow = async (cancellation: CancellationMarker): Promise<Result<TOutput>> => {
+    if (!events.some((event) => event.type === "workflow.cancelRequested")) {
+      await emit(
+        createEvent({
+          runId,
+          workflowId: options.workflow.id,
+          type: "workflow.cancelRequested",
+          payload: cancellationPayload(cancellation),
+        }),
+      );
+    }
+
+    if (!events.some((event) => event.type === "workflow.cancelled")) {
+      await emit(
+        createEvent({
+          runId,
+          workflowId: options.workflow.id,
+          type: "workflow.cancelled",
+          payload: cancellationPayload(cancellation),
+        }),
+      );
+    }
+
+    return {
+      status: "cancelled",
+      runId,
+      runDir,
+      cancellation,
+      events,
+    } as unknown as Result<TOutput>;
+  };
+
   const failWorkflow = async (failure: Failure): Promise<Result<TOutput>> => {
     await emit(
       createEvent({
@@ -122,6 +160,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   try {
     return await runContextStorage.run(runContext, () => runWorkflowBody());
   } catch (error) {
+    if (isWorkflowCancellationError(error)) {
+      return await cancelWorkflow(error.cancellation);
+    }
+
     return await failWorkflow(workflowFailure(error));
   }
 
@@ -129,6 +171,16 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     const inputSchema = options.workflow.inputShape
       ? normalizeShape(options.workflow.inputShape)
       : options.workflow.input;
+
+    const previousTerminalStatus = readPreviousTerminalWorkflowStatus(previousEvents);
+    const existingCancellation = readExistingCancellationEvent(previousEvents);
+    const cancellation =
+      previousTerminalStatus === undefined || previousTerminalStatus === "cancelled"
+        ? (existingCancellation ?? (await readCancellationMarker(runDir)))
+        : undefined;
+    if (cancellation !== undefined) {
+      return await cancelWorkflow(cancellation);
+    }
 
     let workflowInput: TInput;
     let startNode: ContinuationResult | undefined;
@@ -284,6 +336,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       return await failWorkflow(continuationResult.failure);
     }
 
+    if (continuationResult.status === "cancelled") {
+      return await cancelWorkflow(continuationResult.cancellation);
+    }
+
     if (continuationResult.status === "waiting") {
       return {
         status: "waiting",
@@ -320,4 +376,44 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       events,
     };
   }
+}
+
+function readPreviousTerminalWorkflowStatus(
+  events: readonly Event[],
+): "completed" | "failed" | "cancelled" | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "workflow.completed") {
+      return "completed";
+    }
+    if (event?.type === "workflow.failed") {
+      return "failed";
+    }
+    if (event?.type === "workflow.cancelled") {
+      return "cancelled";
+    }
+  }
+
+  return undefined;
+}
+
+function readExistingCancellationEvent(events: readonly Event[]): CancellationMarker | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== "workflow.cancelled") {
+      continue;
+    }
+
+    return cancellationFromPayload(event.payload);
+  }
+
+  return undefined;
+}
+
+function cancellationFromPayload(payload: Record<string, unknown>): CancellationMarker {
+  return {
+    ...(typeof payload.requestedAt === "string" ? { requestedAt: payload.requestedAt } : {}),
+    ...(typeof payload.reason === "string" ? { reason: payload.reason } : {}),
+    ...(typeof payload.source === "string" ? { source: payload.source } : {}),
+  };
 }

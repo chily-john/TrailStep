@@ -20,6 +20,8 @@ function formatEvent(event: Event): readonly string[] | undefined {
   }
 
   switch (event.type) {
+    case "workflow.cancelRequested":
+      return ["⊘ Workflow cancellation requested"];
     case "step.started": {
       const stepName =
         typeof event.payload.title === "string"
@@ -46,6 +48,8 @@ function formatEvent(event: Event): readonly string[] | undefined {
           : "";
       return [`✗ ${event.stepId}${message}`];
     }
+    case "step.cancelled":
+      return [`⊘ ${event.stepId}`];
     case "step.display": {
       const message = typeof event.payload.message === "string" ? event.payload.message : undefined;
       if (message === undefined) {

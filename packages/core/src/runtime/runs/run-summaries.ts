@@ -6,7 +6,7 @@ import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
 
-export type RunSummaryStatus = "active" | "completed" | "failed" | "unknown";
+export type RunSummaryStatus = "active" | "completed" | "failed" | "cancelled" | "unknown";
 
 export interface RunSummary {
   readonly runId: string;
@@ -97,10 +97,10 @@ function summarizeReadableRun(options: {
   const workflowId =
     lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
 
-  if (terminalStatus === "completed") {
+  if (terminalStatus === "completed" || terminalStatus === "cancelled") {
     return {
       ...options,
-      status: "completed",
+      status: terminalStatus,
       workflowId,
       lastTimestamp: lastEvent?.timestamp,
     };
@@ -124,7 +124,9 @@ function summarizeReadableRun(options: {
   };
 }
 
-function selectTerminalStatus(events: readonly Event[]): "completed" | "failed" | undefined {
+function selectTerminalStatus(
+  events: readonly Event[],
+): "completed" | "failed" | "cancelled" | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type === "workflow.completed") {
@@ -133,6 +135,10 @@ function selectTerminalStatus(events: readonly Event[]): "completed" | "failed" 
 
     if (event?.type === "workflow.failed") {
       return "failed";
+    }
+
+    if (event?.type === "workflow.cancelled") {
+      return "cancelled";
     }
   }
 

@@ -1,7 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 
-import { type Event, jsonSchema, type PlainObject, runWorkflow } from "@trailstep/core";
+import {
+  type Event,
+  jsonSchema,
+  type PlainObject,
+  readCancellationMarker,
+  runWorkflow,
+} from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
@@ -73,6 +79,15 @@ async function continueWaitingRun(
 ): Promise<number> {
   const resolvedRun = await resolveRunDirectory(runNameOrRunDir, context);
   const events = await readEventsForRun(resolvedRun.runDir);
+  const terminalStatus = readTerminalWorkflowStatus(events);
+  if (
+    terminalStatus === "cancelled" ||
+    (terminalStatus === undefined && (await readCancellationMarker(resolvedRun.runDir)))
+  ) {
+    context.io.writeLine(`Workflow cancelled: ${basename(resolvedRun.runDir)}`);
+    return 0;
+  }
+
   const startedEvent = events.find((event) => event.type === "workflow.started");
   if (!startedEvent) {
     context.io.writeError(`Run has no workflow.started event: ${resolvedRun.runDir}`);
@@ -164,6 +179,11 @@ async function continueWaitingRun(
     return 0;
   }
 
+  if (result.status === "cancelled") {
+    context.io.writeLine(`Workflow cancelled: ${result.runId}`);
+    return 0;
+  }
+
   context.io.writeError(
     `Workflow failed: ${resolvedWorkflow.id} at ${result.runDir}: ${result.failure.message}`,
   );
@@ -172,6 +192,25 @@ async function continueWaitingRun(
 
 function isCheckWait(event: Event): boolean {
   return event.payload.kind === "check";
+}
+
+function readTerminalWorkflowStatus(
+  events: readonly Event[],
+): "completed" | "failed" | "cancelled" | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "workflow.completed") {
+      return "completed";
+    }
+    if (event?.type === "workflow.failed") {
+      return "failed";
+    }
+    if (event?.type === "workflow.cancelled") {
+      return "cancelled";
+    }
+  }
+
+  return undefined;
 }
 
 function readWorkflowRef(startedEvent: Event): string | undefined {

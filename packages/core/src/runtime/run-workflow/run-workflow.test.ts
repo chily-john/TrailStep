@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { done, notify, step, workflow as workflowInput } from "../../authoring/authoring.js";
+import { done, fail, notify, step, workflow as workflowInput } from "../../authoring/authoring.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 import { runWorkflow } from "./run-workflow.js";
@@ -142,6 +142,54 @@ describe("runWorkflow runtime front-door", () => {
         level: "info",
         data: { task: "worktree" },
         phaseIndex: 0,
+      },
+    });
+  });
+
+  it("persists terminal messages on workflow completed and failed events", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-terminal-message-"));
+    const completeWorkflow: Workflow<{ task: string }, { ok: boolean }> = {
+      id: "complete-message-events",
+      inputShape: { task: "string" },
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return done({ ok: true }, { message: `Completed ${input.task}` });
+      },
+    };
+    const failWorkflow: Workflow<{ task: string }, { ok: boolean }> = {
+      id: "fail-message-events",
+      inputShape: { task: "string" },
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return fail(
+          { code: "task_failed", message: `Failed ${input.task}` },
+          { message: `Cannot complete ${input.task}` },
+        );
+      },
+    };
+
+    const completed = await runWorkflow({
+      workflow: completeWorkflow,
+      input: { task: "handoff" },
+      runName: "complete-message-run",
+      cwd,
+    });
+    const failed = await runWorkflow({
+      workflow: failWorkflow,
+      input: { task: "handoff" },
+      runName: "fail-message-run",
+      cwd,
+    });
+
+    expect(completed.events.at(-1)).toMatchObject({
+      type: "workflow.completed",
+      payload: { output: { ok: true }, message: "Completed handoff" },
+    });
+    expect(failed.events.at(-1)).toMatchObject({
+      type: "workflow.failed",
+      payload: {
+        failure: { code: "task_failed", message: "Failed handoff" },
+        message: "Cannot complete handoff",
       },
     });
   });

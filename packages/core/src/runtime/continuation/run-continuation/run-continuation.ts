@@ -102,8 +102,8 @@ export interface WaitingWait {
 }
 
 export type RunContinuationResult =
-  | { readonly status: "success"; readonly output: PlainObject }
-  | { readonly status: "failure"; readonly failure: Failure }
+  | { readonly status: "success"; readonly output: PlainObject; readonly message?: string }
+  | { readonly status: "failure"; readonly failure: Failure; readonly message?: string }
   | { readonly status: "waiting"; readonly wait: WaitingWait }
   | { readonly status: "cancelled"; readonly cancellation: CancellationMarker };
 
@@ -127,11 +127,19 @@ export async function runContinuation(
     }
 
     if (isDoneNode(node)) {
-      return { status: "success", output: node.output };
+      return {
+        status: "success",
+        output: node.output,
+        ...(node.message === undefined ? {} : { message: node.message }),
+      };
     }
 
     if (isFailNode(node)) {
-      return { status: "failure", failure: node.failure };
+      return {
+        status: "failure",
+        failure: node.failure,
+        ...(node.message === undefined ? {} : { message: node.message }),
+      };
     }
 
     if (!isStepNode(node)) {
@@ -385,7 +393,11 @@ export async function runContinuation(
       }
 
       if (isFailNode(nextNode)) {
-        return { status: "failure", failure: nextNode.failure };
+        return {
+          status: "failure",
+          failure: nextNode.failure,
+          ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+        };
       }
 
       node = nextNode;

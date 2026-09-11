@@ -131,13 +131,16 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     } as unknown as Result<TOutput>;
   };
 
-  const failWorkflow = async (failure: Failure): Promise<Result<TOutput>> => {
+  const failWorkflow = async (failure: Failure, message?: string): Promise<Result<TOutput>> => {
     await emit(
       createEvent({
         runId,
         workflowId: options.workflow.id,
         type: "workflow.failed",
-        payload: { failure },
+        payload: {
+          failure,
+          ...(message === undefined ? {} : { message }),
+        },
       }),
     );
     return {
@@ -333,7 +336,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     });
 
     if (continuationResult.status === "failure") {
-      return await failWorkflow(continuationResult.failure);
+      return await failWorkflow(continuationResult.failure, continuationResult.message);
     }
 
     if (continuationResult.status === "cancelled") {
@@ -364,7 +367,12 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         runId,
         workflowId: options.workflow.id,
         type: "workflow.completed",
-        payload: { output },
+        payload: {
+          output,
+          ...(continuationResult.message === undefined
+            ? {}
+            : { message: continuationResult.message }),
+        },
       }),
     );
 

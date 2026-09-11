@@ -69,26 +69,12 @@ function formatQuestionsAndAnswers(input: DelegateTurnInput): string {
     .join("\n");
 }
 
-const outputContract = `Return only JSON matching this TypeScript shape:
+const outputContract = `Return the structured JSON object requested by the wrapper.
 
-{
-  "status": "completed" | "continue" | "question" | "blocked",
-  "summary": "concise turn summary",
-  "memoryPatch": "optional compact facts to preserve within this run",
-  "question": "required only when status is question",
-  "result": "optional final or partial result details",
-  "changedFiles": ["optional relative/path.ts"],
-  "artifacts": [
-    {
-      "name": "optional artifact name",
-      "path": "relative/or/absolute/path",
-      "mediaType": "optional/media-type"
-    }
-  ]
-}
+Status meanings:
+- completed: the delegated task is finished; include result when useful.
+- continue: more bounded work is needed in another turn; include memoryPatch for durable continuity.
+- question: parent/human input is required; include exactly one clear question.
+- blocked: the task cannot proceed safely; summarize why and include result details when useful.
 
-Rules:
-- status \`question\` must include \`question\`.
-- status \`completed\` should include \`result\` when a separate final result is useful.
-- Arrays must be arrays of strings/objects, not comma-delimited text.
-- Do not include extra top-level properties.`;
+Only report changedFiles/artifacts that you actually changed or produced.`;

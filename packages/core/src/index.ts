@@ -73,6 +73,7 @@ export type {
   StepWaitContext,
   SubPromptFactory,
   SubPromptOptions,
+  TerminalMessageOptions,
   WaitCallback,
   WaitCheckResult,
   WaitDefinition,
@@ -84,7 +85,7 @@ export type {
   WaitPhase,
 } from "./authoring/step/continuation.types.js";
 export type { DeepReadonly, WorkflowInputApi } from "./authoring/workflow/workflow.js";
-export type { Workflow } from "./authoring/workflow/workflow.types.js";
+export type { Workflow, WorkflowSkillOptions } from "./authoring/workflow/workflow.types.js";
 export type {
   ManagedSessionPromptInjectionMode,
   ProviderAdapter,

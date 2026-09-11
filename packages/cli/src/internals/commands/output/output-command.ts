@@ -10,6 +10,7 @@ import {
 interface OutputCommandArgs {
   readonly runNameOrRunDir: string;
   readonly json: boolean;
+  readonly message: boolean;
   readonly field?: string;
 }
 
@@ -18,12 +19,13 @@ export const outputCommand: CliCommand<OutputCommandArgs> = {
   parseArgs(argv) {
     if (argv.length < 2 || argv[0] !== "output") {
       throw new CliUsageError(
-        "Usage: trailstep output <runNameOrRunDir> [--json] [--field <path>]",
+        "Usage: trailstep output <runNameOrRunDir> [--json] [--field <path>] [--message]",
       );
     }
 
     const runNameOrRunDir = argv[1];
     let json = false;
+    let message = false;
     let field: string | undefined;
 
     for (let index = 2; index < argv.length; index += 1) {
@@ -43,14 +45,35 @@ export const outputCommand: CliCommand<OutputCommandArgs> = {
         continue;
       }
 
+      if (option === "--message") {
+        message = true;
+        continue;
+      }
+
       throw new CliUsageError(`Unknown option: ${option ?? ""}`);
     }
 
-    return { runNameOrRunDir: runNameOrRunDir as string, json, ...(field ? { field } : {}) };
+    return {
+      runNameOrRunDir: runNameOrRunDir as string,
+      json,
+      message,
+      ...(field ? { field } : {}),
+    };
   },
   async run(args: OutputCommandArgs, context: CliCommandContext): Promise<number> {
     const resolved = await resolveRunDirectory(args.runNameOrRunDir, context);
     const events = await readEventsForRun(resolved.runDir);
+    if (args.message) {
+      const terminal = findLatestTerminalEvent(events);
+      const message = terminal?.payload.message;
+      if (typeof message !== "string") {
+        context.io.writeError(`No final workflow message found for ${resolved.displayName}.`);
+        return 1;
+      }
+      context.io.writeLine(formatOutputValue(message, args.json));
+      return 0;
+    }
+
     const completed = findFinalOutputEvent(events);
 
     if (!completed) {
@@ -85,10 +108,14 @@ function findFinalOutputEvent(events: readonly Event[]): Event | undefined {
   return undefined;
 }
 
-function describeRunStatus(events: readonly Event[]): string {
-  const latestTerminal = [...events]
+function findLatestTerminalEvent(events: readonly Event[]): Event | undefined {
+  return [...events]
     .reverse()
     .find((event) => event.type === "workflow.failed" || event.type === "workflow.completed");
+}
+
+function describeRunStatus(events: readonly Event[]): string {
+  const latestTerminal = findLatestTerminalEvent(events);
   if (latestTerminal?.type === "workflow.failed") {
     return "failed";
   }

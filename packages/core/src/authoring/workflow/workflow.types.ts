@@ -4,11 +4,19 @@ import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
 import type { ContinuationResult } from "../step/continuation.types.js";
 
+export interface WorkflowSkillOptions {
+  readonly description?: string;
+  readonly instructions?: string;
+  readonly markdown?: string;
+}
+
 export interface Workflow<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > {
   readonly id: string;
+  readonly description?: string;
+  readonly skill?: string | WorkflowSkillOptions;
   readonly input?: Schema<TInput>;
   readonly output?: Schema<TOutput>;
   readonly inputShape?: ShapeInput<TInput>;

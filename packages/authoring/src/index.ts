@@ -32,6 +32,7 @@ export type {
   StepFactory,
   StepPhase,
   StepWaitContext,
+  TerminalMessageOptions,
   TimeoutPolicy,
   TimeoutPolicyInput,
   WaitCallback,
@@ -45,6 +46,7 @@ export type {
   WaitPhase,
   Workflow,
   WorkflowInputApi,
+  WorkflowSkillOptions,
 } from "@trailstep/core";
 export {
   Document,

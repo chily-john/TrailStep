@@ -165,13 +165,12 @@ TrailStep's step model is the core idea:
 
 ## From tiny workflows to workflow systems
 
-The same primitives power larger reusable workflow packages. `@trailstep/create-flows` currently publishes:
+The same primitives power larger reusable workflow packages. `@trailstep/sub-agents` currently publishes delegate workflows for focused sub-agent work, and `@trailstep/create-flows` currently publishes:
 
-- **`delegate`**: runs delegated focused work with run-local continuity, parent/human questions, and typed results.
 - **`grill-it-away`**: starts interactively, asks clarifying questions, then turns the result into an implementation workflow.
 - **`take-it-away`**: starts from an existing conversation or feature request and runs the implementation workflow directly.
 
-These create-flows are durable and retry-aware: delegate memory and story routing are recorded in `.trailstep/runs/<runName>/` so interrupted work can resume with `trailstep retry` or `trailstep continue` instead of restarting planning.
+These workflows are durable and retry-aware: sub-agent memory and story routing are recorded in `.trailstep/runs/<runName>/` so interrupted work can resume with `trailstep retry` or `trailstep continue` instead of restarting planning.
 
 At a high level, the implementation workflows expand the simple step pattern into a multi-stage coding process:
 
@@ -197,7 +196,8 @@ Public packages:
 - [`@trailstep/cli`](packages/cli/README.md) — the `trailstep` command for init, agents, workflow registration, execution, retry, and updates.
 - [`@trailstep/authoring`](packages/authoring/README.md) — TypeScript helpers for authoring workflows with `defineWorkflow`, `step`, and `done`.
 - [`@trailstep/core`](packages/core/README.md) — framework-neutral runtime primitives, validation, events, retry state, providers, and run artifacts.
-- [`@trailstep/create-flows`](packages/create-flows/README.md) — reusable general-purpose workflows, including `delegate`, `grill-it-away`, and `take-it-away`.
+- [`@trailstep/create-flows`](packages/create-flows/README.md) — reusable general-purpose workflows, including `grill-it-away` and `take-it-away`.
+- [`@trailstep/sub-agents`](packages/sub-agents/README.md) — reusable delegate workflows for focused sub-agent research, review, and implementation chunks.
 
 Workspace packages not yet part of the initial public publish set:
 

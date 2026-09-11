@@ -1,4 +1,7 @@
-import { resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import { done, notify, type StepFactory, state, step } from "@trailstep/authoring";
 import { delegateTurnPrompt } from "./prompts.js";
@@ -9,6 +12,8 @@ import {
   type DelegateOutput,
   type DelegateTurnInput,
   type DelegateTurnOutput,
+  type DelegateWorkflowDefaults,
+  type DelegateWorktreeCleanupDetails,
   delegateTurnOutputShape,
   type NormalizedDelegateInput,
   normalizeDelegateInput,
@@ -19,6 +24,7 @@ import {
 } from "./schema.js";
 
 const MEMORY_LIMIT = 12_000;
+const execFileAsync = promisify(execFile);
 
 const DELEGATE_STATE_KEYS = {
   initialized: "delegate.initialized",
@@ -32,22 +38,55 @@ const DELEGATE_STATE_KEYS = {
   changedFiles: "delegate.changedFiles",
   result: "delegate.result",
   worktreePath: "delegate.worktreePath",
+  worktreeBranch: "delegate.worktreeBranch",
+  worktreeCleanup: "delegate.worktreeCleanup",
 } as const;
 
-export const initializeDelegateStep = step({
+interface InitializeDelegateInput extends Record<string, unknown> {
+  readonly input: DelegateInput;
+  readonly defaults: DelegateWorkflowDefaults;
+}
+
+export function initializeDelegateStep(
+  input: DelegateInput,
+  defaults: DelegateWorkflowDefaults = {},
+): ReturnType<typeof initializeDelegateStepFactory> {
+  return initializeDelegateStepFactory({ input, defaults });
+}
+
+const initializeDelegateStepFactory = step({
   id: "initialize-delegate",
   title: "Initialize delegate",
 })
-  .display(({ input }) => `Delegating: ${(input as DelegateInput).task}`)
-  .do(async (input: DelegateInput) => {
+  .display(({ input }) => `Delegating: ${(input as InitializeDelegateInput).input.task}`)
+  .do(async ({ input, defaults }: InitializeDelegateInput) => {
     const initialized = (await state.get<boolean>(DELEGATE_STATE_KEYS.initialized)) ?? false;
     if (initialized) {
       return prepareDelegateTurnStep({ turn: 1 });
     }
 
-    const normalized = normalizeDelegateInput(input);
-    const executionCwd = resolveDelegateCwd(normalized.cwd);
-    const normalizedInput = { ...normalized, ...(normalized.cwd ? { cwd: executionCwd } : {}) };
+    const normalized = normalizeDelegateInput(input, defaults);
+
+    if (normalized.cwd !== undefined && normalized.worktree.enabled) {
+      return await finalDone({
+        status: "blocked",
+        summary:
+          "Delegate input cannot specify both cwd and worktree.enabled. Choose an existing cwd or managed worktree creation, not both.",
+        questionsAsked: 0,
+        turns: 0,
+      });
+    }
+
+    const managedWorktree = normalized.worktree.enabled
+      ? await createManagedWorktree(normalized)
+      : undefined;
+    const executionCwd = managedWorktree?.path ?? resolveDelegateCwd(normalized.cwd);
+    const normalizedInput = {
+      ...normalized,
+      ...(normalized.cwd !== undefined || managedWorktree !== undefined
+        ? { cwd: executionCwd }
+        : {}),
+    };
 
     await state.set(DELEGATE_STATE_KEYS.initialized, true);
     await state.set(DELEGATE_STATE_KEYS.input, normalizedInput);
@@ -59,23 +98,18 @@ export const initializeDelegateStep = step({
     await state.set(DELEGATE_STATE_KEYS.artifacts, []);
     await state.set(DELEGATE_STATE_KEYS.changedFiles, []);
     await state.set(DELEGATE_STATE_KEYS.result, null);
-    await state.set(DELEGATE_STATE_KEYS.worktreePath, null);
+    await state.set(DELEGATE_STATE_KEYS.worktreePath, managedWorktree?.path ?? null);
+    await state.set(DELEGATE_STATE_KEYS.worktreeBranch, managedWorktree?.branch ?? null);
+    await state.set(DELEGATE_STATE_KEYS.worktreeCleanup, null);
 
     await notify.progress("Initialized delegate memory", {
       mode: normalizedInput.mode,
       maxTurns: normalizedInput.maxTurns,
       cwd: executionCwd,
+      ...(managedWorktree === undefined
+        ? {}
+        : { worktreePath: managedWorktree.path, worktreeBranch: managedWorktree.branch }),
     });
-
-    if (normalizedInput.worktree.enabled) {
-      return done<DelegateOutput>({
-        status: "blocked",
-        summary:
-          "Delegate worktree support is not implemented yet. Re-run with worktree.enabled false or provide cwd directly.",
-        questionsAsked: 0,
-        turns: 0,
-      });
-    }
 
     return prepareDelegateTurnStep({ turn: 1 });
   });
@@ -93,7 +127,7 @@ export const prepareDelegateTurnStep: StepFactory<
 
   if (turnRequest.turn > input.maxTurns) {
     await notify.warning("Delegate exceeded maxTurns", { maxTurns: input.maxTurns, turns });
-    return done<DelegateOutput>({
+    return await finalDone({
       status: "blocked",
       summary: "Delegate exceeded maxTurns without completing.",
       ...(await finalOptionalOutputFields()),
@@ -108,7 +142,7 @@ export const prepareDelegateTurnStep: StepFactory<
     ...(input.context === undefined ? {} : { context: input.context }),
     mode: input.mode,
     executionCwd,
-    ...(input.worktree.enabled && input.cwd !== undefined ? { worktreePath: input.cwd } : {}),
+    ...(input.worktree.enabled ? { worktreePath: executionCwd } : {}),
     memory: (await state.get<string>(DELEGATE_STATE_KEYS.memory)) ?? "",
     questionsAndAnswers: (await state.get<QuestionAnswer[]>(DELEGATE_STATE_KEYS.answers)) ?? [],
     latestSummary: (await state.get<string | null>(DELEGATE_STATE_KEYS.latestSummary)) ?? undefined,
@@ -155,7 +189,7 @@ export const delegateTurnStep: StepFactory<DelegateTurnInput, DelegateTurnOutput
 
     if (turnOutput.status === "completed") {
       const questionsAsked = (await state.get<number>(DELEGATE_STATE_KEYS.questions)) ?? 0;
-      return done<DelegateOutput>({
+      return await finalDone({
         status: "completed",
         summary: turnOutput.summary,
         ...(await finalOptionalOutputFields(turnOutput)),
@@ -166,7 +200,7 @@ export const delegateTurnStep: StepFactory<DelegateTurnInput, DelegateTurnOutput
 
     if (turnOutput.status === "blocked") {
       const questionsAsked = (await state.get<number>(DELEGATE_STATE_KEYS.questions)) ?? 0;
-      return done<DelegateOutput>({
+      return await finalDone({
         status: "blocked",
         summary: turnOutput.summary,
         ...(await finalOptionalOutputFields(turnOutput)),
@@ -179,7 +213,7 @@ export const delegateTurnStep: StepFactory<DelegateTurnInput, DelegateTurnOutput
       const question = turnOutput.question?.trim();
       if (!question) {
         const questionsAsked = (await state.get<number>(DELEGATE_STATE_KEYS.questions)) ?? 0;
-        return done<DelegateOutput>({
+        return await finalDone({
           status: "blocked",
           summary: "Delegate requested a parent answer but did not provide a question.",
           ...(await finalOptionalOutputFields(turnOutput)),
@@ -237,9 +271,138 @@ export const askParentStep: StepFactory<AskParentInput, AskParentInput> = step({
     return prepareDelegateTurnStep({ turn: input.nextTurn });
   });
 
+async function createManagedWorktree(
+  input: NormalizedDelegateInput,
+): Promise<{ path: string; branch: string }> {
+  const base = state.projectCwd ?? state.executionCwd ?? state.cwd ?? process.cwd();
+  const safeRunName = sanitizeRefSegment(state.name);
+  const worktreePath = resolve(base, input.worktree.path ?? `.trailstep/worktrees/${safeRunName}`);
+  const branch = input.worktree.branch ?? `trailstep/delegate/${safeRunName}`;
+  const baseRef = input.worktree.baseRef ?? input.worktree.baseBranch ?? "HEAD";
+
+  await mkdir(dirname(worktreePath), { recursive: true });
+  await git(base, ["worktree", "add", "-b", branch, worktreePath, baseRef]);
+  await notify.progress("Created delegate worktree", { path: worktreePath, branch, baseRef });
+  return { path: worktreePath, branch };
+}
+
+async function cleanupManagedWorktree(
+  finalStatus: DelegateOutput["status"],
+): Promise<DelegateWorktreeCleanupDetails | undefined> {
+  const input = await state.get<NormalizedDelegateInput>(DELEGATE_STATE_KEYS.input);
+  const worktreePath = await state.get<string | null>(DELEGATE_STATE_KEYS.worktreePath);
+  const worktreeBranch = await state.get<string | null>(DELEGATE_STATE_KEYS.worktreeBranch);
+  if (input?.worktree.enabled !== true || worktreePath === undefined || worktreePath === null) {
+    return undefined;
+  }
+
+  const requested = input.worktree.cleanup;
+  const keep = async (status: DelegateWorktreeCleanupDetails["status"], reason: string) => {
+    const details = { requested, status, reason } satisfies DelegateWorktreeCleanupDetails;
+    await state.set(DELEGATE_STATE_KEYS.worktreeCleanup, details);
+    await notify.progress("Kept delegate worktree", { path: worktreePath, reason });
+    return details;
+  };
+
+  if (requested === "never") {
+    return keep("kept", "cleanup=never");
+  }
+  if (requested === "auto" && finalStatus !== "completed") {
+    return keep("kept", "auto cleanup keeps worktree because delegate did not complete");
+  }
+
+  let clean = false;
+  try {
+    clean = (await git(worktreePath, ["status", "--porcelain"])).trim().length === 0;
+  } catch (error) {
+    return keep("failed", `could not prove worktree cleanliness: ${errorMessage(error)}`);
+  }
+
+  if (!clean && !input.worktree.forceCleanup) {
+    return keep("kept-dirty", "worktree has changes and forceCleanup is false");
+  }
+
+  const repoCwd = state.projectCwd ?? state.executionCwd ?? state.cwd ?? process.cwd();
+  try {
+    const args = [
+      "worktree",
+      "remove",
+      ...(input.worktree.forceCleanup ? ["--force"] : []),
+      worktreePath,
+    ];
+    await git(repoCwd, args);
+  } catch (error) {
+    return keep("failed", `git worktree remove failed: ${errorMessage(error)}`);
+  }
+
+  const branchCleanupReason = await cleanupManagedWorktreeBranch({
+    repoCwd,
+    branch: worktreeBranch,
+    createdByRun: input.worktree.branch === undefined,
+  });
+  const details = {
+    requested,
+    status: branchCleanupReason?.startsWith("managed branch cleanup failed") ? "failed" : "removed",
+    ...(branchCleanupReason === undefined ? {} : { reason: branchCleanupReason }),
+  } satisfies DelegateWorktreeCleanupDetails;
+  await state.set(DELEGATE_STATE_KEYS.worktreeCleanup, details);
+  await notify.progress("Removed delegate worktree", {
+    path: worktreePath,
+    reason: branchCleanupReason,
+  });
+  return details;
+}
+
+async function cleanupManagedWorktreeBranch({
+  repoCwd,
+  branch,
+  createdByRun,
+}: {
+  readonly repoCwd: string;
+  readonly branch: string | null | undefined;
+  readonly createdByRun: boolean;
+}): Promise<string | undefined> {
+  if (branch === undefined || branch === null) {
+    return undefined;
+  }
+  if (!createdByRun) {
+    return "user-supplied branch retained";
+  }
+
+  let currentBranch: string;
+  try {
+    currentBranch = (await git(repoCwd, ["branch", "--show-current"])).trim();
+  } catch (error) {
+    return `managed branch cleanup failed after worktree removal: could not determine current branch: ${errorMessage(error)}`;
+  }
+  if (currentBranch === branch) {
+    return "managed branch retained because it is currently checked out";
+  }
+
+  try {
+    await git(repoCwd, ["branch", "-d", branch]);
+    return undefined;
+  } catch (error) {
+    return `managed branch cleanup failed after worktree removal: ${errorMessage(error)}`;
+  }
+}
+
+async function git(cwd: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, { cwd });
+  return stdout;
+}
+
 function resolveDelegateCwd(cwd: string | undefined): string {
   const base = state.projectCwd ?? state.executionCwd ?? state.cwd ?? process.cwd();
   return cwd === undefined ? base : resolve(base, cwd);
+}
+
+function sanitizeRefSegment(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "run";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function appendMemory(turn: number, output: DelegateTurnOutput): Promise<void> {
@@ -293,13 +456,52 @@ async function finalOptionalOutputFields(
   const changedFiles = (await state.get<string[]>(DELEGATE_STATE_KEYS.changedFiles)) ?? [];
   const artifacts = (await state.get<DelegateArtifact[]>(DELEGATE_STATE_KEYS.artifacts)) ?? [];
   const worktreePath = await state.get<string | null>(DELEGATE_STATE_KEYS.worktreePath);
+  const worktreeBranch = await state.get<string | null>(DELEGATE_STATE_KEYS.worktreeBranch);
+  const worktreeCleanup = await state.get<DelegateWorktreeCleanupDetails | null>(
+    DELEGATE_STATE_KEYS.worktreeCleanup,
+  );
 
   return {
     ...(result === undefined || result === null ? {} : { result }),
     ...(changedFiles.length === 0 ? {} : { changedFiles }),
     ...(artifacts.length === 0 ? {} : { artifacts }),
     ...(worktreePath === undefined || worktreePath === null ? {} : { worktreePath }),
+    ...(worktreeBranch === undefined || worktreeBranch === null ? {} : { worktreeBranch }),
+    ...(worktreeCleanup === undefined || worktreeCleanup === null ? {} : { worktreeCleanup }),
   };
+}
+
+async function finalDone(output: DelegateOutput) {
+  const cleanup = await cleanupManagedWorktree(output.status);
+  const finalOutput = cleanup === undefined ? output : { ...output, worktreeCleanup: cleanup };
+  return done(finalOutput, { message: delegateTerminalMessage(finalOutput) });
+}
+
+function delegateTerminalMessage(output: DelegateOutput): string {
+  const lines = [
+    `Delegate ${output.status}: ${output.summary}`,
+    `Turns: ${output.turns}; questions asked: ${output.questionsAsked}`,
+  ];
+  if (output.changedFiles && output.changedFiles.length > 0) {
+    lines.push(`Changed files: ${output.changedFiles.join(", ")}`);
+  }
+  if (output.worktreePath) {
+    lines.push(`Worktree: ${output.worktreePath}`);
+  }
+  if (output.worktreeBranch) {
+    lines.push(`Worktree branch: ${output.worktreeBranch}`);
+  }
+  if (output.worktreeCleanup) {
+    lines.push(
+      `Worktree cleanup: ${output.worktreeCleanup.status} (${output.worktreeCleanup.requested})${
+        output.worktreeCleanup.reason ? ` - ${output.worktreeCleanup.reason}` : ""
+      }`,
+    );
+  }
+  if (output.result?.trim()) {
+    lines.push(output.result.trim());
+  }
+  return lines.join("\n");
 }
 
 async function requiredState<T>(key: string): Promise<T> {

@@ -6,7 +6,7 @@ import {
   type Workflow,
 } from "@trailstep/core";
 
-export type WorkflowSkillMetadata = Workflow & { readonly description?: string };
+export type WorkflowSkillMetadata = Workflow;
 
 export interface WorkflowSkillContentInput {
   readonly registeredRef: string;
@@ -26,26 +26,47 @@ export function generateWorkflowSkillContent(
 ): WorkflowSkillContent {
   const skillName = workflowSkillName(input.namespace, input.name);
   const registeredRef = `${input.namespace}/${input.name}`;
+  const workflowSkill = normalizeWorkflowSkill(input.workflow?.skill);
+  const inputMode = classifyWorkflowInput(input.workflow);
+  const generatedInstructions = generatedWorkflowSkillInstructionLines({
+    inputMode,
+    registeredRef,
+    skillName,
+    sourceRef: input.registeredRef,
+  });
+  const customMarkdown = workflowSkill.markdown;
   const baseDescription =
+    workflowSkill.description ??
     input.workflow?.description ??
     input.description ??
     `Run the TrailStep workflow "${registeredRef}".`;
   const description = workflowSkillDescription(input.namespace, baseDescription);
-  const inputMode = classifyWorkflowInput(input.workflow);
+  const generatedFrontmatter = [
+    "---",
+    `name: ${skillName}`,
+    `description: ${frontmatterString(description)}`,
+    "---",
+    "",
+  ];
+
+  if (customMarkdown !== undefined && customMarkdown.trim().length > 0) {
+    const customBody = customMarkdown.trimEnd();
+    const contentLines = startsWithYamlFrontmatter(customBody)
+      ? [customBody, ""]
+      : [...generatedFrontmatter, customBody, ""];
+
+    return {
+      skillName,
+      markdown: [...contentLines, ...generatedInstructions].join("\n"),
+    };
+  }
 
   return {
     skillName,
     markdown: [
-      "---",
-      `name: ${skillName}`,
-      `description: ${frontmatterString(description)}`,
-      "---",
-      "",
-      `Run the registered TrailStep workflow \`${registeredRef}\`.`,
-      "",
-      ...inputInstructions({ inputMode, registeredRef, skillName }),
-      `Registered workflow source: \`${input.registeredRef}\``,
-      "",
+      ...generatedFrontmatter,
+      ...customSkillInstructionLines(workflowSkill.instructions),
+      ...generatedInstructions,
     ].join("\n"),
   };
 }
@@ -72,6 +93,21 @@ function classifyWorkflowInput(workflow: WorkflowSkillMetadata | undefined): Wor
   }
 
   return { kind: "none" };
+}
+
+function generatedWorkflowSkillInstructionLines(input: {
+  readonly inputMode: WorkflowInputMode;
+  readonly registeredRef: string;
+  readonly skillName: string;
+  readonly sourceRef: string;
+}): readonly string[] {
+  return [
+    `Run the registered TrailStep workflow \`${input.registeredRef}\`.`,
+    "",
+    ...inputInstructions(input),
+    `Registered workflow source: \`${input.sourceRef}\``,
+    "",
+  ];
 }
 
 function inputInstructions(input: {
@@ -153,6 +189,20 @@ function schemaJsonSchema(schema: Schema<PlainObject>): Record<string, unknown> 
   return schema.jsonSchema;
 }
 
+function customSkillInstructionLines(instructions: string | undefined): readonly string[] {
+  const trimmed = instructions?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? [] : [trimmed, ""];
+}
+
+function normalizeWorkflowSkill(skill: WorkflowSkillMetadata["skill"]): {
+  readonly description?: string;
+  readonly instructions?: string;
+  readonly markdown?: string;
+} {
+  if (typeof skill === "string") return { markdown: skill };
+  return skill ?? {};
+}
+
 function workflowSkillDescription(namespace: string, description: string): string {
   const origin = namespace.trim();
   return origin.length > 0 ? `[${origin}] ${description}` : description;
@@ -160,6 +210,10 @@ function workflowSkillDescription(namespace: string, description: string): strin
 
 function frontmatterString(value: string): string {
   return JSON.stringify(value);
+}
+
+function startsWithYamlFrontmatter(markdown: string): boolean {
+  return markdown.startsWith("---\n") || markdown.startsWith("---\r\n");
 }
 
 function sanitizeSkillNamePart(value: string): string {

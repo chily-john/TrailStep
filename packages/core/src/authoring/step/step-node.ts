@@ -19,6 +19,7 @@ import type {
   StepFactory,
   StepNode,
   StepPhase,
+  TerminalMessageOptions,
   WaitInput,
   WaitOptions,
   WaitPhase,
@@ -174,17 +175,20 @@ export function step(config: StepConfig): StepBuilder {
 
 export function done<TOutput extends PlainObject = PlainObject>(
   output?: TOutput,
+  options?: TerminalMessageOptions,
 ): DoneNode<TOutput> {
   return {
     kind: "done",
     output: output ?? ({} as TOutput),
+    ...(options?.message === undefined ? {} : { message: options.message }),
   };
 }
 
-export function fail(failure: Failure): FailNode {
+export function fail(failure: Failure, options?: TerminalMessageOptions): FailNode {
   return {
     kind: "fail",
     failure,
+    ...(options?.message === undefined ? {} : { message: options.message }),
   };
 }
 

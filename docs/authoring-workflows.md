@@ -47,7 +47,7 @@ export const featureSummaryOutput = shape<FeatureSummaryOutput>({
 });
 ```
 
-The workflow file defines the public boundary: id, description, input shape, output shape, agent roles, and start continuation.
+The workflow file defines the public boundary: id, description, optional generated-skill metadata, input shape, output shape, agent roles, and start continuation.
 
 ```ts
 // workflows/feature-summary.workflow.ts
@@ -63,6 +63,10 @@ import { summarizeRequestStep } from "./steps/summarize-request.step.js";
 export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
   id: "feature-summary",
   description: "Summarize a feature request and suggest one next step.",
+  skill: {
+    description: "Use when an agent needs to summarize a feature request.",
+    instructions: "Capture the user's request faithfully and recommend one concrete next step.",
+  },
   inputShape: featureSummaryInput,
   outputShape: featureSummaryOutput,
   agents: {
@@ -110,6 +114,8 @@ export const summarizeRequestStep = step({ id: "summarize-request" })
   })
   .do((output) => done(output));
 ```
+
+The optional `skill` block customizes generated workflow skill frontmatter and guidance. Generated TrailStep usage, input-file, schema, and run-command instructions are still appended automatically.
 
 ## Core primitives
 

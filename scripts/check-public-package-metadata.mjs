@@ -9,6 +9,7 @@ const packageDirectories = [
   "authoring",
   "cli",
   "create-flows",
+  "sub-agents",
   "provider-claude",
   "provider-codex",
   "provider-gemini",
@@ -21,6 +22,7 @@ const publishablePackageNames = [
   "@trailstep/authoring",
   "@trailstep/cli",
   "@trailstep/create-flows",
+  "@trailstep/sub-agents",
   "@trailstep/provider-claude",
   "@trailstep/provider-codex",
   "@trailstep/provider-gemini",
@@ -182,6 +184,16 @@ function verifyPublicPackageMetadata() {
     manifestByName.get("@trailstep/create-flows")?.peerDependencies?.["@trailstep/authoring"],
     expectedCaretPeerRange(manifestByName, "@trailstep/authoring"),
     "@trailstep/create-flows must declare peer compatibility with the current @trailstep/authoring version",
+  );
+  assert.equal(
+    manifestByName.get("@trailstep/sub-agents")?.dependencies?.["@trailstep/authoring"],
+    "workspace:*",
+    "@trailstep/sub-agents must keep @trailstep/authoring as a workspace dependency",
+  );
+  assert.equal(
+    manifestByName.get("@trailstep/sub-agents")?.peerDependencies?.["@trailstep/authoring"],
+    expectedCaretPeerRange(manifestByName, "@trailstep/authoring"),
+    "@trailstep/sub-agents must declare peer compatibility with the current @trailstep/authoring version",
   );
   assert.ok(
     manifestByName.get("@trailstep/cli")?.files?.includes("trailstep-skill"),

@@ -10,10 +10,17 @@ export interface DelegateArtifact extends Record<string, unknown> {
   readonly mediaType?: string;
 }
 
+export type DelegateWorktreeCleanup = "auto" | "never" | "always";
+
 export interface DelegateWorktreeInput extends Record<string, unknown> {
   readonly enabled?: boolean;
+  readonly path?: string;
+  readonly baseRef?: string;
+  /** @deprecated Use baseRef. */
   readonly baseBranch?: string;
-  readonly cleanup?: "always" | "on-success" | "never";
+  readonly branch?: string;
+  readonly cleanup?: DelegateWorktreeCleanup;
+  readonly forceCleanup?: boolean;
 }
 
 export interface DelegateInput extends Record<string, unknown> {
@@ -33,6 +40,8 @@ export interface DelegateOutput extends Record<string, unknown> {
   readonly changedFiles?: readonly string[];
   readonly artifacts?: readonly DelegateArtifact[];
   readonly worktreePath?: string;
+  readonly worktreeBranch?: string;
+  readonly worktreeCleanup?: DelegateWorktreeCleanupDetails;
   readonly questionsAsked: number;
   readonly turns: number;
 }
@@ -51,10 +60,27 @@ export interface ParentAnswerOutput extends Record<string, unknown> {
   readonly answer: string;
 }
 
+export interface DelegateWorktreeCleanupDetails extends Record<string, unknown> {
+  readonly requested: DelegateWorktreeCleanup;
+  readonly status: "not-managed" | "kept" | "removed" | "kept-dirty" | "failed";
+  readonly reason?: string;
+}
+
 export interface DelegateWorktreeOptions extends Record<string, unknown> {
   readonly enabled: boolean;
+  readonly path?: string;
+  readonly baseRef?: string;
+  /** @deprecated Use baseRef. */
   readonly baseBranch?: string;
-  readonly cleanup: "always" | "on-success" | "never";
+  readonly branch?: string;
+  readonly cleanup: DelegateWorktreeCleanup;
+  readonly forceCleanup: boolean;
+}
+
+export interface DelegateWorkflowDefaults extends Record<string, unknown> {
+  readonly mode?: DelegateMode;
+  readonly maxTurns?: number;
+  readonly summarize?: boolean;
 }
 
 export interface NormalizedDelegateInput extends Record<string, unknown> {
@@ -119,8 +145,12 @@ export const delegateInputShape = jsonSchema<DelegateInput>({
       type: "object",
       properties: {
         enabled: { type: "boolean" },
+        path: { type: "string" },
+        baseRef: { type: "string" },
         baseBranch: { type: "string" },
-        cleanup: { type: "string", enum: ["always", "on-success", "never"] },
+        branch: { type: "string" },
+        cleanup: { type: "string", enum: ["auto", "never", "always"] },
+        forceCleanup: { type: "boolean" },
       },
       additionalProperties: false,
     },
@@ -138,6 +168,20 @@ export const delegateOutputShape = jsonSchema<DelegateOutput>({
     changedFiles: { type: "array", items: { type: "string" } },
     artifacts: { type: "array", items: delegateArtifactShape },
     worktreePath: { type: "string" },
+    worktreeBranch: { type: "string" },
+    worktreeCleanup: {
+      type: "object",
+      properties: {
+        requested: { type: "string", enum: ["auto", "never", "always"] },
+        status: {
+          type: "string",
+          enum: ["not-managed", "kept", "removed", "kept-dirty", "failed"],
+        },
+        reason: { type: "string" },
+      },
+      required: ["requested", "status"],
+      additionalProperties: false,
+    },
     questionsAsked: { type: "number" },
     turns: { type: "number" },
   },
@@ -169,8 +213,11 @@ export const parentAnswerShape = jsonSchema<ParentAnswerOutput>({
   additionalProperties: false,
 });
 
-export function normalizeDelegateInput(input: DelegateInput): NormalizedDelegateInput {
-  const mode = input.mode ?? "general";
+export function normalizeDelegateInput(
+  input: DelegateInput,
+  defaults: DelegateWorkflowDefaults = {},
+): NormalizedDelegateInput {
+  const mode = input.mode ?? defaults.mode ?? "general";
   return {
     task: input.task,
     ...(nonEmptyOptional(input.context) === undefined
@@ -178,14 +225,24 @@ export function normalizeDelegateInput(input: DelegateInput): NormalizedDelegate
       : { context: nonEmptyOptional(input.context) }),
     mode,
     ...(nonEmptyOptional(input.cwd) === undefined ? {} : { cwd: nonEmptyOptional(input.cwd) }),
-    maxTurns: normalizeMaxTurns(input.maxTurns),
-    summarize: input.summarize ?? (mode === "explore" || mode === "general"),
+    maxTurns: normalizeMaxTurns(input.maxTurns ?? defaults.maxTurns),
+    summarize: input.summarize ?? defaults.summarize ?? (mode === "explore" || mode === "general"),
     worktree: {
       enabled: input.worktree?.enabled ?? false,
+      ...(nonEmptyOptional(input.worktree?.path) === undefined
+        ? {}
+        : { path: nonEmptyOptional(input.worktree?.path) }),
+      ...(nonEmptyOptional(input.worktree?.baseRef ?? input.worktree?.baseBranch) === undefined
+        ? {}
+        : { baseRef: nonEmptyOptional(input.worktree?.baseRef ?? input.worktree?.baseBranch) }),
       ...(nonEmptyOptional(input.worktree?.baseBranch) === undefined
         ? {}
         : { baseBranch: nonEmptyOptional(input.worktree?.baseBranch) }),
-      cleanup: input.worktree?.cleanup ?? "on-success",
+      ...(nonEmptyOptional(input.worktree?.branch) === undefined
+        ? {}
+        : { branch: nonEmptyOptional(input.worktree?.branch) }),
+      cleanup: input.worktree?.cleanup ?? "auto",
+      forceCleanup: input.worktree?.forceCleanup ?? false,
     },
   };
 }

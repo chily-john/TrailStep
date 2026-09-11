@@ -87,18 +87,22 @@ function formatEvent(event: Event): readonly string[] | undefined {
       const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
       return [waitId ? `✓ Wait satisfied: ${waitId}` : "✓ Wait satisfied"];
     }
-    case "workflow.completed":
-      return ["✓ Workflow completed"];
+    case "workflow.completed": {
+      const message = typeof event.payload.message === "string" ? `: ${event.payload.message}` : "";
+      return [`✓ Workflow completed${message}`];
+    }
     case "workflow.failed": {
       const failure = event.payload.failure;
-      const message =
+      const failureMessage =
         typeof failure === "object" &&
         failure !== null &&
         "message" in failure &&
         typeof failure.message === "string"
           ? `: ${failure.message}`
           : "";
-      return [`✗ Workflow failed${message}`];
+      const terminalMessage =
+        typeof event.payload.message === "string" ? ` — ${event.payload.message}` : "";
+      return [`✗ Workflow failed${failureMessage}${terminalMessage}`];
     }
     default:
       return undefined;

@@ -62,6 +62,10 @@ import { summarizeRequestStep } from "./steps/summarize-request.step.js";
 export const featureSummary = defineWorkflow<FeatureSummaryInput, FeatureSummaryOutput>({
   id: "feature-summary",
   description: "Summarize a feature request and suggest one next step.",
+  skill: {
+    description: "Use when an agent needs to summarize a feature request.",
+    instructions: "Capture the user's request faithfully and recommend one concrete next step.",
+  },
   inputShape: featureSummaryInput,
   outputShape: featureSummaryOutput,
   agents: {
@@ -107,6 +111,8 @@ export const summarizeRequestStep = step({ id: "summarize-request" })
   })
   .do((output) => done(output));
 ```
+
+The optional `skill` block customizes generated agent skill metadata. TrailStep still appends generated CLI usage, input-file, and schema instructions when creating the skill. Raw skill markdown that starts with YAML frontmatter keeps that frontmatter exactly; raw markdown without frontmatter is wrapped in generated `name`/`description` frontmatter before the custom body.
 
 Run direct refs while developing:
 

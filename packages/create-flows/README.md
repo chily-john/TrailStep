@@ -1,14 +1,13 @@
 # @trailstep/create-flows
 
-`@trailstep/create-flows` is a public package of reusable, general-purpose TrailStep workflows. It demonstrates how TrailStep's small step model can grow into larger, long-horizon coding workflows with focused agent sessions, typed handoffs, review loops, and retryable boundaries.
+`@trailstep/create-flows` is a public package of reusable, general-purpose TrailStep workflows. It demonstrates how TrailStep's small step model can grow into larger, long-horizon coding workflows with typed handoffs, review loops, and retryable boundaries.
 
 ## Workflows
 
-- `delegate`: default registered id `delegate`; runs delegated focused work with run-local continuity, optional parent/human questions, and typed results.
 - `grillItAway`: default registered id `grill-it-away`; starts interactively by asking clarifying questions, then runs the implementation pipeline.
 - `takeItAway`: default registered id `take-it-away`; starts from an already-organic conversation, ticket, or feature request, then runs the implementation pipeline.
 
-`grillItAway` and `takeItAway` end with a typed output containing implementation status, feature/implementation document paths, completed story count, completed story titles, and a summary. `delegate` ends with completed/blocked/cancelled status, summary/result text, changed files/artifacts, and turn/question counts.
+`grillItAway` and `takeItAway` end with a typed output containing implementation status, feature/implementation document paths, completed story count, completed story titles, and a summary.
 
 ## Recommended setup
 
@@ -32,7 +31,7 @@ trailstep init --scope project --install-skill
 # Preview without installing, registering, or writing skills.
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --dry-run
 
-# Install/register both workflows and generate project skills.
+# Install/register the workflows and generate project skills.
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 ```
 
@@ -41,39 +40,12 @@ trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --pr
 Run registered workflows directly if you prefer the CLI:
 
 ```bash
-trailstep project/delegate --task "Investigate failing parser tests" --mode explore
 trailstep project/grill-it-away
 trailstep project/take-it-away --input-file feature-request.json
 trailstep retry project/take-it-away <runName>
 ```
 
 ## Which workflow should I use?
-
-### `delegate`
-
-Use this when you want a focused delegate agent to continue within one TrailStep run without persisting memory globally. It can explore, implement, review, or handle general delegated work. Memory is durable only in `.trailstep/runs/<runName>/state.json` for the active run and is not shared with separate runs.
-
-```bash
-trailstep project/delegate --task "Investigate failing parser tests" --mode explore
-```
-
-JSON input-file usage is useful for richer context:
-
-```json
-{
-  "task": "Investigate failing parser tests",
-  "context": "Parser fixtures fail only on Windows paths.",
-  "mode": "explore",
-  "cwd": "./packages/parser",
-  "maxTurns": 6
-}
-```
-
-```bash
-trailstep project/delegate --input-file delegate-input.json
-```
-
-The delegate can ask parent/human questions through TrailStep waits. Answer them with `trailstep answer`, then resume with `trailstep continue`. Watch progress and display/notify events with `trailstep watch`, and read the final typed result with `trailstep output`.
 
 ### `grill-it-away`
 
@@ -105,16 +77,6 @@ Input is a JSON object. `autoCommit` and `pullRequest.enabled` both default to `
 ## Step architecture
 
 `grill-it-away` and `take-it-away` share the same implementation pipeline after initial intake:
-
-`delegate` has its own small continuation loop:
-
-```text
-delegate-turn -> completed/blocked: done
-delegate-turn -> continue: delegate-turn
-delegate-turn -> question: ask-parent -> delegate-turn
-```
-
-It honors `cwd` when provided. Worktree input is accepted for forward compatibility but currently disabled; provide `cwd` directly instead.
 
 ```mermaid
 flowchart TD
@@ -165,7 +127,6 @@ The `pullRequest` input option controls the final code-only PR step and defaults
 
 The workflows declare role defaults so TrailStep can target different kinds of agent work:
 
-- **delegateAgent**: runs delegated focused work while preserving run-local continuity.
 - **grillingAgent**: clarifies vague requests interactively.
 - **featureWriter**: turns the request/conversation into a standalone feature document.
 - **planner**: creates or improves an architecture-aware implementation plan.
@@ -191,7 +152,6 @@ npm install @trailstep/create-flows @trailstep/authoring
 Then direct bundle refs use manifest names:
 
 ```bash
-trailstep @trailstep/create-flows#delegate --task "Investigate failing parser tests" --mode explore
 trailstep @trailstep/create-flows#takeItAway --input-file feature-request.json
 trailstep @trailstep/create-flows#grillItAway
 ```

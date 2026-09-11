@@ -26,6 +26,10 @@ describe("authoring workflow builders", () => {
     const workflow = defineWorkflow({
       id: "greeting-workflow",
       description: "Builds a greeting from mapped input.",
+      skill: {
+        description: "Use when an agent needs to build a greeting.",
+        instructions: "Keep the greeting concise.",
+      },
       inputShape: jsonSchema<{ readonly person: string } & Record<string, unknown>>({
         type: "object",
         properties: { person: { type: "string" } },
@@ -50,6 +54,10 @@ describe("authoring workflow builders", () => {
     expect(assignableWorkflow).toMatchObject({
       id: "greeting-workflow",
       description: "Builds a greeting from mapped input.",
+      skill: {
+        description: "Use when an agent needs to build a greeting.",
+        instructions: "Keep the greeting concise.",
+      },
     });
 
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-authoring-builder-test-"));

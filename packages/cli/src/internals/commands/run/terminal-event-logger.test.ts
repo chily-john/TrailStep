@@ -96,6 +96,32 @@ describe("createTerminalEventLogger", () => {
     ]);
   });
 
+  it("prints terminal workflow messages", () => {
+    const lines: string[] = [];
+    const logger = createTerminalEventLogger({
+      writeLine: (line) => lines.push(line),
+      writeError: (line) => lines.push(line),
+    });
+
+    logger(
+      event({ type: "workflow.completed", payload: { output: { ok: true }, message: "Ready" } }),
+    );
+    logger(
+      event({
+        type: "workflow.failed",
+        payload: {
+          failure: { code: "failed", message: "Boom" },
+          message: "Needs attention",
+        },
+      }),
+    );
+
+    expect(lines).toEqual([
+      "✓ Workflow completed: Ready",
+      "✗ Workflow failed: Boom — Needs attention",
+    ]);
+  });
+
   it("prints notify progress, warning, and artifact events", () => {
     const lines: string[] = [];
     const logger = createTerminalEventLogger({

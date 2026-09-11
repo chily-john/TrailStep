@@ -307,15 +307,21 @@ export type SubPromptFactory<
   // biome-ignore lint/complexity/noBannedTypes: `{}` here is the standard conditional-type idiom for "TInput has no required keys", not a stand-in for "any value".
 > = {} extends TInput ? (input?: TInput) => Promise<TOutput> : (input: TInput) => Promise<TOutput>;
 
+export interface TerminalMessageOptions {
+  readonly message?: string;
+}
+
 export interface DoneNode<TOutput extends PlainObject = PlainObject> {
   readonly kind: "done";
   readonly output: TOutput;
+  readonly message?: string;
 }
 
 /** Terminates the workflow as a failure without dispatching a step -- no step.* events, just workflow.failed. */
 export interface FailNode {
   readonly kind: "fail";
   readonly failure: Failure;
+  readonly message?: string;
 }
 
 export type ContinuationResult<TOutput extends PlainObject = PlainObject> =

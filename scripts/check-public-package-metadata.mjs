@@ -195,10 +195,12 @@ function verifyPublicPackageMetadata() {
     expectedCaretPeerRange(manifestByName, "@trailstep/authoring"),
     "@trailstep/sub-agents must declare peer compatibility with the current @trailstep/authoring version",
   );
-  assert.ok(
-    manifestByName.get("@trailstep/cli")?.files?.includes("trailstep-skill"),
-    "@trailstep/cli must include trailstep-skill in published files",
-  );
+  for (const skillDirectory of ["trailstep-skill", "trailstep-authoring-skill"]) {
+    assert.ok(
+      manifestByName.get("@trailstep/cli")?.files?.includes(skillDirectory),
+      `@trailstep/cli must include ${skillDirectory} in published files`,
+    );
+  }
 }
 
 verifyPublicPackageMetadata();

@@ -17,7 +17,7 @@ const publicPackages = [
   {
     name: "@trailstep/cli",
     directory: "packages/cli",
-    requiredFiles: ["trailstep-skill/SKILL.md"],
+    requiredFiles: ["trailstep-skill/SKILL.md", "trailstep-authoring-skill/SKILL.md"],
   },
   { name: "@trailstep/create-flows", directory: "packages/create-flows" },
   { name: "@trailstep/sub-agents", directory: "packages/sub-agents" },

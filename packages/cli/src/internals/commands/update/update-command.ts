@@ -16,7 +16,10 @@ import {
   defaultPackageCommandRunner,
   detectPackageManager,
 } from "../../package-manager/package-manager.js";
-import { refreshTrackedPackagedTrailStepSkills } from "../../trailstep-skill/trailstep-skill.js";
+import {
+  findStaleTrackedPackagedTrailStepSkillInstallations,
+  refreshTrackedPackagedTrailStepSkills,
+} from "../../trailstep-skill/trailstep-skill.js";
 import {
   type GlobalCliUpdatePlan,
   resolveGlobalCliUpdateTarget,
@@ -99,10 +102,13 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         context.io.writeLine(skip.message);
       }
 
+      const staleSkillInstallations =
+        await findStaleTrackedPackagedTrailStepSkillInstallations(context);
       const hasGlobalCliChanges = (globalCliPlan?.targets.length ?? 0) > 0;
       const hasSelfChanges = (selfPlan?.targets.length ?? 0) > 0;
       const hasWorkflowChanges = workflowTargetsToApply.length > 0;
-      if (!hasGlobalCliChanges && !hasSelfChanges && !hasWorkflowChanges) {
+      const hasSkillChanges = staleSkillInstallations.length > 0;
+      if (!hasGlobalCliChanges && !hasSelfChanges && !hasWorkflowChanges && !hasSkillChanges) {
         context.io.writeLine(noChangesMessage(args, globalCliPlan, selfPlan, workflowPlan));
         return 0;
       }
@@ -134,12 +140,21 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         }
       }
 
+      if (hasSkillChanges) {
+        context.io.writeLine("Planned TrailStep packaged skill refresh:");
+        for (const staleSkill of staleSkillInstallations) {
+          context.io.writeLine(`  ${staleSkill.target} skills tracked in ${staleSkill.configPath}`);
+        }
+      }
+
       const updateGroups = createDependencyUpdateGroups({
         cwd: context.cwd,
         selfUpdates: selfPlan?.targets ?? [],
         workflowUpdates: workflowTargetsToApply,
       });
-      const confirmed = await confirmUpdate(args, context);
+      const confirmed = await confirmUpdate(args, context, {
+        hasPackageChanges: hasGlobalCliChanges || hasSelfChanges || hasWorkflowChanges,
+      });
       if (!confirmed) {
         context.io.writeLine("Update cancelled.");
         return 0;
@@ -165,7 +180,6 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
           context.io.writeLine(
             "Updated global TrailStep CLI. The updated binary will be used by the next trailstep process.",
           );
-          await refreshTrailStepSkillAfterGlobalCliUpdate(context);
         }
       }
 
@@ -191,6 +205,9 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
           }
           return 1;
         }
+      }
+      if (hasSkillChanges || hasGlobalCliChanges) {
+        await refreshTrailStepSkillsAfterUpdate(context);
       }
       context.io.writeLine("Update complete.");
       return 0;
@@ -271,17 +288,15 @@ async function scanTargets(
   return findings;
 }
 
-async function refreshTrailStepSkillAfterGlobalCliUpdate(
-  context: CliCommandContext,
-): Promise<void> {
+async function refreshTrailStepSkillsAfterUpdate(context: CliCommandContext): Promise<void> {
   try {
     const refreshed = await refreshTrackedPackagedTrailStepSkills(context);
     if (refreshed.length > 0) {
-      context.io.writeLine("Refreshed tracked TrailStep usage skill installation(s).");
+      context.io.writeLine("Refreshed tracked TrailStep skill installation(s).");
     }
   } catch (error) {
     context.io.writeError(
-      `Warning: failed to refresh tracked TrailStep usage skill installation(s): ${error instanceof Error ? error.message : "unknown error"}`,
+      `Warning: failed to refresh tracked TrailStep skill installation(s): ${error instanceof Error ? error.message : "unknown error"}`,
     );
   }
 }
@@ -380,6 +395,7 @@ function noChangesMessage(
 async function confirmUpdate(
   args: UpdateCommandArgs,
   context: CliCommandContext,
+  plan: { readonly hasPackageChanges: boolean },
 ): Promise<boolean> {
   if (args.assumeYes) {
     return true;
@@ -389,7 +405,11 @@ async function confirmUpdate(
       "Update requires --yes, --assume-yes, or an interactive confirm prompt before writing.",
     );
   }
-  return context.prompts.confirm("Apply package updates and run install?");
+  return context.prompts.confirm(
+    plan.hasPackageChanges
+      ? "Apply package updates and run install?"
+      : "Refresh tracked TrailStep skills?",
+  );
 }
 
 function dedupeFindings(findings: readonly DeprecationFinding[]): readonly DeprecationFinding[] {

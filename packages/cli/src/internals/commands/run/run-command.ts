@@ -4,6 +4,7 @@ import { runWorkflow } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { resolveRunsRoot } from "../../runs-root.js";
+import { maybeWriteRunUpdateNotice } from "../../update-notices/run-update-notice.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { writeRunWorkflowRef } from "../wait-run-helpers.js";
 import { generateRunName } from "./generate-run-name.js";
@@ -20,6 +21,7 @@ export const runCommand: CliCommand<RunCommandArgs> = {
   },
   async run(args: RunCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
+    await maybeWriteRunUpdateNotice(context);
     const baseInput = await loadJsonInput(args.input, cwd);
     const trailstepConfig = await loadTrailStepConfig(cwd, { homeDir: context.homeDir });
     const resolvedWorkflow = await resolveWorkflowReference(args.workflowId, {

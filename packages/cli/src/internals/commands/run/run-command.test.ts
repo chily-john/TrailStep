@@ -639,6 +639,37 @@ describe("run command", () => {
     expect(userLines.join("\n")).toContain("global/review");
   });
 
+  it("prints a non-blocking update notice when starting a workflow run", async ({ task }) => {
+    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    const cwd = join(root, "project");
+    const homeDir = join(root, "home");
+    await rm(root, { recursive: true, force: true });
+    await mkdir(cwd, { recursive: true });
+    await writeDirectWorkflowFile(cwd);
+    const lines: string[] = [];
+    const packageRequests: unknown[] = [];
+
+    const exitCode = await main({
+      argv: ["./workflows/review.mjs", "notice-run", "--input", "{}"],
+      cwd,
+      homeDir,
+      env: { NODE_ENV: "development" },
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageRequests.push(request);
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "99.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(packageRequests).toHaveLength(1);
+    expect(lines.join("\n")).toContain("TrailStep update available:");
+    expect(lines.join("\n")).toContain(
+      "Run `trailstep update` to update the CLI and refresh tracked skills.",
+    );
+    expect(lines.join("\n")).toContain("Workflow completed");
+  });
+
   it("runs a global package-backed workflow from the managed global package store", async ({
     task,
   }) => {

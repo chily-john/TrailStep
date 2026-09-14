@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { Event } from "@trailstep/core";
 import { readRunEvents } from "@trailstep/core";
 import type { CliCommandContext } from "../command.types.js";
+import { CliUsageError } from "../command.types.js";
 import { resolveRunsRoot } from "../runs-root.js";
 
 export interface ResolvedRunDirectory {
@@ -25,6 +26,15 @@ export async function resolveRunDirectory(
   const namedCandidate = join(resolveRunsRoot(context), runNameOrRunDir);
   if (await hasEventsFile(namedCandidate)) {
     return { runDir: namedCandidate, displayName: runNameOrRunDir };
+  }
+
+  if (
+    !isPathLike(runNameOrRunDir) &&
+    (await hasArchivedRunManifest(resolveRunsRoot(context), runNameOrRunDir))
+  ) {
+    throw new CliUsageError(
+      `Run ${runNameOrRunDir} is archived. Restore it with:\n  trailstep storage restore ${runNameOrRunDir}`,
+    );
   }
 
   if (directCandidate !== undefined) {
@@ -136,6 +146,15 @@ function isPathLike(value: string): boolean {
 async function hasEventsFile(runDir: string): Promise<boolean> {
   try {
     await access(join(runDir, "events.jsonl"), constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function hasArchivedRunManifest(runsRoot: string, runId: string): Promise<boolean> {
+  try {
+    await access(join(runsRoot, ".archive", `${runId}.manifest.json`), constants.F_OK);
     return true;
   } catch {
     return false;

@@ -139,7 +139,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage and authoring skills?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -217,7 +220,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage and authoring skills?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -271,7 +277,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage and authoring skills?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -355,7 +364,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage and authoring skills?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -448,7 +460,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage and authoring skills?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -533,7 +548,10 @@ describe("initCommand", () => {
           if (prompt === "Custom provider supports thinking overrides?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage and authoring skills?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -595,6 +613,9 @@ describe("initCommand", () => {
         async confirm(prompt) {
           confirmPrompts.push(prompt);
           if (prompt === "Configure another agent?") {
+            return false;
+          }
+          if (prompt === "Configure recommended run artifact lifecycle storage?") {
             return false;
           }
           if (prompt === "Install the TrailStep usage and authoring skills?") {
@@ -669,6 +690,9 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
+          if (prompt === "Configure recommended run artifact lifecycle storage?") {
+            return false;
+          }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
         },
       },
@@ -726,6 +750,9 @@ describe("initCommand", () => {
           async confirm(prompt) {
             confirmPrompts.push(prompt);
             if (prompt === "Configure another agent?") {
+              return false;
+            }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
               return false;
             }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -824,6 +851,9 @@ describe("initCommand", () => {
             if (prompt === "Configure another agent?") {
               return false;
             }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
           },
         },
@@ -907,6 +937,9 @@ describe("initCommand", () => {
             if (prompt === "Configure another agent?") {
               return false;
             }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
           },
         },
@@ -964,6 +997,9 @@ describe("initCommand", () => {
           },
           async confirm(prompt) {
             if (prompt === "Configure another agent?") {
+              return false;
+            }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
               return false;
             }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);

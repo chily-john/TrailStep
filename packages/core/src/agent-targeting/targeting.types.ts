@@ -56,12 +56,31 @@ export interface TrailStepWorkflowConfig {
   readonly settings?: TrailStepSettings;
 }
 
+export interface TrailStepStorageLifecycleRetentionConfig {
+  /** Duration string such as "7d"; false disables compression for the matching scope. */
+  readonly compressAfter?: string | false;
+  /** Duration string such as "30d"; false disables deletion for the matching scope. */
+  readonly deleteAfter?: string | false;
+}
+
+export interface TrailStepStorageLifecycleConfig extends TrailStepStorageLifecycleRetentionConfig {
+  readonly enabled?: boolean;
+  readonly runOn?: readonly ("run" | "open" | "runs")[];
+  readonly throttle?: string | false;
+  readonly workflows?: Readonly<Record<string, TrailStepStorageLifecycleRetentionConfig>>;
+}
+
+export interface TrailStepStorageConfig {
+  readonly lifecycle?: TrailStepStorageLifecycleConfig;
+}
+
 export interface TrailStepConfig {
   readonly version: 1;
   readonly customProviders: Readonly<Record<string, TrailStepCustomProviderConfig>>;
   readonly providers?: Readonly<Record<string, TrailStepProviderRegistration>>;
   readonly agents: TrailStepAgentMappings;
   readonly settings?: TrailStepSettings;
+  readonly storage?: TrailStepStorageConfig;
   readonly workflows?: Readonly<Record<string, TrailStepWorkflowConfig>>;
 }
 

@@ -203,6 +203,25 @@ export {
   selectRecentFailedRunSummaries,
 } from "./runtime/runs/run-summaries.js";
 export type {
+  StorageLifecycleAction,
+  StorageLifecyclePolicy,
+  StorageLifecycleStatus,
+} from "./runtime/storage-lifecycle/storage-lifecycle.js";
+export {
+  applyStorageLifecycle,
+  archiveRun,
+  deleteArchivedRun,
+  deleteRun,
+  parseStorageLifecycleDurationDays,
+  pinRun,
+  planStorageLifecycle,
+  readStorageLifecycleStatus,
+  restoreArchivedRun,
+  storageArchiveDir,
+  storagePinPath,
+  unpinRun,
+} from "./runtime/storage-lifecycle/storage-lifecycle.js";
+export type {
   ResolveTimeoutPolicyOptions,
   TimeoutPolicy,
   TimeoutPolicyInput,

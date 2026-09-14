@@ -93,6 +93,29 @@ describe("output command", () => {
     expect(lines).toEqual(["Could not finish tests"]);
   });
 
+  it("tells users to restore archived runs before reading output", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await mkdir(join(cwd, ".trailstep", "runs", ".archive"), { recursive: true });
+    await writeFile(
+      join(cwd, ".trailstep", "runs", ".archive", "archived-run.manifest.json"),
+      `${JSON.stringify({ schemaVersion: 1, runId: "archived-run" })}\n`,
+      "utf8",
+    );
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["output", "archived-run"],
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    expect(errors.join("\n")).toContain("Run archived-run is archived");
+    expect(errors.join("\n")).toContain("trailstep storage restore archived-run");
+  });
+
   it("reports no final output for a waiting run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
     await rm(cwd, { recursive: true, force: true });

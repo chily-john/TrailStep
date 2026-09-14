@@ -40,6 +40,7 @@ interface InitCommandArgs {
 
 const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
 const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage and authoring skills?";
+const STORAGE_LIFECYCLE_PROMPT_LABEL = "Configure recommended run artifact lifecycle storage?";
 const OFFICIAL_PROVIDER_ADD_GUIDANCE =
   "Don't see your provider? Add any TrailStep-compatible provider manifest/package with trailstep providers add <path-or-package>.";
 const PROVIDER_CHOICES = OFFICIAL_PROVIDER_PACKAGES.map((provider) => provider.packageName).sort();
@@ -100,6 +101,8 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         context,
       });
     }
+
+    nextConfig = await configureStorageLifecyclePreset(nextConfig, context);
 
     await writeRawTrailStepConfigFile(configPath, nextConfig);
     context.io.writeLine(`Wrote TrailStep agent config to ${configPath}.`);
@@ -163,6 +166,31 @@ function resolveSkillInstallMode(flags: Record<string, string | undefined>): Ski
     return "skip";
   }
   return "prompt";
+}
+
+async function configureStorageLifecyclePreset(
+  config: Record<string, unknown>,
+  context: CliCommandContext,
+): Promise<Record<string, unknown>> {
+  const shouldConfigure = context.prompts?.confirm
+    ? await context.prompts.confirm(STORAGE_LIFECYCLE_PROMPT_LABEL)
+    : (await promptSelect(
+        STORAGE_LIFECYCLE_PROMPT_LABEL,
+        ["no", "yes"] as const,
+        context.prompts,
+        "trailstep init requires a yes/no answer.",
+      )) === "yes";
+  if (!shouldConfigure) {
+    return config;
+  }
+  const storage = toMutableRecord(config.storage);
+  storage.lifecycle = {
+    ...toMutableRecord(toMutableRecord(config.storage).lifecycle),
+    enabled: true,
+    compressAfter: "7d",
+    deleteAfter: "30d",
+  };
+  return { ...config, storage };
 }
 
 async function shouldInstallSkill(

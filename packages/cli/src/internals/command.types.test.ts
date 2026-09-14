@@ -49,6 +49,17 @@ describe("usageText", () => {
     );
   });
 
+  it("documents storage lifecycle commands and safety behavior", () => {
+    expect(usageText).toContain("trailstep storage status");
+    expect(usageText).toContain("trailstep storage gc [--dry-run]");
+    expect(usageText).toContain("trailstep storage restore <runId>");
+    expect(usageText).toContain("trailstep storage pin <runId>");
+    expect(usageText).toContain("trailstep storage delete <runId>");
+    expect(usageText).toContain("storage.lifecycle");
+    expect(usageText).toContain('compressAfter: "7d"');
+    expect(usageText).toContain("refuses pinned runs");
+  });
+
   it("documents optional model override semantics for agents set", () => {
     expect(usageText).toContain(
       "trailstep agents set <name> --provider <provider> [--model <model>]",

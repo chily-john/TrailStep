@@ -1,12 +1,18 @@
 import type { Dirent } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultRunsRoot, readRunEvents } from "../artifacts/run-storage.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
 
-export type RunSummaryStatus = "active" | "completed" | "failed" | "cancelled" | "unknown";
+export type RunSummaryStatus =
+  | "active"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "archived"
+  | "unknown";
 
 export interface RunSummary {
   readonly runId: string;
@@ -38,7 +44,7 @@ export async function listRunSummaries(options: {
   const summaries: RunSummary[] = [];
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) {
+    if (!entry.isDirectory() || entry.name === ".archive") {
       continue;
     }
 
@@ -56,6 +62,8 @@ export async function listRunSummaries(options: {
       });
     }
   }
+
+  summaries.push(...(await listArchivedRunSummaries(runsRoot)));
 
   return summaries.sort(newestFirst);
 }
@@ -143,6 +151,52 @@ function selectTerminalStatus(
   }
 
   return undefined;
+}
+
+async function listArchivedRunSummaries(runsRoot: string): Promise<RunSummary[]> {
+  const archiveDir = join(runsRoot, ".archive");
+  let entries: Dirent[];
+  try {
+    entries = await readdir(archiveDir, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  const summaries: RunSummary[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".manifest.json")) {
+      continue;
+    }
+    try {
+      const manifest = JSON.parse(await readFile(join(archiveDir, entry.name), "utf8")) as {
+        readonly runId?: unknown;
+        readonly workflowId?: unknown;
+        readonly lastTimestamp?: unknown;
+      };
+      if (typeof manifest.runId === "string") {
+        summaries.push({
+          runId: manifest.runId,
+          runDir: join(archiveDir, `${manifest.runId}.json.gz`),
+          status: "archived",
+          ...(typeof manifest.workflowId === "string" ? { workflowId: manifest.workflowId } : {}),
+          ...(typeof manifest.lastTimestamp === "string"
+            ? { lastTimestamp: manifest.lastTimestamp }
+            : {}),
+        });
+      }
+    } catch (error) {
+      summaries.push({
+        runId: entry.name.replace(/\.manifest\.json$/u, ""),
+        runDir: join(archiveDir, entry.name),
+        status: "unknown",
+        warning: `Warning: Could not read archived run manifest ${entry.name}: ${readErrorMessage(error)}`,
+      });
+    }
+  }
+  return summaries;
 }
 
 function compareTimestampDescending(left: string | undefined, right: string | undefined): number {

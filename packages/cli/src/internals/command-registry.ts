@@ -15,6 +15,7 @@ import { retryCommand } from "./commands/retry/retry-command.js";
 import { runOrOpenCommand } from "./commands/run-or-open/run-or-open-command.js";
 import { runsCommand } from "./commands/runs/runs-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
+import { storageCommand } from "./commands/storage/storage-command.js";
 import { updateCommand } from "./commands/update/update-command.js";
 import { watchCommand } from "./commands/watch/watch-command.js";
 import { workflowsCommand } from "./commands/workflows/workflows-command.js";
@@ -71,6 +72,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "runs") {
     return runsCommand;
+  }
+
+  if (argv[0] === "storage") {
+    return storageCommand;
   }
 
   if (argv.length === 1 && argv[0] === "skill-check") {

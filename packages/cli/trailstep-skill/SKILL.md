@@ -20,6 +20,7 @@ Use TrailStep to install, discover, run, continue, retry, and observe durable ty
 - Answer human/parent waits with `trailstep answer <runName> <waitId> --json '{"answer":"..."}'`.
 - Retry failed work with `trailstep retry <workflow-ref> <runName>`; retry instead of inventing a separate resume mechanism.
 - Inspect active/history with `trailstep runs`, `trailstep watch`, and `trailstep output <runName>` when available in the installed CLI version.
+- Manage run artifact lifecycle with `trailstep storage status`, `trailstep storage gc --dry-run`, `trailstep storage restore <runId>`, `trailstep storage pin <runId>`, and `trailstep storage delete <runId>`.
 - Open a managed standalone agent session with `trailstep open [agent-or-provider]` or bare `trailstep` when a default agent is configured.
 
 ## Workflow refs
@@ -43,6 +44,8 @@ Use direct refs for local files, registered refs for named project or user workf
 
 - Do not manually edit `.trailstep/runs`.
 - Local run artifacts are runtime outputs, not source of truth.
+- Configure filesystem run cleanup under `storage.lifecycle` with duration strings such as `compressAfter: "7d"` and `deleteAfter: "30d"`; per-workflow overrides live under `storage.lifecycle.workflows`.
+- `trailstep storage gc` applies the configured lifecycle and skips pinned runs. `restore` refuses to overwrite hot runs and removes the archive copy after success. `pin`/`unpin` operate on hot runs; restore archived runs first. `delete` removes hot or archived runs but refuses pinned runs.
 - Use `trailstep continue` for normal continuation and `trailstep retry` for failed steps instead of adding a custom resume path.
 - Keep reusable workflow behavior in workflow source and package exports, not in generated run directories.
 - If TrailStep reports that the CLI or packaged skills are out of date, run `trailstep update`.

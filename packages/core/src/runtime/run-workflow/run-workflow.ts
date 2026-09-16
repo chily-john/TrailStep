@@ -16,6 +16,7 @@ import {
   readCancellationMarker,
 } from "../cancellation/cancellation.js";
 import { runContinuation } from "../continuation/run-continuation/run-continuation.js";
+import { runRootContinuationArrayScheduler } from "./root-continuation-array-scheduler.js";
 import { createEvent } from "../events/create-run-event.js";
 import { isFailureLikeError } from "../failures/failure-like.js";
 import { workflowFailure } from "../failures/workflow-failure.js";
@@ -292,48 +293,69 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       );
     }
 
-    const continuationResult = await runContinuation({
-      node: startNode ?? options.workflow.start(workflowInput),
-      runId,
-      workflowId: options.workflow.id,
-      emit,
-      maxSteps,
-      initialSource: isRetry
-        ? `retry for workflow ${options.workflow.id}`
-        : isResume
-          ? `resume for workflow ${options.workflow.id}`
-          : `workflow.start for workflow ${options.workflow.id}`,
-      // The original run already used one step-index slot per step.started
-      // event ever recorded (successful or failed) -- newly-dispatched steps
-      // after resume must continue that sequence, not restart at 1, or their
-      // artifact directories collide with the pre-resume steps' directories.
-      initialExecutedSteps:
-        isResume || isRetry || isWaitContinue
-          ? previousEvents.filter((event) => event.type === "step.started").length
-          : undefined,
-      ...(waitResume === undefined
-        ? {}
-        : {
-            resumeWait: {
-              stepId: waitResume.resumedStepId,
-              stepIndex: waitResume.stepIndex,
-              phaseIndex: waitResume.phaseIndex,
-              phaseValue: waitResume.phaseValue,
-              waitOutputs: waitResume.waitOutputs,
-              seenWaitIds: waitResume.seenWaitIds,
-              wait: waitResume.wait,
-            },
-          }),
-      workflowAgents: options.workflow.agents ?? {},
-      workflowTimeout: options.workflow.timeout,
-      runDir,
-      projectCwd,
-      cwd,
-      trailstepConfig,
-      workingAgentProcessRunner: options.workingAgentProcessRunner,
-      providerWorkingRunner: options.providerWorkingRunner,
-      processRunner: options.processRunner,
-    });
+    const rootNode = startNode ?? options.workflow.start(workflowInput);
+    const continuationResult =
+      !isResume && !isRetry && !isWaitContinue && Array.isArray(rootNode)
+        ? await runRootContinuationArrayScheduler({
+            nodes: rootNode,
+            runId,
+            workflowId: options.workflow.id,
+            emit,
+            maxSteps,
+            initialSource: `workflow.start for workflow ${options.workflow.id}`,
+            workers: options.scheduler?.workers ?? 1,
+            workflowAgents: options.workflow.agents ?? {},
+            workflowTimeout: options.workflow.timeout,
+            runDir,
+            projectCwd,
+            cwd,
+            trailstepConfig,
+            workingAgentProcessRunner: options.workingAgentProcessRunner,
+            providerWorkingRunner: options.providerWorkingRunner,
+            processRunner: options.processRunner,
+          })
+        : await runContinuation({
+            node: rootNode,
+            runId,
+            workflowId: options.workflow.id,
+            emit,
+            maxSteps,
+            initialSource: isRetry
+              ? `retry for workflow ${options.workflow.id}`
+              : isResume
+                ? `resume for workflow ${options.workflow.id}`
+                : `workflow.start for workflow ${options.workflow.id}`,
+            // The original run already used one step-index slot per step.started
+            // event ever recorded (successful or failed) -- newly-dispatched steps
+            // after resume must continue that sequence, not restart at 1, or their
+            // artifact directories collide with the pre-resume steps' directories.
+            initialExecutedSteps:
+              isResume || isRetry || isWaitContinue
+                ? previousEvents.filter((event) => event.type === "step.started").length
+                : undefined,
+            ...(waitResume === undefined
+              ? {}
+              : {
+                  resumeWait: {
+                    stepId: waitResume.resumedStepId,
+                    stepIndex: waitResume.stepIndex,
+                    phaseIndex: waitResume.phaseIndex,
+                    phaseValue: waitResume.phaseValue,
+                    waitOutputs: waitResume.waitOutputs,
+                    seenWaitIds: waitResume.seenWaitIds,
+                    wait: waitResume.wait,
+                  },
+                }),
+            workflowAgents: options.workflow.agents ?? {},
+            workflowTimeout: options.workflow.timeout,
+            runDir,
+            projectCwd,
+            cwd,
+            trailstepConfig,
+            workingAgentProcessRunner: options.workingAgentProcessRunner,
+            providerWorkingRunner: options.providerWorkingRunner,
+            processRunner: options.processRunner,
+          });
 
     if (continuationResult.status === "failure") {
       return await failWorkflow(continuationResult.failure, continuationResult.message);

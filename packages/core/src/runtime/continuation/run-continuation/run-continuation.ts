@@ -63,6 +63,7 @@ export interface RunContinuationOptions {
   readonly maxSteps: number;
   readonly initialSource: string;
   readonly initialExecutedSteps?: number;
+  readonly allocateStepIndex?: () => number;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowTimeout?: TimeoutPolicyInput;
   readonly runDir: string;
@@ -180,8 +181,13 @@ export async function runContinuation(
           ),
         };
       }
-      executedSteps += 1;
-      stepIndex = executedSteps;
+      if (options.allocateStepIndex !== undefined) {
+        stepIndex = options.allocateStepIndex();
+        executedSteps += 1;
+      } else {
+        executedSteps += 1;
+        stepIndex = executedSteps;
+      }
     } else {
       stepIndex = resumeWait.stepIndex;
       pendingResumeWait = undefined;

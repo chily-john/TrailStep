@@ -143,6 +143,9 @@ interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends Pla
   /** Injectable stdout-capturing runner for built-in registry provider adapters (e.g. Claude). Test-only seam. */
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly maxSteps?: number;
+  readonly scheduler?: {
+    readonly workers?: number;
+  };
 }
 
 export type RunWorkflowOptions<

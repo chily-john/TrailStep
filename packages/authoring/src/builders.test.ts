@@ -4,7 +4,13 @@ import { join } from "node:path";
 
 import { jsonSchema, runWorkflow, type Workflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
-import { defineWorkflow, done, step } from "./index.js";
+import {
+  defineWorkflow,
+  done,
+  isWorkflowInvocationNode,
+  step,
+  type ContinuationArray,
+} from "./index.js";
 
 interface GreetingInput extends Record<string, unknown> {
   readonly name: string;
@@ -51,14 +57,13 @@ describe("authoring workflow builders", () => {
       GreetingOutput
     > = workflow;
 
-    expect(assignableWorkflow).toMatchObject({
-      id: "greeting-workflow",
-      description: "Builds a greeting from mapped input.",
-      skill: {
-        description: "Use when an agent needs to build a greeting.",
-        instructions: "Keep the greeting concise.",
-      },
+    expect(assignableWorkflow.id).toBe("greeting-workflow");
+    expect(assignableWorkflow.description).toBe("Builds a greeting from mapped input.");
+    expect(assignableWorkflow.skill).toEqual({
+      description: "Use when an agent needs to build a greeting.",
+      instructions: "Keep the greeting concise.",
     });
+    expect(typeof workflow).toBe("function");
 
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-authoring-builder-test-"));
     const result = await runWorkflow({
@@ -72,6 +77,62 @@ describe("authoring workflow builders", () => {
       status: "success",
       output: { message: "Hello, Ada!" },
     });
+  });
+
+  it("constructs workflow invocation nodes with preserved input and options", () => {
+    const workflow = defineWorkflow<
+      { readonly value: number } & Record<string, unknown>,
+      { readonly doubled: number } & Record<string, unknown>
+    >({
+      id: "callable-workflow",
+      inputShape: { value: "number" },
+      outputShape: { doubled: "number" },
+      start(input) {
+        return done({ doubled: input.value * 2 });
+      },
+    });
+
+    const node = workflow({ value: 2 });
+
+    expect(isWorkflowInvocationNode(node)).toBe(true);
+    expect(node.workflow).toBe(workflow);
+    expect(node.input).toEqual({ value: 2 });
+
+    let invoked = false;
+    const onDone = (output: { readonly doubled: number } & Record<string, unknown>) => {
+      invoked = true;
+      return done({ doubled: output.doubled + 1 });
+    };
+    const nodeWithOptions = workflow({ value: 3 }, { branch: "existing-plus-followup", onDone });
+
+    expect(isWorkflowInvocationNode(nodeWithOptions)).toBe(true);
+    expect(nodeWithOptions.options?.branch).toBe("existing-plus-followup");
+    expect(nodeWithOptions.options?.onDone).toBe(onDone);
+    expect(invoked).toBe(false);
+  });
+
+  it("accepts mixed step and workflow invocations in continuation arrays", () => {
+    const someStep = step({ id: "some-step" }).do(
+      (input: { readonly value: number } & Record<string, unknown>) => done({ value: input.value }),
+    );
+    const someWorkflow = defineWorkflow<
+      { readonly value: number } & Record<string, unknown>,
+      { readonly value: number } & Record<string, unknown>
+    >({
+      id: "array-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return done({ value: input.value });
+      },
+    });
+
+    const continuation = (input: { readonly value: number } & Record<string, unknown>) => {
+      const nodes = [someStep(input), someWorkflow({ value: 1 })] satisfies ContinuationArray;
+      return nodes;
+    };
+
+    expect(continuation).toBeTypeOf("function");
   });
 
   it("defines a workflow with workflow-level agents and a step-level agent reference", () => {

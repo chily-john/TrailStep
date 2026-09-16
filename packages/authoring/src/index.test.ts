@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { defineWorkflow, done, jsonSchema, notify, step, subPrompt, workflow } from "./index.js";
+import {
+  absoluteDone,
+  absoluteFail,
+  defineWorkflow,
+  done,
+  isAbsoluteDoneNode,
+  isAbsoluteFailNode,
+  isWorkflowInvocationNode,
+  jsonSchema,
+  notify,
+  step,
+  subPrompt,
+  workflow,
+  type AbsoluteDoneNode,
+  type AbsoluteFailNode,
+  type ContinuationArray,
+  type DefinedWorkflow,
+  type RunnableContinuationNode,
+  type WorkflowInvocationNode,
+  type WorkflowInvocationOptions,
+} from "./index.js";
 
 describe("@trailstep/authoring exports", () => {
   it("exports workflow authoring primitives", () => {
@@ -8,8 +28,72 @@ describe("@trailstep/authoring exports", () => {
     expect(step).toBeTypeOf("function");
     expect(subPrompt).toBeTypeOf("function");
     expect(done).toBeTypeOf("function");
+    expect(absoluteDone).toBeTypeOf("function");
+    expect(absoluteFail).toBeTypeOf("function");
+    expect(isWorkflowInvocationNode).toBeTypeOf("function");
+    expect(isAbsoluteDoneNode).toBeTypeOf("function");
+    expect(isAbsoluteFailNode).toBeTypeOf("function");
     expect(notify.progress).toBeTypeOf("function");
     expect(workflow.input).toBeTypeOf("function");
+  });
+
+  it("constructs and recognizes absolute terminal nodes from the entrypoint", () => {
+    const doneNode = absoluteDone({ ok: true }, { message: "finished everywhere" });
+    const failNode = absoluteFail(
+      { code: "authoring_test_failed", message: "Failed everywhere" },
+      { message: "stopped everywhere" },
+    );
+
+    expect(isAbsoluteDoneNode(doneNode)).toBe(true);
+    expect(doneNode).toMatchObject({
+      kind: "absoluteDone",
+      output: { ok: true },
+      message: "finished everywhere",
+    });
+    expect(isAbsoluteFailNode(failNode)).toBe(true);
+    expect(failNode).toMatchObject({
+      kind: "absoluteFail",
+      failure: { code: "authoring_test_failed", message: "Failed everywhere" },
+      message: "stopped everywhere",
+    });
+  });
+
+  it("exports callable workflow and continuation public types", () => {
+    const workflowDefinition = defineWorkflow<
+      { readonly value: number } & Record<string, unknown>,
+      { readonly value: number } & Record<string, unknown>
+    >({
+      id: "public-type-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return done({ value: input.value });
+      },
+    }) satisfies DefinedWorkflow<
+      { readonly value: number } & Record<string, unknown>,
+      { readonly value: number } & Record<string, unknown>
+    >;
+
+    const options = {
+      branch: "existing-plus-followup",
+      onDone: (output: { readonly value: number } & Record<string, unknown>) =>
+        done({ value: output.value + 1 }),
+    } satisfies WorkflowInvocationOptions<{ readonly value: number } & Record<string, unknown>>;
+    const invocation = workflowDefinition({ value: 1 }, options) satisfies WorkflowInvocationNode<
+      { readonly value: number } & Record<string, unknown>,
+      { readonly value: number } & Record<string, unknown>
+    >;
+    const runnable = invocation satisfies RunnableContinuationNode;
+    const array = [runnable] satisfies ContinuationArray;
+    const doneNode = absoluteDone({ value: 1 }) satisfies AbsoluteDoneNode<{
+      readonly value: number;
+    } & Record<string, unknown>>;
+    const failNode = absoluteFail({ code: "failed", message: "Failed" }) satisfies AbsoluteFailNode;
+
+    expect(isWorkflowInvocationNode(invocation)).toBe(true);
+    expect(array).toHaveLength(1);
+    expect(isAbsoluteDoneNode(doneNode)).toBe(true);
+    expect(isAbsoluteFailNode(failNode)).toBe(true);
   });
 
   it("exports subPrompt and related public types", () => {

@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
@@ -17,7 +18,7 @@ interface RunRootContinuationArraySchedulerOptions {
   readonly emit: (event: Event) => Promise<void>;
   readonly maxSteps: number;
   readonly initialSource: string;
-  readonly workers: number;
+  readonly workers?: number;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowTimeout?: TimeoutPolicyInput;
   readonly runDir: string;
@@ -53,6 +54,11 @@ export async function runRootContinuationArrayScheduler(
     };
   }
 
+  const resolvedWorkers = resolveSchedulerWorkerCount(options.workers);
+  if (!resolvedWorkers.ok) {
+    return resolvedWorkers.failure;
+  }
+
   const rootBranchId = "root";
   const branchStates: BranchState[] = options.nodes.map((_, index) => {
     const now = new Date().toISOString();
@@ -77,13 +83,87 @@ export async function runRootContinuationArrayScheduler(
     return nextStepIndex;
   };
 
-  await persistTrack(options, rootBranchId, branchStates, "running");
+  await persistTrack(options, resolvedWorkers.workers, rootBranchId, branchStates, "running");
 
-  for (const [index, node] of options.nodes.entries()) {
+  let nextBranchIndex = 0;
+  let activeWorkers = 0;
+  let terminalResult: RunContinuationResult | undefined;
+
+  await new Promise<void>((resolve, reject) => {
+    const schedule = (): void => {
+      if (terminalResult !== undefined || nextBranchIndex >= options.nodes.length) {
+        if (activeWorkers === 0) {
+          resolve();
+        }
+        return;
+      }
+
+      while (
+        terminalResult === undefined &&
+        activeWorkers < resolvedWorkers.workers &&
+        nextBranchIndex < options.nodes.length
+      ) {
+        const index = nextBranchIndex;
+        nextBranchIndex += 1;
+        activeWorkers += 1;
+
+        void runBranch(index)
+          .then((branchResult) => {
+            if (branchResult.status !== "success" && terminalResult === undefined) {
+              terminalResult = branchResult;
+            }
+          })
+          .then(
+            () => {
+              activeWorkers -= 1;
+              schedule();
+            },
+            (error: unknown) => {
+              reject(error);
+            },
+          );
+      }
+    };
+
+    schedule();
+  });
+
+  if (terminalResult !== undefined) {
+    await persistTrack(
+      options,
+      resolvedWorkers.workers,
+      rootBranchId,
+      branchStates,
+      terminalResult.status,
+    );
+    return terminalResult;
+  }
+
+  await Promise.all(branchStates.map((branch) => persistBranch(options.runDir, branch)));
+  await persistTrack(options, resolvedWorkers.workers, rootBranchId, branchStates, "completed");
+
+  return {
+    status: "success",
+    output: {
+      status: "completed",
+      branches: Object.fromEntries(
+        branchStates.map((branch) => [
+          branch.branchId,
+          {
+            status: branch.status,
+            output: branch.output ?? {},
+          },
+        ]),
+      ),
+    },
+  };
+  async function runBranch(index: number): Promise<RunContinuationResult> {
+    const node = options.nodes[index];
     const branch = branchStates[index];
-    if (branch === undefined) {
+    if (node === undefined || branch === undefined) {
       throw new Error(`missing scheduler branch state for branch ${index + 1}`);
     }
+
     const branchResult = await runContinuation({
       node,
       runId: options.runId,
@@ -117,34 +197,40 @@ export async function runRootContinuationArrayScheduler(
     if (branchResult.status === "success") {
       branch.status = "done";
       branch.output = branchResult.output;
-      await persistBranch(options.runDir, branch);
-      continue;
+    } else {
+      branch.status = branchResult.status === "failure" ? "failed" : branchResult.status;
     }
-
-    branch.status = branchResult.status === "failure" ? "failed" : branchResult.status;
     await persistBranch(options.runDir, branch);
-    await persistTrack(options, rootBranchId, branchStates, branchResult.status);
     return branchResult;
   }
+}
 
-  await Promise.all(branchStates.map((branch) => persistBranch(options.runDir, branch)));
-  await persistTrack(options, rootBranchId, branchStates, "completed");
+function resolveSchedulerWorkerCount(
+  workers: number | undefined,
+):
+  | { readonly ok: true; readonly workers: number }
+  | { readonly ok: false; readonly failure: RunContinuationResult } {
+  if (workers === undefined) {
+    return {
+      ok: true,
+      workers: Math.max(1, Math.floor(availableParallelism() / 2)),
+    };
+  }
 
-  return {
-    status: "success",
-    output: {
-      status: "completed",
-      branches: Object.fromEntries(
-        branchStates.map((branch) => [
-          branch.branchId,
-          {
-            status: branch.status,
-            output: branch.output ?? {},
-          },
-        ]),
-      ),
-    },
-  };
+  if (!Number.isFinite(workers) || !Number.isInteger(workers) || workers < 1) {
+    return {
+      ok: false,
+      failure: {
+        status: "failure",
+        failure: {
+          code: "invalid_scheduler_workers",
+          message: "scheduler.workers must be an integer greater than or equal to 1.",
+        },
+      },
+    };
+  }
+
+  return { ok: true, workers };
 }
 
 function decorateBranchEvent(event: Event, trackId: string, branchId: string): Event {
@@ -164,6 +250,7 @@ function decorateBranchEvent(event: Event, trackId: string, branchId: string): E
 
 async function persistTrack(
   options: RunRootContinuationArraySchedulerOptions,
+  workers: number,
   rootBranchId: string,
   branches: readonly BranchState[],
   status: string,
@@ -171,7 +258,7 @@ async function persistTrack(
   await writeJson(join(options.runDir, "track.json"), {
     runId: options.runId,
     status,
-    workers: options.workers,
+    workers,
     failurePolicy: "fail-fast",
     rootBranchId,
     splitOccurred: true,

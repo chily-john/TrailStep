@@ -303,7 +303,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
             emit,
             maxSteps,
             initialSource: `workflow.start for workflow ${options.workflow.id}`,
-            workers: options.scheduler?.workers ?? 1,
+            workers: options.scheduler?.workers,
             workflowAgents: options.workflow.agents ?? {},
             workflowTimeout: options.workflow.timeout,
             runDir,

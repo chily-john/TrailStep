@@ -18,9 +18,12 @@ import type {
 import {
   firstPromptPhase,
   getStepPhases,
+  isAbsoluteDoneNode,
+  isAbsoluteFailNode,
   isDoneNode,
   isFailNode,
   isStepNode,
+  isWorkflowInvocationNode,
 } from "../../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
@@ -139,6 +142,14 @@ export async function runContinuation(
         status: "failure",
         failure: node.failure,
         ...(node.message === undefined ? {} : { message: node.message }),
+      };
+    }
+
+    const unsupportedFailure = unsupportedContinuationFailure(node, source);
+    if (unsupportedFailure !== undefined) {
+      return {
+        status: "failure",
+        failure: unsupportedFailure,
       };
     }
 
@@ -378,6 +389,20 @@ export async function runContinuation(
       }
 
       const nextNode = stepResult.node;
+      const unsupportedStepFailure = unsupportedContinuationFailure(nextNode, `step ${config.id}`);
+      if (unsupportedStepFailure !== undefined) {
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: options.workflowId,
+            stepId: config.id,
+            type: "step.failed",
+            payload: { failure: unsupportedStepFailure },
+          }),
+        );
+        return { status: "failure", failure: unsupportedStepFailure };
+      }
+
       if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
         const failure = continuationFailure(`step ${config.id}`);
         await options.emit(
@@ -434,15 +459,24 @@ export async function runContinuation(
 
       try {
         const nextNode = stepNode.onError(failure);
+        const errorSource = `error continuation for step ${config.id}`;
+        const unsupportedErrorFailure = unsupportedContinuationFailure(nextNode, errorSource);
+        if (unsupportedErrorFailure !== undefined) {
+          return {
+            status: "failure",
+            failure: unsupportedErrorFailure,
+          };
+        }
+
         if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
           return {
             status: "failure",
-            failure: continuationFailure(`error continuation for step ${config.id}`),
+            failure: continuationFailure(errorSource),
           };
         }
 
         node = nextNode;
-        source = `error continuation for step ${config.id}`;
+        source = errorSource;
       } catch (errorContinuationError) {
         return {
           status: "failure",
@@ -1336,4 +1370,36 @@ function continuationFailure(source: string): Failure {
     code: "invalid_continuation",
     message: `${source} returned an invalid continuation node.`,
   };
+}
+
+function unsupportedContinuationFailure(node: unknown, source: string): Failure | undefined {
+  const form = unsupportedContinuationForm(node);
+  if (form === undefined) {
+    return undefined;
+  }
+
+  return {
+    code: "unsupported_continuation",
+    message: `${source} returned ${form}, but parallel tracks/workflow invocation execution is not implemented yet.`,
+  };
+}
+
+function unsupportedContinuationForm(node: unknown): string | undefined {
+  if (Array.isArray(node)) {
+    return "a continuation array";
+  }
+
+  if (isWorkflowInvocationNode(node)) {
+    return "a workflow invocation continuation";
+  }
+
+  if (isAbsoluteDoneNode(node)) {
+    return "an absolute done continuation";
+  }
+
+  if (isAbsoluteFailNode(node)) {
+    return "an absolute fail continuation";
+  }
+
+  return undefined;
 }

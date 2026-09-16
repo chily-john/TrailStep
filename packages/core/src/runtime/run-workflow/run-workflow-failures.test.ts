@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  absoluteDone,
+  absoluteFail,
+  defineWorkflow,
   done,
   type Event,
   fail,
@@ -165,6 +168,120 @@ describe("runWorkflow failure paths", () => {
     ]);
   });
 
+  it("fails clearly when workflow.start returns a workflow invocation", async () => {
+    const cwd = await testCwd();
+    const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "invoked-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => done(input),
+    });
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-start-workflow-invocation-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => SomeWorkflow(input),
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-start-workflow-invocation",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "workflow invocation continuation");
+    expectFailure(
+      result,
+      "unsupported_continuation",
+      "workflow.start for workflow unsupported-start-workflow-invocation-workflow",
+    );
+    expectFailure(result, "unsupported_continuation", "not implemented yet");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.failed",
+    ]);
+  });
+
+  it("fails clearly when workflow.start returns an absolute done continuation", async () => {
+    const cwd = await testCwd();
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-start-absolute-done-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => absoluteDone(input),
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-start-absolute-done",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "absolute done continuation");
+    expectFailure(
+      result,
+      "unsupported_continuation",
+      "workflow.start for workflow unsupported-start-absolute-done-workflow",
+    );
+  });
+
+  it("fails clearly when workflow.start returns an absolute fail continuation", async () => {
+    const cwd = await testCwd();
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-start-absolute-fail-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: () => absoluteFail({ code: "blocked", message: "Cannot continue." }),
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-start-absolute-fail",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "absolute fail continuation");
+    expectFailure(
+      result,
+      "unsupported_continuation",
+      "workflow.start for workflow unsupported-start-absolute-fail-workflow",
+    );
+  });
+
+  it("fails clearly when workflow.start returns a continuation array", async () => {
+    const cwd = await testCwd();
+    const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "array-invoked-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => done(input),
+    });
+    const SomeStep = step({ id: "array-step" }).do((input: { value: number }) => done(input));
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-start-array-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => [SomeStep(input), SomeWorkflow(input)],
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-start-array",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "continuation array");
+    expectFailure(
+      result,
+      "unsupported_continuation",
+      "workflow.start for workflow unsupported-start-array-workflow",
+    );
+  });
+
   it("fails clearly when a step continuation returns an invalid node", async () => {
     const cwd = await testCwd();
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -203,6 +320,75 @@ describe("runWorkflow failure paths", () => {
       stepId: "choose-next",
       payload: { failure: result.failure },
     });
+  });
+
+  it("emits step.failed and workflow.failed when a step returns unsupported continuations", async () => {
+    const cwd = await testCwd();
+    const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "step-invoked-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => done(input),
+    });
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-step-continuation-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step({ id: "choose-next" }).do(() => SomeWorkflow(input))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-step-continuation",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "workflow invocation continuation");
+    expectFailure(result, "unsupported_continuation", "step choose-next");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.failed",
+      "workflow.failed",
+    ]);
+    expect(result.events[3]).toMatchObject({
+      stepId: "choose-next",
+      payload: { failure: result.failure },
+    });
+  });
+
+  it("fails clearly when a step continuation returns a continuation array", async () => {
+    const cwd = await testCwd();
+    const SomeStep = step({ id: "array-child" }).do((input: { value: number }) => done(input));
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-step-array-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step({ id: "choose-next" }).do(() => [SomeStep(input)])(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-step-array",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "continuation array");
+    expectFailure(result, "unsupported_continuation", "step choose-next");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.failed",
+      "workflow.failed",
+    ]);
   });
 
   it("routes a thrown step error through an error continuation to done", async () => {
@@ -337,6 +523,77 @@ describe("runWorkflow failure paths", () => {
       stepId: "explode",
       payload: { failure: { code: "step_execution_failed", message: "Boom" } },
     });
+  });
+
+  it("fails clearly when an error continuation returns unsupported continuations", async () => {
+    const cwd = await testCwd();
+    const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "error-invoked-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => done(input),
+    });
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-error-continuation-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step({ id: "explode" })
+          .do(() => {
+            throw new Error("Boom");
+          })
+          .catch(() => SomeWorkflow(input))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-error-continuation",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "workflow invocation continuation");
+    expectFailure(result, "unsupported_continuation", "error continuation for step explode");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+    ]);
+    expect(result.events[2]).toMatchObject({
+      stepId: "explode",
+      payload: { failure: { code: "step_execution_failed", message: "Boom" } },
+    });
+  });
+
+  it("fails clearly when an error continuation returns a continuation array", async () => {
+    const cwd = await testCwd();
+    const SomeStep = step({ id: "error-array-child" }).do((input: { value: number }) =>
+      done(input),
+    );
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "unsupported-error-array-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step({ id: "explode" })
+          .do(() => {
+            throw new Error("Boom");
+          })
+          .catch(() => [SomeStep(input)])(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "unsupported-error-array",
+      cwd,
+    });
+
+    expectFailure(result, "unsupported_continuation", "continuation array");
+    expectFailure(result, "unsupported_continuation", "error continuation for step explode");
   });
 
   it("fails clearly when a continuation working agent needs config but none was provided", async () => {

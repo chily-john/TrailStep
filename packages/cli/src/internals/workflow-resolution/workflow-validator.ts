@@ -1,7 +1,7 @@
 import type { Workflow } from "@trailstep/core";
 
 export function isWorkflow(value: unknown): value is Workflow {
-  if (!isPlainObject(value)) {
+  if (!isWorkflowLikeObject(value)) {
     return false;
   }
 
@@ -35,6 +35,14 @@ function isSimpleShapeObject(value: unknown): boolean {
     Object.values(value).every(
       (shapeType) => shapeType === "string" || shapeType === "number" || shapeType === "boolean",
     )
+  );
+}
+
+function isWorkflowLikeObject(value: unknown): value is Workflow & Record<string, unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    !Array.isArray(value)
   );
 }
 

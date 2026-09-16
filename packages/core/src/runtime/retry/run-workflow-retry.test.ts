@@ -179,6 +179,115 @@ describe("runWorkflow retry", () => {
     });
   });
 
+  it("manual retry ignores completed events from earlier resolved failed attempts", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-resolved-completions-"));
+    let shouldFailReview = true;
+    let shouldFailPublish = true;
+    let agentAttempts = 0;
+
+    const workflow: Workflow<{ task: string }, { result: string }> = {
+      id: "retry-resolved-completions-workflow",
+      inputShape: { task: "string" },
+      outputShape: { result: "string" },
+      agents: { reviewer: { size: "small" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { action: "string" },
+            agent: "reviewer",
+          })
+          .do((output: { action: string }) => {
+            if (shouldFailReview) {
+              return fail({ code: "review_rejected", message: "review rejected" });
+            }
+
+            if (output.action === "stop") {
+              return done({ result: "stopped" });
+            }
+
+            return step({ id: "publish" }).do(() => {
+              if (shouldFailPublish) {
+                throw new Error("publish unavailable");
+              }
+
+              return done({ result: "published" });
+            })({});
+          })(input);
+      },
+    };
+
+    const trailstepConfig = parseTrailStepConfig({
+      version: 1,
+      customProviders: { worker: { binary: "worker-agent" } },
+      agents: { small: [{ provider: "worker" }] },
+    });
+    const runAgent = async (request: { readonly outputFile: string }) => {
+      agentAttempts += 1;
+      await writeFile(
+        request.outputFile,
+        JSON.stringify({ action: agentAttempts === 1 ? "stop" : "continue" }),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const failedReview = await runWorkflow({
+      workflow,
+      input: { task: "resolved completion retry" },
+      runName: "retry-resolved-completions",
+      cwd,
+      trailstepConfig,
+      workingAgentProcessRunner: runAgent,
+    });
+
+    expect(failedReview.status).toBe("failure");
+    expect(eventTypes(failedReview.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.failed",
+      "workflow.failed",
+    ]);
+
+    shouldFailReview = false;
+    const failedPublish = await runWorkflow({
+      workflow,
+      retry: { runDir: failedReview.runDir, kind: "manual" },
+      trailstepConfig,
+      workingAgentProcessRunner: runAgent,
+    });
+
+    expect(failedPublish.status).toBe("failure");
+    expect(eventTypes(failedPublish.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.failed",
+      "workflow.failed",
+      "workflow.retryStarted",
+      "step.started",
+      "step.completed",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+    ]);
+
+    shouldFailPublish = false;
+    const retriedPublish = await runWorkflow({
+      workflow,
+      retry: { runDir: failedReview.runDir, kind: "manual" },
+      trailstepConfig,
+      workingAgentProcessRunner: runAgent,
+    });
+
+    expect(retriedPublish.status).toBe("success");
+    if (retriedPublish.status !== "success") {
+      throw new Error(retriedPublish.failure.message);
+    }
+    expect(retriedPublish.output).toEqual({ result: "published" });
+    expect(agentAttempts).toBe(2);
+  });
+
   it("manual retry appends events with ids unique from existing events", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-event-ids-"));
     const runName = "retry-event-ids";
@@ -456,6 +565,58 @@ describe("runWorkflow retry", () => {
         sourceFailureReplayPosition: 2,
       },
     });
+  });
+
+  it("manual retry replays completed wait steps with their satisfied wait outputs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-wait-replay-"));
+    const runName = "retry-wait-replay";
+    let shouldFail = true;
+
+    const workflow: Workflow<Record<string, never>, { approved: boolean }> = {
+      id: "retry-wait-replay-workflow",
+      inputShape: {},
+      outputShape: { approved: "boolean" },
+      start(input) {
+        return step({ id: "review" })
+          .wait(async ({ wait }) => wait.done({ approved: true }), {
+            output: { approved: "boolean" },
+          })
+          .do(({ waits }) =>
+            step({ id: "publish" }).do(() => {
+              if (shouldFail) {
+                throw new Error("publish unavailable");
+              }
+
+              return done({ approved: waits["check-0"]?.approved === true });
+            })({}),
+          )(input);
+      },
+    };
+
+    const failed = await runWorkflow({ workflow, input: {}, runName, cwd });
+
+    expect(failed.status).toBe("failure");
+    expect(eventTypes(failed.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "wait.satisfied",
+      "step.completed",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+    ]);
+
+    shouldFail = false;
+    const retried = await runWorkflow({
+      workflow,
+      retry: { runDir: failed.runDir, kind: "manual" },
+    });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(retried.output).toEqual({ approved: true });
   });
 
   it("manual retry writes a failed prompt agent attempt and retried attempt to separate step artifact directories", async () => {

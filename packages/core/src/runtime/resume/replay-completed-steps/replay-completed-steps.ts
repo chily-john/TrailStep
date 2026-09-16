@@ -93,8 +93,16 @@ export async function replayCompletedSteps<
         stepIndex,
       }).stepDir;
       const completedNode = node;
+      const recordedWaitOutputs = readCompletedStepWaitOutputs({
+        events: options.events,
+        completedEvent,
+        stepId: completedNode.config.id,
+      });
+      if (recordedWaitOutputs.status === "failure") {
+        return recordedWaitOutputs;
+      }
       node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        replayStepPhases(completedNode, validatedOutput),
+        replayStepPhases(completedNode, validatedOutput, recordedWaitOutputs.waitOutputs),
       );
     } else {
       const stepDir = resolveStepArtifactPaths({
@@ -103,8 +111,16 @@ export async function replayCompletedSteps<
         stepIndex,
       }).stepDir;
       const completedNode = node;
+      const recordedWaitOutputs = readCompletedStepWaitOutputs({
+        events: options.events,
+        completedEvent,
+        stepId: completedNode.config.id,
+      });
+      if (recordedWaitOutputs.status === "failure") {
+        return recordedWaitOutputs;
+      }
       node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        replayStepPhases(completedNode),
+        replayStepPhases(completedNode, undefined, recordedWaitOutputs.waitOutputs),
       );
     }
   }
@@ -125,6 +141,7 @@ export async function replayCompletedSteps<
 async function replayStepPhases(
   stepNode: StepNode,
   recordedPromptOutput?: PlainObject,
+  recordedWaitOutputs: Readonly<Record<string, PlainObject>> = {},
 ): Promise<ContinuationResult> {
   let phaseValue = stepNode.config.input;
   let usedRecordedPromptOutput = false;
@@ -148,7 +165,10 @@ async function replayStepPhases(
       continue;
     }
 
-    nextNode = await phase.onOutput(phaseValue, stepNode.config.input);
+    nextNode = await phase.onOutput(
+      withWaitsDoContext(phaseValue, recordedWaitOutputs),
+      stepNode.config.input,
+    );
   }
 
   if (nextNode === undefined) {
@@ -156,6 +176,89 @@ async function replayStepPhases(
   }
 
   return nextNode;
+}
+
+function readCompletedStepWaitOutputs(options: {
+  readonly events: readonly Event[];
+  readonly completedEvent: Event;
+  readonly stepId: string;
+}):
+  | { readonly status: "success"; readonly waitOutputs: Readonly<Record<string, PlainObject>> }
+  | { readonly status: "failure"; readonly failure: Failure } {
+  const completedEventIndex = options.events.indexOf(options.completedEvent);
+  const priorEvents =
+    completedEventIndex === -1 ? options.events : options.events.slice(0, completedEventIndex);
+  let stepStartedIndex = -1;
+  for (let index = priorEvents.length - 1; index >= 0; index -= 1) {
+    const event = priorEvents[index];
+    if (event?.type === "step.started" && event.stepId === options.stepId) {
+      stepStartedIndex = index;
+      break;
+    }
+  }
+  const inStepEvents =
+    stepStartedIndex === -1 ? priorEvents : priorEvents.slice(stepStartedIndex + 1);
+  const waitOutputs: Record<string, PlainObject> = {};
+
+  for (const event of inStepEvents) {
+    if (event.type !== "wait.satisfied" || event.stepId !== options.stepId) {
+      continue;
+    }
+
+    const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
+    const output = readPlainPayload(event, "output");
+    if (!waitId || !output) {
+      return {
+        status: "failure",
+        failure: replayFailure(
+          "resume_missing_wait_output",
+          `Completed step ${options.stepId} has an invalid recorded satisfied wait output.`,
+        ),
+      };
+    }
+
+    if (Object.hasOwn(waitOutputs, waitId)) {
+      return {
+        status: "failure",
+        failure: replayFailure(
+          "resume_duplicate_wait_id",
+          `Completed step ${options.stepId} has duplicate wait id '${waitId}'.`,
+        ),
+      };
+    }
+    waitOutputs[waitId] = output;
+  }
+
+  return { status: "success", waitOutputs };
+}
+
+function withWaitsDoContext(
+  output: PlainObject,
+  waits: Readonly<Record<string, PlainObject>>,
+): PlainObject {
+  return new Proxy(output, {
+    get(target, property, receiver) {
+      if (property === "output") {
+        return target;
+      }
+      if (property === "waits") {
+        return waits;
+      }
+      return Reflect.get(target, property, receiver);
+    },
+    has(target, property) {
+      return property === "output" || property === "waits" || Reflect.has(target, property);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (property === "output") {
+        return { configurable: true, enumerable: false, value: target };
+      }
+      if (property === "waits") {
+        return { configurable: true, enumerable: false, value: waits };
+      }
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
 }
 
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {

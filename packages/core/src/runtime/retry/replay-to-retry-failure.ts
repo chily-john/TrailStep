@@ -101,26 +101,91 @@ function eventsBeforeRetryTarget(
   targetStepId: string,
 ): readonly Event[] {
   const eventsBeforeFailure = events.slice(0, replayPosition);
-  let targetAttemptStartPosition = -1;
+  const excludedPositions = new Set<number>();
 
+  for (const event of eventsBeforeFailure) {
+    if (event.type !== "workflow.retryStarted") {
+      continue;
+    }
+
+    const resolvedPosition = readSourceFailureReplayPosition(event);
+    if (resolvedPosition === undefined || resolvedPosition >= replayPosition) {
+      continue;
+    }
+
+    for (const position of resolvedAttemptPositions(events, resolvedPosition)) {
+      excludedPositions.add(position);
+    }
+  }
+
+  let targetAttemptStartPosition = -1;
   for (let index = eventsBeforeFailure.length - 1; index >= 0; index -= 1) {
     const event = eventsBeforeFailure[index];
+    if (excludedPositions.has(index)) {
+      continue;
+    }
+
     if (event?.type === "step.started" && event.stepId === targetStepId) {
       targetAttemptStartPosition = index;
       break;
     }
   }
 
-  if (targetAttemptStartPosition === -1) {
-    return eventsBeforeFailure;
-  }
+  return eventsBeforeFailure.filter((event, index) => {
+    if (excludedPositions.has(index)) {
+      return false;
+    }
 
-  return eventsBeforeFailure.filter(
-    (event, index) =>
+    return (
+      targetAttemptStartPosition === -1 ||
       index <= targetAttemptStartPosition ||
       event.type !== "step.completed" ||
-      event.stepId !== targetStepId,
+      event.stepId !== targetStepId
+    );
+  });
+}
+
+function readSourceFailureReplayPosition(event: Event): number | undefined {
+  const { sourceFailureReplayPosition } = event.payload;
+  return typeof sourceFailureReplayPosition === "number" ? sourceFailureReplayPosition : undefined;
+}
+
+function resolvedAttemptPositions(
+  events: readonly Event[],
+  resolvedPosition: number,
+): readonly number[] {
+  const resolvedEvent = events[resolvedPosition];
+  if (!resolvedEvent?.stepId) {
+    return [resolvedPosition];
+  }
+
+  const attemptStartPosition = findAttemptStartPosition(
+    events,
+    resolvedPosition,
+    resolvedEvent.stepId,
   );
+  const startPosition = attemptStartPosition === -1 ? resolvedPosition : attemptStartPosition;
+  const positions: number[] = [];
+  for (let position = startPosition; position <= resolvedPosition; position += 1) {
+    positions.push(position);
+  }
+
+  return positions;
+}
+
+function findAttemptStartPosition(
+  events: readonly Event[],
+  resolvedPosition: number,
+  stepId: string,
+): number {
+  for (let index = resolvedPosition; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "step.started" && event.stepId === stepId) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function retryFailure(code: string, message: string): Failure {

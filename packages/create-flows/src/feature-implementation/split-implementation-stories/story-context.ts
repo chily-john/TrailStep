@@ -1,6 +1,7 @@
 export type StoryContextAudience = "implementer" | "reviewer" | "all";
 
 export type StoryContextPhase =
+  | "deterministic-context-preflight"
   | "explore-story"
   | "write-red-tests"
   | "implement-green"
@@ -148,6 +149,7 @@ function splitMetadataList(value: string): readonly string[] {
 
 function isStoryContextPhase(value: string): value is StoryContextPhase {
   return [
+    "deterministic-context-preflight",
     "explore-story",
     "write-red-tests",
     "implement-green",
@@ -181,7 +183,10 @@ function blockMatchesStory(block: ParsedStoryContextBlock, storyContent: string)
 }
 
 function blockMatchesPhase(block: ParsedStoryContextBlock, phase: StoryContextPhase): boolean {
-  return !block.phases || block.phases === "all" || block.phases.includes(phase);
+  if (!block.phases || block.phases === "all" || block.phases.includes(phase)) {
+    return true;
+  }
+  return phase === "deterministic-context-preflight" && block.phases.includes("explore-story");
 }
 
 function extractStoryLabels(storyContent: string): readonly string[] {

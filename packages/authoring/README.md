@@ -17,6 +17,7 @@ Use this package to author continuation workflows with:
 - `defineWorkflow({ start })` as the workflow boundary.
 - `step(...)` for focused units of agent or local work.
 - `.prompt(...).do(...)` for agent-backed steps with structured output.
+- `subPrompt(...)` for dispatching typed helper prompts from inside a running step.
 - `done(...)` and `fail(...)` for terminal continuations.
 - `shape(...)` or `jsonSchema(...)` for JSON-object validation.
 - prompt helpers such as `promptSections`, `section`, `loadFragments`, and `promptTemplate`.

@@ -20,6 +20,7 @@ export function createFeatureDocPrompt({ input }: { readonly input: TakeItAwayIn
         "Preserve the user's actual must-have outcome, explicit constraints, uncertainty, and explicit non-goals; include implied scope limits only when tied to clear evidence.",
         "Do not invent scope, acceptance criteria, integrations, personas, product decisions, or polish that the user did not ask for.",
         "When a broad request includes brainstorming, ambitions, or adjacent possibilities, keep the confirmed current scope in the must-have/in-scope sections and move nonessential ideas to Optional / Future Ideas.",
+        "Use Structured Scope Facts for compact planning metadata copied or derived directly from the conversation; do not let that fact list add new requirements.",
         "If a detail is unknown, record it as an assumption or open question instead of choosing an answer.",
         "A later planning agent may implement the must-have and in-scope sections; optional/future ideas are context only and must not become story scope unless explicitly promoted by the user.",
       ].join("\n"),

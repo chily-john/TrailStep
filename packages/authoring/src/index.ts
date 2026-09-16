@@ -32,6 +32,8 @@ export type {
   StepFactory,
   StepPhase,
   StepWaitContext,
+  SubPromptFactory,
+  SubPromptOptions,
   TerminalMessageOptions,
   TimeoutPolicy,
   TimeoutPolicyInput,
@@ -63,6 +65,7 @@ export {
   shape,
   state,
   step,
+  subPrompt,
   workflow,
 } from "@trailstep/core";
 export { defineWorkflow } from "./workflow-builder/workflow-builder.js";

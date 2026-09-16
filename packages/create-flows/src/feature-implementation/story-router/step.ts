@@ -13,7 +13,9 @@ import {
   type BlockedStoryPhase,
   type BlockedStoryRouteSourceReason,
   incrementStoryPhaseAttempt,
+  loadStoryPhaseContext,
   STORY_STATE_KEYS,
+  type StoryPhaseContexts,
   type StoryRouterState,
 } from "../shared/story-state.js";
 import { storyDoctorStep } from "../story-doctor/step.js";
@@ -57,18 +59,19 @@ class StoryRouterFailureError extends Error {
 
 export const storyRouterStep = step({ id: "story-router" }).do(
   async ({ currentStory, reason }: StoryRouterInput): Promise<ContinuationResult> => {
+    const previousActivePhase = await state.get<string | null>(STORY_STATE_KEYS.activePhase);
     await state.set(STORY_STATE_KEYS.activePhase, "story-router");
     await incrementStoryPhaseAttempt("story-router");
 
     if (reason === "failed-review") {
-      const replayedRoute = await replayPersistedRetryRoute(reason, currentStory);
+      const replayedRoute = await replayPersistedRetryRoute(reason, currentStory, previousActivePhase);
       if (replayedRoute) {
         return replayedRoute;
       }
       return routeFailedReview(currentStory);
     }
     if (reason === "failed-validation") {
-      const replayedRoute = await replayPersistedRetryRoute(reason, currentStory);
+      const replayedRoute = await replayPersistedRetryRoute(reason, currentStory, previousActivePhase);
       if (replayedRoute) {
         return replayedRoute;
       }
@@ -96,7 +99,7 @@ export const storyRouterStep = step({ id: "story-router" }).do(
       }
 
       const [nextStoryContext = "", ...remainingStoryContexts] =
-        (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
+        (await state.get<(string | StoryPhaseContexts)[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
       await state.set(STORY_STATE_KEYS.storyQueue, remaining);
       await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
       await state.set(STORY_STATE_KEYS.activeStory, nextStory);
@@ -186,6 +189,7 @@ async function routeFailedReview(currentStory?: Document): Promise<ContinuationR
     attempt,
     previousReviewSummary: review.summary,
     requiredImprovements: review.requiredImprovements,
+    implementationContext: await loadStoryPhaseContext("implement-green"),
   });
 }
 
@@ -300,6 +304,7 @@ async function routeFailedValidation(currentStory?: Document): Promise<Continuat
     attempt,
     failedValidationSummary: validation.summary,
     failedValidationCommands: validation.commands,
+    implementationContext: await loadStoryPhaseContext("implement-green"),
   });
 }
 
@@ -374,6 +379,7 @@ async function replayBlockedStoryRoute(): Promise<ContinuationResult | null> {
 async function replayPersistedRetryRoute(
   reason: RetryRouteSourceReason,
   currentStory?: Document,
+  previousActivePhase?: string | null,
 ): Promise<ContinuationResult | null> {
   const routerState = await state.get<Partial<StoryRouterState> | null>(
     STORY_STATE_KEYS.latestStoryRouterState,
@@ -415,6 +421,14 @@ async function replayPersistedRetryRoute(
     return fail(formatExhaustedRetryRouteFailure(routerState, activeStory));
   }
 
+  if (
+    routerState.route !== "doctoring" &&
+    routerState.targetPhase !== previousActivePhase &&
+    previousActivePhase !== "story-router"
+  ) {
+    return null;
+  }
+
   if (!(await persistedRetryEvidenceMatches(reason, routerState))) {
     return null;
   }
@@ -436,6 +450,7 @@ async function replayPersistedRetryRoute(
         reason === "failed-validation" ? routerState.latestValidation?.summary : undefined,
       failedValidationCommands:
         reason === "failed-validation" ? routerState.latestValidation?.commands : undefined,
+      implementationContext: await loadStoryPhaseContext("implement-green"),
     });
   }
 

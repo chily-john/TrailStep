@@ -2,22 +2,20 @@ import { state, step } from "@trailstep/authoring";
 import { reviewStoryImplementationStep } from "../review-story-implementation/step.js";
 import {
   incrementStoryPhaseAttempt,
+  loadStoryPhaseContext,
   loadStoryReviewGitContext,
   STORY_STATE_KEYS,
 } from "../shared/story-state.js";
-import {
-  type ValidateStoryInput,
-  type ValidateStoryOutput,
-  validateStoryOutput,
-  validateStoryPrompt,
-} from "./prompt.js";
+import type { ValidateStoryInput, ValidateStoryOutput } from "./prompt.js";
+import { runFocusedStoryValidation } from "./validation-runner.js";
 
-export const validateStoryStep = step({ id: "validate-story" })
-  .prompt<ValidateStoryInput, ValidateStoryOutput>(validateStoryPrompt, {
-    agent: "validator",
-    output: validateStoryOutput,
-  })
-  .do(async (promptOutput, input) => {
+export const validateStoryStep = step({ id: "validate-story" }).do(
+  async (input: ValidateStoryInput) => {
+    const promptOutput: ValidateStoryOutput = await runFocusedStoryValidation({
+      validationInput: input,
+      cwd: state.cwd,
+      implementationContext: await loadStoryPhaseContext("validate-story"),
+    });
     await state.set(STORY_STATE_KEYS.latestValidationSummary, promptOutput);
     if (promptOutput.blocked) {
       await state.set(
@@ -48,6 +46,7 @@ export const validateStoryStep = step({ id: "validate-story" })
     return reviewStoryImplementationStep({
       currentStory: input.currentStory,
       attempt: input.attempt,
+      implementationContext: await loadStoryPhaseContext("review-story-implementation"),
       implementationSummary: input.implementationSummary?.summary,
       explorationSummary: input.explorationBrief?.summary,
       redTestSummary: input.redTestSummary?.summary,
@@ -56,4 +55,5 @@ export const validateStoryStep = step({ id: "validate-story" })
       validationCommands: promptOutput.commands,
       gitContext: await loadStoryReviewGitContext(),
     });
-  });
+  },
+);

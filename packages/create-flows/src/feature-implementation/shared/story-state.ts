@@ -12,6 +12,8 @@ export const STORY_STATE_KEYS = {
   latestExplorationBrief: "latestExplorationBrief",
   latestImplementationSummary: "latestImplementationSummary",
   latestPreflightStatus: "latestPreflightStatus",
+  planningCheckpointCount: "planningCheckpointCount",
+  skipNextPlanningCheckpoint: "skipNextPlanningCheckpoint",
   latestRedTestSummary: "latestRedTestSummary",
   latestReviewResult: "latestReviewResult",
   latestStoryRouterState: "latestStoryRouterState",
@@ -26,6 +28,7 @@ export const STORY_STATE_KEYS = {
 export type StoryPhase =
   | "story-router"
   | "story-isolation-preflight"
+  | "deterministic-context-preflight"
   | "explore-story"
   | "write-red-tests"
   | "implement-green"
@@ -88,6 +91,16 @@ export interface ActiveStoryStartCommit {
   readonly warning?: string;
 }
 
+export type StoryRoutedContextPhase =
+  | "deterministic-context-preflight"
+  | "explore-story"
+  | "write-red-tests"
+  | "implement-green"
+  | "validate-story"
+  | "review-story-implementation";
+
+export type StoryPhaseContexts = Partial<Record<StoryRoutedContextPhase, string>>;
+
 export interface StoryReviewGitContext {
   readonly storyStartCommit?: string;
   readonly statusShort?: string;
@@ -130,6 +143,24 @@ export async function recordActiveStoryStartCommit(): Promise<ActiveStoryStartCo
   await state.set(STORY_STATE_KEYS.activeStoryStartCommit, baseline);
   await state.set(STORY_STATE_KEYS.storyBaseline, result.stdout);
   return baseline;
+}
+
+export async function loadStoryPhaseContext(
+  phase: StoryRoutedContextPhase,
+): Promise<string | undefined> {
+  const context = await state.get<string | StoryPhaseContexts | null>(
+    STORY_STATE_KEYS.activeStoryContext,
+  );
+  if (!context) {
+    return undefined;
+  }
+
+  if (typeof context === "string") {
+    return context.length > 0 ? context : undefined;
+  }
+
+  const scopedContext = context[phase];
+  return scopedContext && scopedContext.length > 0 ? scopedContext : undefined;
 }
 
 export async function incrementStoryPhaseAttempt(phase: StoryPhase): Promise<number> {

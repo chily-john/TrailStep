@@ -42,6 +42,10 @@ Record constraints, rationale, terminology, user preferences, tradeoffs, and not
 ## Optional / Future Ideas
 
 List explicitly mentioned nice-to-haves, possible follow-ups, or adjacent ideas separately from the current implementation scope. These ideas are not acceptance criteria unless the conversation explicitly makes them must-haves.
+
+## Structured Scope Facts
+
+Provide a compact, planning-friendly fact list without introducing new scope. Use `- Key: value` bullets for confirmed actors, in-scope surfaces, data/entities, integrations, constraints, explicit exclusions, and open decisions that later planning should preserve mechanically.
 ```
 
 The document should be detailed enough that another agent can plan implementation without reading the original conversation, while still preserving important uncertainty and scope boundaries.

@@ -2,9 +2,10 @@ import type { Document } from "@trailstep/authoring";
 import { fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
 import { runGit } from "../commit-reviewed-story/run-git.js";
-import { exploreStoryStep } from "../explore-story/step.js";
+import { deterministicContextPreflightStep } from "../deterministic-context-preflight/step.js";
 import {
   incrementStoryPhaseAttempt,
+  loadStoryPhaseContext,
   STORY_STATE_KEYS,
   type StoryPreflightStatus,
   type StoryRouterState,
@@ -21,11 +22,8 @@ export const storyIsolationPreflightStep = step({ id: "story-isolation-preflight
       return result.failure;
     }
 
-    await state.set(STORY_STATE_KEYS.activePhase, "explore-story");
-    await incrementStoryPhaseAttempt("explore-story");
-    const implementationContext =
-      (await state.get<string | null>(STORY_STATE_KEYS.activeStoryContext)) ?? undefined;
-    return exploreStoryStep({ currentStory, implementationContext });
+    const implementationContext = await loadStoryPhaseContext("deterministic-context-preflight");
+    return deterministicContextPreflightStep({ currentStory, implementationContext });
   },
 );
 

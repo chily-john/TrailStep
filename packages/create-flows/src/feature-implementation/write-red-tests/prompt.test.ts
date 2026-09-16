@@ -40,4 +40,17 @@ describe("writeRedTestsPrompt", () => {
     expect(prompt).not.toContain("SubPrompts");
     expect(prompt).not.toContain("sub-prompt");
   });
+
+  it("includes red-test scoped implementation context without leaking green scoped context", () => {
+    const prompt = writeRedTestsPrompt({
+      input: {
+        currentStory: activeStory,
+        attempt: 1,
+        implementationContext: "RED_TEST_CONTEXT_TOKEN",
+      },
+    });
+
+    expect(prompt).toContain("RED_TEST_CONTEXT_TOKEN");
+    expect(prompt).not.toContain("GREEN_CONTEXT_TOKEN");
+  });
 });

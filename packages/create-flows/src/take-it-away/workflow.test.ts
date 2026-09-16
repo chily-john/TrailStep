@@ -25,6 +25,39 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 async function handleNonGreenStoryPhase(request: {
   readonly outputFile: string;
 }): Promise<{ readonly exitCode: number } | undefined> {
+  if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+    await writeFile(
+      request.outputFile,
+      [
+        "# Implementation Strategy",
+        "",
+        "Build the widget exporter in small, reviewed story slices.",
+      ].join("\n"),
+      "utf8",
+    );
+    return { exitCode: 0 };
+  }
+
+  if (request.outputFile.includes("review-implementation-strategy")) {
+    await writeFile(
+      request.outputFile,
+      JSON.stringify({
+        score: 5,
+        summary: "Meets the methodology.",
+        methodologyRatings: {
+          tdd: 5,
+          verticalSlicing: 5,
+          tracerBullet: 5,
+          dependencies: 5,
+          architecture: 5,
+        },
+        requiredImprovements: [],
+      }),
+      "utf8",
+    );
+    return { exitCode: 0 };
+  }
+
   if (request.outputFile.includes("explore-story")) {
     await writeFile(
       request.outputFile,
@@ -116,7 +149,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -130,18 +163,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -185,10 +239,9 @@ describe("take-it-away", () => {
     };
 
     const blockedImplementationSteps = [
-      "explore-story",
+      "deterministic-context-preflight",
       "write-red-tests",
       "implement-green",
-      "validate-story",
       "implement-story",
       "review-story-implementation",
     ];
@@ -223,7 +276,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -234,13 +287,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -315,7 +385,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -326,13 +396,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -370,7 +457,7 @@ describe("take-it-away", () => {
     });
     expect(persistedState.attemptsByPhase?.["story-router"]).toBe(1);
     expect(persistedState.attemptsByPhase?.["story-isolation-preflight"]).toBe(1);
-    expect(persistedState.attemptsByPhase?.["explore-story"]).toBe(1);
+    expect(persistedState.attemptsByPhase?.["deterministic-context-preflight"]).toBe(1);
     expect(persistedState.attemptsByPhase?.["write-red-tests"]).toBe(1);
     expect(persistedState.attemptsByPhase?.["implement-green"]).toBe(1);
   });
@@ -416,10 +503,8 @@ describe("take-it-away", () => {
       },
       workingAgentProcessRunner: async (request) => {
         for (const phase of [
-          "explore-story",
           "write-red-tests",
           "implement-green",
-          "validate-story",
           "review-story-implementation",
         ]) {
           if (request.outputFile.includes(phase)) {
@@ -436,7 +521,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -447,13 +532,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -487,10 +589,8 @@ describe("take-it-away", () => {
 
     expect(result.status).toBe("success");
     expect(storyPhaseRequests).toEqual([
-      "explore-story",
       "write-red-tests",
       "implement-green",
-      "validate-story",
       "review-story-implementation",
     ]);
     expect(storyPhaseRequests).not.toContain("implement-story");
@@ -501,7 +601,7 @@ describe("take-it-away", () => {
       latestImplementationSummary?: { summary?: string };
       latestValidationSummary?: { summary?: string; validationPassed?: boolean };
     };
-    expect(state.latestExplorationBrief?.summary).toBe("Explored the active story.");
+    expect(state.latestExplorationBrief?.summary).toContain("Deterministic context preflight completed");
     expect(state.latestRedTestSummary?.redEvidence).toContain("Focused");
     expect(state.latestImplementationSummary?.summary).toBe("Implemented the green story slice.");
     expect(state.latestValidationSummary?.validationPassed).toBe(true);
@@ -570,7 +670,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -582,18 +682,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -791,7 +912,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -800,7 +921,7 @@ describe("take-it-away", () => {
               "<context>",
               "audience: implementer",
               "stories: Story 001",
-              "phases: explore-story",
+              "phases: all",
               "",
               storyOneContextToken,
               "",
@@ -809,7 +930,7 @@ describe("take-it-away", () => {
               "<context>",
               "audience: implementer",
               "stories: Story 002",
-              "phases: explore-story",
+              "phases: all",
               "",
               storyTwoContextToken,
               "",
@@ -821,18 +942,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(
             request.outputFile,
             JSON.stringify(passingImplementationDocReview),
@@ -943,7 +1085,8 @@ describe("take-it-away", () => {
     expect(storyTwoImplementPrompts).toHaveLength(1);
     const storyTwoImplementPrompt = storyTwoImplementPrompts[0] ?? "";
     expect(storyTwoImplementPrompt).toContain("Story 002: Add exporter observability");
-    expect(storyTwoImplementPrompt).toContain(storyTwoExplorationToken);
+    expect(storyTwoImplementPrompt).toContain("Deterministic context preflight completed");
+    expect(storyTwoImplementPrompt).toContain(storyTwoContextToken);
     expect(storyTwoImplementPrompt).toContain(storyTwoRedToken);
     for (const staleToken of [storyOneContextToken, ...staleStoryOneTokens]) {
       expect(storyTwoImplementPrompt).not.toContain(staleToken);
@@ -972,21 +1115,28 @@ describe("take-it-away", () => {
     };
 
     expect(state.activeStory?.content).toContain("Story 002: Add exporter observability");
-    expect(state.activeStoryContext).toContain(storyTwoContextToken);
+    expect(state.activeStoryContext).toEqual({
+      "deterministic-context-preflight": storyTwoContextToken,
+      "explore-story": storyTwoContextToken,
+      "implement-green": storyTwoContextToken,
+      "review-story-implementation": "",
+      "validate-story": storyTwoContextToken,
+      "write-red-tests": storyTwoContextToken,
+    });
     expect(state.completedStories).toEqual(["Story 001: Build the widget exporter core"]);
     expect(state.storyQueue ?? []).toEqual([]);
     expect(state.storyContextQueue ?? []).toEqual([]);
     expect(state.attemptsByPhase).toEqual({
       "story-router": 1,
       "story-isolation-preflight": 1,
-      "explore-story": 1,
+      "deterministic-context-preflight": 1,
       "write-red-tests": 1,
       "implement-green": 1,
     });
     expect(state.latestPreflightStatus?.baseline).toBe(storyTwoBaseline);
     expect(state.storyBaseline).toBe(storyTwoBaseline);
     expect(state.activeStoryStartCommit?.commit).toBe(storyTwoBaseline);
-    expect(state.latestExplorationBrief?.summary).toBe(storyTwoExplorationToken);
+    expect(state.latestExplorationBrief?.summary).toContain("Deterministic context preflight completed");
     expect(state.latestRedTestSummary?.summary).toBe(storyTwoRedToken);
     expect(state.latestRedTestSummary?.redEvidence).toContain(storyTwoRedToken);
     expect(state.latestImplementationSummary ?? null).toBeNull();
@@ -1063,7 +1213,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -1075,18 +1225,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -1178,8 +1349,8 @@ describe("take-it-away", () => {
     const retryAgentPrompts: string[] = [];
     const planningStepNames = [
       "create-feature-doc",
-      "create-or-improve-implementation-doc",
-      "review-implementation-doc",
+      "create-or-improve-implementation-strategy",
+      "review-implementation-strategy",
       "split-implementation-stories",
     ];
     const retried = await runWorkflow({
@@ -1241,8 +1412,8 @@ describe("take-it-away", () => {
       },
       requiredImprovements: [],
     };
-    const failedValidationSummary = "Focused validation still fails after implementation work.";
-    const failedValidationResult = "failed: widget output omitted stable metadata";
+    const failedValidationSummary = "Focused validation failed";
+    const failedValidationResult = "failed: exit 1";
     const trailstepConfig = {
       version: 1 as const,
       customProviders: { worker: { binary: "worker-agent" } },
@@ -1253,7 +1424,6 @@ describe("take-it-away", () => {
       },
     };
     let implementGreenAttempts = 0;
-    let validateAttempts = 0;
     let doctorAttempts = 0;
 
     const failed = await runWorkflow({
@@ -1272,7 +1442,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -1283,13 +1453,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `node missing-validation-file.js`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -1307,26 +1494,6 @@ describe("take-it-away", () => {
               blocked: false,
               summary: `Implemented green story slice attempt ${implementGreenAttempts}.`,
               changedFiles: ["widget.txt"],
-            }),
-            "utf8",
-          );
-          return { exitCode: 0 };
-        }
-
-        if (request.outputFile.includes("validate-story")) {
-          validateAttempts += 1;
-          await writeFile(
-            request.outputFile,
-            JSON.stringify({
-              blocked: false,
-              summary: `${failedValidationSummary} Attempt ${validateAttempts}.`,
-              commands: [
-                {
-                  command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
-                  result: failedValidationResult,
-                },
-              ],
-              validationPassed: false,
             }),
             "utf8",
           );
@@ -1360,8 +1527,8 @@ describe("take-it-away", () => {
     const retryAgentRequests: string[] = [];
     const planningStepNames = [
       "create-feature-doc",
-      "create-or-improve-implementation-doc",
-      "review-implementation-doc",
+      "create-or-improve-implementation-strategy",
+      "review-implementation-strategy",
       "split-implementation-stories",
     ];
     const retried = await runWorkflow({
@@ -1387,7 +1554,7 @@ describe("take-it-away", () => {
     });
 
     expect(retried.status).toBe("failure");
-    expect(retryAgentRequests[0]).toContain("story-doctor");
+    expect(retryAgentRequests.every((outputFile) => !planningStepNames.some((stepName) => outputFile.includes(stepName)))).toBe(true);
     const retriedState = JSON.parse(await readFile(join(failed.runDir, "state.json"), "utf8")) as {
       latestStoryRouterState?: { validationRetryCount?: number } | null;
     };
@@ -1458,7 +1625,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -1469,13 +1636,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -1624,7 +1808,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -1636,18 +1820,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -1828,7 +2033,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -1840,18 +2045,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `node -e \"process.exit(require('fs').readFileSync('widget.txt','utf8').includes('attempt 2') ? 0 : 1)\"`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -1905,45 +2131,6 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("validate-story")) {
-          validateAttempts += 1;
-          if (validateAttempts === 1) {
-            await writeFile(
-              request.outputFile,
-              JSON.stringify({
-                blocked: false,
-                summary: failedValidationSummary,
-                commands: [
-                  {
-                    command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
-                    result: failedValidationResult,
-                  },
-                ],
-                validationPassed: false,
-              }),
-              "utf8",
-            );
-            return { exitCode: 0 };
-          }
-
-          await writeFile(
-            request.outputFile,
-            JSON.stringify({
-              blocked: false,
-              summary: passingValidationSummary,
-              commands: [
-                {
-                  command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
-                  result: "passed",
-                },
-              ],
-              validationPassed: true,
-            }),
-            "utf8",
-          );
-          return { exitCode: 0 };
-        }
-
         if (request.outputFile.includes("review-story-implementation")) {
           reviewPrompts.push(await readFile(request.promptFile, "utf8"));
           return { exitCode: 1 };
@@ -1957,10 +2144,10 @@ describe("take-it-away", () => {
     expect(implementGreenPrompts).toHaveLength(2);
     const retryPrompt = implementGreenPrompts.at(1) ?? "";
     expect(retryPrompt).toContain("Story 001: Build the widget exporter core");
-    expect(retryPrompt).toContain(failedValidationSummary);
-    expect(retryPrompt).toContain(failedValidationResult);
+    expect(retryPrompt).toContain("Focused validation failed");
+    expect(retryPrompt).toContain("attempt 2");
     expect(retryPrompt).not.toContain("Story 002: Add exporter observability");
-    expect(validateAttempts).toBe(2);
+    expect(validateAttempts).toBe(0);
     expect(reviewPrompts).toHaveLength(1);
 
     const failedValidationCompletedIndex = result.events.findIndex(
@@ -2018,9 +2205,9 @@ describe("take-it-away", () => {
     expect(state.storyQueue).toHaveLength(1);
     expect(state.storyQueue?.[0]?.content).toContain("Story 002");
     expect(state.latestValidationSummary).toMatchObject({
-      summary: passingValidationSummary,
       validationPassed: true,
     });
+    expect(state.latestValidationSummary?.summary).toContain("Focused validation passed");
     expect(state.latestStoryRouterState).toMatchObject({
       route: "retrying",
       reviewRetryCount: 0,
@@ -2057,13 +2244,12 @@ describe("take-it-away", () => {
       },
       requiredImprovements: [],
     };
-    const failedValidationSummary = "Focused validation still fails after implementation work.";
-    const failedValidationResult = "failed: widget output omitted stable metadata";
+    const failedValidationSummary = "Focused validation failed";
+    const failedValidationResult = "failed: exit 1";
     const implementGreenPrompts: string[] = [];
     const doctorPrompts: string[] = [];
     let implementGreenAttempts = 0;
     let doctorAttempts = 0;
-    let validateAttempts = 0;
 
     const result = await runWorkflow({
       workflow: takeItAway,
@@ -2089,7 +2275,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -2101,18 +2287,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `node missing-validation-file.js`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `node missing-validation-file.js`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -2152,26 +2359,6 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("validate-story")) {
-          validateAttempts += 1;
-          await writeFile(
-            request.outputFile,
-            JSON.stringify({
-              blocked: false,
-              summary: `${failedValidationSummary} Attempt ${validateAttempts}.`,
-              commands: [
-                {
-                  command: "pnpm --filter @trailstep/create-flows test -- take-it-away",
-                  result: failedValidationResult,
-                },
-              ],
-              validationPassed: false,
-            }),
-            "utf8",
-          );
-          return { exitCode: 0 };
-        }
-
         if (request.outputFile.includes("review-story-implementation")) {
           throw new Error("Exhausted validation should not dispatch story review.");
         }
@@ -2187,7 +2374,6 @@ describe("take-it-away", () => {
     expect(result.failure.code).toBe("story_validation_exhausted");
     expect(implementGreenPrompts).toHaveLength(2);
     expect(doctorPrompts).toHaveLength(1);
-    expect(validateAttempts).toBe(3);
     expect(doctorAttempts).toBe(1);
     expect(doctorPrompts[0]).toContain(failedValidationSummary);
     expect(doctorPrompts[0]).toContain(failedValidationResult);
@@ -2282,7 +2468,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -2294,18 +2480,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `node story-one-validation.js`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `node story-two-validation.js`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -2336,6 +2543,9 @@ describe("take-it-away", () => {
             }\n`,
             "utf8",
           );
+          if (storyLabel === "Story 001" && storyOneImplementAttempts >= 2) {
+            await writeFile(join(cwd, "story-one-validation.js"), "process.exit(0);\n", "utf8");
+          }
           await writeFile(
             request.outputFile,
             JSON.stringify({
@@ -2435,8 +2645,6 @@ describe("take-it-away", () => {
       throw new Error("Expected repeated story validation failures to exhaust the second story.");
     }
     expect(result.failure.code).toBe("story_validation_exhausted");
-    expect(storyOneValidationAttempts).toBe(2);
-    expect(storyTwoValidationAttempts).toBe(MAX_STORY_VALIDATION_ATTEMPTS);
     expect(storyTwoImplementAttempts).toBe(STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD);
     expect(storyTwoDoctorAttempts).toBe(1);
     expect(result.failure.details).toMatchObject({
@@ -2444,12 +2652,12 @@ describe("take-it-away", () => {
       validationRetryCount: MAX_STORY_VALIDATION_ATTEMPTS,
       retryLimit: MAX_STORY_VALIDATION_ATTEMPTS,
       validation: {
-        summary: storyTwoValidationSummaries.at(-1),
-        commands: [
-          {
-            result: storyTwoValidationResults.at(-1),
-          },
-        ],
+        summary: expect.stringContaining("Focused validation failed"),
+        commands: expect.arrayContaining([
+          expect.objectContaining({
+            result: expect.stringContaining("failed:"),
+          }),
+        ]),
       },
     });
 
@@ -2475,12 +2683,12 @@ describe("take-it-away", () => {
         content: expect.stringContaining("Story 002: Add exporter observability"),
       },
       latestValidation: {
-        summary: storyTwoValidationSummaries.at(-1),
-        commands: [
-          {
-            result: storyTwoValidationResults.at(-1),
-          },
-        ],
+        summary: expect.stringContaining("Focused validation failed"),
+        commands: expect.arrayContaining([
+          expect.objectContaining({
+            result: expect.stringContaining("failed:"),
+          }),
+        ]),
       },
       source: {
         reason: "failed-validation",
@@ -2541,7 +2749,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -2553,18 +2761,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `not-allowlisted-validation-command`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -2694,11 +2923,11 @@ describe("take-it-away", () => {
       } | null;
     };
 
-    expect(failedState.blockedReason).toBe(blockedReason);
+    expect(failedState.blockedReason).toBe("All focused validation commands were rejected or skipped.");
     expect(failedState.latestStoryRouterState).toMatchObject({
       route: "blocked",
       blockedPhase: "validate-story",
-      blockedReason,
+      blockedReason: "All focused validation commands were rejected or skipped.",
       reviewRetryCount: 0,
       validationRetryCount: 0,
       activeStory: {
@@ -2737,7 +2966,7 @@ describe("take-it-away", () => {
     }
     expect(retried.failure).toMatchObject({
       code: "story_validation_blocked",
-      message: blockedReason,
+      message: "All focused validation commands were rejected or skipped.",
     });
 
     const retryStartedIndex = retried.events.findIndex(
@@ -2776,7 +3005,7 @@ describe("take-it-away", () => {
     expect(retryAgentRequests).toEqual([]);
   });
 
-  it("routes only scoped active-story implementer context into the explore prompt", async () => {
+  it("routes only scoped active-story implementer context into deterministic implementation prompts", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
     await git(cwd, ["init"]);
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
@@ -2800,7 +3029,7 @@ describe("take-it-away", () => {
       requiredImprovements: [],
     };
 
-    const explorePrompts: string[] = [];
+    const implementPrompts: string[] = [];
     const implementRequests: string[] = [];
 
     const result = await runWorkflow({
@@ -2827,7 +3056,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -2844,7 +3073,7 @@ describe("take-it-away", () => {
               "<context>",
               "audience: implementer",
               "stories: Story 001",
-              "phases: explore-story",
+              "phases: all",
               "",
               "STORY_001_EXPLORE_CONTEXT_TOKEN",
               "",
@@ -2853,7 +3082,7 @@ describe("take-it-away", () => {
               "<context>",
               "audience: implementer",
               "stories: Story 002",
-              "phases: explore-story",
+              "phases: all",
               "",
               "STORY_002_CONTEXT_TOKEN",
               "",
@@ -2862,7 +3091,7 @@ describe("take-it-away", () => {
               "<context>",
               "audience: reviewer",
               "stories: Story 001",
-              "phases: explore-story",
+              "phases: all",
               "",
               "REVIEWER_ONLY_CONTEXT_TOKEN",
               "",
@@ -2874,6 +3103,10 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "This active story mentions inline <context> marker prose as ordinary text.",
               "INLINE_CONTEXT_MARKER_STORY_TEXT",
               "",
@@ -2882,6 +3115,10 @@ describe("take-it-away", () => {
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
               "STORY_002_BODY_TOKEN",
             ].join("\n"),
             "utf8",
@@ -2889,24 +3126,21 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
-          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("explore-story")) {
-          explorePrompts.push(await readFile(request.promptFile, "utf8"));
-          await writeFile(
-            request.outputFile,
-            JSON.stringify({
-              blocked: false,
-              summary: "Explored the active story with scoped context.",
-              relevantFiles: ["widget.txt"],
-              testSeams: ["widget exporter behavior"],
-              recommendedValidationCommands: ["pnpm --filter @trailstep/create-flows test"],
-            }),
-            "utf8",
-          );
+        if (request.outputFile.includes("review-implementation-strategy")) {
+          await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
 
@@ -2917,6 +3151,7 @@ describe("take-it-away", () => {
 
         if (request.outputFile.includes("implement-green")) {
           implementRequests.push(request.outputFile);
+          implementPrompts.push(await readFile(request.promptFile, "utf8"));
           return { exitCode: 1 };
         }
 
@@ -2930,12 +3165,12 @@ describe("take-it-away", () => {
     }
     expect(result.failure.code).not.toBe("unbalanced_story_context");
     expect(implementRequests).toHaveLength(1);
-    expect(explorePrompts).toHaveLength(1);
+    expect(implementPrompts).toHaveLength(1);
 
-    const prompt = explorePrompts[0];
+    const prompt = implementPrompts[0];
     expect(prompt).toContain("Story 001: Build the widget exporter core");
     expect(prompt).toContain("STORY_001_EXPLORE_CONTEXT_TOKEN");
-    expect(prompt).toContain("INLINE_CONTEXT_MARKER_STORY_TEXT");
+    expect(prompt).not.toContain("INLINE_CONTEXT_MARKER_STORY_TEXT");
     expect(prompt).not.toContain("Story 002: Add exporter observability");
     expect(prompt).not.toContain("STORY_002_BODY_TOKEN");
     expect(prompt).not.toContain("STORY_002_CONTEXT_TOKEN");
@@ -2993,7 +3228,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3013,18 +3248,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -3095,7 +3351,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3120,7 +3376,20 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -3202,7 +3471,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3215,13 +3484,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -3355,7 +3641,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3367,18 +3653,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(
             request.outputFile,
             JSON.stringify(passingImplementationDocReview),
@@ -3500,11 +3807,11 @@ describe("take-it-away", () => {
     expect(storyTwoReviewPrompts).toHaveLength(1);
     const prompt = storyTwoReviewPrompts[0] ?? "";
     expect(prompt).toContain("Story 002: Add exporter observability");
-    expect(prompt).toContain(storyTwoExplorationToken);
+    expect(prompt).toContain("Deterministic context preflight completed");
     expect(prompt).toContain(storyTwoRedToken);
     expect(prompt).toContain(`${storyTwoRedToken} failed for the intended reason.`);
     expect(prompt).toContain(storyTwoImplementationToken);
-    expect(prompt).toContain(storyTwoValidationToken);
+    expect(prompt).toContain("Focused validation passed");
     expect(prompt).toContain("Story review git metadata");
     expect(prompt).toContain(`Recorded story start commit: ${storyTwoBaseline}`);
     expect(prompt).toContain("Changed files:");
@@ -3574,7 +3881,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3586,18 +3893,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -3706,7 +4034,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3717,13 +4045,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -3819,7 +4164,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3832,13 +4177,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -3926,7 +4288,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -3940,18 +4302,39 @@ describe("take-it-away", () => {
               "",
               "Implement the core widget exporter behavior.",
               "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
+              "",
               "<!-- trailstep-story-boundary -->",
               "",
               "## Story 002: Add exporter observability",
               "",
               "Emit observable exporter events.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }
@@ -4066,7 +4449,7 @@ describe("take-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -4079,13 +4462,30 @@ describe("take-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+          await writeFile(
+            request.outputFile,
+            [
+              "# Implementation Strategy",
+              "",
+              "Build the widget exporter in small, reviewed story slices.",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        }
+
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }

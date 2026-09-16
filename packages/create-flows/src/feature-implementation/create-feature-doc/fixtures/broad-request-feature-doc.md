@@ -63,3 +63,13 @@ Admins can export the existing weekly summary table as a CSV from the current da
 - Scheduled email reports.
 - AI insight summaries.
 - Syncing reports to a data warehouse.
+
+## Structured Scope Facts
+
+- Actor: admins.
+- Surface: existing dashboard weekly summary table.
+- Data/entity: weekly workspace summary rows already shown in the table.
+- In-scope behavior: CSV export that respects existing table filters.
+- Constraint: keep the current dashboard layout stable during QA.
+- Explicit exclusions: full analytics product, new charts, scheduled/email delivery, external integrations.
+- Open decision: hidden columns in CSV.

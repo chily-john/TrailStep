@@ -7,6 +7,7 @@ import type { RunContextState } from "../../contracts/run-context/run-context.ty
 import type { PlainObject, ShapeInput } from "../../contracts/shapes/shape.types.js";
 import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
+import type { Workflow } from "../workflow/workflow.types.js";
 
 /** A local text file to load a prompt's content from, resolved relative to the workflow/project `cwd` at dispatch time. */
 export interface PromptTemplateSource {
@@ -324,7 +325,44 @@ export interface FailNode {
   readonly message?: string;
 }
 
+export interface WorkflowInvocationOptions<TOutput extends PlainObject = PlainObject> {
+  readonly branch?: string;
+  readonly onDone?: (output: TOutput) => ContinuationResult | Promise<ContinuationResult>;
+}
+
+export interface WorkflowInvocationNode<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
+  readonly kind: "workflowInvocation";
+  readonly workflow: Workflow<TInput, TOutput>;
+  readonly input: TInput;
+  readonly options?: WorkflowInvocationOptions<TOutput>;
+}
+
+export interface AbsoluteDoneNode<TOutput extends PlainObject = PlainObject> {
+  readonly kind: "absoluteDone";
+  readonly output: TOutput;
+  readonly message?: string;
+}
+
+export interface AbsoluteFailNode {
+  readonly kind: "absoluteFail";
+  readonly failure: Failure;
+  readonly message?: string;
+}
+
+export type RunnableContinuationNode =
+  | StepNode<PlainObject, PlainObject>
+  | WorkflowInvocationNode<any, any>;
+
+export type ContinuationArray = readonly RunnableContinuationNode[];
+
 export type ContinuationResult<TOutput extends PlainObject = PlainObject> =
   | StepNode<PlainObject, PlainObject>
   | DoneNode<TOutput>
-  | FailNode;
+  | FailNode
+  | WorkflowInvocationNode<any, any>
+  | AbsoluteDoneNode<TOutput>
+  | AbsoluteFailNode
+  | ContinuationArray;

@@ -2,6 +2,8 @@ import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js"
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type {
+  AbsoluteDoneNode,
+  AbsoluteFailNode,
   CheckWaitCallback,
   ContinuationStepConfig,
   DisplayPhase,
@@ -23,6 +25,7 @@ import type {
   WaitInput,
   WaitOptions,
   WaitPhase,
+  WorkflowInvocationNode,
 } from "../step/continuation.types.js";
 
 /**
@@ -192,6 +195,28 @@ export function fail(failure: Failure, options?: TerminalMessageOptions): FailNo
   };
 }
 
+export function absoluteDone<TOutput extends PlainObject = PlainObject>(
+  output?: TOutput,
+  options?: TerminalMessageOptions,
+): AbsoluteDoneNode<TOutput> {
+  return {
+    kind: "absoluteDone",
+    output: output ?? ({} as TOutput),
+    ...(options?.message === undefined ? {} : { message: options.message }),
+  };
+}
+
+export function absoluteFail(
+  failure: Failure,
+  options?: TerminalMessageOptions,
+): AbsoluteFailNode {
+  return {
+    kind: "absoluteFail",
+    failure,
+    ...(options?.message === undefined ? {} : { message: options.message }),
+  };
+}
+
 export function isStepNode(value: unknown): value is StepNode {
   return isPlainObject(value) && value.kind === "step";
 }
@@ -202,6 +227,18 @@ export function isDoneNode(value: unknown): value is DoneNode {
 
 export function isFailNode(value: unknown): value is FailNode {
   return isPlainObject(value) && value.kind === "fail";
+}
+
+export function isWorkflowInvocationNode(value: unknown): value is WorkflowInvocationNode {
+  return isPlainObject(value) && value.kind === "workflowInvocation";
+}
+
+export function isAbsoluteDoneNode(value: unknown): value is AbsoluteDoneNode {
+  return isPlainObject(value) && value.kind === "absoluteDone";
+}
+
+export function isAbsoluteFailNode(value: unknown): value is AbsoluteFailNode {
+  return isPlainObject(value) && value.kind === "absoluteFail";
 }
 
 /** Returns a step's ordered phases, synthesizing phases for legacy StepNode-shaped objects. */

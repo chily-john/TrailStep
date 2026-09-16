@@ -39,8 +39,27 @@ export type {
   WaitInput,
   WaitOptions,
   WaitPendingInput,
+  AbsoluteDoneNode,
+  AbsoluteFailNode,
+  ContinuationArray,
+  RunnableContinuationNode,
   WaitPendingResult,
+  WorkflowInvocationNode,
+  WorkflowInvocationOptions,
 } from "./step/continuation.types.js";
-export { done, fail, isDoneNode, isFailNode, isStepNode, step } from "./step/step-node.js";
+export {
+  absoluteDone,
+  absoluteFail,
+  done,
+  fail,
+  isAbsoluteDoneNode,
+  isAbsoluteFailNode,
+  isDoneNode,
+  isFailNode,
+  isStepNode,
+  isWorkflowInvocationNode,
+  step,
+} from "./step/step-node.js";
 export { subPrompt } from "./step/sub-prompt.js";
+export { defineWorkflow, type DefinedWorkflow, type WorkflowBuilderOptions } from "./workflow/define-workflow.js";
 export { type DeepReadonly, type WorkflowInputApi, workflow } from "./workflow/workflow.js";

@@ -18,12 +18,18 @@ export type {
 } from "./agent-targeting/targeting.types.js";
 export {
   Document,
+  absoluteDone,
+  absoluteFail,
+  defineWorkflow,
   document,
   done,
   fail,
+  isAbsoluteDoneNode,
+  isAbsoluteFailNode,
   isDoneNode,
   isFailNode,
   isStepNode,
+  isWorkflowInvocationNode,
   type JsonSchemaObject,
   jsonSchema,
   list,
@@ -43,7 +49,10 @@ export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
   CheckWaitCallback,
   CheckWaitContext,
+  AbsoluteDoneNode,
+  AbsoluteFailNode,
   CheckWaitHelpers,
+  ContinuationArray,
   ContinuationResult,
   ContinuationStepConfig,
   DisplayPhase,
@@ -70,6 +79,7 @@ export type {
   StepFactory,
   StepNode,
   StepPhase,
+  RunnableContinuationNode,
   StepWaitContext,
   SubPromptFactory,
   SubPromptOptions,
@@ -83,8 +93,11 @@ export type {
   WaitPendingInput,
   WaitPendingResult,
   WaitPhase,
+  WorkflowInvocationNode,
+  WorkflowInvocationOptions,
 } from "./authoring/step/continuation.types.js";
 export type { DeepReadonly, WorkflowInputApi } from "./authoring/workflow/workflow.js";
+export type { DefinedWorkflow, WorkflowBuilderOptions } from "./authoring/workflow/define-workflow.js";
 export type { Workflow, WorkflowSkillOptions } from "./authoring/workflow/workflow.types.js";
 export type {
   ManagedSessionPromptInjectionMode,

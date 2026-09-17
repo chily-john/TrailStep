@@ -515,8 +515,8 @@ describe("take-it-away", () => {
       id: workflowId,
       inputShape: {},
       outputShape: { ok: "boolean" },
-      start(input) {
-        return storyRouterStep({ reason: "story-completed", currentStory: storyTwo })(input);
+      start() {
+        return storyRouterStep({ reason: "story-completed", currentStory: storyTwo });
       },
     };
 

@@ -30,6 +30,20 @@ export const storyIsolationPreflightStep = step({ id: "story-isolation-preflight
 export async function runStoryIsolationPreflight(
   currentStory: Document,
 ): Promise<StoryIsolationPreflightResult> {
+  const completedReplay = await loadCompletedReplayPreflightState(currentStory);
+  if (completedReplay) {
+    await state.set(STORY_STATE_KEYS.activePhase, "story-isolation-preflight");
+    await state.set(STORY_STATE_KEYS.storyBaseline, completedReplay.baseline);
+    await state.set(STORY_STATE_KEYS.activeStoryStartCommit, { commit: completedReplay.baseline });
+    await state.set(STORY_STATE_KEYS.latestPreflightStatus, {
+      ok: true,
+      code: "story_preflight_replayed",
+      message: "Completed story isolation preflight was replayed from durable state.",
+      baseline: completedReplay.baseline,
+    } satisfies StoryPreflightStatus);
+    return { ok: true, baseline: completedReplay.baseline };
+  }
+
   await state.set(STORY_STATE_KEYS.activePhase, "story-isolation-preflight");
   await incrementStoryPhaseAttempt("story-isolation-preflight");
 
@@ -125,6 +139,22 @@ type StoryIsolationPreflightResult =
   | { readonly ok: true; readonly baseline: string }
   | { readonly ok: false; readonly failure: ContinuationResult };
 
+async function loadCompletedReplayPreflightState(
+  currentStory: Document,
+): Promise<{ readonly baseline: string } | null> {
+  if (!state.isReplayingCompletedStep) {
+    return null;
+  }
+
+  const activeStory = await state.get<Document | null>(STORY_STATE_KEYS.activeStory);
+  if (activeStory && !documentsMatch(activeStory, currentStory)) {
+    return null;
+  }
+
+  const baseline = await loadRecordedBaseline();
+  return baseline ? { baseline } : null;
+}
+
 async function loadBlockedReplayPreflightState(
   currentStory: Document,
 ): Promise<{ readonly baseline: string } | null> {
@@ -139,11 +169,21 @@ async function loadBlockedReplayPreflightState(
     return null;
   }
 
-  const baseline =
+  const baseline = await loadRecordedBaseline();
+  return baseline ? { baseline } : null;
+}
+
+async function loadRecordedBaseline(): Promise<string | null> {
+  return (
     (await state.get<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
     (await state.get<{ readonly commit?: string } | null>(STORY_STATE_KEYS.activeStoryStartCommit))
-      ?.commit;
-  return baseline ? { baseline } : null;
+      ?.commit ??
+    null
+  );
+}
+
+function documentsMatch(left: Document, right: Document): boolean {
+  return left.path === right.path && left.content === right.content;
 }
 
 async function preflightFailure(

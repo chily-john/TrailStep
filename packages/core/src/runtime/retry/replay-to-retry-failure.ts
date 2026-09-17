@@ -65,7 +65,12 @@ export async function replayToRetryFailure<
 
   const replay = await replayCompletedSteps({
     workflow: options.workflow,
-    events: eventsBeforeRetryTarget(options.events, failure.replayPosition, failure.stepId),
+    events: eventsBeforeRetryTarget(
+      options.events,
+      failure.replayPosition,
+      failure.stepId,
+      failure.event,
+    ),
     input: failure.workflowInput,
     targetStepId: failure.stepId,
     runDir: options.runDir,
@@ -99,6 +104,7 @@ function eventsBeforeRetryTarget(
   events: readonly Event[],
   replayPosition: number,
   targetStepId: string,
+  targetEvent: Event,
 ): readonly Event[] {
   const eventsBeforeFailure = events.slice(0, replayPosition);
   const excludedPositions = new Set<number>();
@@ -116,6 +122,10 @@ function eventsBeforeRetryTarget(
     for (const position of resolvedAttemptPositions(events, resolvedPosition)) {
       excludedPositions.add(position);
     }
+  }
+
+  if (targetEvent.type === "step.started") {
+    return eventsBeforeFailure.filter((_, index) => !excludedPositions.has(index));
   }
 
   let targetAttemptStartPosition = -1;

@@ -27,6 +27,7 @@ export async function withStepContext<T>(
     readonly maxSubPrompts?: unknown;
     readonly cwd?: string;
     readonly executionCwd?: string;
+    readonly replay?: { readonly kind: "completed-step" };
   } = {},
 ): Promise<T> {
   const parentContext = runContextStorage.getStore();
@@ -48,6 +49,7 @@ export async function withStepContext<T>(
       maxSubPrompts: options.maxSubPrompts,
       cwd: executionCwd ?? parentContext.cwd,
       executionCwd: executionCwd ?? parentContext.executionCwd,
+      replay: options.replay,
       nextDocumentIndex(): number {
         nextDocumentIndex += 1;
         return nextDocumentIndex;

@@ -103,6 +103,7 @@ export interface RunContext {
     readonly maxSubPrompts?: unknown;
     readonly cwd?: string;
     readonly executionCwd?: string;
+    readonly replay?: { readonly kind: "completed-step" };
     nextDocumentIndex(): number;
     nextSubPromptIndex(): number;
   };

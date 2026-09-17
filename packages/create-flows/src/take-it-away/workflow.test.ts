@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { runWorkflow } from "@trailstep/core";
+import { done, type Event, runWorkflow, step, type Workflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
+import { runStoryIsolationPreflight } from "../feature-implementation/story-isolation-preflight/step.js";
 import {
   MAX_STORY_REVIEW_ATTEMPTS,
   MAX_STORY_VALIDATION_ATTEMPTS,
@@ -20,6 +21,26 @@ const execFileAsync = promisify(execFile);
 async function git(cwd: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", [...args], { cwd });
   return stdout.trimEnd();
+}
+
+function event(input: {
+  readonly id: string;
+  readonly runId: string;
+  readonly workflowId: string;
+  readonly stepId?: string;
+  readonly type: Event["type"];
+  readonly payload?: Event["payload"];
+}): Event {
+  return {
+    id: input.id,
+    runId: input.runId,
+    workflowId: input.workflowId,
+    ...(input.stepId === undefined ? {} : { stepId: input.stepId }),
+    timestamp: "2026-01-01T00:00:00.000Z",
+    schemaVersion: "v0",
+    type: input.type,
+    payload: input.payload ?? {},
+  };
 }
 
 async function handleNonGreenStoryPhase(request: {
@@ -328,6 +349,84 @@ describe("take-it-away", () => {
     for (const stepName of blockedImplementationSteps) {
       expect(requestedOutputFiles.some((outputFile) => outputFile.includes(stepName))).toBe(false);
     }
+  });
+
+  it("manual retry replays a completed story preflight without re-checking a now-dirty worktree", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-preflight-replay-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep", "runs", "preflight-replay-run"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+    const baseline = await git(cwd, ["rev-parse", "HEAD"]);
+
+    const runName = "preflight-replay-run";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    const currentStory = {
+      content: "## Story 001: Keep replay isolated\n\nImplement the focused story.",
+      path: join(runDir, "story-1.md"),
+    };
+    await writeFile(
+      join(runDir, "state.json"),
+      `${JSON.stringify(
+        {
+          activeStory: currentStory,
+          storyBaseline: baseline,
+          activeStoryStartCommit: { commit: baseline },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(join(cwd, "dirty-story-work.txt"), "uncommitted story work\n", "utf8");
+
+    const workflowId = "preflight-replay-workflow";
+    const persistedEvents: readonly Event[] = [
+      event({ id: "workflow-started", runId: runName, workflowId, type: "workflow.started", payload: { input: {} } }),
+      event({ id: "preflight-started", runId: runName, workflowId, stepId: "story-isolation-preflight", type: "step.started" }),
+      event({ id: "preflight-completed", runId: runName, workflowId, stepId: "story-isolation-preflight", type: "step.completed" }),
+      event({ id: "implement-started", runId: runName, workflowId, stepId: "implement-green", type: "step.started" }),
+    ];
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${persistedEvents.map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const workflow: Workflow<Record<string, never>, { ok: boolean }> = {
+      id: workflowId,
+      inputShape: {},
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return step({ id: "story-isolation-preflight" }).do(async () => {
+          const preflight = await runStoryIsolationPreflight(currentStory);
+          if (!preflight.ok) {
+            return preflight.failure;
+          }
+
+          return step({ id: "implement-green" }).do(() => done({ ok: true }))({});
+        })(input);
+      },
+    };
+
+    const retried = await runWorkflow({ workflow, retry: { runDir, kind: "manual" }, cwd });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(retried.output).toEqual({ ok: true });
+    const persistedState = JSON.parse(await readFile(join(runDir, "state.json"), "utf8")) as {
+      latestPreflightStatus?: { code?: string; baseline?: string } | null;
+    };
+    expect(persistedState.latestPreflightStatus).toMatchObject({
+      code: "story_preflight_replayed",
+      baseline,
+    });
   });
 
   it("router records active story phase and baseline before dispatching implementation", async () => {

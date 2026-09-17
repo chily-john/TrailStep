@@ -19,6 +19,26 @@ function eventTypes(events: readonly Event[]): readonly string[] {
   return events.map((event) => event.type);
 }
 
+function event(input: {
+  readonly id: string;
+  readonly runId: string;
+  readonly workflowId: string;
+  readonly stepId?: string;
+  readonly type: Event["type"];
+  readonly payload?: Event["payload"];
+}): Event {
+  return {
+    id: input.id,
+    runId: input.runId,
+    workflowId: input.workflowId,
+    ...(input.stepId === undefined ? {} : { stepId: input.stepId }),
+    timestamp: "2026-01-01T00:00:00.000Z",
+    schemaVersion: "v0",
+    type: input.type,
+    payload: input.payload ?? {},
+  };
+}
+
 describe("runWorkflow retry", () => {
   it("manual retry targets a step that returned fail", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-fail-node-"));
@@ -500,6 +520,64 @@ describe("runWorkflow retry", () => {
       },
     });
     expect(retried.events[3]).toMatchObject({ type: "step.started", stepId: "review" });
+  });
+
+  it("manual retry targets a dangling repeated implement-green without dropping prior completed attempts", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-repeated-dangling-"));
+    const runName = "retry-repeated-dangling";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    const persistedEvents: readonly Event[] = [
+      event({ id: "workflow-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", type: "workflow.started", payload: { input: {} } }),
+      event({ id: "router-1-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.started" }),
+      event({ id: "router-1-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.completed" }),
+      event({ id: "implement-1-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.started" }),
+      event({ id: "implement-1-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.completed" }),
+      event({ id: "router-2-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.started" }),
+      event({ id: "router-2-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.completed" }),
+      event({ id: "implement-2-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.started" }),
+      event({ id: "implement-2-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.completed" }),
+      event({ id: "router-3-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.started" }),
+      event({ id: "router-3-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.completed" }),
+      event({ id: "implement-3-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.started" }),
+    ];
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${persistedEvents.map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      "utf8",
+    );
+
+    let implementCalls = 0;
+    const workflow: Workflow<Record<string, never>, { attempt: number }> = {
+      id: "retry-repeated-dangling-workflow",
+      inputShape: {},
+      outputShape: { attempt: "number" },
+      start(input) {
+        const route = () => step({ id: "story-router" }).do(() => implement({}));
+        const implement = step({ id: "implement-green" }).do(() => {
+          implementCalls += 1;
+          return implementCalls < 3 ? route()({}) : done({ attempt: implementCalls });
+        });
+        return route()(input);
+      },
+    };
+
+    const retried = await runWorkflow({ workflow, retry: { runDir, kind: "manual" } });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(retried.output).toEqual({ attempt: 3 });
+    expect(retried.events[12]).toMatchObject({
+      type: "workflow.retryStarted",
+      payload: {
+        retriedStepId: "implement-green",
+        sourceFailureEventId: "implement-3-started",
+        sourceFailureReplayPosition: 11,
+      },
+    });
+    expect(retried.events.at(-3)).toMatchObject({ type: "step.started", stepId: "implement-green" });
   });
 
   it("manual retry resumes the latest unresolved failure and continues artifact ordinals", async () => {

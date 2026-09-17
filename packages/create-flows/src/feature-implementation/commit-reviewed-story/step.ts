@@ -34,7 +34,7 @@ export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
     const activeStory =
       (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? input.currentStory;
 
-    if (await storyAutoCommitEnabled()) {
+    if (!state.isReplayingCompletedStep && (await storyAutoCommitEnabled())) {
       const commitResult = await commitReviewedStoryChanges(
         activeStory,
         input.implementationSummary,
@@ -196,7 +196,7 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     return openPullRequestStep(output);
   }
 
-  if (!(await storyAutoCommitEnabled())) {
+  if (!state.isReplayingCompletedStep && !(await storyAutoCommitEnabled())) {
     const cleanBoundary = await verifyCleanBoundaryBeforeNextStory(activeStory);
     if (!cleanBoundary.ok) {
       return fail({

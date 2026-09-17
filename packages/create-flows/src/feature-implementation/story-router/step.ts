@@ -422,6 +422,7 @@ async function replayPersistedRetryRoute(
   }
 
   if (
+    !state.isReplayingCompletedStep &&
     routerState.route !== "doctoring" &&
     routerState.targetPhase !== previousActivePhase &&
     previousActivePhase !== "story-router"
@@ -554,7 +555,15 @@ async function persistedRetryEvidenceMatches(
   reason: RetryRouteSourceReason,
   routerState: Partial<StoryRouterState>,
 ): Promise<boolean> {
-  return routerState.source?.reason === reason && routerStateEvidenceMatchesLatest(routerState);
+  if (routerState.source?.reason !== reason) {
+    return false;
+  }
+
+  if (state.isReplayingCompletedStep) {
+    return true;
+  }
+
+  return routerStateEvidenceMatchesLatest(routerState);
 }
 
 async function routerStateEvidenceMatchesLatest(

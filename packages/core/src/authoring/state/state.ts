@@ -27,6 +27,9 @@ export const state = {
   get executionCwd(): string | undefined {
     return currentRunContext().executionCwd ?? currentRunContext().cwd;
   },
+  get isReplayingCompletedStep(): boolean {
+    return currentRunContext().currentStep?.replay?.kind === "completed-step";
+  },
   get projectCwd(): string | undefined {
     return currentRunContext().projectCwd;
   },

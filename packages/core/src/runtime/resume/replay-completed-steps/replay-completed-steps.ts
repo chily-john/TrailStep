@@ -101,8 +101,11 @@ export async function replayCompletedSteps<
       if (recordedWaitOutputs.status === "failure") {
         return recordedWaitOutputs;
       }
-      node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        replayStepPhases(completedNode, validatedOutput, recordedWaitOutputs.waitOutputs),
+      node = await withStepContext(
+        completedNode.config.id,
+        stepDir,
+        async () => replayStepPhases(completedNode, validatedOutput, recordedWaitOutputs.waitOutputs),
+        { replay: { kind: "completed-step" } },
       );
     } else {
       const stepDir = resolveStepArtifactPaths({
@@ -119,8 +122,11 @@ export async function replayCompletedSteps<
       if (recordedWaitOutputs.status === "failure") {
         return recordedWaitOutputs;
       }
-      node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        replayStepPhases(completedNode, undefined, recordedWaitOutputs.waitOutputs),
+      node = await withStepContext(
+        completedNode.config.id,
+        stepDir,
+        async () => replayStepPhases(completedNode, undefined, recordedWaitOutputs.waitOutputs),
+        { replay: { kind: "completed-step" } },
       );
     }
   }

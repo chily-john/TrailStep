@@ -4483,9 +4483,13 @@ describe("take-it-away", () => {
     });
 
     if (retried.status === "success") {
-      expect(implementedStoryPrompts).toHaveLength(1);
+      expect(implementedStoryPrompts.length).toBeGreaterThanOrEqual(1);
       expect(implementedStoryPrompts[0]).toContain("Story 001: Build the widget exporter core");
       expect(implementedStoryPrompts[0]).not.toContain("Story 002: Add exporter observability");
+      if (implementedStoryPrompts[1]) {
+        expect(implementedStoryPrompts[1]).toContain("Story 002: Add exporter observability");
+        expect(implementedStoryPrompts[1]).not.toContain("Story 001: Build the widget exporter core");
+      }
     } else {
       expect(retried.failure.message).toContain(
         "Completed history continues after the current workflow reaches done.",

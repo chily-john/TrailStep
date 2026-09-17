@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  type ContinuationResult,
   document,
   done,
   type Event,
@@ -528,18 +529,90 @@ describe("runWorkflow retry", () => {
     const runDir = join(cwd, ".trailstep", "runs", runName);
     await mkdir(runDir, { recursive: true });
     const persistedEvents: readonly Event[] = [
-      event({ id: "workflow-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", type: "workflow.started", payload: { input: {} } }),
-      event({ id: "router-1-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.started" }),
-      event({ id: "router-1-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.completed" }),
-      event({ id: "implement-1-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.started" }),
-      event({ id: "implement-1-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.completed" }),
-      event({ id: "router-2-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.started" }),
-      event({ id: "router-2-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.completed" }),
-      event({ id: "implement-2-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.started" }),
-      event({ id: "implement-2-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.completed" }),
-      event({ id: "router-3-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.started" }),
-      event({ id: "router-3-completed", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "story-router", type: "step.completed" }),
-      event({ id: "implement-3-started", runId: runName, workflowId: "retry-repeated-dangling-workflow", stepId: "implement-green", type: "step.started" }),
+      event({
+        id: "workflow-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        type: "workflow.started",
+        payload: { input: {} },
+      }),
+      event({
+        id: "router-1-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "story-router",
+        type: "step.started",
+      }),
+      event({
+        id: "router-1-completed",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "story-router",
+        type: "step.completed",
+      }),
+      event({
+        id: "implement-1-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "implement-green",
+        type: "step.started",
+      }),
+      event({
+        id: "implement-1-completed",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "implement-green",
+        type: "step.completed",
+      }),
+      event({
+        id: "router-2-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "story-router",
+        type: "step.started",
+      }),
+      event({
+        id: "router-2-completed",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "story-router",
+        type: "step.completed",
+      }),
+      event({
+        id: "implement-2-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "implement-green",
+        type: "step.started",
+      }),
+      event({
+        id: "implement-2-completed",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "implement-green",
+        type: "step.completed",
+      }),
+      event({
+        id: "router-3-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "story-router",
+        type: "step.started",
+      }),
+      event({
+        id: "router-3-completed",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "story-router",
+        type: "step.completed",
+      }),
+      event({
+        id: "implement-3-started",
+        runId: runName,
+        workflowId: "retry-repeated-dangling-workflow",
+        stepId: "implement-green",
+        type: "step.started",
+      }),
     ];
     await writeFile(
       join(runDir, "events.jsonl"),
@@ -553,12 +626,13 @@ describe("runWorkflow retry", () => {
       inputShape: {},
       outputShape: { attempt: "number" },
       start(input) {
-        const route = () => step({ id: "story-router" }).do(() => implement({}));
+        let route: (routeInput: Record<string, never>) => ContinuationResult<{ attempt: number }>;
         const implement = step({ id: "implement-green" }).do(() => {
           implementCalls += 1;
-          return implementCalls < 3 ? route()({}) : done({ attempt: implementCalls });
+          return implementCalls < 3 ? route({}) : done({ attempt: implementCalls });
         });
-        return route()(input);
+        route = step({ id: "story-router" }).do(() => implement({}));
+        return route(input);
       },
     };
 
@@ -577,7 +651,10 @@ describe("runWorkflow retry", () => {
         sourceFailureReplayPosition: 11,
       },
     });
-    expect(retried.events.at(-3)).toMatchObject({ type: "step.started", stepId: "implement-green" });
+    expect(retried.events.at(-3)).toMatchObject({
+      type: "step.started",
+      stepId: "implement-green",
+    });
   });
 
   it("manual retry resumes the latest unresolved failure and continues artifact ordinals", async () => {

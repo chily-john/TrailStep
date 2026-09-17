@@ -548,7 +548,6 @@ describe("take-it-away", () => {
     expect(state.latestImplementationSummary ?? null).toBeNull();
     expect(state.latestStoryRouterState ?? null).toBeNull();
     expect(state.attemptsByPhase).toEqual({
-      "story-router": 1,
       "story-isolation-preflight": 1,
     });
   });

@@ -125,7 +125,9 @@ function eventsBeforeRetryTarget(
   }
 
   if (targetEvent.type === "step.started") {
-    return eventsBeforeFailure.filter((_, index) => !excludedPositions.has(index));
+    return eventsBeforeFailure.filter(
+      (event, index) => !excludedPositions.has(index) || shouldKeepResolvedAttemptEvent(event),
+    );
   }
 
   let targetAttemptStartPosition = -1;
@@ -142,7 +144,7 @@ function eventsBeforeRetryTarget(
   }
 
   return eventsBeforeFailure.filter((event, index) => {
-    if (excludedPositions.has(index)) {
+    if (excludedPositions.has(index) && !shouldKeepResolvedAttemptEvent(event)) {
       return false;
     }
 
@@ -153,6 +155,16 @@ function eventsBeforeRetryTarget(
       event.stepId !== targetStepId
     );
   });
+}
+
+function shouldKeepResolvedAttemptEvent(event: Event): boolean {
+  // Replay must not consume completed outputs from a previously failed attempt,
+  // but it still needs the attempt's start/terminal events so step artifact
+  // ordinals remain aligned with the original event stream and failed starts are
+  // paired off before later retried attempts with the same step id complete.
+  return (
+    event.type === "step.started" || event.type === "step.failed" || event.type === "step.cancelled"
+  );
 }
 
 function readSourceFailureReplayPosition(event: Event): number | undefined {

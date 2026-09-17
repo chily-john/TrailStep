@@ -62,6 +62,19 @@ describe("selectLatestUnresolvedFailure", () => {
     expect(target).toBeUndefined();
   });
 
+  it("selects a dangling repeated step.started by exact latest unmatched attempt", () => {
+    const target = selectLatestUnresolvedFailure([
+      event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),
+      event({ id: "review-started-1", type: "step.started", stepId: "review" }),
+      event({ id: "review-started-2", type: "step.started", stepId: "review" }),
+      event({ id: "review-completed-1", type: "step.completed", stepId: "review" }),
+    ]);
+
+    expect(target).not.toBeUndefined();
+    expect(target?.event).toMatchObject({ id: "review-started-1", type: "step.started" });
+    expect(target?.replayPosition).toBe(1);
+  });
+
   it("does not select a step.started event closed by a later step terminal event", () => {
     const target = selectLatestUnresolvedFailure([
       event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),

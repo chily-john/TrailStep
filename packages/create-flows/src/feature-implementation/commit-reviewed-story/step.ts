@@ -31,8 +31,7 @@ type StoryCommitResult =
 
 export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
   async (input: CommitReviewedStoryInput): Promise<ContinuationResult> => {
-    const activeStory =
-      (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? input.currentStory;
+    const activeStory = input.currentStory;
 
     if (!state.isReplayingCompletedStep && (await storyAutoCommitEnabled())) {
       const commitResult = await commitReviewedStoryChanges(
@@ -167,13 +166,21 @@ async function commitReviewedStoryChanges(
 
 async function completeReviewedStory(activeStory: Document): Promise<ContinuationResult> {
   const completed = (await state.get<string[]>(STORY_STATE_KEYS.completedStories)) ?? [];
-  const updatedCompleted = [
-    ...completed,
-    extractStoryTitle(activeStory.content, completed.length + 1),
-  ];
+  const completedTitle = extractStoryTitle(activeStory.content, completed.length + 1);
+  const storyAlreadyCompleted = completed.includes(completedTitle);
+  const updatedCompleted = storyAlreadyCompleted ? completed : [...completed, completedTitle];
 
+  const persistedActiveStory = await state.get<Document | null>(STORY_STATE_KEYS.activeStory);
   const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
-  const [nextStory, ...remaining] = storyQueue;
+  const storyQueueWithoutCompleted = storyQueue.filter((story) => !documentsMatch(story, activeStory));
+  const nextStory =
+    persistedActiveStory && !documentsMatch(persistedActiveStory, activeStory)
+      ? persistedActiveStory
+      : storyQueueWithoutCompleted[0];
+  const remaining =
+    persistedActiveStory && !documentsMatch(persistedActiveStory, activeStory)
+      ? storyQueueWithoutCompleted
+      : storyQueueWithoutCompleted.slice(1);
   const [nextStoryContext = "", ...remainingStoryContexts] =
     (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
 
@@ -215,6 +222,10 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
   await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
   const { storyRouterStep } = await import("../story-router/step.js");
   return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
+}
+
+function documentsMatch(left: Document, right: Document): boolean {
+  return left.path === right.path && left.content === right.content;
 }
 
 async function appendWorkflowWarning(warning: string): Promise<void> {

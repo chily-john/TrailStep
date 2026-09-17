@@ -7,6 +7,7 @@ import {
   MAX_STORY_VALIDATION_ATTEMPTS,
   STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD,
 } from "../shared/constants.js";
+import { extractStoryTitle } from "../shared/output-schema.js";
 import type { ReviewResult } from "../shared/review-schema.js";
 import { reviewPasses } from "../shared/review-schema.js";
 import {
@@ -14,6 +15,7 @@ import {
   type BlockedStoryRouteSourceReason,
   incrementStoryPhaseAttempt,
   loadStoryPhaseContext,
+  resetStoryLocalStateForNextStory,
   STORY_STATE_KEYS,
   type StoryPhaseContexts,
   type StoryRouterState,
@@ -83,6 +85,10 @@ export const storyRouterStep = step({ id: "story-router" }).do(
         return blockedReplay;
       }
       return routeBlockedStory(currentStory, reason);
+    }
+
+    if (reason === "story-completed") {
+      await repairStaleStoryCompletion(currentStory);
     }
 
     const activeStory =
@@ -843,6 +849,47 @@ function formatBlockedRouteFailureDetails(
     blockedPhase,
     ...(metadata ? metadata : {}),
   };
+}
+
+async function repairStaleStoryCompletion(currentStory?: Document): Promise<void> {
+  if (!currentStory) {
+    return;
+  }
+
+  const persistedActiveStory = await state.get<Document | null>(STORY_STATE_KEYS.activeStory);
+  if (!persistedActiveStory || storiesMatch(persistedActiveStory, currentStory)) {
+    return;
+  }
+
+  const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
+  const queuedCurrentStoryIndex = storyQueue.findIndex((story) => storiesMatch(story, currentStory));
+  if (queuedCurrentStoryIndex < 0) {
+    return;
+  }
+
+  const completed = (await state.get<string[]>(STORY_STATE_KEYS.completedStories)) ?? [];
+  const completedTitle = extractStoryTitle(persistedActiveStory.content, completed.length + 1);
+  await resetStoryLocalStateForNextStory();
+  await state.set(
+    STORY_STATE_KEYS.completedStories,
+    completed.includes(completedTitle) ? completed : [...completed, completedTitle],
+  );
+  await state.set(
+    STORY_STATE_KEYS.storyQueue,
+    storyQueue.filter((story) => !storiesMatch(story, currentStory)),
+  );
+
+  const storyContextQueue =
+    (await state.get<(string | StoryPhaseContexts)[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
+  await state.set(
+    STORY_STATE_KEYS.storyContextQueue,
+    storyContextQueue.filter((_, index) => index !== queuedCurrentStoryIndex),
+  );
+  await state.set(STORY_STATE_KEYS.activeStory, currentStory);
+  await state.set(
+    STORY_STATE_KEYS.activeStoryContext,
+    storyContextQueue[queuedCurrentStoryIndex] ?? "",
+  );
 }
 
 async function routeStoryAfterPreflight(activeStory: Document): Promise<ContinuationResult> {

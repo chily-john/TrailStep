@@ -10,8 +10,10 @@ import {
   done,
   type Event,
   fail,
+  jsonSchema,
   parseTrailStepConfig,
   runWorkflow,
+  state,
   step,
   type Workflow,
 } from "../../index.js";
@@ -205,6 +207,7 @@ describe("runWorkflow retry", () => {
     let shouldFailReview = true;
     let shouldFailPublish = true;
     let agentAttempts = 0;
+    const reviewDocumentPaths: string[] = [];
 
     const workflow: Workflow<{ task: string }, { result: string }> = {
       id: "retry-resolved-completions-workflow",
@@ -217,10 +220,13 @@ describe("runWorkflow retry", () => {
             output: { action: "string" },
             agent: "reviewer",
           })
-          .do((output: { action: string }) => {
+          .do(async (output: { action: string }) => {
             if (shouldFailReview) {
               return fail({ code: "review_rejected", message: "review rejected" });
             }
+
+            const reviewDocument = await document(`review action ${output.action}`);
+            reviewDocumentPaths.push(reviewDocument.path);
 
             if (output.action === "stop") {
               return done({ result: "stopped" });
@@ -307,6 +313,10 @@ describe("runWorkflow retry", () => {
     }
     expect(retriedPublish.output).toEqual({ result: "published" });
     expect(agentAttempts).toBe(2);
+    expect(reviewDocumentPaths).toEqual([
+      join(failedReview.runDir, "steps", "0002-review", "document-1.md"),
+      join(failedReview.runDir, "steps", "0002-review", "document-1.md"),
+    ]);
   });
 
   it("manual retry appends events with ids unique from existing events", async () => {
@@ -521,6 +531,239 @@ describe("runWorkflow retry", () => {
       },
     });
     expect(retried.events[3]).toMatchObject({ type: "step.started", stepId: "review" });
+  });
+
+  it("manual retry targets dangling second implement-story with paired repeated-id replay", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-repeated-story-dangling-"));
+    const runName = "retry-repeated-story-dangling";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    const workflowId = "retry-repeated-story-dangling-workflow";
+    const persistedEvents: readonly Event[] = [
+      event({
+        id: "workflow-started",
+        runId: runName,
+        workflowId,
+        type: "workflow.started",
+        payload: { input: {} },
+      }),
+      event({
+        id: "router-1-started",
+        runId: runName,
+        workflowId,
+        stepId: "story-router",
+        type: "step.started",
+      }),
+      event({
+        id: "router-1-completed",
+        runId: runName,
+        workflowId,
+        stepId: "story-router",
+        type: "step.completed",
+      }),
+      event({
+        id: "implement-1-started",
+        runId: runName,
+        workflowId,
+        stepId: "implement-story",
+        type: "step.started",
+      }),
+      event({
+        id: "implement-1-wait",
+        runId: runName,
+        workflowId,
+        stepId: "implement-story",
+        type: "wait.satisfied",
+        payload: { waitId: "check-0", output: { story: 1 } },
+      }),
+      event({
+        id: "implement-1-completed",
+        runId: runName,
+        workflowId,
+        stepId: "implement-story",
+        type: "step.completed",
+      }),
+      event({
+        id: "review-1-started",
+        runId: runName,
+        workflowId,
+        stepId: "review-story-implementation",
+        type: "step.started",
+      }),
+      event({
+        id: "review-1-completed",
+        runId: runName,
+        workflowId,
+        stepId: "review-story-implementation",
+        type: "step.completed",
+      }),
+      event({
+        id: "commit-1-started",
+        runId: runName,
+        workflowId,
+        stepId: "commit-story",
+        type: "step.started",
+      }),
+      event({
+        id: "commit-1-completed",
+        runId: runName,
+        workflowId,
+        stepId: "commit-story",
+        type: "step.completed",
+      }),
+      event({
+        id: "router-2-started",
+        runId: runName,
+        workflowId,
+        stepId: "story-router",
+        type: "step.started",
+      }),
+      event({
+        id: "router-2-completed",
+        runId: runName,
+        workflowId,
+        stepId: "story-router",
+        type: "step.completed",
+      }),
+      event({
+        id: "implement-2-started",
+        runId: runName,
+        workflowId,
+        stepId: "implement-story",
+        type: "step.started",
+      }),
+    ];
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${persistedEvents.map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      "utf8",
+    );
+
+    let implementCalls = 0;
+    const seenWaitStories: number[] = [];
+    const workflow: Workflow<Record<string, never>, { story: number }> = {
+      id: workflowId,
+      inputShape: {},
+      outputShape: { story: "number" },
+      start(input) {
+        let route: (routeInput: Record<string, never>) => ContinuationResult<{ story: number }>;
+        const commit = step({ id: "commit-story" }).do(() => route({}));
+        const review = step({ id: "review-story-implementation" }).do(() => commit({}));
+        const implement = step({ id: "implement-story" })
+          .wait(async ({ wait }) => wait.done({ story: implementCalls + 1 }), {
+            output: { story: "number" },
+          })
+          .do(({ waits }) => {
+            const story = waits["check-0"]?.story;
+            if (typeof story !== "number") {
+              throw new Error("missing implement wait story");
+            }
+            seenWaitStories.push(story);
+            implementCalls += 1;
+            return story < 2 ? review({}) : done({ story });
+          });
+        route = step({ id: "story-router" }).do(() => implement({}));
+        return route(input);
+      },
+    };
+
+    const retried = await runWorkflow({ workflow, retry: { runDir, kind: "manual" } });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(retried.output).toEqual({ story: 2 });
+    expect(seenWaitStories).toEqual([1, 2]);
+    expect(retried.events[13]).toMatchObject({
+      type: "workflow.retryStarted",
+      payload: {
+        retriedStepId: "implement-story",
+        sourceFailureEventId: "implement-2-started",
+        sourceFailureReplayPosition: 12,
+      },
+    });
+  });
+
+  it("manual retry reconstructs runtime state at a repeated-step retry boundary", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-state-boundary-"));
+    let shouldFailSecondStory = true;
+    const seenStoryIndexes: number[] = [];
+
+    const workflow: Workflow<{ stories: string[] }, { story: string }> = {
+      id: "retry-state-boundary-workflow",
+      inputShape: jsonSchema<{ stories: string[] }>({
+        type: "object",
+        properties: { stories: { type: "array", items: { type: "string" } } },
+        required: ["stories"],
+        additionalProperties: false,
+      }),
+      outputShape: { story: "string" },
+      start(input) {
+        const implementStory = (): ContinuationResult<{ story: string }> =>
+          step({ id: "implement-story" }).do(async () => {
+            const active = await state.get<{ index: number }>("activeStory");
+            const index = active?.index ?? 0;
+            seenStoryIndexes.push(index);
+
+            if (index === 1 && shouldFailSecondStory) {
+              throw new Error("second story unavailable");
+            }
+
+            const story = input.stories[index];
+            if (story === undefined) {
+              throw new Error(`missing story ${index}`);
+            }
+
+            if (index + 1 >= input.stories.length) {
+              return done({ story });
+            }
+
+            await state.set("activeStory", { index: index + 1 });
+            return implementStory();
+          })({});
+
+        return implementStory();
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: { stories: ["Story 001", "Story 002"] },
+      runName: "retry-state-boundary",
+      cwd,
+    });
+
+    expect(failed.status).toBe("failure");
+    await expect(readFile(join(failed.runDir, "state.json"), "utf8")).resolves.toContain(
+      '"index": 1',
+    );
+
+    shouldFailSecondStory = false;
+    seenStoryIndexes.length = 0;
+    const retried = await runWorkflow({
+      workflow,
+      retry: { runDir: failed.runDir, kind: "manual" },
+    });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(retried.output).toEqual({ story: "Story 002" });
+    expect(seenStoryIndexes).toEqual([0, 1]);
+    expect(eventTypes(retried.events)).toEqual([
+      "workflow.started",
+      "step.started",
+      "step.completed",
+      "step.started",
+      "step.failed",
+      "workflow.failed",
+      "workflow.retryStarted",
+      "step.started",
+      "step.completed",
+      "workflow.completed",
+    ]);
   });
 
   it("manual retry targets a dangling repeated implement-green without dropping prior completed attempts", async () => {

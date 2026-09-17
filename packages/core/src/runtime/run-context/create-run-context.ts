@@ -12,6 +12,7 @@ export function createRunContext(options: {
   readonly runId: string;
   readonly runName: string;
   readonly runDir: string;
+  readonly initialState?: RunState;
   readonly workflowId?: string;
   readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
   readonly projectCwd?: string;
@@ -32,6 +33,10 @@ export function createRunContext(options: {
 
   function ensureLoaded(): Promise<RunState> {
     if (cache) return Promise.resolve(cache);
+    if (options.initialState !== undefined) {
+      cache = { ...options.initialState };
+      return Promise.resolve(cache);
+    }
     loadPromise ??= readRunState(options.runDir).then((state) => (cache = state));
     return loadPromise;
   }

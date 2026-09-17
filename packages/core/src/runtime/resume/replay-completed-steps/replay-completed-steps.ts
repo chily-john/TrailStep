@@ -38,10 +38,10 @@ export async function replayCompletedSteps<
   | { readonly status: "failure"; readonly failure: Failure }
 > {
   let node: ContinuationResult = options.workflow.start(options.input as TInput);
-  const completedStepEvents = options.events.filter((event) => event.type === "step.completed");
+  const completedAttempts = pairCompletedStepAttempts(options.events);
 
-  for (const [completedIndex, completedEvent] of completedStepEvents.entries()) {
-    const stepIndex = completedIndex + 1;
+  for (const attempt of completedAttempts) {
+    const { completedEvent, stepIndex } = attempt;
     if (!isStepNode(node)) {
       return {
         status: "failure",
@@ -95,8 +95,7 @@ export async function replayCompletedSteps<
       const completedNode = node;
       const recordedWaitOutputs = readCompletedStepWaitOutputs({
         events: options.events,
-        completedEvent,
-        stepId: completedNode.config.id,
+        attempt,
       });
       if (recordedWaitOutputs.status === "failure") {
         return recordedWaitOutputs;
@@ -104,7 +103,8 @@ export async function replayCompletedSteps<
       node = await withStepContext(
         completedNode.config.id,
         stepDir,
-        async () => replayStepPhases(completedNode, validatedOutput, recordedWaitOutputs.waitOutputs),
+        async () =>
+          replayStepPhases(completedNode, validatedOutput, recordedWaitOutputs.waitOutputs),
         { replay: { kind: "completed-step" } },
       );
     } else {
@@ -116,8 +116,7 @@ export async function replayCompletedSteps<
       const completedNode = node;
       const recordedWaitOutputs = readCompletedStepWaitOutputs({
         events: options.events,
-        completedEvent,
-        stepId: completedNode.config.id,
+        attempt,
       });
       if (recordedWaitOutputs.status === "failure") {
         return recordedWaitOutputs;
@@ -184,30 +183,73 @@ async function replayStepPhases(
   return nextNode;
 }
 
+interface CompletedStepAttempt {
+  readonly stepId: string;
+  readonly stepIndex: number;
+  readonly completedEvent: Event;
+  readonly startedEventIndex: number;
+  readonly completedEventIndex: number;
+}
+
+interface CompletedStepAttemptStart {
+  readonly event: Event;
+  readonly eventIndex: number;
+  readonly stepIndex: number;
+}
+
+function pairCompletedStepAttempts(events: readonly Event[]): readonly CompletedStepAttempt[] {
+  const startedByStepId = new Map<string, CompletedStepAttemptStart[]>();
+  const attempts: CompletedStepAttempt[] = [];
+  let stepIndex = 0;
+
+  for (const [eventIndex, event] of events.entries()) {
+    if (event.type === "step.started" && event.stepId) {
+      stepIndex += 1;
+      const starts = startedByStepId.get(event.stepId) ?? [];
+      starts.push({ event, eventIndex, stepIndex });
+      startedByStepId.set(event.stepId, starts);
+      continue;
+    }
+
+    if (
+      (event.type === "step.completed" ||
+        event.type === "step.failed" ||
+        event.type === "step.cancelled") &&
+      event.stepId
+    ) {
+      const starts = startedByStepId.get(event.stepId);
+      const started = starts?.pop();
+      if (!started || event.type !== "step.completed") {
+        continue;
+      }
+
+      attempts.push({
+        stepId: event.stepId,
+        stepIndex: started.stepIndex,
+        completedEvent: event,
+        startedEventIndex: started.eventIndex,
+        completedEventIndex: eventIndex,
+      });
+    }
+  }
+
+  return attempts.sort((left, right) => left.completedEventIndex - right.completedEventIndex);
+}
+
 function readCompletedStepWaitOutputs(options: {
   readonly events: readonly Event[];
-  readonly completedEvent: Event;
-  readonly stepId: string;
+  readonly attempt: CompletedStepAttempt;
 }):
   | { readonly status: "success"; readonly waitOutputs: Readonly<Record<string, PlainObject>> }
   | { readonly status: "failure"; readonly failure: Failure } {
-  const completedEventIndex = options.events.indexOf(options.completedEvent);
-  const priorEvents =
-    completedEventIndex === -1 ? options.events : options.events.slice(0, completedEventIndex);
-  let stepStartedIndex = -1;
-  for (let index = priorEvents.length - 1; index >= 0; index -= 1) {
-    const event = priorEvents[index];
-    if (event?.type === "step.started" && event.stepId === options.stepId) {
-      stepStartedIndex = index;
-      break;
-    }
-  }
-  const inStepEvents =
-    stepStartedIndex === -1 ? priorEvents : priorEvents.slice(stepStartedIndex + 1);
+  const inStepEvents = options.events.slice(
+    options.attempt.startedEventIndex + 1,
+    options.attempt.completedEventIndex,
+  );
   const waitOutputs: Record<string, PlainObject> = {};
 
   for (const event of inStepEvents) {
-    if (event.type !== "wait.satisfied" || event.stepId !== options.stepId) {
+    if (event.type !== "wait.satisfied" || event.stepId !== options.attempt.stepId) {
       continue;
     }
 
@@ -218,7 +260,7 @@ function readCompletedStepWaitOutputs(options: {
         status: "failure",
         failure: replayFailure(
           "resume_missing_wait_output",
-          `Completed step ${options.stepId} has an invalid recorded satisfied wait output.`,
+          `Completed step ${options.attempt.stepId} has an invalid recorded satisfied wait output.`,
         ),
       };
     }
@@ -228,7 +270,7 @@ function readCompletedStepWaitOutputs(options: {
         status: "failure",
         failure: replayFailure(
           "resume_duplicate_wait_id",
-          `Completed step ${options.stepId} has duplicate wait id '${waitId}'.`,
+          `Completed step ${options.attempt.stepId} has duplicate wait id '${waitId}'.`,
         ),
       };
     }

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
 import { runStoryIsolationPreflight } from "../feature-implementation/story-isolation-preflight/step.js";
+import { storyRouterStep } from "../feature-implementation/story-router/step.js";
 import {
   MAX_STORY_REVIEW_ATTEMPTS,
   MAX_STORY_VALIDATION_ATTEMPTS,
@@ -426,6 +427,105 @@ describe("take-it-away", () => {
     expect(persistedState.latestPreflightStatus).toMatchObject({
       code: "story_preflight_replayed",
       baseline,
+    });
+  });
+
+  it("repairs stale completed-story state before routing the next story", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-stale-story-"));
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "trailstep@example.test"]);
+    await git(cwd, ["config", "user.name", "TrailStep Test"]);
+    await mkdir(join(cwd, ".trailstep", "runs", "stale-story-run"), { recursive: true });
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
+    await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
+    await git(cwd, ["commit", "-m", "initial commit"]);
+
+    const runName = "stale-story-run";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    const storyOne = {
+      content: "## Story 001: Build the widget exporter core\n\nImplement story one.",
+      path: join(runDir, "story-1.md"),
+    };
+    const storyTwo = {
+      content: "## Story 002: Add exporter observability\n\nImplement story two.",
+      path: join(runDir, "story-2.md"),
+    };
+    await writeFile(
+      join(runDir, "state.json"),
+      `${JSON.stringify(
+        {
+          activeStory: storyOne,
+          activeStoryContext: "stale story one context",
+          activeStoryStartCommit: { commit: "stale-baseline" },
+          attemptsByPhase: { "implement-green": 2 },
+          completedStories: [],
+          latestImplementationSummary: { summary: "stale implementation" },
+          latestStoryRouterState: { route: "retrying", activeStory: storyOne },
+          storyContextQueue: ["story two context"],
+          storyQueue: [storyTwo],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(join(cwd, "dirty-before-story-two.txt"), "force preflight to stop\n", "utf8");
+
+    const workflowId = "stale-story-repair-workflow";
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify(
+        event({
+          id: "workflow-started",
+          runId: runName,
+          workflowId,
+          type: "workflow.started",
+          payload: { input: {} },
+        }),
+      )}\n`,
+      "utf8",
+    );
+
+    const workflow: Workflow<Record<string, never>, { ok: boolean }> = {
+      id: workflowId,
+      inputShape: {},
+      outputShape: { ok: "boolean" },
+      start(input) {
+        return storyRouterStep({ reason: "story-completed", currentStory: storyTwo })(input);
+      },
+    };
+
+    const result = await runWorkflow({ workflow, retry: { runDir, kind: "manual" }, cwd });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected dirty preflight to stop after stale state repair.");
+    }
+    expect(result.failure.code).toBe("story_preflight_dirty_worktree");
+
+    const state = JSON.parse(await readFile(join(runDir, "state.json"), "utf8")) as {
+      activeStory?: { content?: string } | null;
+      activeStoryContext?: string | null;
+      activeStoryStartCommit?: unknown | null;
+      attemptsByPhase?: Record<string, number>;
+      completedStories?: string[];
+      latestImplementationSummary?: unknown | null;
+      latestStoryRouterState?: unknown | null;
+      storyContextQueue?: string[];
+      storyQueue?: Array<{ content?: string }>;
+    };
+    expect(state.completedStories).toEqual(["Story 001: Build the widget exporter core"]);
+    expect(state.activeStory?.content).toContain("Story 002: Add exporter observability");
+    expect(state.activeStoryContext).toBe("story two context");
+    expect(state.storyQueue ?? []).toEqual([]);
+    expect(state.storyContextQueue ?? []).toEqual([]);
+    expect(state.activeStoryStartCommit ?? null).toBeNull();
+    expect(state.latestImplementationSummary ?? null).toBeNull();
+    expect(state.latestStoryRouterState ?? null).toBeNull();
+    expect(state.attemptsByPhase).toEqual({
+      "story-router": 1,
+      "story-isolation-preflight": 1,
     });
   });
 

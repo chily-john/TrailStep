@@ -475,7 +475,7 @@ describe("take-it-away", () => {
     const workflowId = "stale-story-repair-workflow";
     await writeFile(
       join(runDir, "events.jsonl"),
-      `${JSON.stringify(
+      `${[
         event({
           id: "workflow-started",
           runId: runName,
@@ -483,7 +483,31 @@ describe("take-it-away", () => {
           type: "workflow.started",
           payload: { input: {} },
         }),
-      )}\n`,
+        event({
+          id: "story-router-started",
+          runId: runName,
+          workflowId,
+          stepId: "story-router",
+          type: "step.started",
+        }),
+        event({
+          id: "story-router-failed",
+          runId: runName,
+          workflowId,
+          stepId: "story-router",
+          type: "step.failed",
+          payload: { failure: { code: "interrupted", message: "interrupted" } },
+        }),
+        event({
+          id: "workflow-failed",
+          runId: runName,
+          workflowId,
+          type: "workflow.failed",
+          payload: { failure: { code: "interrupted", message: "interrupted" } },
+        }),
+      ]
+        .map((persistedEvent) => JSON.stringify(persistedEvent))
+        .join("\n")}\n`,
       "utf8",
     );
 

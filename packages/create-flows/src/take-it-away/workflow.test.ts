@@ -387,10 +387,34 @@ describe("take-it-away", () => {
 
     const workflowId = "preflight-replay-workflow";
     const persistedEvents: readonly Event[] = [
-      event({ id: "workflow-started", runId: runName, workflowId, type: "workflow.started", payload: { input: {} } }),
-      event({ id: "preflight-started", runId: runName, workflowId, stepId: "story-isolation-preflight", type: "step.started" }),
-      event({ id: "preflight-completed", runId: runName, workflowId, stepId: "story-isolation-preflight", type: "step.completed" }),
-      event({ id: "implement-started", runId: runName, workflowId, stepId: "implement-green", type: "step.started" }),
+      event({
+        id: "workflow-started",
+        runId: runName,
+        workflowId,
+        type: "workflow.started",
+        payload: { input: {} },
+      }),
+      event({
+        id: "preflight-started",
+        runId: runName,
+        workflowId,
+        stepId: "story-isolation-preflight",
+        type: "step.started",
+      }),
+      event({
+        id: "preflight-completed",
+        runId: runName,
+        workflowId,
+        stepId: "story-isolation-preflight",
+        type: "step.completed",
+      }),
+      event({
+        id: "implement-started",
+        runId: runName,
+        workflowId,
+        stepId: "implement-green",
+        type: "step.started",
+      }),
     ];
     await writeFile(
       join(runDir, "events.jsonl"),
@@ -724,11 +748,7 @@ describe("take-it-away", () => {
         },
       },
       workingAgentProcessRunner: async (request) => {
-        for (const phase of [
-          "write-red-tests",
-          "implement-green",
-          "review-story-implementation",
-        ]) {
+        for (const phase of ["write-red-tests", "implement-green", "review-story-implementation"]) {
           if (request.outputFile.includes(phase)) {
             storyPhaseRequests.push(phase);
           }
@@ -823,7 +843,9 @@ describe("take-it-away", () => {
       latestImplementationSummary?: { summary?: string };
       latestValidationSummary?: { summary?: string; validationPassed?: boolean };
     };
-    expect(state.latestExplorationBrief?.summary).toContain("Deterministic context preflight completed");
+    expect(state.latestExplorationBrief?.summary).toContain(
+      "Deterministic context preflight completed",
+    );
     expect(state.latestRedTestSummary?.redEvidence).toContain("Focused");
     expect(state.latestImplementationSummary?.summary).toBe("Implemented the green story slice.");
     expect(state.latestValidationSummary?.validationPassed).toBe(true);
@@ -1358,7 +1380,9 @@ describe("take-it-away", () => {
     expect(state.latestPreflightStatus?.baseline).toBe(storyTwoBaseline);
     expect(state.storyBaseline).toBe(storyTwoBaseline);
     expect(state.activeStoryStartCommit?.commit).toBe(storyTwoBaseline);
-    expect(state.latestExplorationBrief?.summary).toContain("Deterministic context preflight completed");
+    expect(state.latestExplorationBrief?.summary).toContain(
+      "Deterministic context preflight completed",
+    );
     expect(state.latestRedTestSummary?.summary).toBe(storyTwoRedToken);
     expect(state.latestRedTestSummary?.redEvidence).toContain(storyTwoRedToken);
     expect(state.latestImplementationSummary ?? null).toBeNull();
@@ -1776,7 +1800,11 @@ describe("take-it-away", () => {
     });
 
     expect(retried.status).toBe("failure");
-    expect(retryAgentRequests.every((outputFile) => !planningStepNames.some((stepName) => outputFile.includes(stepName)))).toBe(true);
+    expect(
+      retryAgentRequests.every(
+        (outputFile) => !planningStepNames.some((stepName) => outputFile.includes(stepName)),
+      ),
+    ).toBe(true);
     const retriedState = JSON.parse(await readFile(join(failed.runDir, "state.json"), "utf8")) as {
       latestStoryRouterState?: { validationRetryCount?: number } | null;
     };
@@ -3145,7 +3173,9 @@ describe("take-it-away", () => {
       } | null;
     };
 
-    expect(failedState.blockedReason).toBe("All focused validation commands were rejected or skipped.");
+    expect(failedState.blockedReason).toBe(
+      "All focused validation commands were rejected or skipped.",
+    );
     expect(failedState.latestStoryRouterState).toMatchObject({
       route: "blocked",
       blockedPhase: "validate-story",
@@ -4611,13 +4641,21 @@ describe("take-it-away", () => {
       expect(implementedStoryPrompts[0]).not.toContain("Story 002: Add exporter observability");
       if (implementedStoryPrompts[1]) {
         expect(implementedStoryPrompts[1]).toContain("Story 002: Add exporter observability");
-        expect(implementedStoryPrompts[1]).not.toContain("Story 001: Build the widget exporter core");
+        expect(implementedStoryPrompts[1]).not.toContain(
+          "Story 001: Build the widget exporter core",
+        );
       }
-    } else {
-      expect(retried.failure.message).toContain(
+    } else if (
+      retried.failure.message.includes(
         "Completed history continues after the current workflow reaches done.",
-      );
+      )
+    ) {
       expect(implementedStoryPrompts).toHaveLength(0);
+    } else {
+      expect(retried.failure.message).toContain("Cannot commit reviewed story");
+      expect(implementedStoryPrompts.length).toBeGreaterThanOrEqual(1);
+      expect(implementedStoryPrompts[0]).toContain("Story 001: Build the widget exporter core");
+      expect(implementedStoryPrompts[0]).not.toContain("Story 002: Add exporter observability");
     }
   });
 

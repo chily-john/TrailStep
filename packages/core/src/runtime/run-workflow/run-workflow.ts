@@ -98,7 +98,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     providerWorkingRunner: options.providerWorkingRunner,
     emit,
     events: () => events,
-    ...(isResume || isRetry || isWaitContinue ? { initialState: {} } : {}),
+    ...(isResume || isRetry ? { initialState: {} } : {}),
   });
 
   const cancelWorkflow = async (cancellation: CancellationMarker): Promise<Result<TOutput>> => {

@@ -8,13 +8,13 @@ import { done, type Event, runWorkflow, step, type Workflow } from "@trailstep/c
 import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
-import { runStoryIsolationPreflight } from "../feature-implementation/story-isolation-preflight/step.js";
-import { storyRouterStep } from "../feature-implementation/story-router/step.js";
 import {
   MAX_STORY_REVIEW_ATTEMPTS,
   MAX_STORY_VALIDATION_ATTEMPTS,
   STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD,
 } from "../feature-implementation/shared/constants.js";
+import { runStoryIsolationPreflight } from "../feature-implementation/story-isolation-preflight/step.js";
+import { storyRouterStep } from "../feature-implementation/story-router/step.js";
 import { takeItAway } from "./workflow.js";
 
 const execFileAsync = promisify(execFile);
@@ -2257,7 +2257,7 @@ describe("take-it-away", () => {
     const implementGreenPrompts: string[] = [];
     const reviewPrompts: string[] = [];
     let implementGreenAttempts = 0;
-    let validateAttempts = 0;
+    const validateAttempts = 0;
 
     const result = await runWorkflow({
       workflow: takeItAway,

@@ -16,7 +16,6 @@ import {
   readCancellationMarker,
 } from "../cancellation/cancellation.js";
 import { runContinuation } from "../continuation/run-continuation/run-continuation.js";
-import { runRootContinuationArrayScheduler } from "./root-continuation-array-scheduler.js";
 import { createEvent } from "../events/create-run-event.js";
 import { isFailureLikeError } from "../failures/failure-like.js";
 import { workflowFailure } from "../failures/workflow-failure.js";
@@ -34,6 +33,7 @@ import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
 import { resolveAndValidateRunCwds } from "./cwd.js";
 import { initializeRun } from "./initialize-run.js";
+import { runRootContinuationArrayScheduler } from "./root-continuation-array-scheduler.js";
 import { parseTrailStepConfigInput } from "./trailstep-config-input.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(

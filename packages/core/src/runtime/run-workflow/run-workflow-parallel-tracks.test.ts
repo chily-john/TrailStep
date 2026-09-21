@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   defineWorkflow,
   done,
+  fail,
   runWorkflow,
   step,
   type Event,
@@ -151,6 +152,196 @@ describe("runWorkflow parallel tracks", () => {
 
     const track = await readJsonObject(join(result.runDir, "track.json"));
     expect(track).toMatchObject({ splitOccurred: false, branches: ["root"] });
+    await expect(readdir(join(result.runDir, "branches"))).resolves.toEqual(["root.json"]);
+    const rootBranch = await readJsonObject(join(result.runDir, "branches", "root.json"));
+    expect(rootBranch).toMatchObject({
+      branchId: "root",
+      status: "done",
+      output: { value: 42 },
+      latestStepIndex: 3,
+    });
+  });
+
+  it("schedules an onDone continuation array after same-branch workflow invocation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-ondone-array-"));
+    const observed: string[] = [];
+    const branchIds: string[] = [];
+    const gates = new Map(["a", "b"].map((branch) => [branch, createDeferred()]));
+    let active = 0;
+    let maxActive = 0;
+
+    const childStep = step({ id: "on-done-array-child-step" }).do((input: { value: number }) => {
+      observed.push("child");
+      return done({ value: input.value + 1 });
+    });
+    const branchA = step({ id: "on-done-array-branch-a" }).do(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      observed.push("a");
+      await gates.get("a")?.promise;
+      active -= 1;
+      return done({ branch: "a" });
+    });
+    const branchB = step({ id: "on-done-array-branch-b" }).do(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      observed.push("b");
+      await gates.get("b")?.promise;
+      active -= 1;
+      return done({ branch: "b" });
+    });
+    const ChildWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "on-done-array-child-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return childStep(input);
+      },
+    });
+    const parentStep = step({ id: "on-done-array-parent-step" }).do((input: { value: number }) =>
+      ChildWorkflow(input, {
+        onDone(output) {
+          observed.push(`onDone:${output.value}`);
+          return [branchA(), branchB()];
+        },
+      }),
+    );
+    const workflow: Workflow<{ value: number }, PlainObject> = {
+      id: "on-done-array-parent-workflow",
+      inputShape: { value: "number" },
+      start(input) {
+        return parentStep(input);
+      },
+    };
+
+    const run = runWorkflow({
+      workflow,
+      input: { value: 40 },
+      runName: "invocation-on-done-array",
+      cwd,
+      eventSink(event) {
+        if (event.type === "step.started") {
+          branchIds.push(String(event.payload.branchId));
+        }
+      },
+      scheduler: { workers: 1 },
+    });
+
+    try {
+      await expect.poll(() => observed).toEqual(["child", "onDone:41", "a"]);
+      await delay(25);
+      expect(observed).toEqual(["child", "onDone:41", "a"]);
+      gates.get("a")?.resolve();
+      await expect.poll(() => observed).toEqual(["child", "onDone:41", "a", "b"]);
+      gates.get("b")?.resolve();
+    } catch (error) {
+      gates.get("a")?.resolve();
+      gates.get("b")?.resolve();
+      await run.catch(() => undefined);
+      throw error;
+    }
+
+    const result = await run;
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(maxActive).toBe(1);
+    expect(branchIds).toEqual(["root", "root", "branch-1", "branch-2"]);
+    expect(result.output).toMatchObject({
+      status: "completed",
+      branches: expect.any(Object),
+    });
+    expect(Object.values(result.output.branches ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "done", output: { branch: "a" } }),
+        expect.objectContaining({ status: "done", output: { branch: "b" } }),
+      ]),
+    );
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({ splitOccurred: true, branches: ["root", "branch-1", "branch-2"] });
+    const rootBranch = await readJsonObject(join(result.runDir, "branches", "root.json"));
+    expect(rootBranch).toMatchObject({
+      branchId: "root",
+      status: "split",
+      splitSource: "onDone for workflow invocation on-done-array-child-workflow",
+      latestStepId: "on-done-array-child-step",
+    });
+    for (const branchId of ["branch-1", "branch-2"]) {
+      const branch = await readJsonObject(join(result.runDir, "branches", `${branchId}.json`));
+      expect(branch).toMatchObject({
+        branchId,
+        parentBranchId: "root",
+        source: "onDone for workflow invocation on-done-array-child-workflow",
+        status: "done",
+      });
+    }
+
+    const stepDirs = await readdir(join(result.runDir, "steps"));
+    expect(stepDirs).toEqual(expect.arrayContaining(["0002-on-done-array-child-step"]));
+    expect(stepDirs).toContainEqual(expect.stringMatching(/^000[34]-on-done-array-branch-a$/));
+    expect(stepDirs).toContainEqual(expect.stringMatching(/^000[34]-on-done-array-branch-b$/));
+    expect(new Set(stepDirs).size).toBe(stepDirs.length);
+  });
+
+  it("terminalizes the same branch when invocation onDone returns done", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-ondone-done-"));
+    const observedOutputs: PlainObject[] = [];
+    const branchIds: string[] = [];
+
+    const childStep = step({ id: "child-on-done-terminal-step" }).do((input: { value: number }) =>
+      done({ value: input.value + 1 }),
+    );
+    const ChildWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "on-done-terminal-child-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return childStep(input);
+      },
+    });
+    const parentStep = step({ id: "parent-on-done-terminal-step" }).do((input: { value: number }) =>
+      ChildWorkflow(input, {
+        onDone(output) {
+          observedOutputs.push(output);
+          return done({ value: output.value + 1 });
+        },
+      }),
+    );
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "on-done-terminal-parent-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return parentStep(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 40 },
+      runName: "invocation-on-done-terminal-same-branch",
+      cwd,
+      eventSink(event) {
+        if (event.type === "step.started") {
+          branchIds.push(String(event.payload.branchId));
+        }
+      },
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(observedOutputs).toEqual([{ value: 41 }]);
+    expect(result.output).toEqual({ value: 42 });
+    expect(branchIds).toEqual(["root", "root"]);
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({ splitOccurred: false, branches: ["root"] });
     const rootBranch = await readJsonObject(join(result.runDir, "branches", "root.json"));
     expect(rootBranch).toMatchObject({
       branchId: "root",
@@ -266,6 +457,128 @@ describe("runWorkflow parallel tracks", () => {
         expect.objectContaining({ output: { branch: "a" } }),
         expect.objectContaining({ output: { branch: "b" } }),
         expect.objectContaining({ output: { branch: "c" } }),
+      ]),
+    );
+  });
+
+  it("normal done completes only the current branch and waits for siblings", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-branch-done-waits-"));
+    const slowGate = createDeferred();
+    const observed: string[] = [];
+    let settled = false;
+
+    const fastBranch = step({ id: "done-waits-fast" }).do(() => {
+      observed.push("fast");
+      return done({ branch: "fast" });
+    });
+    const slowBranch = step({ id: "done-waits-slow" }).do(async () => {
+      observed.push("slow-start");
+      await slowGate.promise;
+      observed.push("slow-done");
+      return done({ branch: "slow" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "branch-done-waits-workflow",
+      start() {
+        return [fastBranch(), slowBranch()];
+      },
+    };
+
+    const run = runWorkflow({
+      workflow,
+      input: {},
+      runName: "branch-done-waits",
+      cwd,
+      scheduler: { workers: 2 },
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    try {
+      await expect.poll(() => observed).toHaveLength(2);
+      expect(observed).toEqual(expect.arrayContaining(["fast", "slow-start"]));
+      await delay(25);
+      expect(settled).toBe(false);
+      slowGate.resolve();
+    } catch (error) {
+      slowGate.resolve();
+      await run.catch(() => undefined);
+      throw error;
+    }
+
+    const result = await run;
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(observed).toEqual(expect.arrayContaining(["fast", "slow-start", "slow-done"]));
+    expect(Object.values(result.output.branches ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "done", output: { branch: "fast" } }),
+        expect.objectContaining({ status: "done", output: { branch: "slow" } }),
+      ]),
+    );
+  });
+
+  it("branch fail triggers fail-fast and preserves completed sibling state", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-branch-fail-fast-"));
+    const observed: string[] = [];
+
+    const completedBranch = step({ id: "fail-fast-completed" }).do(() => {
+      observed.push("completed");
+      return done({ branch: "completed" });
+    });
+    const failingBranch = step({ id: "fail-fast-failing" }).do(() => {
+      observed.push("failing");
+      return fail({ code: "branch_failed", message: "branch failed intentionally" });
+    });
+    const queuedBranch = step({ id: "fail-fast-queued" }).do(() => {
+      observed.push("queued");
+      return done({ branch: "queued" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "branch-fail-fast-workflow",
+      start() {
+        return [completedBranch(), failingBranch(), queuedBranch()];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "branch-fail-fast",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("expected fail-fast run to fail");
+    }
+    expect(result.failure).toMatchObject({
+      code: "branch_failed",
+      message: "branch failed intentionally",
+    });
+    expect(observed).toEqual(["completed", "failing"]);
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({
+      status: "failed",
+      failure: { code: "branch_failed", message: "branch failed intentionally" },
+    });
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "done", output: { branch: "completed" } }),
+        expect.objectContaining({
+          status: "failed",
+          failure: { code: "branch_failed", message: "branch failed intentionally" },
+        }),
+        expect.objectContaining({ status: "cancelled", latestStepIndex: 0 }),
       ]),
     );
   });
@@ -457,6 +770,144 @@ describe("runWorkflow parallel tracks", () => {
 
     const stepDirs = await readdir(join(result.runDir, "steps"));
     expect(new Set(stepDirs).size).toBe(stepDirs.length);
+  });
+
+  it("schedules workflow invocations inside continuation arrays as branch candidates", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-array-invocations-"));
+    const branchStepsByValue = new Map<string, string[]>();
+
+    const workerStepA = step({ id: "array-invocation-worker-a" }).do((input: { value: string }) =>
+      done({ value: `${input.value}-done` }),
+    );
+    const workerStepB = step({ id: "array-invocation-worker-b" }).do((input: { value: string }) =>
+      done({ value: `${input.value}-done` }),
+    );
+    const WorkerWorkflowA = defineWorkflow<{ value: string }, { value: string }>({
+      id: "array-invocation-worker-workflow-a",
+      inputShape: { value: "string" },
+      outputShape: { value: "string" },
+      start(input) {
+        return workerStepA(input);
+      },
+    });
+    const WorkerWorkflowB = defineWorkflow<{ value: string }, { value: string }>({
+      id: "array-invocation-worker-workflow-b",
+      inputShape: { value: "string" },
+      outputShape: { value: "string" },
+      start(input) {
+        return workerStepB(input);
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "array-invocation-parent-workflow",
+      start() {
+        return [WorkerWorkflowA({ value: "a" }), WorkerWorkflowB({ value: "b" })];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "array-invocations",
+      cwd,
+      eventSink(event) {
+        if (event.type === "step.started") {
+          const branchId = String(event.payload.branchId);
+          const observed = branchStepsByValue.get(branchId) ?? [];
+          observed.push(event.stepId ?? "");
+          branchStepsByValue.set(branchId, observed);
+        }
+      },
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toMatchObject({
+      status: "completed",
+      branches: expect.any(Object),
+    });
+    expect(Object.values(result.output.branches ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "done", output: { value: "a-done" } }),
+        expect.objectContaining({ status: "done", output: { value: "b-done" } }),
+      ]),
+    );
+
+    expect(branchStepsByValue.size).toBe(2);
+    for (const stepIds of branchStepsByValue.values()) {
+      expect(stepIds).toHaveLength(1);
+    }
+  });
+
+  it("persists requested branch identifiers for array candidates", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-array-requested-branches-"));
+    const stepEvents: Event[] = [];
+
+    const workerStep = step({ id: "requested-branch-worker-step" }).do((input: { value: string }) =>
+      done({ value: input.value }),
+    );
+    const WorkerWorkflow = defineWorkflow<{ value: string }, { value: string }>({
+      id: "requested-branch-worker-workflow",
+      inputShape: { value: "string" },
+      outputShape: { value: "string" },
+      start(input) {
+        return workerStep(input);
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "requested-branch-parent-workflow",
+      start() {
+        return [
+          WorkerWorkflow({ value: "a" }, { branch: "human-readable-a" }),
+          WorkerWorkflow({ value: "b" }, { branch: "human-readable-b" }),
+          WorkerWorkflow({ value: "duplicate" }, { branch: "human-readable-a" }),
+        ];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "array-requested-branches",
+      cwd,
+      eventSink(event) {
+        if (event.type === "step.started" || event.type === "step.completed") {
+          stepEvents.push(event);
+        }
+      },
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    const branchIds = track.branches as readonly string[];
+    expect(new Set(branchIds).size).toBe(branchIds.length);
+
+    const requestedByBranch = new Map<string, unknown>();
+    for (const branchId of branchIds) {
+      const branch = await readJsonObject(join(result.runDir, "branches", `${branchId}.json`));
+      requestedByBranch.set(branchId, branch.requestedBranchId);
+    }
+    expect([...requestedByBranch.values()]).toEqual(
+      expect.arrayContaining(["human-readable-a", "human-readable-b", "human-readable-a"]),
+    );
+
+    expect(stepEvents).toHaveLength(6);
+    for (const event of stepEvents) {
+      const branchId = String(event.payload.branchId);
+      expect(event.payload).toMatchObject({
+        branchId,
+        requestedBranchId: requestedByBranch.get(branchId),
+      });
+    }
   });
 
   it("executes a root continuation array as branch candidates with aggregate output, unique artifacts, persisted state, and branch event metadata", async () => {

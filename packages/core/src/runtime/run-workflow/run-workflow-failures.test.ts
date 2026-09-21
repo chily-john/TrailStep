@@ -262,7 +262,45 @@ describe("runWorkflow failure paths", () => {
     });
 
     expectFailure(result, "step_execution_failed", "workflow invocation onDone failed");
+    expectFailure(result, "step_execution_failed", "throwing-on-done-child-workflow");
     expectFailure(result, "step_execution_failed", "onDone blew up");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.failed",
+    ]);
+  });
+
+  it("fails the current branch when invocation onDone returns fail", async () => {
+    const cwd = await testCwd();
+    const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
+      id: "failing-on-done-child-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) => done(input),
+    });
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "failing-on-done-parent-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start: (input) =>
+        SomeWorkflow(input, {
+          onDone(output) {
+            return fail({
+              code: "on_done_rejected",
+              message: `Rejected value ${output.value}.`,
+            });
+          },
+        }),
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 7 },
+      runName: "failing-invocation-on-done",
+      cwd,
+    });
+
+    expectFailure(result, "on_done_rejected", "Rejected value 7.");
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "workflow.failed",

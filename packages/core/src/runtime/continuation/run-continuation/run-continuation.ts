@@ -120,7 +120,11 @@ export type RunContinuationResult =
   | { readonly status: "failure"; readonly failure: Failure; readonly message?: string }
   | { readonly status: "waiting"; readonly wait: WaitingWait }
   | { readonly status: "cancelled"; readonly cancellation: CancellationMarker }
-  | { readonly status: "split"; readonly nodes: readonly ContinuationResult[] };
+  | {
+      readonly status: "split";
+      readonly nodes: readonly ContinuationResult[];
+      readonly source: string;
+    };
 
 export async function runContinuation(
   options: RunContinuationOptions,
@@ -208,7 +212,7 @@ export async function runContinuation(
     }
 
     if (Array.isArray(node) && options.returnContinuationArrays === true) {
-      return { status: "split", nodes: node };
+      return { status: "split", nodes: node, source };
     }
 
     if (isWorkflowInvocationNode(node)) {
@@ -504,7 +508,7 @@ export async function runContinuation(
 
       const nextNode = stepResult.node;
       if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
-        return { status: "split", nodes: nextNode };
+        return { status: "split", nodes: nextNode, source: `step ${config.id}` };
       }
 
       const unsupportedStepFailure = unsupportedContinuationFailure(nextNode, `step ${config.id}`);
@@ -584,7 +588,7 @@ export async function runContinuation(
         const nextNode = stepNode.onError(failure);
         const errorSource = `error continuation for step ${config.id}`;
         if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
-          return { status: "split", nodes: nextNode };
+          return { status: "split", nodes: nextNode, source: errorSource };
         }
 
         const unsupportedErrorFailure = unsupportedContinuationFailure(nextNode, errorSource);

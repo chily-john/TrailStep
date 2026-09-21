@@ -296,9 +296,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
 
     const rootNode = startNode ?? options.workflow.start(workflowInput);
     const continuationResult =
-      !isResume && !isRetry && !isWaitContinue && Array.isArray(rootNode)
+      !isResume && !isRetry && !isWaitContinue
         ? await runRootContinuationArrayScheduler({
-            nodes: rootNode,
+            nodes: Array.isArray(rootNode) ? rootNode : [rootNode],
+            rootIsArray: Array.isArray(rootNode),
             runId,
             workflowId: options.workflow.id,
             emit,
@@ -374,6 +375,13 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         wait: continuationResult.wait,
         events,
       } as unknown as Result<TOutput>;
+    }
+
+    if (continuationResult.status === "split") {
+      return await failWorkflow({
+        code: "unsupported_continuation",
+        message: "A continuation array escaped workflow scheduling.",
+      });
     }
 
     const current = continuationResult.output;

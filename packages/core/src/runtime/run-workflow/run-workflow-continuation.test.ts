@@ -61,6 +61,37 @@ describe("runWorkflow", () => {
     expect(result.events[3]?.stepId).toBe("review");
   });
 
+  it("keeps sequential continuation output compatible when no split occurs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-sequential-compatible-"));
+
+    const first = step({ id: "first-compatible" }).do((input: { value: number }) =>
+      second({ value: input.value + 1 }),
+    );
+    const second = step({ id: "second-compatible" }).do((input: { value: number }) =>
+      done({ value: input.value + 1 }),
+    );
+
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "sequential-compatible-workflow",
+      start(input) {
+        return first(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "sequential-compatible-run",
+      cwd,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ value: 3 });
+  });
+
   it("fails when a continuation step references an undeclared workflow agent role", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-"));
 

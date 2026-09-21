@@ -74,6 +74,7 @@ export interface RunContinuationOptions {
   readonly providerWorkingRunner?: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner?: RunWorkflowOptions["processRunner"];
   readonly resumeWait?: ResumeWaitOptions;
+  readonly returnContinuationArrays?: boolean;
 }
 
 export interface ResumeWaitOptions {
@@ -105,11 +106,21 @@ export interface WaitingWait {
   readonly artifactPaths: WaitArtifactPaths;
 }
 
+interface WorkflowInvocationFrame {
+  readonly workflowId: string;
+  readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
+  readonly workflowTimeout?: TimeoutPolicyInput;
+  readonly workflowOutputSchema?: ReturnType<typeof normalizeShape>;
+  readonly invocationWorkflowId: string;
+  readonly onDone?: (output: PlainObject) => ContinuationResult | Promise<ContinuationResult>;
+}
+
 export type RunContinuationResult =
   | { readonly status: "success"; readonly output: PlainObject; readonly message?: string }
   | { readonly status: "failure"; readonly failure: Failure; readonly message?: string }
   | { readonly status: "waiting"; readonly wait: WaitingWait }
-  | { readonly status: "cancelled"; readonly cancellation: CancellationMarker };
+  | { readonly status: "cancelled"; readonly cancellation: CancellationMarker }
+  | { readonly status: "split"; readonly nodes: readonly ContinuationResult[] };
 
 export async function runContinuation(
   options: RunContinuationOptions,
@@ -123,6 +134,11 @@ export async function runContinuation(
   let executedSteps = options.initialExecutedSteps ?? 0;
   let pendingResumeWait = options.resumeWait;
   const trailstepConfig = options.trailstepConfig;
+  const invocationFrames: WorkflowInvocationFrame[] = [];
+  let currentWorkflowId = options.workflowId;
+  let currentWorkflowAgents = options.workflowAgents;
+  let currentWorkflowTimeout = options.workflowTimeout;
+  let currentWorkflowOutputSchema: ReturnType<typeof normalizeShape> | undefined;
 
   while (true) {
     const pendingCancellation = await readCancellationMarker(options.runDir);
@@ -131,6 +147,51 @@ export async function runContinuation(
     }
 
     if (isDoneNode(node)) {
+      const frame = invocationFrames.pop();
+      if (frame !== undefined) {
+        const invocationWorkflowId = frame.invocationWorkflowId;
+        let output: PlainObject;
+        try {
+          output =
+            currentWorkflowOutputSchema === undefined
+              ? node.output
+              : currentWorkflowOutputSchema.assert(
+                  node.output,
+                  `invoked workflow ${invocationWorkflowId} output`,
+                );
+        } catch (error) {
+          return { status: "failure", failure: failureFromError(error) };
+        }
+
+        currentWorkflowId = frame.workflowId;
+        currentWorkflowAgents = frame.workflowAgents;
+        currentWorkflowTimeout = frame.workflowTimeout;
+        currentWorkflowOutputSchema = frame.workflowOutputSchema;
+
+        if (frame.onDone !== undefined) {
+          try {
+            node = await frame.onDone(output);
+          } catch (error) {
+            return {
+              status: "failure",
+              failure: stepExecutionFailure(
+                new Error(
+                  `workflow invocation onDone failed for ${invocationWorkflowId}: ${errorMessage(error)}`,
+                ),
+              ),
+            };
+          }
+          source = `onDone for workflow invocation ${invocationWorkflowId}`;
+          continue;
+        }
+
+        return {
+          status: "success",
+          output,
+          ...(node.message === undefined ? {} : { message: node.message }),
+        };
+      }
+
       return {
         status: "success",
         output: node.output,
@@ -144,6 +205,53 @@ export async function runContinuation(
         failure: node.failure,
         ...(node.message === undefined ? {} : { message: node.message }),
       };
+    }
+
+    if (Array.isArray(node) && options.returnContinuationArrays === true) {
+      return { status: "split", nodes: node };
+    }
+
+    if (isWorkflowInvocationNode(node)) {
+      const invocation = node;
+      const inputSchema = invocation.workflow.inputShape
+        ? normalizeShape(invocation.workflow.inputShape)
+        : invocation.workflow.input;
+      let input: PlainObject;
+      try {
+        input =
+          inputSchema === undefined
+            ? invocation.input
+            : inputSchema.assert(
+                invocation.input,
+                `invoked workflow ${invocation.workflow.id} input`,
+              );
+      } catch (error) {
+        return { status: "failure", failure: failureFromError(error) };
+      }
+
+      invocationFrames.push({
+        workflowId: currentWorkflowId,
+        workflowAgents: currentWorkflowAgents,
+        ...(currentWorkflowTimeout === undefined
+          ? {}
+          : { workflowTimeout: currentWorkflowTimeout }),
+        ...(currentWorkflowOutputSchema === undefined
+          ? {}
+          : { workflowOutputSchema: currentWorkflowOutputSchema }),
+        invocationWorkflowId: invocation.workflow.id,
+        ...(invocation.options?.onDone === undefined ? {} : { onDone: invocation.options.onDone }),
+      });
+      currentWorkflowId = invocation.workflow.id;
+      currentWorkflowAgents = invocation.workflow.agents ?? {};
+      currentWorkflowTimeout = invocation.workflow.timeout;
+      currentWorkflowOutputSchema = invocation.workflow.outputShape
+        ? normalizeShape(invocation.workflow.outputShape)
+        : invocation.workflow.output === undefined
+          ? undefined
+          : normalizeShape(invocation.workflow.output);
+      node = invocation.workflow.start(input);
+      source = `workflow.start for workflow ${invocation.workflow.id}`;
+      continue;
     }
 
     const unsupportedFailure = unsupportedContinuationFailure(node, source);
@@ -197,20 +305,20 @@ export async function runContinuation(
     const timeoutPolicy = resolveTimeoutPolicy({
       global: trailstepConfig?.settings?.timeout,
       workflow:
-        options.workflowTimeout ??
-        trailstepConfig?.workflows?.[options.workflowId]?.settings?.timeout,
+        currentWorkflowTimeout ??
+        trailstepConfig?.workflows?.[currentWorkflowId]?.settings?.timeout,
       step: config.timeout,
     });
     const maxSubPrompts =
       firstPromptPhase(phases)?.maxSubPrompts ??
       config.maxSubPrompts ??
-      trailstepConfig?.workflows?.[options.workflowId]?.settings?.maxSubPrompts;
+      trailstepConfig?.workflows?.[currentWorkflowId]?.settings?.maxSubPrompts;
 
     if (resumeWait === undefined) {
       await options.emit(
         createEvent({
           runId: options.runId,
-          workflowId: options.workflowId,
+          workflowId: currentWorkflowId,
           stepId: config.id,
           type: "step.started",
           payload: {
@@ -226,7 +334,7 @@ export async function runContinuation(
     try {
       const stepCwd = await resolveStepExecutionCwd({
         stepId: config.id,
-        workflowId: options.workflowId,
+        workflowId: currentWorkflowId,
         defaultCwd: options.cwd,
         input: config.input,
         cwdInput: config.cwd,
@@ -274,7 +382,7 @@ export async function runContinuation(
                   await options.emit(
                     createEvent({
                       runId: options.runId,
-                      workflowId: options.workflowId,
+                      workflowId: currentWorkflowId,
                       stepId: config.id,
                       type: "step.display",
                       payload,
@@ -293,7 +401,7 @@ export async function runContinuation(
                     stepArtifactId: stepArtifacts.artifactStepId,
                     runDir: options.runDir,
                     runId: options.runId,
-                    workflowId: options.workflowId,
+                    workflowId: currentWorkflowId,
                     emit: options.emit,
                   });
                 },
@@ -303,7 +411,7 @@ export async function runContinuation(
                     stepId: config.id,
                     runDir: options.runDir,
                     runId: options.runId,
-                    workflowId: options.workflowId,
+                    workflowId: currentWorkflowId,
                     emit: options.emit,
                   }),
                 dispatchPrompt: async (phase) => {
@@ -320,9 +428,9 @@ export async function runContinuation(
                         ? "json"
                         : "session-file",
                     runId: options.runId,
-                    workflowId: options.workflowId,
+                    workflowId: currentWorkflowId,
                     emit: options.emit,
-                    workflowAgents: options.workflowAgents,
+                    workflowAgents: currentWorkflowAgents,
                     runDir: options.runDir,
                     projectCwd: options.projectCwd ?? options.cwd,
                     cwd: stepCwd,
@@ -339,7 +447,7 @@ export async function runContinuation(
                   await options.emit(
                     createEvent({
                       runId: options.runId,
-                      workflowId: options.workflowId,
+                      workflowId: currentWorkflowId,
                       stepId: config.id,
                       type: "step.completed",
                       payload: { output },
@@ -359,7 +467,7 @@ export async function runContinuation(
                 await options.emit(
                   createEvent({
                     runId: options.runId,
-                    workflowId: options.workflowId,
+                    workflowId: currentWorkflowId,
                     stepId: config.id,
                     type: "step.failed",
                     payload: { failure: nextNode.failure },
@@ -375,7 +483,7 @@ export async function runContinuation(
                 await options.emit(
                   createEvent({
                     runId: options.runId,
-                    workflowId: options.workflowId,
+                    workflowId: currentWorkflowId,
                     stepId: config.id,
                     type: "step.completed",
                     payload: {},
@@ -395,12 +503,16 @@ export async function runContinuation(
       }
 
       const nextNode = stepResult.node;
+      if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
+        return { status: "split", nodes: nextNode };
+      }
+
       const unsupportedStepFailure = unsupportedContinuationFailure(nextNode, `step ${config.id}`);
       if (unsupportedStepFailure !== undefined) {
         await options.emit(
           createEvent({
             runId: options.runId,
-            workflowId: options.workflowId,
+            workflowId: currentWorkflowId,
             stepId: config.id,
             type: "step.failed",
             payload: { failure: unsupportedStepFailure },
@@ -409,12 +521,17 @@ export async function runContinuation(
         return { status: "failure", failure: unsupportedStepFailure };
       }
 
-      if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
+      if (
+        !isStepNode(nextNode) &&
+        !isWorkflowInvocationNode(nextNode) &&
+        !isDoneNode(nextNode) &&
+        !isFailNode(nextNode)
+      ) {
         const failure = continuationFailure(`step ${config.id}`);
         await options.emit(
           createEvent({
             runId: options.runId,
-            workflowId: options.workflowId,
+            workflowId: currentWorkflowId,
             stepId: config.id,
             type: "step.failed",
             payload: { failure },
@@ -438,7 +555,7 @@ export async function runContinuation(
         await options.emit(
           createEvent({
             runId: options.runId,
-            workflowId: options.workflowId,
+            workflowId: currentWorkflowId,
             stepId: config.id,
             type: "step.cancelled",
             payload: cancellationPayload(error.cancellation),
@@ -452,7 +569,7 @@ export async function runContinuation(
       await options.emit(
         createEvent({
           runId: options.runId,
-          workflowId: options.workflowId,
+          workflowId: currentWorkflowId,
           stepId: config.id,
           type: "step.failed",
           payload: { failure },
@@ -466,6 +583,10 @@ export async function runContinuation(
       try {
         const nextNode = stepNode.onError(failure);
         const errorSource = `error continuation for step ${config.id}`;
+        if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
+          return { status: "split", nodes: nextNode };
+        }
+
         const unsupportedErrorFailure = unsupportedContinuationFailure(nextNode, errorSource);
         if (unsupportedErrorFailure !== undefined) {
           return {
@@ -474,7 +595,12 @@ export async function runContinuation(
           };
         }
 
-        if (!isStepNode(nextNode) && !isDoneNode(nextNode) && !isFailNode(nextNode)) {
+        if (
+          !isStepNode(nextNode) &&
+          !isWorkflowInvocationNode(nextNode) &&
+          !isDoneNode(nextNode) &&
+          !isFailNode(nextNode)
+        ) {
           return {
             status: "failure",
             failure: continuationFailure(errorSource),
@@ -1378,6 +1504,14 @@ function continuationFailure(source: string): Failure {
   };
 }
 
+function failureFromError(error: unknown): Failure {
+  if (error instanceof TrailStepFailureError) {
+    return error.failure;
+  }
+
+  return stepExecutionFailure(error);
+}
+
 function unsupportedContinuationFailure(node: unknown, source: string): Failure | undefined {
   const form = unsupportedContinuationForm(node);
   if (form === undefined) {
@@ -1393,10 +1527,6 @@ function unsupportedContinuationFailure(node: unknown, source: string): Failure 
 function unsupportedContinuationForm(node: unknown): string | undefined {
   if (Array.isArray(node)) {
     return "a continuation array";
-  }
-
-  if (isWorkflowInvocationNode(node)) {
-    return "a workflow invocation continuation";
   }
 
   if (isAbsoluteDoneNode(node)) {

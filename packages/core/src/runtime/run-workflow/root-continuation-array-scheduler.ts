@@ -3,16 +3,20 @@ import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
-import { isStepNode } from "../../authoring/step/step-node.js";
+import { isStepNode, isWorkflowInvocationNode } from "../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 import { resolveStepArtifactPaths } from "../artifacts/step-artifacts.js";
-import { runContinuation, type RunContinuationResult } from "../continuation/run-continuation/run-continuation.js";
+import {
+  type RunContinuationResult,
+  runContinuation,
+} from "../continuation/run-continuation/run-continuation.js";
 import type { TimeoutPolicyInput } from "../timeout/timeout-policy.js";
+import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 
 interface RunRootContinuationArraySchedulerOptions {
   readonly nodes: readonly ContinuationResult[];
+  readonly rootIsArray?: boolean;
   readonly runId: string;
   readonly workflowId: string;
   readonly emit: (event: Event) => Promise<void>;
@@ -30,49 +34,44 @@ interface RunRootContinuationArraySchedulerOptions {
   readonly processRunner?: RunWorkflowOptions["processRunner"];
 }
 
+type BranchStatus = "queued" | "running" | "done" | "failed" | "waiting" | "cancelled" | "split";
+
 interface BranchState {
   readonly branchId: string;
-  readonly parentBranchId: string;
+  readonly parentBranchId?: string;
   readonly workflowId: string;
   readonly createdAt: string;
-  status: "running" | "done" | "failed" | "waiting" | "cancelled";
+  status: BranchStatus;
   output?: PlainObject;
+  message?: string;
   updatedAt: string;
   latestStepIndex: number;
+  latestStepId?: string;
+}
+
+interface QueuedBranch {
+  readonly node: ContinuationResult;
+  readonly branch: BranchState;
+  readonly source: string;
+  readonly requireRunnableBranchCandidate: boolean;
 }
 
 export async function runRootContinuationArrayScheduler(
   options: RunRootContinuationArraySchedulerOptions,
 ): Promise<RunContinuationResult> {
-  if (!options.nodes.every(isStepNode)) {
-    return {
-      status: "failure",
-      failure: {
-        code: "unsupported_continuation",
-        message: `${options.initialSource} returned a continuation array containing unsupported branch candidates.`,
-      },
-    };
-  }
-
   const resolvedWorkers = resolveSchedulerWorkerCount(options.workers);
   if (!resolvedWorkers.ok) {
     return resolvedWorkers.failure;
   }
 
+  const workers = resolvedWorkers.workers;
   const rootBranchId = "root";
-  const branchStates: BranchState[] = options.nodes.map((_, index) => {
-    const now = new Date().toISOString();
-    return {
-      branchId: `branch-${index + 1}`,
-      parentBranchId: rootBranchId,
-      workflowId: options.workflowId,
-      createdAt: now,
-      updatedAt: now,
-      status: "running",
-      latestStepIndex: 0,
-    };
-  });
+  const branches: BranchState[] = [];
+  const queue: QueuedBranch[] = [];
+  let splitOccurred = options.rootIsArray === true;
   let nextStepIndex = 0;
+  let nextBranchId = 1;
+
   const allocateStepIndex = (branch: BranchState): number => {
     if (nextStepIndex >= options.maxSteps) {
       throw new Error(`workflow exceeded maxSteps guard (${options.maxSteps})`);
@@ -83,31 +82,73 @@ export async function runRootContinuationArrayScheduler(
     return nextStepIndex;
   };
 
-  await persistTrack(options, resolvedWorkers.workers, rootBranchId, branchStates, "running");
+  const enqueue = (
+    node: ContinuationResult,
+    parentBranchId: string | undefined,
+    source: string,
+    requireRunnableBranchCandidate: boolean,
+  ): BranchState => {
+    const now = new Date().toISOString();
+    const branch: BranchState = {
+      branchId:
+        parentBranchId === undefined && branches.length === 0
+          ? rootBranchId
+          : `branch-${nextBranchId++}`,
+      ...(parentBranchId === undefined ? {} : { parentBranchId }),
+      workflowId: options.workflowId,
+      createdAt: now,
+      updatedAt: now,
+      status: "queued",
+      latestStepIndex: 0,
+    };
+    branches.push(branch);
+    queue.push({ node, branch, source, requireRunnableBranchCandidate });
+    return branch;
+  };
 
-  let nextBranchIndex = 0;
+  if (options.rootIsArray === true) {
+    if (!options.nodes.every(isRunnableBranchCandidate)) {
+      return unsupportedArrayFailure(options.initialSource);
+    }
+    for (const node of options.nodes) {
+      enqueue(node, rootBranchId, options.initialSource, true);
+    }
+  } else {
+    const rootNode = options.nodes[0];
+    if (rootNode === undefined) {
+      return {
+        status: "failure",
+        failure: {
+          code: "invalid_continuation",
+          message: `${options.initialSource} returned an invalid continuation node.`,
+        },
+      };
+    }
+    enqueue(rootNode, undefined, options.initialSource, false);
+  }
+
+  await persistTrack(options, workers, rootBranchId, branches, "running", splitOccurred);
+
   let activeWorkers = 0;
   let terminalResult: RunContinuationResult | undefined;
 
   await new Promise<void>((resolve, reject) => {
     const schedule = (): void => {
-      if (terminalResult !== undefined || nextBranchIndex >= options.nodes.length) {
+      if (terminalResult !== undefined || queue.length === 0) {
         if (activeWorkers === 0) {
           resolve();
         }
         return;
       }
 
-      while (
-        terminalResult === undefined &&
-        activeWorkers < resolvedWorkers.workers &&
-        nextBranchIndex < options.nodes.length
-      ) {
-        const index = nextBranchIndex;
-        nextBranchIndex += 1;
+      while (terminalResult === undefined && activeWorkers < workers && queue.length > 0) {
+        const queued = queue.shift();
+        if (queued === undefined) {
+          return;
+        }
         activeWorkers += 1;
 
-        void runBranch(index)
+        void runBranch(queued)
           .then((branchResult) => {
             if (branchResult.status !== "success" && terminalResult === undefined) {
               terminalResult = branchResult;
@@ -129,25 +170,41 @@ export async function runRootContinuationArrayScheduler(
   });
 
   if (terminalResult !== undefined) {
+    await Promise.all(branches.map((branch) => persistBranch(options.runDir, branch)));
     await persistTrack(
       options,
-      resolvedWorkers.workers,
+      workers,
       rootBranchId,
-      branchStates,
+      branches,
       terminalResult.status,
+      splitOccurred,
     );
     return terminalResult;
   }
 
-  await Promise.all(branchStates.map((branch) => persistBranch(options.runDir, branch)));
-  await persistTrack(options, resolvedWorkers.workers, rootBranchId, branchStates, "completed");
+  await Promise.all(branches.map((branch) => persistBranch(options.runDir, branch)));
+  await persistTrack(options, workers, rootBranchId, branches, "completed", splitOccurred);
+
+  const terminalBranches = branches.filter(
+    (branch) =>
+      branch.status === "done" || branch.status === "failed" || branch.status === "cancelled",
+  );
+  if (!splitOccurred && terminalBranches.length === 1 && terminalBranches[0]?.status === "done") {
+    return {
+      status: "success",
+      output: terminalBranches[0].output ?? {},
+      ...(terminalBranches[0].message === undefined
+        ? {}
+        : { message: terminalBranches[0].message }),
+    };
+  }
 
   return {
     status: "success",
     output: {
       status: "completed",
       branches: Object.fromEntries(
-        branchStates.map((branch) => [
+        terminalBranches.map((branch) => [
           branch.branchId,
           {
             status: branch.status,
@@ -157,12 +214,19 @@ export async function runRootContinuationArrayScheduler(
       ),
     },
   };
-  async function runBranch(index: number): Promise<RunContinuationResult> {
-    const node = options.nodes[index];
-    const branch = branchStates[index];
-    if (node === undefined || branch === undefined) {
-      throw new Error(`missing scheduler branch state for branch ${index + 1}`);
+
+  async function runBranch(queued: QueuedBranch): Promise<RunContinuationResult> {
+    const { node, branch, source, requireRunnableBranchCandidate } = queued;
+    if (requireRunnableBranchCandidate && !isRunnableBranchCandidate(node)) {
+      branch.status = "failed";
+      branch.updatedAt = new Date().toISOString();
+      await persistBranch(options.runDir, branch);
+      return unsupportedArrayFailure(source);
     }
+
+    branch.status = "running";
+    branch.updatedAt = new Date().toISOString();
+    await persistBranch(options.runDir, branch);
 
     const branchResult = await runContinuation({
       node,
@@ -170,6 +234,9 @@ export async function runRootContinuationArrayScheduler(
       workflowId: options.workflowId,
       emit: async (event) => {
         if (event.type === "step.started" && event.stepId !== undefined) {
+          branch.latestStepId = event.stepId;
+        }
+        if (splitOccurred && event.type === "step.started" && event.stepId !== undefined) {
           const stepArtifacts = resolveStepArtifactPaths({
             runDir: options.runDir,
             stepId: event.stepId,
@@ -180,8 +247,12 @@ export async function runRootContinuationArrayScheduler(
         await options.emit(decorateBranchEvent(event, options.runId, branch.branchId));
       },
       maxSteps: options.maxSteps,
-      initialSource: `${options.initialSource} branch ${branch.branchId}`,
+      initialSource:
+        !splitOccurred && branch.branchId === rootBranchId
+          ? source
+          : `${source} branch ${branch.branchId}`,
       allocateStepIndex: () => allocateStepIndex(branch),
+      returnContinuationArrays: true,
       workflowAgents: options.workflowAgents,
       workflowTimeout: options.workflowTimeout,
       runDir: options.runDir,
@@ -194,15 +265,50 @@ export async function runRootContinuationArrayScheduler(
     });
 
     branch.updatedAt = new Date().toISOString();
-    if (branchResult.status === "success") {
+    if (branchResult.status === "split") {
+      if (!branchResult.nodes.every(isRunnableBranchCandidate)) {
+        branch.status = "failed";
+        await persistBranch(options.runDir, branch);
+        return unsupportedArrayFailure(`branch ${branch.branchId}`);
+      }
+      splitOccurred = true;
+      branch.status = "split";
+      if (branch.latestStepId !== undefined && branch.latestStepIndex > 0) {
+        const stepArtifacts = resolveStepArtifactPaths({
+          runDir: options.runDir,
+          stepId: branch.latestStepId,
+          stepIndex: branch.latestStepIndex,
+        });
+        await mkdir(stepArtifacts.stepDir, { recursive: true });
+      }
+      for (const childNode of branchResult.nodes) {
+        enqueue(childNode, branch.branchId, `branch ${branch.branchId}`, true);
+      }
+    } else if (branchResult.status === "success") {
       branch.status = "done";
       branch.output = branchResult.output;
+      branch.message = branchResult.message;
     } else {
       branch.status = branchResult.status === "failure" ? "failed" : branchResult.status;
     }
     await persistBranch(options.runDir, branch);
-    return branchResult;
+    await persistTrack(options, workers, rootBranchId, branches, "running", splitOccurred);
+    return branchResult.status === "split" ? { status: "success", output: {} } : branchResult;
   }
+}
+
+function isRunnableBranchCandidate(node: ContinuationResult): boolean {
+  return isStepNode(node) || isWorkflowInvocationNode(node);
+}
+
+function unsupportedArrayFailure(source: string): RunContinuationResult {
+  return {
+    status: "failure",
+    failure: {
+      code: "unsupported_continuation",
+      message: `${source} returned a continuation array containing unsupported branch candidates.`,
+    },
+  };
 }
 
 function resolveSchedulerWorkerCount(
@@ -254,6 +360,7 @@ async function persistTrack(
   rootBranchId: string,
   branches: readonly BranchState[],
   status: string,
+  splitOccurred: boolean,
 ): Promise<void> {
   await writeJson(join(options.runDir, "track.json"), {
     runId: options.runId,
@@ -261,7 +368,7 @@ async function persistTrack(
     workers,
     failurePolicy: "fail-fast",
     rootBranchId,
-    splitOccurred: true,
+    splitOccurred,
     branches: branches.map((branch) => branch.branchId),
   });
 }
@@ -269,10 +376,11 @@ async function persistTrack(
 async function persistBranch(runDir: string, branch: BranchState): Promise<void> {
   await writeJson(join(runDir, "branches", `${branch.branchId}.json`), {
     branchId: branch.branchId,
-    parentBranchId: branch.parentBranchId,
+    ...(branch.parentBranchId === undefined ? {} : { parentBranchId: branch.parentBranchId }),
     status: branch.status,
     workflowId: branch.workflowId,
     output: branch.output ?? {},
+    ...(branch.message === undefined ? {} : { message: branch.message }),
     createdAt: branch.createdAt,
     updatedAt: branch.updatedAt,
     latestStepIndex: branch.latestStepIndex,

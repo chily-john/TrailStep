@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  absoluteDone,
+  absoluteFail,
   defineWorkflow,
   done,
   fail,
@@ -565,6 +567,8 @@ describe("runWorkflow parallel tracks", () => {
     const track = await readJsonObject(join(result.runDir, "track.json"));
     expect(track).toMatchObject({
       status: "failed",
+      terminalKind: "failure",
+      terminalBranchId: expect.any(String),
       failure: { code: "branch_failed", message: "branch failed intentionally" },
     });
     const branchIds = track.branches as readonly string[];
@@ -575,8 +579,283 @@ describe("runWorkflow parallel tracks", () => {
       expect.arrayContaining([
         expect.objectContaining({ status: "done", output: { branch: "completed" } }),
         expect.objectContaining({
+          branchId: track.terminalBranchId,
           status: "failed",
           failure: { code: "branch_failed", message: "branch failed intentionally" },
+        }),
+        expect.objectContaining({ status: "cancelled", latestStepIndex: 0 }),
+      ]),
+    );
+  });
+
+  it("absoluteDone completes the whole track and cancels queued siblings", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-absolute-done-"));
+    const observed: string[] = [];
+
+    const winningBranch = step({ id: "absolute-done-winner" }).do(() => {
+      observed.push("winner");
+      return absoluteDone({ value: "winner" });
+    });
+    const queuedBranch = step({ id: "absolute-done-queued" }).do(() => {
+      observed.push("queued");
+      return done({ value: "queued" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "absolute-done-workflow",
+      start() {
+        return [winningBranch(), queuedBranch()];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "absolute-done-track-terminal",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ value: "winner" });
+    expect(observed).toEqual(["winner"]);
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({
+      status: "completed",
+      terminalKind: "absoluteDone",
+      terminalBranchId: expect.any(String),
+      terminalOutput: { value: "winner" },
+    });
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "done",
+          output: { value: "winner" },
+          terminalKind: "absoluteDone",
+        }),
+        expect.objectContaining({ status: "cancelled", latestStepIndex: 0 }),
+      ]),
+    );
+  });
+
+  it("absoluteFail fails the whole track and cancels queued siblings", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-absolute-fail-"));
+    const observed: string[] = [];
+    const failure = { code: "absolute_failed", message: "absolute failure" };
+
+    const failingBranch = step({ id: "absolute-fail-loser" }).do(() => {
+      observed.push("loser");
+      return absoluteFail(failure);
+    });
+    const queuedBranch = step({ id: "absolute-fail-queued" }).do(() => {
+      observed.push("queued");
+      return done({ value: "queued" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "absolute-fail-workflow",
+      start() {
+        return [failingBranch(), queuedBranch()];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "absolute-fail-track-terminal",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("expected absoluteFail run to fail");
+    }
+    expect(result.failure).toMatchObject(failure);
+    expect(observed).toEqual(["loser"]);
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({
+      status: "failed",
+      failure,
+      terminalKind: "absoluteFail",
+      terminalBranchId: expect.any(String),
+    });
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "failed", failure, terminalKind: "absoluteFail" }),
+        expect.objectContaining({ status: "cancelled", latestStepIndex: 0 }),
+      ]),
+    );
+  });
+
+  it("concurrent fail-fast prevents a running sibling from queuing split children", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-concurrent-fail-fast-"));
+    const failGate = createDeferred();
+    const splitGate = createDeferred();
+    const observed: string[] = [];
+
+    const failingBranch = step({ id: "concurrent-fail-fast-failing" }).do(async () => {
+      observed.push("failing-start");
+      await failGate.promise;
+      observed.push("failing-done");
+      return fail({ code: "concurrent_branch_failed", message: "concurrent failure" });
+    });
+    const splitChildA = step({ id: "concurrent-fail-fast-child-a" }).do(() => {
+      observed.push("child-a");
+      return done({ branch: "child-a" });
+    });
+    const splitChildB = step({ id: "concurrent-fail-fast-child-b" }).do(() => {
+      observed.push("child-b");
+      return done({ branch: "child-b" });
+    });
+    const splittingBranch = step({ id: "concurrent-fail-fast-splitter" }).do(async () => {
+      observed.push("splitter-start");
+      await splitGate.promise;
+      observed.push("splitter-done");
+      return [splitChildA(), splitChildB()];
+    });
+    const queuedBranch = step({ id: "concurrent-fail-fast-queued" }).do(() => {
+      observed.push("queued");
+      return done({ branch: "queued" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "concurrent-branch-fail-fast-workflow",
+      start() {
+        return [failingBranch(), splittingBranch(), queuedBranch()];
+      },
+    };
+
+    const run = runWorkflow({
+      workflow,
+      input: {},
+      runName: "concurrent-branch-fail-fast",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    try {
+      await expect.poll(() => observed).toEqual(
+        expect.arrayContaining(["failing-start", "splitter-start"]),
+      );
+      failGate.resolve();
+      await expect
+        .poll(async () => {
+          const queued = await readJsonObject(
+            join(
+              cwd,
+              ".trailstep",
+              "runs",
+              "concurrent-branch-fail-fast",
+              "branches",
+              "branch-3.json",
+            ),
+          );
+          return queued.status;
+        })
+        .toBe("cancelled");
+      splitGate.resolve();
+    } catch (error) {
+      failGate.resolve();
+      splitGate.resolve();
+      await run.catch(() => undefined);
+      throw error;
+    }
+
+    const result = await run;
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("expected fail-fast run to fail");
+    }
+    expect(result.failure).toMatchObject({
+      code: "concurrent_branch_failed",
+      message: "concurrent failure",
+    });
+    expect(observed).not.toEqual(expect.arrayContaining(["child-a", "child-b", "queued"]));
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({
+      status: "failed",
+      failure: { code: "concurrent_branch_failed", message: "concurrent failure" },
+    });
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "failed",
+          failure: { code: "concurrent_branch_failed", message: "concurrent failure" },
+        }),
+      ]),
+    );
+    expect(branches.every((branch) => branch.status !== "queued")).toBe(true);
+    expect(branches.filter((branch) => branch.status === "cancelled").length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(branches).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "step concurrent-fail-fast-splitter" }),
+      ]),
+    );
+  });
+
+  it("thrown branch errors trigger fail-fast and persist branch failure", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-thrown-fail-fast-"));
+    const observed: string[] = [];
+
+    const throwingBranch = step({ id: "thrown-fail-fast-throwing" }).do(() => {
+      observed.push("throwing");
+      throw new Error("branch exploded");
+    });
+    const queuedBranch = step({ id: "thrown-fail-fast-queued" }).do(() => {
+      observed.push("queued");
+      return done({ branch: "queued" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "thrown-branch-fail-fast-workflow",
+      start() {
+        return [throwingBranch(), queuedBranch()];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "thrown-branch-fail-fast",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("expected thrown branch error to fail the track");
+    }
+    expect(result.failure.message).toContain("branch exploded");
+    expect(observed).toEqual(["throwing"]);
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({ status: "failed" });
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "failed",
+          failure: expect.objectContaining({ message: expect.stringContaining("branch exploded") }),
         }),
         expect.objectContaining({ status: "cancelled", latestStepIndex: 0 }),
       ]),
@@ -991,6 +1270,9 @@ describe("runWorkflow parallel tracks", () => {
       expect(event.payload).toMatchObject({
         trackId: result.runId,
         branchId: expect.any(String),
+        stepIndex: expect.any(Number),
+        stepArtifactId: expect.stringMatching(/^000[12]-same-id$/),
+        stepArtifactPath: expect.stringMatching(/^steps\/000[12]-same-id$/),
       });
     }
   });

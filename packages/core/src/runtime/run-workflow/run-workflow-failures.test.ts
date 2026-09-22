@@ -341,10 +341,10 @@ describe("runWorkflow failure paths", () => {
     );
   });
 
-  it("fails clearly when workflow.start returns an absolute done continuation", async () => {
+  it("preserves unsupported behavior when workflow.start returns an absolute done continuation", async () => {
     const cwd = await testCwd();
     const workflow: Workflow<{ value: number }, { value: number }> = {
-      id: "unsupported-start-absolute-done-workflow",
+      id: "start-absolute-done-workflow",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start: (input) => absoluteDone(input),
@@ -353,22 +353,21 @@ describe("runWorkflow failure paths", () => {
     const result = await runWorkflow({
       workflow,
       input: { value: 1 },
-      runName: "unsupported-start-absolute-done",
+      runName: "start-absolute-done",
       cwd,
     });
 
-    expectFailure(result, "unsupported_continuation", "absolute done continuation");
     expectFailure(
       result,
       "unsupported_continuation",
-      "workflow.start for workflow unsupported-start-absolute-done-workflow",
+      "workflow.start for workflow start-absolute-done-workflow returned an absolute done continuation",
     );
   });
 
-  it("fails clearly when workflow.start returns an absolute fail continuation", async () => {
+  it("preserves unsupported behavior when workflow.start returns an absolute fail continuation", async () => {
     const cwd = await testCwd();
     const workflow: Workflow<{ value: number }, { value: number }> = {
-      id: "unsupported-start-absolute-fail-workflow",
+      id: "start-absolute-fail-workflow",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start: () => absoluteFail({ code: "blocked", message: "Cannot continue." }),
@@ -377,15 +376,14 @@ describe("runWorkflow failure paths", () => {
     const result = await runWorkflow({
       workflow,
       input: { value: 1 },
-      runName: "unsupported-start-absolute-fail",
+      runName: "start-absolute-fail",
       cwd,
     });
 
-    expectFailure(result, "unsupported_continuation", "absolute fail continuation");
     expectFailure(
       result,
       "unsupported_continuation",
-      "workflow.start for workflow unsupported-start-absolute-fail-workflow",
+      "workflow.start for workflow start-absolute-fail-workflow returned an absolute fail continuation",
     );
   });
 

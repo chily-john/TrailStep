@@ -359,7 +359,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
             processRunner: options.processRunner,
           });
 
-    if (continuationResult.status === "failure") {
+    if (continuationResult.status === "failure" || continuationResult.status === "absoluteFailure") {
       return await failWorkflow(continuationResult.failure, continuationResult.message);
     }
 

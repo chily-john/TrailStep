@@ -118,6 +118,8 @@ interface WorkflowInvocationFrame {
 export type RunContinuationResult =
   | { readonly status: "success"; readonly output: PlainObject; readonly message?: string }
   | { readonly status: "failure"; readonly failure: Failure; readonly message?: string }
+  | { readonly status: "absoluteSuccess"; readonly output: PlainObject; readonly message?: string }
+  | { readonly status: "absoluteFailure"; readonly failure: Failure; readonly message?: string }
   | { readonly status: "waiting"; readonly wait: WaitingWait }
   | { readonly status: "cancelled"; readonly cancellation: CancellationMarker }
   | {
@@ -206,6 +208,22 @@ export async function runContinuation(
     if (isFailNode(node)) {
       return {
         status: "failure",
+        failure: node.failure,
+        ...(node.message === undefined ? {} : { message: node.message }),
+      };
+    }
+
+    if (options.returnContinuationArrays === true && isAbsoluteDoneNode(node)) {
+      return {
+        status: "absoluteSuccess",
+        output: node.output,
+        ...(node.message === undefined ? {} : { message: node.message }),
+      };
+    }
+
+    if (options.returnContinuationArrays === true && isAbsoluteFailNode(node)) {
+      return {
+        status: "absoluteFailure",
         failure: node.failure,
         ...(node.message === undefined ? {} : { message: node.message }),
       };
@@ -511,6 +529,22 @@ export async function runContinuation(
         return { status: "split", nodes: nextNode, source: `step ${config.id}` };
       }
 
+      if (options.returnContinuationArrays === true && isAbsoluteDoneNode(nextNode)) {
+        return {
+          status: "absoluteSuccess",
+          output: nextNode.output,
+          ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+        };
+      }
+
+      if (options.returnContinuationArrays === true && isAbsoluteFailNode(nextNode)) {
+        return {
+          status: "absoluteFailure",
+          failure: nextNode.failure,
+          ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+        };
+      }
+
       const unsupportedStepFailure = unsupportedContinuationFailure(nextNode, `step ${config.id}`);
       if (unsupportedStepFailure !== undefined) {
         await options.emit(
@@ -589,6 +623,22 @@ export async function runContinuation(
         const errorSource = `error continuation for step ${config.id}`;
         if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
           return { status: "split", nodes: nextNode, source: errorSource };
+        }
+
+        if (options.returnContinuationArrays === true && isAbsoluteDoneNode(nextNode)) {
+          return {
+            status: "absoluteSuccess",
+            output: nextNode.output,
+            ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+          };
+        }
+
+        if (options.returnContinuationArrays === true && isAbsoluteFailNode(nextNode)) {
+          return {
+            status: "absoluteFailure",
+            failure: nextNode.failure,
+            ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+          };
         }
 
         const unsupportedErrorFailure = unsupportedContinuationFailure(nextNode, errorSource);

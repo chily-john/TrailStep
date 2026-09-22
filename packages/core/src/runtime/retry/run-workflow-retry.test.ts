@@ -43,6 +43,140 @@ function event(input: {
 }
 
 describe("runWorkflow retry", () => {
+  it("manual retry lets replayed completed code steps inspect persisted run state", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-persisted-state-"));
+    const runName = "retry-persisted-state";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "state.json"),
+      `${JSON.stringify({ token: "persisted-token" }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${[
+        event({
+          id: "workflow-started",
+          runId: runName,
+          workflowId: "retry-persisted-state-workflow",
+          type: "workflow.started",
+          payload: { input: {} },
+        }),
+        event({
+          id: "prepare-started",
+          runId: runName,
+          workflowId: "retry-persisted-state-workflow",
+          stepId: "prepare",
+          type: "step.started",
+        }),
+        event({
+          id: "prepare-completed",
+          runId: runName,
+          workflowId: "retry-persisted-state-workflow",
+          stepId: "prepare",
+          type: "step.completed",
+        }),
+        event({
+          id: "work-started",
+          runId: runName,
+          workflowId: "retry-persisted-state-workflow",
+          stepId: "work",
+          type: "step.started",
+        }),
+      ].map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const workflow: Workflow<Record<string, never>, { token: string }> = {
+      id: "retry-persisted-state-workflow",
+      inputShape: {},
+      outputShape: { token: "string" },
+      start(input) {
+        return step({ id: "prepare" }).do(async () => {
+          const token = await state.getPersisted<string>("token");
+          return token
+            ? step({ id: "work" }).do(() => done({ token }))({})
+            : done({ token: "missing" });
+        })(input);
+      },
+    };
+
+    const retried = await runWorkflow({ workflow, retry: { runDir, kind: "manual" }, cwd });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(retried.output).toEqual({ token: "persisted-token" });
+  });
+
+  it("manual retry restores persisted state when replay validation fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-restore-state-"));
+    const runName = "retry-restore-state";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "state.json"),
+      `${JSON.stringify({ token: "original" }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${[
+        event({
+          id: "workflow-started",
+          runId: runName,
+          workflowId: "retry-restore-state-workflow",
+          type: "workflow.started",
+          payload: { input: {} },
+        }),
+        event({
+          id: "prepare-started",
+          runId: runName,
+          workflowId: "retry-restore-state-workflow",
+          stepId: "prepare",
+          type: "step.started",
+        }),
+        event({
+          id: "prepare-completed",
+          runId: runName,
+          workflowId: "retry-restore-state-workflow",
+          stepId: "prepare",
+          type: "step.completed",
+        }),
+        event({
+          id: "work-started",
+          runId: runName,
+          workflowId: "retry-restore-state-workflow",
+          stepId: "work",
+          type: "step.started",
+        }),
+      ].map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const workflow: Workflow<Record<string, never>, { token: string }> = {
+      id: "retry-restore-state-workflow",
+      inputShape: {},
+      outputShape: { token: "string" },
+      start(input) {
+        return step({ id: "prepare" }).do(async () => {
+          await state.set("token", "mutated-during-replay");
+          return done({ token: "ended-before-target" });
+        })(input);
+      },
+    };
+
+    const retried = await runWorkflow({ workflow, retry: { runDir, kind: "manual" }, cwd });
+
+    expect(retried.status).toBe("failure");
+    const persistedState = JSON.parse(await readFile(join(runDir, "state.json"), "utf8")) as {
+      readonly token?: string;
+    };
+    expect(persistedState.token).toBe("original");
+  });
+
   it("manual retry targets a step that returned fail", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-retry-fail-node-"));
     let shouldFail = true;

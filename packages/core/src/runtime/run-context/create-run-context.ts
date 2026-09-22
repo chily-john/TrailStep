@@ -94,10 +94,25 @@ export function createQueuedRunState(options: {
       const state = await ensureLoaded();
       return state[key] as T | undefined;
     },
-    async set(key: string, value: unknown): Promise<void> {
+    async getPersisted<T = unknown>(key: string): Promise<T | undefined> {
+      const state = await options.read();
+      return state[key] as T | undefined;
+    },
+    async hydratePersisted(): Promise<void> {
+      const persisted = await options.read();
+      const state = await ensureLoaded();
+      cache = { ...state, ...persisted };
+    },
+    async set(
+      key: string,
+      value: unknown,
+      options: { readonly persist?: boolean } = {},
+    ): Promise<void> {
       const state = await ensureLoaded();
       state[key] = value;
-      await enqueueWrite();
+      if (options.persist !== false) {
+        await enqueueWrite();
+      }
     },
   };
 }
@@ -130,10 +145,28 @@ export function createQueuedGlobalState(options: {
       const state = await mutationQueue.then(() => ensureLoaded());
       return state[key] as T | undefined;
     },
-    async set(key: string, value: unknown): Promise<void> {
+    async getPersisted<T = unknown>(key: string): Promise<T | undefined> {
+      const state = await mutationQueue.then(() => options.read());
+      return state[key] as T | undefined;
+    },
+    async hydratePersisted(): Promise<void> {
+      await enqueueMutation(async (state) => {
+        const persisted = await options.read();
+        for (const [key, value] of Object.entries(persisted)) {
+          state[key] = value;
+        }
+      });
+    },
+    async set(
+      key: string,
+      value: unknown,
+      setOptions: { readonly persist?: boolean } = {},
+    ): Promise<void> {
       await enqueueMutation(async (state) => {
         state[key] = value;
-        await options.write(state);
+        if (setOptions.persist !== false) {
+          await options.write(state);
+        }
       });
     },
     async update<T = unknown>(

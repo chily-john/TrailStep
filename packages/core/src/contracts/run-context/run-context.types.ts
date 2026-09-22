@@ -41,7 +41,9 @@ export type RunContextProviderWorkingRunner = (
 
 export interface RunContextState {
   get<T = unknown>(key: string): Promise<T | undefined>;
-  set(key: string, value: unknown): Promise<void>;
+  getPersisted<T = unknown>(key: string): Promise<T | undefined>;
+  hydratePersisted(): Promise<void>;
+  set(key: string, value: unknown, options?: { readonly persist?: boolean }): Promise<void>;
 }
 
 export interface RunContextGlobalState extends RunContextState {

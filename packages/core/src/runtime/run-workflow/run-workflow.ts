@@ -8,7 +8,7 @@ import type {
   Result,
   RunWorkflowOptions,
 } from "../../runtime/run-workflow/run-workflow.types.js";
-import { appendEvent } from "../artifacts/run-storage.js";
+import { appendEvent, readRunState, writeRunState } from "../artifacts/run-storage.js";
 import {
   type CancellationMarker,
   cancellationPayload,
@@ -193,20 +193,23 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
 
     if (isResume) {
       const danglingAnchor = findDanglingInteractiveSessionStart(previousEvents);
-      const replay = danglingAnchor
-        ? await reattachInProgressStep({
-            workflow: options.workflow,
-            events: previousEvents,
-            runDir,
-          })
-        : await replayToFailedStep({
-            workflow: options.workflow,
-            events: previousEvents,
-            runDir,
-          });
+      const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+        danglingAnchor
+          ? reattachInProgressStep({
+              workflow: options.workflow,
+              events: previousEvents,
+              runDir,
+            })
+          : replayToFailedStep({
+              workflow: options.workflow,
+              events: previousEvents,
+              runDir,
+            }),
+      );
       if (replay.status === "failure") {
         return failResumeValidation(replay.failure);
       }
+      await runContext.state.hydratePersisted();
 
       workflowInput = inputSchema
         ? (inputSchema.assert(replay.input, "workflow input") as TInput)
@@ -225,14 +228,17 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }),
       );
     } else if (isWaitContinue) {
-      const replay = await replayToWaitingStep({
-        workflow: options.workflow,
-        events: previousEvents,
-        runDir,
-      });
+      const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+        replayToWaitingStep({
+          workflow: options.workflow,
+          events: previousEvents,
+          runDir,
+        }),
+      );
       if (replay.status === "failure") {
         return failResumeValidation(replay.failure);
       }
+      await runContext.state.hydratePersisted();
 
       workflowInput = inputSchema
         ? (inputSchema.assert(replay.input, "workflow input") as TInput)
@@ -253,14 +259,17 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }),
       );
     } else if (isRetry) {
-      const replay = await replayToRetryFailure({
-        workflow: options.workflow,
-        events: previousEvents,
-        runDir,
-      });
+      const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+        replayToRetryFailure({
+          workflow: options.workflow,
+          events: previousEvents,
+          runDir,
+        }),
+      );
       if (replay.status === "failure") {
         return failResumeValidation(replay.failure);
       }
+      await runContext.state.hydratePersisted();
 
       workflowInput = inputSchema
         ? (inputSchema.assert(replay.input, "workflow input") as TInput)
@@ -415,6 +424,18 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       events,
     };
   }
+}
+
+async function replayWithoutClobberingStateOnFailure<T extends { readonly status: string }>(
+  runDir: string,
+  replay: () => Promise<T>,
+): Promise<T> {
+  const stateBeforeReplay = await readRunState(runDir);
+  const result = await replay();
+  if (result.status === "failure") {
+    await writeRunState(runDir, stateBeforeReplay);
+  }
+  return result;
 }
 
 function readPreviousTerminalWorkflowStatus(

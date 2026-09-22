@@ -9,8 +9,14 @@ export const state = {
   async get<T = unknown>(key: string): Promise<T | undefined> {
     return currentRunContext().state.get<T>(key);
   },
+  async getPersisted<T = unknown>(key: string): Promise<T | undefined> {
+    return currentRunContext().state.getPersisted<T>(key);
+  },
   async set(key: string, value: unknown): Promise<void> {
-    await currentRunContext().state.set(key, value);
+    const context = currentRunContext();
+    await context.state.set(key, value, {
+      persist: context.currentStep?.replay?.kind === "completed-step" ? false : true,
+    });
   },
   get id(): string {
     return currentRunContext().id;

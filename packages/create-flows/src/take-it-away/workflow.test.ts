@@ -446,12 +446,11 @@ describe("take-it-away", () => {
     }
     expect(retried.output).toEqual({ ok: true });
     const persistedState = JSON.parse(await readFile(join(runDir, "state.json"), "utf8")) as {
-      latestPreflightStatus?: { code?: string; baseline?: string } | null;
+      activeStory?: { readonly path?: string } | null;
+      storyBaseline?: string | null;
     };
-    expect(persistedState.latestPreflightStatus).toMatchObject({
-      code: "story_preflight_replayed",
-      baseline,
-    });
+    expect(persistedState.activeStory?.path).toBe(currentStory.path);
+    expect(persistedState.storyBaseline).toBe(baseline);
   });
 
   it("repairs stale completed-story state before routing the next story", async () => {

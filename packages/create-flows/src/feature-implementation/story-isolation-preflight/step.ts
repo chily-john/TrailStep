@@ -146,13 +146,16 @@ async function loadCompletedReplayPreflightState(
     return null;
   }
 
-  const activeStory = await state.get<Document | null>(STORY_STATE_KEYS.activeStory);
-  if (activeStory && !documentsMatch(activeStory, currentStory)) {
-    return null;
+  const activeStory = await state.getPersisted<Document | null>(STORY_STATE_KEYS.activeStory);
+  const baseline = await loadPersistedRecordedBaseline();
+  if (!activeStory || documentsMatch(activeStory, currentStory)) {
+    return baseline ? { baseline } : { baseline: "replayed-completed-step" };
   }
 
-  const baseline = await loadRecordedBaseline();
-  return baseline ? { baseline } : null;
+  // Historical story preflights are replayed only to reconstruct the continuation graph.
+  // They must not re-check today's worktree cleanliness, because later story work may
+  // legitimately be dirty after the completed preflight originally succeeded.
+  return { baseline: "replayed-completed-step" };
 }
 
 async function loadBlockedReplayPreflightState(
@@ -178,6 +181,16 @@ async function loadRecordedBaseline(): Promise<string | null> {
     (await state.get<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
     (await state.get<{ readonly commit?: string } | null>(STORY_STATE_KEYS.activeStoryStartCommit))
       ?.commit ??
+    null
+  );
+}
+
+async function loadPersistedRecordedBaseline(): Promise<string | null> {
+  return (
+    (await state.getPersisted<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
+    (await state.getPersisted<{ readonly commit?: string } | null>(
+      STORY_STATE_KEYS.activeStoryStartCommit,
+    ))?.commit ??
     null
   );
 }

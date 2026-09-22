@@ -399,9 +399,11 @@ async function replayPersistedRetryRoute(
   currentStory?: Document,
   previousActivePhase?: string | null,
 ): Promise<ContinuationResult | null> {
-  const routerState = await state.get<Partial<StoryRouterState> | null>(
-    STORY_STATE_KEYS.latestStoryRouterState,
-  );
+  const routerState = state.isReplayingCompletedStep
+    ? await state.getPersisted<Partial<StoryRouterState> | null>(
+        STORY_STATE_KEYS.latestStoryRouterState,
+      )
+    : await state.get<Partial<StoryRouterState> | null>(STORY_STATE_KEYS.latestStoryRouterState);
   if (!routerState || !isPersistedRetryRoute(routerState.route)) {
     return null;
   }

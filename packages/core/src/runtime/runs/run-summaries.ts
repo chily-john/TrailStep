@@ -5,6 +5,8 @@ import { defaultRunsRoot, readRunEvents } from "../artifacts/run-storage.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
+import type { TrackSummary } from "./track-summary.js";
+import { readTrackSummary } from "./track-summary.js";
 
 export type RunSummaryStatus =
   | "active"
@@ -21,6 +23,8 @@ export interface RunSummary {
   readonly workflowId?: string;
   readonly lastTimestamp?: string;
   readonly latestFailure?: LatestUnresolvedFailure;
+  readonly track?: TrackSummary;
+  readonly trackWarning?: string;
   readonly warning?: string;
 }
 
@@ -52,7 +56,7 @@ export async function listRunSummaries(options: {
     const runDir = join(runsRoot, runId);
 
     try {
-      summaries.push(summarizeReadableRun({ runId, runDir, events: await readRunEvents(runDir) }));
+      summaries.push(await summarizeReadableRun({ runId, runDir, events: await readRunEvents(runDir) }));
     } catch (error) {
       summaries.push({
         runId,
@@ -94,11 +98,22 @@ export function newestFirst(left: RunSummary, right: RunSummary): number {
   );
 }
 
-function summarizeReadableRun(options: {
+async function summarizeReadableRun(options: {
   readonly runId: string;
   readonly runDir: string;
   readonly events: readonly Event[];
-}): RunSummary {
+}): Promise<RunSummary> {
+  let track: TrackSummary | undefined;
+  let trackWarning: string | undefined;
+  try {
+    track = await readTrackSummary(options);
+  } catch (error) {
+    trackWarning = `Warning: Could not read track summary for run ${options.runId}: ${readErrorMessage(error)}`;
+  }
+  const trackFields = {
+    ...(track === undefined ? {} : { track }),
+    ...(trackWarning === undefined ? {} : { trackWarning }),
+  };
   const latestFailure = selectLatestUnresolvedFailure(options.events);
   const terminalStatus = selectTerminalStatus(options.events);
   const lastEvent = options.events.at(-1);
@@ -108,6 +123,7 @@ function summarizeReadableRun(options: {
   if (terminalStatus === "completed" || terminalStatus === "cancelled") {
     return {
       ...options,
+      ...trackFields,
       status: terminalStatus,
       workflowId,
       lastTimestamp: lastEvent?.timestamp,
@@ -117,6 +133,7 @@ function summarizeReadableRun(options: {
   if (latestFailure) {
     return {
       ...options,
+      ...trackFields,
       status: "failed",
       workflowId: latestFailure.workflowId,
       lastTimestamp: latestFailure.event.timestamp,
@@ -126,6 +143,7 @@ function summarizeReadableRun(options: {
 
   return {
     ...options,
+    ...trackFields,
     status: terminalStatus ?? "active",
     workflowId,
     lastTimestamp: lastEvent?.timestamp,

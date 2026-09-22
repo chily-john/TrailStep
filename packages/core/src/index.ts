@@ -213,6 +213,7 @@ export type {
   WorkingAgentProcessRunner,
 } from "./runtime/run-workflow/run-workflow.types.js";
 export type { RunSummary, RunSummaryStatus } from "./runtime/runs/run-summaries.js";
+export type { BranchSummary, TrackSummary } from "./runtime/runs/track-summary.js";
 export {
   listRunSummaries,
   newestFirst,

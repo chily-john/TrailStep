@@ -4,18 +4,24 @@ import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 
-export const runsCommand: CliCommand<void> = {
+export const runsCommand: CliCommand<{ readonly json: boolean }> = {
   name: "runs",
   parseArgs(argv) {
-    if (argv.length !== 1 || argv[0] !== "runs") {
-      throw new CliUsageError("Usage: trailstep runs");
+    if (argv[0] !== "runs" || (argv.length !== 1 && !(argv.length === 2 && argv[1] === "--json"))) {
+      throw new CliUsageError("Usage: trailstep runs [--json]");
     }
+    return { json: argv[1] === "--json" };
   },
-  async run(_args, context) {
+  async run(args, context) {
     const summaries = await listRunSummaries({
       cwd: context.cwd,
       runsRoot: resolveRunsRoot(context),
     });
+    if (args.json) {
+      context.io.writeLine(JSON.stringify(summaries));
+      return 0;
+    }
+
     const activeRuns = summaries.filter((summary) => summary.status === "active");
     const recentFailedRuns = selectRecentFailedRunSummaries(summaries);
 
@@ -24,7 +30,7 @@ export const runsCommand: CliCommand<void> = {
     writeSection(context, "All runs:", summaries);
 
     for (const warning of summaries.flatMap((summary) =>
-      summary.warning ? [summary.warning] : [],
+      [summary.warning, summary.trackWarning].filter((value): value is string => value !== undefined),
     )) {
       context.io.writeError(warning);
     }
@@ -56,9 +62,42 @@ function formatRunSummary(summary: RunSummary): string {
     summary.workflowId,
     summary.lastTimestamp,
     formatFailureContext(summary),
+    formatTrackContext(summary),
   ].filter(Boolean);
 
   return fields.join(" | ");
+}
+
+function formatTrackContext(summary: RunSummary): string | undefined {
+  const track = summary.track;
+  if (track === undefined) {
+    return undefined;
+  }
+
+  const counts = new Map<string, number>();
+  for (const branch of track.branches) {
+    const status = branch.status ?? "unknown";
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+  const countText = [...counts.entries()]
+    .map(([status, count]) => `${count} ${status}`)
+    .join(", ");
+  const interestingBranches = track.branches.filter(
+    (branch) => branch.status === "failed" || branch.status === "waiting" || branch.output !== undefined,
+  );
+  const branchText = interestingBranches
+    .map((branch) => {
+      const details = [
+        branch.branchId,
+        branch.status,
+        readFailureMessage(branch.failure),
+        branch.latestMessage,
+      ].filter(Boolean);
+      return details.join(" ");
+    })
+    .join("; ");
+
+  return [`track ${track.status}`, countText, branchText].filter(Boolean).join(" | ");
 }
 
 function formatFailureContext(summary: RunSummary): string | undefined {

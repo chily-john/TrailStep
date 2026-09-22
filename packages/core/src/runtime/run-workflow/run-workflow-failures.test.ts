@@ -341,7 +341,7 @@ describe("runWorkflow failure paths", () => {
     );
   });
 
-  it("preserves unsupported behavior when workflow.start returns an absolute done continuation", async () => {
+  it("supports workflow.start returning an absolute done continuation", async () => {
     const cwd = await testCwd();
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "start-absolute-done-workflow",
@@ -357,14 +357,18 @@ describe("runWorkflow failure paths", () => {
       cwd,
     });
 
-    expectFailure(
-      result,
-      "unsupported_continuation",
-      "workflow.start for workflow start-absolute-done-workflow returned an absolute done continuation",
-    );
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ value: 1 });
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.completed",
+    ]);
   });
 
-  it("preserves unsupported behavior when workflow.start returns an absolute fail continuation", async () => {
+  it("supports workflow.start returning an absolute fail continuation", async () => {
     const cwd = await testCwd();
     const workflow: Workflow<{ value: number }, { value: number }> = {
       id: "start-absolute-fail-workflow",
@@ -380,11 +384,11 @@ describe("runWorkflow failure paths", () => {
       cwd,
     });
 
-    expectFailure(
-      result,
-      "unsupported_continuation",
-      "workflow.start for workflow start-absolute-fail-workflow returned an absolute fail continuation",
-    );
+    expectFailure(result, "blocked", "Cannot continue.");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.failed",
+    ]);
   });
 
   it("validates aggregate output when workflow.start returns a continuation array", async () => {

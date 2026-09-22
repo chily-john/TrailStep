@@ -10,6 +10,7 @@ import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import { resolveStepArtifactPaths } from "../artifacts/step-artifacts.js";
 import {
   type RunContinuationResult,
+  type WaitingWait,
   runContinuation,
 } from "../continuation/run-continuation/run-continuation.js";
 import type { TimeoutPolicyInput } from "../timeout/timeout-policy.js";
@@ -62,6 +63,7 @@ interface BranchState {
   status: BranchStatus;
   output?: PlainObject;
   failure?: Failure;
+  wait?: WaitingWait;
   terminalKind?: AbsoluteTerminalKind;
   message?: string;
   source: string;
@@ -81,6 +83,7 @@ interface BranchStateJson {
   readonly splitSource?: string;
   readonly output: PlainObject;
   readonly failure?: Failure;
+  readonly wait?: WaitingWait;
   readonly terminalKind?: AbsoluteTerminalKind;
   readonly message?: string;
   readonly createdAt: string;
@@ -151,9 +154,9 @@ export async function runRootContinuationArrayScheduler(
     return branch;
   };
 
-  const cancelQueuedAndPreventableBranches = async (): Promise<void> => {
+  const cancelQueuedAndPreventableBranches = async (preservedBranchId?: string): Promise<void> => {
     queue.length = 0;
-    await cancelPreventableBranches(branches, options.runDir);
+    await cancelPreventableBranches(branches, options.runDir, preservedBranchId);
   };
 
   const terminalizeTrack = async (
@@ -164,13 +167,13 @@ export async function runRootContinuationArrayScheduler(
       terminalResult = result;
       terminalBranchId = terminal?.branchId;
       terminalKind = terminal?.kind;
-      await cancelQueuedAndPreventableBranches();
+      await cancelQueuedAndPreventableBranches(terminal?.branchId);
     }
   };
 
   if (options.rootIsArray === true) {
     if (!options.nodes.every(isRunnableBranchCandidate)) {
-      return unsupportedArrayFailure(options.initialSource);
+      return invalidArrayCandidateFailure(options.initialSource);
     }
     for (const node of options.nodes) {
       enqueue(node, rootBranchId, options.initialSource, true);
@@ -231,7 +234,7 @@ export async function runRootContinuationArrayScheduler(
   });
 
   if (terminalResult !== undefined) {
-    await cancelQueuedAndPreventableBranches();
+    await cancelQueuedAndPreventableBranches(terminalBranchId);
     await Promise.all(branches.map((branch) => persistBranch(options.runDir, branch)));
     await persistTrack(
       options,
@@ -288,7 +291,7 @@ export async function runRootContinuationArrayScheduler(
       branch.status = "failed";
       branch.updatedAt = new Date().toISOString();
       await persistBranch(options.runDir, branch);
-      return unsupportedArrayFailure(source);
+      return invalidArrayCandidateFailure(source);
     }
 
     branch.status = "running";
@@ -332,6 +335,7 @@ export async function runRootContinuationArrayScheduler(
     });
 
     branch.updatedAt = new Date().toISOString();
+    const branchResultWasSplit = branchResult.status === "split";
     if (terminalResult !== undefined) {
       if (!isBranchTerminalStatus(branch.status)) {
         branch.status = "cancelled";
@@ -342,17 +346,6 @@ export async function runRootContinuationArrayScheduler(
     }
 
     if (branchResult.status === "absoluteSuccess") {
-      if (!splitOccurred) {
-        const failure = unsupportedAbsoluteTerminalFailure(
-          "absoluteDone",
-          sourceForUnsupportedTerminal(source, branch),
-        );
-        branch.status = "failed";
-        branch.failure = failure;
-        await terminalizeTrack({ status: "failure", failure }, { branchId: branch.branchId, kind: "failure" });
-        await persistBranch(options.runDir, branch);
-        return { status: "failure", failure };
-      }
       branch.status = "done";
       branch.output = branchResult.output;
       branch.message = branchResult.message;
@@ -363,17 +356,6 @@ export async function runRootContinuationArrayScheduler(
     }
 
     if (branchResult.status === "absoluteFailure") {
-      if (!splitOccurred) {
-        const failure = unsupportedAbsoluteTerminalFailure(
-          "absoluteFail",
-          sourceForUnsupportedTerminal(source, branch),
-        );
-        branch.status = "failed";
-        branch.failure = failure;
-        await terminalizeTrack({ status: "failure", failure }, { branchId: branch.branchId, kind: "failure" });
-        await persistBranch(options.runDir, branch);
-        return { status: "failure", failure };
-      }
       branch.status = "failed";
       branch.failure = branchResult.failure;
       branch.message = branchResult.message;
@@ -394,6 +376,7 @@ export async function runRootContinuationArrayScheduler(
 
     if (branchResult.status === "waiting") {
       branch.status = "waiting";
+      branch.wait = branchResult.wait;
       await terminalizeTrack(branchResult, { branchId: branch.branchId, kind: "waiting" });
       await persistBranch(options.runDir, branch);
       return branchResult;
@@ -409,8 +392,9 @@ export async function runRootContinuationArrayScheduler(
     if (branchResult.status === "split") {
       if (!branchResult.nodes.every(isRunnableBranchCandidate)) {
         branch.status = "failed";
+        branch.failure = invalidArrayCandidateFailure(branchResult.source).failure;
         await persistBranch(options.runDir, branch);
-        return unsupportedArrayFailure(branchResult.source);
+        return invalidArrayCandidateFailure(branchResult.source);
       }
       splitOccurred = true;
       branch.status = "split";
@@ -437,12 +421,10 @@ export async function runRootContinuationArrayScheduler(
       branch.status = "done";
       branch.output = branchResult.output;
       branch.message = branchResult.message;
-    } else {
-      branch.status = branchResult.status;
     }
     await persistBranch(options.runDir, branch);
     await persistTrack(options, workers, rootBranchId, branches, "running", splitOccurred);
-    return branchResult.status === "split" ? { status: "success", output: {} } : branchResult;
+    return branchResultWasSplit ? { status: "success", output: {} } : branchResult;
   }
 }
 
@@ -489,33 +471,18 @@ function isRunnableBranchCandidate(node: ContinuationResult): boolean {
   return isStepNode(node) || isWorkflowInvocationNode(node);
 }
 
-function unsupportedArrayFailure(source: string): RunContinuationResult {
+function invalidArrayCandidateFailure(source: string): RunContinuationResult & { readonly status: "failure" } {
   return {
     status: "failure",
     failure: {
-      code: "unsupported_continuation",
-      message: `${source} returned a continuation array containing unsupported branch candidates.`,
+      code: "invalid_continuation",
+      message: `${source} returned a continuation array containing non-runnable branch candidates; array candidates must be runnable step or workflow invocation nodes.`,
     },
   };
 }
 
 function isBranchTerminalStatus(status: BranchStatus): boolean {
   return status === "done" || status === "failed" || status === "cancelled";
-}
-
-function sourceForUnsupportedTerminal(fallbackSource: string, branch: BranchState): string {
-  return branch.latestStepId === undefined ? fallbackSource : `step ${branch.latestStepId}`;
-}
-
-function unsupportedAbsoluteTerminalFailure(
-  kind: AbsoluteTerminalKind,
-  source: string,
-): Failure {
-  const form = kind === "absoluteDone" ? "an absolute done continuation" : "an absolute fail continuation";
-  return {
-    code: "unsupported_continuation",
-    message: `${source} returned ${form}, but parallel tracks/workflow invocation execution is not implemented yet.`,
-  };
 }
 
 function trackStatusFromTerminalResult(result: RunContinuationResult): string {
@@ -551,11 +518,12 @@ function publicTerminalResult(result: RunContinuationResult): RunContinuationRes
 async function cancelPreventableBranches(
   branches: readonly BranchState[],
   runDir: string,
+  preservedBranchId?: string,
 ): Promise<void> {
   const now = new Date().toISOString();
   await Promise.all(
     branches.map((branch) => {
-      if (!isBranchTerminalStatus(branch.status)) {
+      if (branch.branchId !== preservedBranchId && !isBranchTerminalStatus(branch.status)) {
         branch.status = "cancelled";
         branch.updatedAt = now;
       }
@@ -667,6 +635,7 @@ async function persistBranch(runDir: string, branch: BranchState): Promise<void>
     ...(branch.splitSource === undefined ? {} : { splitSource: branch.splitSource }),
     output: branch.output ?? {},
     ...(branch.failure === undefined ? {} : { failure: branch.failure }),
+    ...(branch.wait === undefined ? {} : { wait: branch.wait }),
     ...(branch.terminalKind === undefined ? {} : { terminalKind: branch.terminalKind }),
     ...(branch.message === undefined ? {} : { message: branch.message }),
     createdAt: branch.createdAt,

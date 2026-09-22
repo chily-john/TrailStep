@@ -24,6 +24,7 @@ export {
   document,
   done,
   fail,
+  globalState,
   isAbsoluteDoneNode,
   isAbsoluteFailNode,
   isDoneNode,
@@ -177,8 +178,10 @@ export {
 } from "./providers/provider-manifest.js";
 export {
   defaultRunsRoot,
+  readGlobalState,
   readRunEvents,
   readRunState,
+  writeGlobalState,
   writeRunState,
 } from "./runtime/artifacts/run-storage.js";
 export type { CancellationMarker } from "./runtime/cancellation/cancellation.js";

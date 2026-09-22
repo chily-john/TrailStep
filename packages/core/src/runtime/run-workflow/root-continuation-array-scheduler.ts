@@ -7,12 +7,15 @@ import { isStepNode, isWorkflowInvocationNode } from "../../authoring/step/step-
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { readBranchRunState, writeBranchRunState } from "../artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../artifacts/step-artifacts.js";
 import {
   type RunContinuationResult,
   type WaitingWait,
   runContinuation,
 } from "../continuation/run-continuation/run-continuation.js";
+import { createQueuedRunState } from "../run-context/create-run-context.js";
+import { runContextStorage } from "../run-context/run-context-storage.js";
 import type { TimeoutPolicyInput } from "../timeout/timeout-policy.js";
 import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 
@@ -285,6 +288,22 @@ export async function runRootContinuationArrayScheduler(
     },
   };
 
+  async function runWithBranchState<T>(branchId: string, fn: () => Promise<T>): Promise<T> {
+    const parentContext = runContextStorage.getStore();
+    if (!parentContext || (!splitOccurred && branchId === rootBranchId)) {
+      return await fn();
+    }
+
+    const branchContext = {
+      ...parentContext,
+      state: createQueuedRunState({
+        read: () => readBranchRunState(options.runDir, branchId),
+        write: (nextState) => writeBranchRunState(options.runDir, branchId, nextState),
+      }),
+    };
+    return await runContextStorage.run(branchContext, fn);
+  }
+
   async function runBranch(queued: QueuedBranch): Promise<RunContinuationResult> {
     const { node, branch, source, requireRunnableBranchCandidate } = queued;
     if (requireRunnableBranchCandidate && !isRunnableBranchCandidate(node)) {
@@ -298,7 +317,7 @@ export async function runRootContinuationArrayScheduler(
     branch.updatedAt = new Date().toISOString();
     await persistBranch(options.runDir, branch);
 
-    const branchResult = await runContinuation({
+    const branchResult = await runWithBranchState(branch.branchId, async () => await runContinuation({
       node,
       runId: options.runId,
       workflowId: options.workflowId,
@@ -332,7 +351,7 @@ export async function runRootContinuationArrayScheduler(
       workingAgentProcessRunner: options.workingAgentProcessRunner,
       providerWorkingRunner: options.providerWorkingRunner,
       processRunner: options.processRunner,
-    });
+    }));
 
     branch.updatedAt = new Date().toISOString();
     const branchResultWasSplit = branchResult.status === "split";

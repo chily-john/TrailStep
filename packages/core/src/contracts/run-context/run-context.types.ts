@@ -44,6 +44,10 @@ export interface RunContextState {
   set(key: string, value: unknown): Promise<void>;
 }
 
+export interface RunContextGlobalState extends RunContextState {
+  update<T = unknown>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+}
+
 export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
   readonly id: string;
   readonly runId: string;
@@ -97,6 +101,7 @@ export interface RunContext {
   readonly emit?: (event: RunContextEvent) => Promise<void>;
   readonly events?: () => readonly RunContextEvent[];
   readonly state: RunContextState;
+  readonly globalState: RunContextGlobalState;
   readonly currentStep?: {
     readonly id: string;
     readonly dir: string;

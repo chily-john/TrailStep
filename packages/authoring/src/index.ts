@@ -63,6 +63,7 @@ export {
   document,
   done,
   fail,
+  globalState,
   isAbsoluteDoneNode,
   isAbsoluteFailNode,
   isWorkflowInvocationNode,

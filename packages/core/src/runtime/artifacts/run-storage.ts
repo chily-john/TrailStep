@@ -99,9 +99,9 @@ export async function writeDocumentArtifact(
   return documentPath;
 }
 
-export async function readRunState(runDir: string): Promise<RunState> {
+export async function readJsonStateArtifact(path: string): Promise<RunState> {
   try {
-    const contents = await readFile(join(runDir, "state.json"), "utf8");
+    const contents = await readFile(path, "utf8");
     const parsed: unknown = JSON.parse(contents);
 
     if (!isRunState(parsed)) {
@@ -118,8 +118,49 @@ export async function readRunState(runDir: string): Promise<RunState> {
   }
 }
 
+export async function writeJsonStateArtifact(path: string, state: RunState): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+export function runStatePath(runDir: string): string {
+  return join(runDir, "state.json");
+}
+
+export function globalStatePath(runDir: string): string {
+  return join(runDir, "global-state.json");
+}
+
+export function branchStatePath(runDir: string, branchId: string): string {
+  return join(runDir, "branches", `${branchId}.state.json`);
+}
+
+export async function readRunState(runDir: string): Promise<RunState> {
+  return await readJsonStateArtifact(runStatePath(runDir));
+}
+
 export async function writeRunState(runDir: string, state: RunState): Promise<void> {
-  await writeFile(join(runDir, "state.json"), `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeJsonStateArtifact(runStatePath(runDir), state);
+}
+
+export async function readGlobalState(runDir: string): Promise<RunState> {
+  return await readJsonStateArtifact(globalStatePath(runDir));
+}
+
+export async function writeGlobalState(runDir: string, state: RunState): Promise<void> {
+  await writeJsonStateArtifact(globalStatePath(runDir), state);
+}
+
+export async function readBranchRunState(runDir: string, branchId: string): Promise<RunState> {
+  return await readJsonStateArtifact(branchStatePath(runDir, branchId));
+}
+
+export async function writeBranchRunState(
+  runDir: string,
+  branchId: string,
+  state: RunState,
+): Promise<void> {
+  await writeJsonStateArtifact(branchStatePath(runDir, branchId), state);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

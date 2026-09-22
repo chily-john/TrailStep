@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import * as Core from "../../index.js";
 import {
   absoluteDone,
   absoluteFail,
@@ -11,6 +12,7 @@ import {
   done,
   fail,
   runWorkflow,
+  state,
   step,
   type Event,
   type PlainObject,
@@ -1499,6 +1501,177 @@ describe("runWorkflow parallel tracks", () => {
     const stepDirs = await readdir(join(result.runDir, "steps"));
     expect(stepDirs).toEqual(expect.arrayContaining(["0001-concurrent-same-id", "0002-concurrent-same-id"]));
     expect(new Set(stepDirs).size).toBe(stepDirs.length);
+  });
+
+  it("lets parallel branches atomically claim unique shared items with globalState.update", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-global-state-claims-"));
+    const globalState = (Core as unknown as {
+      readonly globalState?: {
+        get<T>(key: string): Promise<T | undefined>;
+        set(key: string, value: unknown): Promise<void>;
+        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+      };
+    }).globalState;
+
+    type ClaimState = { readonly remaining: readonly string[]; readonly claimed: readonly string[] };
+
+    const claimStep = step({ id: "claim-shared-item" }).do(async (input: { readonly branch: string }) => {
+      expect(globalState).toBeDefined();
+      const next = await globalState!.update<ClaimState>("claims", async (current) => {
+        await delay(25);
+        const stateValue = current ?? { remaining: ["item-1", "item-2", "item-3", "item-4"], claimed: [] };
+        const [claim, ...remaining] = stateValue.remaining;
+        expect(claim).toBeDefined();
+        return { remaining, claimed: [...stateValue.claimed, claim!] };
+      });
+      return done({ branch: input.branch, claimed: next.claimed.at(-1) });
+    });
+
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "global-state-claim-workflow",
+      start() {
+        return ["a", "b", "c", "d"].map((branch) => claimStep({ branch }));
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "global-state-claims",
+      cwd,
+      scheduler: { workers: 4 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    const aggregateBranches = (result.output.branches ?? {}) as Record<string, { readonly output?: { readonly claimed?: string } }>;
+    const claimed = Object.values(aggregateBranches).map((branch) => branch.output?.claimed);
+    expect(claimed).toHaveLength(4);
+    expect(new Set(claimed)).toEqual(new Set(["item-1", "item-2", "item-3", "item-4"]));
+
+    const persisted = (await readJsonObject(join(result.runDir, "global-state.json"))) as { readonly claims?: ClaimState };
+    expect(persisted.claims?.remaining).toEqual([]);
+    expect(persisted.claims?.claimed).toHaveLength(4);
+    expect(new Set(persisted.claims?.claimed)).toEqual(new Set(["item-1", "item-2", "item-3", "item-4"]));
+  });
+
+  it("shares globalState between a parent branch step and a workflow invocation branch", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-global-state-invocation-"));
+    const globalState = (Core as unknown as {
+      readonly globalState?: {
+        get<T>(key: string): Promise<T | undefined>;
+        set(key: string, value: unknown): Promise<void>;
+        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+      };
+    }).globalState;
+
+    const childStep = step({ id: "child-global-state-step" }).do(async () => {
+      expect(globalState).toBeDefined();
+      const sharedLog = await globalState!.update<readonly string[]>("shared-log", (current) => [
+        ...(current ?? []),
+        "child",
+      ]);
+      return done({ childSaw: sharedLog });
+    });
+    const ChildWorkflow = defineWorkflow<Record<string, never>, { readonly childSaw: readonly string[] }>({
+      id: "global-state-child-workflow",
+      start() {
+        return childStep({});
+      },
+    });
+    const parentReadStep = step({ id: "parent-global-state-read-step" }).do(async () => {
+      expect(globalState).toBeDefined();
+      return done({ parentSaw: await globalState!.get<readonly string[]>("shared-log") });
+    });
+    const parentStep = step({ id: "parent-global-state-step" }).do(async () => {
+      expect(globalState).toBeDefined();
+      await globalState!.set("shared-log", ["parent"]);
+      return [parentReadStep({}), ChildWorkflow({}, { branch: "child-invocation" })];
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "global-state-parent-workflow",
+      start() {
+        return parentStep({});
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "global-state-invocation",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(await readJsonObject(join(result.runDir, "global-state.json"))).toMatchObject({
+      "shared-log": ["parent", "child"],
+    });
+  });
+
+  it("keeps state branch-local while sibling branches share globalState", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-branch-local-state-"));
+    const globalState = (Core as unknown as {
+      readonly globalState?: {
+        get<T>(key: string): Promise<T | undefined>;
+        set(key: string, value: unknown): Promise<void>;
+        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+      };
+    }).globalState;
+
+    const setAndReadStep = step({ id: "set-and-read-branch-state" }).do(async (input: { readonly branch: string }) => {
+      expect(globalState).toBeDefined();
+      await state.set("branchValue", input.branch);
+      const sharedBranches = await globalState!.update<readonly string[]>("branches", (current) => [
+        ...(current ?? []),
+        input.branch,
+      ]);
+      await delay(25);
+      return done({
+        branch: input.branch,
+        branchValue: await state.get<string>("branchValue"),
+        sharedBranches,
+      });
+    });
+
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "branch-local-state-global-state-workflow",
+      start() {
+        return [setAndReadStep({ branch: "a" }), setAndReadStep({ branch: "b" })];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "branch-local-state-global-state",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    const aggregateBranches = (result.output.branches ?? {}) as Record<
+      string,
+      { readonly output?: { readonly branch?: string; readonly branchValue?: string; readonly sharedBranches?: readonly string[] } }
+    >;
+    const outputs = Object.values(aggregateBranches).map((branch) => branch.output);
+    expect(outputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ branch: "a", branchValue: "a" }),
+        expect.objectContaining({ branch: "b", branchValue: "b" }),
+      ]),
+    );
+    expect(new Set(outputs.flatMap((output) => output?.sharedBranches ?? []))).toEqual(new Set(["a", "b"]));
   });
 
   it("executes a root continuation array as branch candidates with aggregate output, unique artifacts, persisted state, and branch event metadata", async () => {

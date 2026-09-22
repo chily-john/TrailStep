@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import * as Authoring from "./index.js";
 import {
   absoluteDone,
   absoluteFail,
@@ -35,6 +36,20 @@ describe("@trailstep/authoring exports", () => {
     expect(isAbsoluteFailNode).toBeTypeOf("function");
     expect(notify.progress).toBeTypeOf("function");
     expect(workflow.input).toBeTypeOf("function");
+  });
+
+  it("re-exports globalState from the public authoring entrypoint", () => {
+    const globalState = (Authoring as unknown as {
+      readonly globalState?: {
+        get<T>(key: string): Promise<T | undefined>;
+        set(key: string, value: unknown): Promise<void>;
+        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+      };
+    }).globalState;
+
+    expect(globalState?.get).toBeTypeOf("function");
+    expect(globalState?.set).toBeTypeOf("function");
+    expect(globalState?.update).toBeTypeOf("function");
   });
 
   it("constructs and recognizes absolute terminal nodes from the entrypoint", () => {

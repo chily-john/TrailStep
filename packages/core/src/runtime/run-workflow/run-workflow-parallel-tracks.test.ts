@@ -815,6 +815,157 @@ describe("runWorkflow parallel tracks", () => {
     );
   });
 
+  it("manual retry preserves completed sibling branches and retries the failed branch", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-retry-preserve-sibling-"));
+    const globalState = (Core as unknown as {
+      readonly globalState?: {
+        get<T>(key: string): Promise<T | undefined>;
+        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+      };
+    }).globalState;
+    const sideEffects: string[] = [];
+    let shouldFailBranchB = true;
+
+    const branchAStep = step({ id: "retry-preserved-branch-a" }).do(async () => {
+      expect(globalState).toBeDefined();
+      sideEffects.push("branch-a-dispatched");
+      await state.set("branch-local", "a-only");
+      const sharedLog = await globalState!.update<readonly string[]>("shared-log", (current) => [
+        ...(current ?? []),
+        "a",
+      ]);
+      return done({ branch: "a", branchLocal: await state.get<string>("branch-local"), sharedLog });
+    });
+    const branchBStep = step({ id: "retry-failed-branch-b" }).do(async () => {
+      expect(globalState).toBeDefined();
+      sideEffects.push("branch-b-dispatched");
+      if (shouldFailBranchB) {
+        return fail({ code: "branch_b_failed", message: "branch B failed on first attempt" });
+      }
+      await state.set("branch-local", "b-only");
+      const sharedLogBefore = await globalState!.get<readonly string[]>("shared-log");
+      const sharedLogAfter = await globalState!.update<readonly string[]>("shared-log", (current) => [
+        ...(current ?? []),
+        "b",
+      ]);
+      return done({
+        branch: "b",
+        branchLocal: await state.get<string>("branch-local"),
+        sharedLogBefore,
+        sharedLogAfter,
+      });
+    });
+    const BranchAWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "retry-preserved-branch-a-workflow",
+      start() {
+        return branchAStep({});
+      },
+    });
+    const BranchBWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "retry-failed-branch-b-workflow",
+      start() {
+        return branchBStep({});
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-retry-preserve-sibling-workflow",
+      start() {
+        return [
+          BranchAWorkflow({}, { branch: "preserved-a" }),
+          BranchBWorkflow({}, { branch: "retried-b" }),
+        ];
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-retry-preserve-sibling",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(failed.status).toBe("failure");
+    expect(sideEffects).toEqual(["branch-a-dispatched", "branch-b-dispatched"]);
+    const failedTrack = await readJsonObject(join(failed.runDir, "track.json"));
+    const failedBranches = await Promise.all(
+      (failedTrack.branches as readonly string[]).map((branchId) =>
+        readJsonObject(join(failed.runDir, "branches", `${branchId}.json`)),
+      ),
+    );
+    expect(failedBranches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          requestedBranchId: "preserved-a",
+          status: "done",
+          output: expect.objectContaining({ branch: "a", branchLocal: "a-only" }),
+        }),
+        expect.objectContaining({
+          requestedBranchId: "retried-b",
+          status: "failed",
+          failure: { code: "branch_b_failed", message: "branch B failed on first attempt" },
+        }),
+      ]),
+    );
+
+    shouldFailBranchB = false;
+    const retried = await runWorkflow({
+      workflow,
+      retry: { runDir: failed.runDir, kind: "manual" },
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(sideEffects.filter((effect) => effect === "branch-a-dispatched")).toHaveLength(1);
+    expect(sideEffects.filter((effect) => effect === "branch-b-dispatched")).toHaveLength(2);
+    expect(Object.values(retried.output.branches ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "done",
+          output: expect.objectContaining({ branch: "a", branchLocal: "a-only" }),
+        }),
+        expect.objectContaining({
+          status: "done",
+          output: expect.objectContaining({
+            branch: "b",
+            branchLocal: "b-only",
+            sharedLogBefore: ["a"],
+            sharedLogAfter: ["a", "b"],
+          }),
+        }),
+      ]),
+    );
+
+    const retriedTrack = await readJsonObject(join(retried.runDir, "track.json"));
+    expect(retriedTrack).toMatchObject({ status: "completed", splitOccurred: true });
+    const retriedBranches = await Promise.all(
+      (retriedTrack.branches as readonly string[]).map((branchId) =>
+        readJsonObject(join(retried.runDir, "branches", `${branchId}.json`)),
+      ),
+    );
+    expect(retriedBranches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          requestedBranchId: "preserved-a",
+          status: "done",
+          output: expect.objectContaining({ branch: "a", branchLocal: "a-only" }),
+        }),
+        expect.objectContaining({
+          requestedBranchId: "retried-b",
+          status: "done",
+          output: expect.objectContaining({ branch: "b", branchLocal: "b-only" }),
+        }),
+      ]),
+    );
+    await expect(readJsonObject(join(retried.runDir, "global-state.json"))).resolves.toMatchObject({
+      "shared-log": ["a", "b"],
+    });
+  });
+
   it("thrown branch errors trigger fail-fast and persist branch failure", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-thrown-fail-fast-"));
     const observed: string[] = [];

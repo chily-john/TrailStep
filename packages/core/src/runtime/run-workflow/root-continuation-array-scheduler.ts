@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
@@ -37,6 +37,9 @@ interface RunRootContinuationArraySchedulerOptions {
   readonly workingAgentProcessRunner?: RunWorkflowOptions["workingAgentProcessRunner"];
   readonly providerWorkingRunner?: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner?: RunWorkflowOptions["processRunner"];
+  readonly retry?: {
+    readonly initialExecutedSteps: number;
+  };
 }
 
 type BranchStatus = "queued" | "running" | "done" | "failed" | "waiting" | "cancelled" | "split";
@@ -115,7 +118,7 @@ export async function runRootContinuationArrayScheduler(
   const branches: BranchState[] = [];
   const queue: QueuedBranch[] = [];
   let splitOccurred = options.rootIsArray === true;
-  let nextStepIndex = 0;
+  let nextStepIndex = options.retry?.initialExecutedSteps ?? 0;
   let nextBranchId = 1;
   let terminalResult: RunContinuationResult | undefined;
   let terminalBranchId: string | undefined;
@@ -174,7 +177,21 @@ export async function runRootContinuationArrayScheduler(
     }
   };
 
-  if (options.rootIsArray === true) {
+  if (options.retry !== undefined) {
+    const retryPlan = await createPersistedTrackRetryPlan({
+      nodes: options.nodes,
+      runDir: options.runDir,
+      workflowId: options.workflowId,
+      initialSource: options.initialSource,
+    });
+    if (retryPlan.status === "failure") {
+      return retryPlan.failure;
+    }
+    branches.push(...retryPlan.branches);
+    queue.push(...retryPlan.queue);
+    splitOccurred = retryPlan.splitOccurred;
+    nextBranchId = retryPlan.nextBranchId;
+  } else if (options.rootIsArray === true) {
     if (!options.nodes.every(isRunnableBranchCandidate)) {
       return invalidArrayCandidateFailure(options.initialSource);
     }
@@ -317,41 +334,45 @@ export async function runRootContinuationArrayScheduler(
     branch.updatedAt = new Date().toISOString();
     await persistBranch(options.runDir, branch);
 
-    const branchResult = await runWithBranchState(branch.branchId, async () => await runContinuation({
-      node,
-      runId: options.runId,
-      workflowId: options.workflowId,
-      emit: async (event) => {
-        if (event.type === "step.started" && event.stepId !== undefined) {
-          branch.latestStepId = event.stepId;
-        }
-        if (splitOccurred && event.type === "step.started" && event.stepId !== undefined) {
-          const stepArtifacts = resolveStepArtifactPaths({
-            runDir: options.runDir,
-            stepId: event.stepId,
-            stepIndex: branch.latestStepIndex,
-          });
-          await mkdir(stepArtifacts.stepDir, { recursive: true });
-        }
-        await options.emit(decorateBranchEvent(event, options.runId, branch));
-      },
-      maxSteps: options.maxSteps,
-      initialSource:
-        !splitOccurred && branch.branchId === rootBranchId
-          ? source
-          : `${source} branch ${branch.branchId}`,
-      allocateStepIndex: () => allocateStepIndex(branch),
-      returnContinuationArrays: true,
-      workflowAgents: options.workflowAgents,
-      workflowTimeout: options.workflowTimeout,
-      runDir: options.runDir,
-      projectCwd: options.projectCwd,
-      cwd: options.cwd,
-      trailstepConfig: options.trailstepConfig,
-      workingAgentProcessRunner: options.workingAgentProcessRunner,
-      providerWorkingRunner: options.providerWorkingRunner,
-      processRunner: options.processRunner,
-    }));
+    const branchResult = await runWithBranchState(
+      branch.branchId,
+      async () =>
+        await runContinuation({
+          node,
+          runId: options.runId,
+          workflowId: options.workflowId,
+          emit: async (event) => {
+            if (event.type === "step.started" && event.stepId !== undefined) {
+              branch.latestStepId = event.stepId;
+            }
+            if (splitOccurred && event.type === "step.started" && event.stepId !== undefined) {
+              const stepArtifacts = resolveStepArtifactPaths({
+                runDir: options.runDir,
+                stepId: event.stepId,
+                stepIndex: branch.latestStepIndex,
+              });
+              await mkdir(stepArtifacts.stepDir, { recursive: true });
+            }
+            await options.emit(decorateBranchEvent(event, options.runId, branch));
+          },
+          maxSteps: options.maxSteps,
+          initialSource:
+            !splitOccurred && branch.branchId === rootBranchId
+              ? source
+              : `${source} branch ${branch.branchId}`,
+          allocateStepIndex: () => allocateStepIndex(branch),
+          returnContinuationArrays: true,
+          workflowAgents: options.workflowAgents,
+          workflowTimeout: options.workflowTimeout,
+          runDir: options.runDir,
+          projectCwd: options.projectCwd,
+          cwd: options.cwd,
+          trailstepConfig: options.trailstepConfig,
+          workingAgentProcessRunner: options.workingAgentProcessRunner,
+          providerWorkingRunner: options.providerWorkingRunner,
+          processRunner: options.processRunner,
+        }),
+    );
 
     branch.updatedAt = new Date().toISOString();
     const branchResultWasSplit = branchResult.status === "split";
@@ -435,7 +456,9 @@ export async function runRootContinuationArrayScheduler(
       for (const childNode of branchResult.nodes) {
         enqueue(childNode, branch.branchId, branchResult.source, true);
       }
-      await Promise.all(branches.map((persistedBranch) => persistBranch(options.runDir, persistedBranch)));
+      await Promise.all(
+        branches.map((persistedBranch) => persistBranch(options.runDir, persistedBranch)),
+      );
     } else if (branchResult.status === "success") {
       branch.status = "done";
       branch.output = branchResult.output;
@@ -476,9 +499,9 @@ function workflowIdForBranchNode(node: ContinuationResult, fallbackWorkflowId: s
   return fallbackWorkflowId;
 }
 
-function requestedBranchMetadata(
-  node: ContinuationResult,
-): { readonly requestedBranchId?: string } {
+function requestedBranchMetadata(node: ContinuationResult): {
+  readonly requestedBranchId?: string;
+} {
   if (isWorkflowInvocationNode(node) && node.options?.branch !== undefined) {
     return { requestedBranchId: node.options.branch };
   }
@@ -490,7 +513,9 @@ function isRunnableBranchCandidate(node: ContinuationResult): boolean {
   return isStepNode(node) || isWorkflowInvocationNode(node);
 }
 
-function invalidArrayCandidateFailure(source: string): RunContinuationResult & { readonly status: "failure" } {
+function invalidArrayCandidateFailure(
+  source: string,
+): RunContinuationResult & { readonly status: "failure" } {
   return {
     status: "failure",
     failure: {
@@ -610,6 +635,129 @@ function decorateBranchEvent(event: Event, trackId: string, branch: BranchState)
             stepArtifactPath: stepArtifactPaths.runRelativeStepDir,
           }),
     },
+  };
+}
+
+async function createPersistedTrackRetryPlan(input: {
+  readonly nodes: readonly ContinuationResult[];
+  readonly runDir: string;
+  readonly workflowId: string;
+  readonly initialSource: string;
+}): Promise<
+  | {
+      readonly status: "success";
+      readonly branches: readonly BranchState[];
+      readonly queue: readonly QueuedBranch[];
+      readonly splitOccurred: boolean;
+      readonly nextBranchId: number;
+    }
+  | { readonly status: "failure"; readonly failure: RunContinuationResult }
+> {
+  let track: TrackStateJson;
+  try {
+    track = JSON.parse(await readFile(join(input.runDir, "track.json"), "utf8")) as TrackStateJson;
+  } catch (error) {
+    return {
+      status: "failure",
+      failure: {
+        status: "failure",
+        failure: {
+          code: "retry_track_metadata_unreadable",
+          message: `Retry target track metadata is missing or unreadable: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      },
+    };
+  }
+
+  if (!input.nodes.every(isRunnableBranchCandidate)) {
+    return { status: "failure", failure: invalidArrayCandidateFailure(input.initialSource) };
+  }
+
+  const branches = await Promise.all(
+    track.branches.map(async (branchId) =>
+      branchFromJson(
+        JSON.parse(
+          await readFile(join(input.runDir, "branches", `${branchId}.json`), "utf8"),
+        ) as BranchStateJson,
+      ),
+    ),
+  );
+  const nodesByRequestedBranchId = new Map<string, ContinuationResult>();
+  for (const node of input.nodes) {
+    const requestedBranchId = requestedBranchMetadata(node).requestedBranchId;
+    if (requestedBranchId !== undefined) {
+      nodesByRequestedBranchId.set(requestedBranchId, node);
+    }
+  }
+
+  const queue: QueuedBranch[] = [];
+  for (const [index, branch] of branches.entries()) {
+    if (branch.status === "done" && branch.output !== undefined) {
+      continue;
+    }
+
+    branch.status = "queued";
+    branch.failure = undefined;
+    branch.wait = undefined;
+    branch.terminalKind = undefined;
+    branch.message = undefined;
+    branch.updatedAt = new Date().toISOString();
+    const node =
+      (branch.requestedBranchId === undefined
+        ? undefined
+        : nodesByRequestedBranchId.get(branch.requestedBranchId)) ?? input.nodes[index];
+    if (node === undefined) {
+      return {
+        status: "failure",
+        failure: {
+          status: "failure",
+          failure: {
+            code: "retry_track_branch_not_found",
+            message: `Retry target branch ${branch.branchId} no longer has a matching workflow branch candidate.`,
+          },
+        },
+      };
+    }
+    queue.push({
+      node,
+      branch,
+      source: branch.splitSource ?? branch.source ?? input.initialSource,
+      requireRunnableBranchCandidate: true,
+    });
+  }
+
+  const maxNumericBranchId = branches.reduce((max, branch) => {
+    const match = /^branch-(\d+)$/.exec(branch.branchId);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return {
+    status: "success",
+    branches,
+    queue,
+    splitOccurred: track.splitOccurred,
+    nextBranchId: maxNumericBranchId + 1,
+  };
+}
+
+function branchFromJson(json: BranchStateJson): BranchState {
+  return {
+    branchId: json.branchId,
+    ...(json.parentBranchId === undefined ? {} : { parentBranchId: json.parentBranchId }),
+    ...(json.requestedBranchId === undefined ? {} : { requestedBranchId: json.requestedBranchId }),
+    workflowId: json.workflowId,
+    createdAt: json.createdAt,
+    updatedAt: json.updatedAt,
+    status: json.status,
+    source: json.source,
+    ...(json.splitSource === undefined ? {} : { splitSource: json.splitSource }),
+    output: json.output,
+    ...(json.failure === undefined ? {} : { failure: json.failure }),
+    ...(json.wait === undefined ? {} : { wait: json.wait }),
+    ...(json.terminalKind === undefined ? {} : { terminalKind: json.terminalKind }),
+    ...(json.message === undefined ? {} : { message: json.message }),
+    latestStepIndex: json.latestStepIndex,
+    ...(json.latestStepId === undefined ? {} : { latestStepId: json.latestStepId }),
   };
 }
 

@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
@@ -190,6 +191,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     let workflowInput: TInput;
     let startNode: ContinuationResult | undefined;
     let waitResume: ReplayToWaitingStepResult | undefined;
+    let isTrackRetry = false;
 
     if (isResume) {
       const danglingAnchor = findDanglingInteractiveSessionStart(previousEvents);
@@ -259,36 +261,64 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }),
       );
     } else if (isRetry) {
-      const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
-        replayToRetryFailure({
-          workflow: options.workflow,
-          events: previousEvents,
-          runDir,
-        }),
-      );
-      if (replay.status === "failure") {
-        return failResumeValidation(replay.failure);
-      }
-      await runContext.state.hydratePersisted();
+      if (await hasSupportedRootParallelTrackRetryMetadata(runDir)) {
+        const persistedInput = readWorkflowStartedInput(previousEvents);
+        if (persistedInput === undefined) {
+          return failResumeValidation({
+            code: "retry_target_not_found",
+            message: "workflow.started payload is missing input.",
+          });
+        }
+        await runContext.state.hydratePersisted();
+        await runContext.globalState.hydratePersisted();
+        workflowInput = inputSchema
+          ? (inputSchema.assert(persistedInput, "workflow input") as TInput)
+          : (persistedInput as TInput);
+        isTrackRetry = true;
+        await emit(
+          createEvent({
+            runId,
+            workflowId: options.workflow.id,
+            type: "workflow.retryStarted",
+            payload: {
+              retryKind: options.retry.kind,
+              retryPlanner: "track",
+              retriedFromRunDir: runDir,
+            },
+          }),
+        );
+      } else {
+        const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+          replayToRetryFailure({
+            workflow: options.workflow,
+            events: previousEvents,
+            runDir,
+          }),
+        );
+        if (replay.status === "failure") {
+          return failResumeValidation(replay.failure);
+        }
+        await runContext.state.hydratePersisted();
 
-      workflowInput = inputSchema
-        ? (inputSchema.assert(replay.input, "workflow input") as TInput)
-        : (replay.input as TInput);
-      startNode = replay.node;
-      await emit(
-        createEvent({
-          runId,
-          workflowId: options.workflow.id,
-          type: "workflow.retryStarted",
-          payload: {
-            retryKind: options.retry.kind,
-            retriedFromRunDir: runDir,
-            retriedStepId: replay.retriedStepId,
-            sourceFailureEventId: replay.sourceFailureEventId,
-            sourceFailureReplayPosition: replay.sourceFailureReplayPosition,
-          },
-        }),
-      );
+        workflowInput = inputSchema
+          ? (inputSchema.assert(replay.input, "workflow input") as TInput)
+          : (replay.input as TInput);
+        startNode = replay.node;
+        await emit(
+          createEvent({
+            runId,
+            workflowId: options.workflow.id,
+            type: "workflow.retryStarted",
+            payload: {
+              retryKind: options.retry.kind,
+              retriedFromRunDir: runDir,
+              retriedStepId: replay.retriedStepId,
+              sourceFailureEventId: replay.sourceFailureEventId,
+              sourceFailureReplayPosition: replay.sourceFailureReplayPosition,
+            },
+          }),
+        );
+      }
     } else {
       workflowInput = inputSchema
         ? inputSchema.assert(options.input, "workflow input")
@@ -304,71 +334,83 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     }
 
     const rootNode = startNode ?? options.workflow.start(workflowInput);
-    const continuationResult =
-      !isResume && !isRetry && !isWaitContinue
-        ? await runRootContinuationArrayScheduler({
-            nodes: Array.isArray(rootNode) ? rootNode : [rootNode],
-            rootIsArray: Array.isArray(rootNode),
-            runId,
-            workflowId: options.workflow.id,
-            emit,
-            maxSteps,
-            initialSource: `workflow.start for workflow ${options.workflow.id}`,
-            workers: options.scheduler?.workers,
-            workflowAgents: options.workflow.agents ?? {},
-            workflowTimeout: options.workflow.timeout,
-            runDir,
-            projectCwd,
-            cwd,
-            trailstepConfig,
-            workingAgentProcessRunner: options.workingAgentProcessRunner,
-            providerWorkingRunner: options.providerWorkingRunner,
-            processRunner: options.processRunner,
-          })
-        : await runContinuation({
-            node: rootNode,
-            runId,
-            workflowId: options.workflow.id,
-            emit,
-            maxSteps,
-            initialSource: isRetry
-              ? `retry for workflow ${options.workflow.id}`
-              : isResume
-                ? `resume for workflow ${options.workflow.id}`
-                : `workflow.start for workflow ${options.workflow.id}`,
-            // The original run already used one step-index slot per step.started
-            // event ever recorded (successful or failed) -- newly-dispatched steps
-            // after resume must continue that sequence, not restart at 1, or their
-            // artifact directories collide with the pre-resume steps' directories.
-            initialExecutedSteps:
-              isResume || isRetry || isWaitContinue
-                ? previousEvents.filter((event) => event.type === "step.started").length
-                : undefined,
-            ...(waitResume === undefined
-              ? {}
-              : {
-                  resumeWait: {
-                    stepId: waitResume.resumedStepId,
-                    stepIndex: waitResume.stepIndex,
-                    phaseIndex: waitResume.phaseIndex,
-                    phaseValue: waitResume.phaseValue,
-                    waitOutputs: waitResume.waitOutputs,
-                    seenWaitIds: waitResume.seenWaitIds,
-                    wait: waitResume.wait,
-                  },
-                }),
-            workflowAgents: options.workflow.agents ?? {},
-            workflowTimeout: options.workflow.timeout,
-            runDir,
-            projectCwd,
-            cwd,
-            trailstepConfig,
-            workingAgentProcessRunner: options.workingAgentProcessRunner,
-            providerWorkingRunner: options.providerWorkingRunner,
-            processRunner: options.processRunner,
-          });
+    const shouldUseRootArrayScheduler = (!isResume && !isRetry && !isWaitContinue) || isTrackRetry;
+    const continuationResult = shouldUseRootArrayScheduler
+      ? await runRootContinuationArrayScheduler({
+          nodes: Array.isArray(rootNode) ? rootNode : [rootNode],
+          rootIsArray: Array.isArray(rootNode),
+          runId,
+          workflowId: options.workflow.id,
+          emit,
+          maxSteps,
+          initialSource: `workflow.start for workflow ${options.workflow.id}`,
+          workers: options.scheduler?.workers,
+          workflowAgents: options.workflow.agents ?? {},
+          workflowTimeout: options.workflow.timeout,
+          runDir,
+          projectCwd,
+          cwd,
+          trailstepConfig,
+          workingAgentProcessRunner: options.workingAgentProcessRunner,
+          providerWorkingRunner: options.providerWorkingRunner,
+          processRunner: options.processRunner,
+          ...(isTrackRetry
+            ? {
+                retry: {
+                  initialExecutedSteps: previousEvents.filter(
+                    (event) => event.type === "step.started",
+                  ).length,
+                },
+              }
+            : {}),
+        })
+      : await runContinuation({
+          node: rootNode,
+          runId,
+          workflowId: options.workflow.id,
+          emit,
+          maxSteps,
+          initialSource: isRetry
+            ? `retry for workflow ${options.workflow.id}`
+            : isResume
+              ? `resume for workflow ${options.workflow.id}`
+              : `workflow.start for workflow ${options.workflow.id}`,
+          // The original run already used one step-index slot per step.started
+          // event ever recorded (successful or failed) -- newly-dispatched steps
+          // after resume must continue that sequence, not restart at 1, or their
+          // artifact directories collide with the pre-resume steps' directories.
+          initialExecutedSteps:
+            isResume || isRetry || isWaitContinue
+              ? previousEvents.filter((event) => event.type === "step.started").length
+              : undefined,
+          ...(waitResume === undefined
+            ? {}
+            : {
+                resumeWait: {
+                  stepId: waitResume.resumedStepId,
+                  stepIndex: waitResume.stepIndex,
+                  phaseIndex: waitResume.phaseIndex,
+                  phaseValue: waitResume.phaseValue,
+                  waitOutputs: waitResume.waitOutputs,
+                  seenWaitIds: waitResume.seenWaitIds,
+                  wait: waitResume.wait,
+                },
+              }),
+          workflowAgents: options.workflow.agents ?? {},
+          workflowTimeout: options.workflow.timeout,
+          runDir,
+          projectCwd,
+          cwd,
+          trailstepConfig,
+          workingAgentProcessRunner: options.workingAgentProcessRunner,
+          providerWorkingRunner: options.providerWorkingRunner,
+          processRunner: options.processRunner,
+        });
 
-    if (continuationResult.status === "failure" || continuationResult.status === "absoluteFailure") {
+    if (
+      continuationResult.status === "failure" ||
+      continuationResult.status === "absoluteFailure"
+    ) {
       return await failWorkflow(continuationResult.failure, continuationResult.message);
     }
 
@@ -436,6 +478,51 @@ async function replayWithoutClobberingStateOnFailure<T extends { readonly status
     await writeRunState(runDir, stateBeforeReplay);
   }
   return result;
+}
+
+async function hasSupportedRootParallelTrackRetryMetadata(runDir: string): Promise<boolean> {
+  try {
+    const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8")) as {
+      readonly rootBranchId?: unknown;
+      readonly splitOccurred?: unknown;
+      readonly branches?: unknown;
+    };
+    if (
+      track.splitOccurred !== true ||
+      typeof track.rootBranchId !== "string" ||
+      !Array.isArray(track.branches) ||
+      !track.branches.every((branchId): branchId is string => typeof branchId === "string")
+    ) {
+      return false;
+    }
+
+    const branches = await Promise.all(
+      track.branches.map(async (branchId) => {
+        const branch = JSON.parse(
+          await readFile(join(runDir, "branches", `${branchId}.json`), "utf8"),
+        ) as { readonly branchId?: unknown; readonly parentBranchId?: unknown };
+        return branch;
+      }),
+    );
+
+    return branches.every(
+      (branch) =>
+        branch.branchId !== track.rootBranchId && branch.parentBranchId === track.rootBranchId,
+    );
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function readWorkflowStartedInput(events: readonly Event[]): PlainObject | undefined {
+  const started = events.find((event) => event.type === "workflow.started");
+  const input = started?.payload.input;
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? (input as PlainObject)
+    : undefined;
 }
 
 function readPreviousTerminalWorkflowStatus(

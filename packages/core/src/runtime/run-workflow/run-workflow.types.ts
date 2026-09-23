@@ -148,6 +148,16 @@ interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends Pla
   };
 }
 
+export type RunWorkflowTrackRetryOptions =
+  | { readonly mode: "failed-only" }
+  | { readonly mode: "branch"; readonly branchId: string };
+
+export type RunWorkflowRetryOptions = {
+  readonly runDir: string;
+  readonly kind: "manual" | "automatic";
+  readonly track?: RunWorkflowTrackRetryOptions;
+};
+
 export type RunWorkflowOptions<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
@@ -168,7 +178,7 @@ export type RunWorkflowOptions<
         readonly continue?: undefined;
       }
     | {
-        readonly retry: { readonly runDir: string; readonly kind: "manual" | "automatic" };
+        readonly retry: RunWorkflowRetryOptions;
         readonly input?: undefined;
         readonly runName?: undefined;
         readonly resume?: undefined;

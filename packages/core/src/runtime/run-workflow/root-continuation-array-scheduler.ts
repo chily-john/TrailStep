@@ -11,13 +11,17 @@ import { readBranchRunState, writeBranchRunState } from "../artifacts/run-storag
 import { resolveStepArtifactPaths } from "../artifacts/step-artifacts.js";
 import {
   type RunContinuationResult,
-  type WaitingWait,
   runContinuation,
+  type WaitingWait,
 } from "../continuation/run-continuation/run-continuation.js";
 import { createQueuedRunState } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
 import type { TimeoutPolicyInput } from "../timeout/timeout-policy.js";
-import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
+import type {
+  Event,
+  RunWorkflowOptions,
+  RunWorkflowTrackRetryOptions,
+} from "./run-workflow.types.js";
 
 interface RunRootContinuationArraySchedulerOptions {
   readonly nodes: readonly ContinuationResult[];
@@ -39,6 +43,7 @@ interface RunRootContinuationArraySchedulerOptions {
   readonly processRunner?: RunWorkflowOptions["processRunner"];
   readonly retry?: {
     readonly initialExecutedSteps: number;
+    readonly track?: RunWorkflowTrackRetryOptions;
   };
 }
 
@@ -183,6 +188,7 @@ export async function runRootContinuationArrayScheduler(
       runDir: options.runDir,
       workflowId: options.workflowId,
       initialSource: options.initialSource,
+      track: options.retry.track,
     });
     if (retryPlan.status === "failure") {
       return retryPlan.failure;
@@ -334,44 +340,42 @@ export async function runRootContinuationArrayScheduler(
     branch.updatedAt = new Date().toISOString();
     await persistBranch(options.runDir, branch);
 
-    const branchResult = await runWithBranchState(
-      branch.branchId,
-      async () =>
-        await runContinuation({
-          node,
-          runId: options.runId,
-          workflowId: options.workflowId,
-          emit: async (event) => {
-            if (event.type === "step.started" && event.stepId !== undefined) {
-              branch.latestStepId = event.stepId;
-            }
-            if (splitOccurred && event.type === "step.started" && event.stepId !== undefined) {
-              const stepArtifacts = resolveStepArtifactPaths({
-                runDir: options.runDir,
-                stepId: event.stepId,
-                stepIndex: branch.latestStepIndex,
-              });
-              await mkdir(stepArtifacts.stepDir, { recursive: true });
-            }
-            await options.emit(decorateBranchEvent(event, options.runId, branch));
-          },
-          maxSteps: options.maxSteps,
-          initialSource:
-            !splitOccurred && branch.branchId === rootBranchId
-              ? source
-              : `${source} branch ${branch.branchId}`,
-          allocateStepIndex: () => allocateStepIndex(branch),
-          returnContinuationArrays: true,
-          workflowAgents: options.workflowAgents,
-          workflowTimeout: options.workflowTimeout,
-          runDir: options.runDir,
-          projectCwd: options.projectCwd,
-          cwd: options.cwd,
-          trailstepConfig: options.trailstepConfig,
-          workingAgentProcessRunner: options.workingAgentProcessRunner,
-          providerWorkingRunner: options.providerWorkingRunner,
-          processRunner: options.processRunner,
-        }),
+    const branchResult = await runWithBranchState(branch.branchId, async () =>
+      runContinuation({
+        node,
+        runId: options.runId,
+        workflowId: options.workflowId,
+        emit: async (event) => {
+          if (event.type === "step.started" && event.stepId !== undefined) {
+            branch.latestStepId = event.stepId;
+          }
+          if (splitOccurred && event.type === "step.started" && event.stepId !== undefined) {
+            const stepArtifacts = resolveStepArtifactPaths({
+              runDir: options.runDir,
+              stepId: event.stepId,
+              stepIndex: branch.latestStepIndex,
+            });
+            await mkdir(stepArtifacts.stepDir, { recursive: true });
+          }
+          await options.emit(decorateBranchEvent(event, options.runId, branch));
+        },
+        maxSteps: options.maxSteps,
+        initialSource:
+          !splitOccurred && branch.branchId === rootBranchId
+            ? source
+            : `${source} branch ${branch.branchId}`,
+        allocateStepIndex: () => allocateStepIndex(branch),
+        returnContinuationArrays: true,
+        workflowAgents: options.workflowAgents,
+        workflowTimeout: options.workflowTimeout,
+        runDir: options.runDir,
+        projectCwd: options.projectCwd,
+        cwd: options.cwd,
+        trailstepConfig: options.trailstepConfig,
+        workingAgentProcessRunner: options.workingAgentProcessRunner,
+        providerWorkingRunner: options.providerWorkingRunner,
+        processRunner: options.processRunner,
+      }),
     );
 
     branch.updatedAt = new Date().toISOString();
@@ -643,6 +647,7 @@ async function createPersistedTrackRetryPlan(input: {
   readonly runDir: string;
   readonly workflowId: string;
   readonly initialSource: string;
+  readonly track?: RunWorkflowTrackRetryOptions;
 }): Promise<
   | {
       readonly status: "success";
@@ -690,9 +695,14 @@ async function createPersistedTrackRetryPlan(input: {
     }
   }
 
+  const selection = selectPersistedBranchesForRetry(branches, input.track);
+  if (selection.status === "failure") {
+    return selection;
+  }
+
   const queue: QueuedBranch[] = [];
   for (const [index, branch] of branches.entries()) {
-    if (branch.status === "done" && branch.output !== undefined) {
+    if (!selection.branchIds.has(branch.branchId)) {
       continue;
     }
 
@@ -738,6 +748,90 @@ async function createPersistedTrackRetryPlan(input: {
     splitOccurred: track.splitOccurred,
     nextBranchId: maxNumericBranchId + 1,
   };
+}
+
+function selectPersistedBranchesForRetry(
+  branches: readonly BranchState[],
+  track: RunWorkflowTrackRetryOptions | undefined,
+):
+  | { readonly status: "success"; readonly branchIds: ReadonlySet<string> }
+  | { readonly status: "failure"; readonly failure: RunContinuationResult } {
+  if (track === undefined) {
+    return {
+      status: "success",
+      branchIds: new Set(
+        branches
+          .filter((branch) => !(branch.status === "done" && branch.output !== undefined))
+          .map((branch) => branch.branchId),
+      ),
+    };
+  }
+
+  if (track.mode === "failed-only") {
+    if ((track as { readonly branchId?: unknown }).branchId !== undefined) {
+      return {
+        status: "failure",
+        failure: {
+          status: "failure",
+          failure: {
+            code: "retry_track_filter_unsupported",
+            message: "Track failed-only retry cannot also specify a branchId.",
+          },
+        },
+      };
+    }
+
+    return {
+      status: "success",
+      branchIds: new Set(
+        branches
+          .filter((branch) => !(branch.status === "done" && branch.output !== undefined))
+          .map((branch) => branch.branchId),
+      ),
+    };
+  }
+
+  if (track.mode !== "branch") {
+    return {
+      status: "failure",
+      failure: {
+        status: "failure",
+        failure: {
+          code: "retry_track_filter_unsupported",
+          message: `Unsupported track retry mode: ${String((track as { readonly mode?: unknown }).mode)}.`,
+        },
+      },
+    };
+  }
+
+  if (typeof track.branchId !== "string" || track.branchId.length === 0) {
+    return {
+      status: "failure",
+      failure: {
+        status: "failure",
+        failure: {
+          code: "retry_track_branch_required",
+          message: "Track branch retry requires a persisted branchId.",
+        },
+      },
+    };
+  }
+
+  const branch = branches.find((candidate) => candidate.branchId === track.branchId);
+  if (branch === undefined) {
+    return {
+      status: "failure",
+      failure: {
+        status: "failure",
+        failure: {
+          code: "retry_track_branch_not_found",
+          message: `Retry target branch ${track.branchId} was not found in persisted track metadata.`,
+        },
+      },
+    };
+  }
+
+  return { status: "success", branchIds: new Set([branch.branchId]) };
 }
 
 function branchFromJson(json: BranchStateJson): BranchState {

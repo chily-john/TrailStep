@@ -360,6 +360,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
                   initialExecutedSteps: previousEvents.filter(
                     (event) => event.type === "step.started",
                   ).length,
+                  track: options.retry?.track,
                 },
               }
             : {}),

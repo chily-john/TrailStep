@@ -233,6 +233,46 @@ describe("retry command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
+  it("fresh retry starts a new run from the original input and leaves the old run unchanged", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await mkdir(cwd, { recursive: true });
+    await writeRetryWorkflow(cwd);
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["./workflow.mjs#retryFeature", "fresh-me", "--input", '{"topic":"retry"}'],
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    const oldRunDir = join(cwd, ".trailstep", "runs", "fresh-me");
+    const oldEventsBefore = await readFile(join(oldRunDir, "events.jsonl"), "utf8");
+    await writeFile(join(cwd, "fixed.txt"), "fixed\n", "utf8");
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["retry", "./workflow.mjs#retryFeature", "fresh-me", "--fresh"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    const freshRunDir = join(cwd, ".trailstep", "runs", "fresh-me-2");
+    const oldEventsAfter = await readFile(join(oldRunDir, "events.jsonl"), "utf8");
+    const freshEvents = parseEvents(await readFile(join(freshRunDir, "events.jsonl"), "utf8"));
+
+    expect(oldEventsAfter).toBe(oldEventsBefore);
+    expect(freshEvents.map((event) => event.type)).not.toContain("workflow.retryStarted");
+    expect(freshEvents[0]?.payload).toMatchObject({ input: { topic: "retry" } });
+    expect(lines.join("\n")).toContain(freshRunDir);
+  });
+
   it("retries an explicitly targeted failed run and preserves failed attempt artifacts", async ({
     task,
   }) => {

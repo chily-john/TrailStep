@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import type { Event } from "@trailstep/core";
-import { runWorkflow } from "@trailstep/core";
+import type { Event, PlainObject, RunWorkflowTrackRetryOptions } from "@trailstep/core";
+import { readRunEvents, runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
@@ -10,6 +10,7 @@ import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-help
 import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { createTerminalEventLogger } from "../run/terminal-event-logger.js";
+import { writeRunWorkflowRef } from "../wait-run-helpers.js";
 import { listEligibleRetryRuns } from "./eligible-retry-runs.js";
 import { parseRetryInvocation } from "./parse-retry-invocation.js";
 import type { RetryCommandArgs } from "./retry-command.types.js";
@@ -22,10 +23,22 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
   async run(args: RetryCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
     const runsRoot = resolveRunsRoot(context);
-    let retryTarget: { readonly workflowId: string; readonly workflowRunName: string };
+    let retryTarget: {
+      readonly workflowId: string;
+      readonly workflowRunName: string;
+      readonly fresh: boolean;
+      readonly track?: RunWorkflowTrackRetryOptions;
+    };
     try {
       retryTarget =
-        args.mode === "interactive" ? await selectInteractiveRetryTarget(context) : args;
+        args.mode === "interactive"
+          ? { ...(await selectInteractiveRetryTarget(context)), fresh: false }
+          : {
+              workflowId: args.workflowId,
+              workflowRunName: args.workflowRunName,
+              fresh: args.fresh,
+              ...trackRetryOption(args.filter),
+            };
     } catch (error) {
       if (error instanceof NoEligibleRetryRuns) {
         return 0;
@@ -52,18 +65,36 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
       return context.eventSink?.(event);
     };
 
-    const result = await runWorkflow({
+    const sharedRunOptions = {
       workflow: resolvedWorkflow.workflow,
       cwd,
       eventSink,
       runsRoot,
-      retry: { runDir: join(runsRoot, retryTarget.workflowRunName), kind: "manual" },
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
       ...(context.workingAgentProcessRunner === undefined
         ? {}
         : { workingAgentProcessRunner: context.workingAgentProcessRunner }),
       ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
-    });
+    };
+
+    const result = retryTarget.fresh
+      ? await runWorkflow({
+          ...sharedRunOptions,
+          input: await readOriginalInput(join(runsRoot, retryTarget.workflowRunName)),
+          runName: retryTarget.workflowRunName,
+        })
+      : await runWorkflow({
+          ...sharedRunOptions,
+          retry: {
+            runDir: join(runsRoot, retryTarget.workflowRunName),
+            kind: "manual",
+            ...(retryTarget.track === undefined ? {} : { track: retryTarget.track }),
+          },
+        });
+
+    if (retryTarget.fresh) {
+      await writeRunWorkflowRef(result.runDir, retryTarget.workflowId);
+    }
 
     if (result.status === "success") {
       io.writeLine(`Workflow completed: ${resolvedWorkflow.id} at ${result.runDir}`);
@@ -128,6 +159,32 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
     ));
 
   return { workflowId, workflowRunName: selectedRun.runId };
+}
+
+function trackRetryOption(
+  filter: Extract<RetryCommandArgs, { readonly mode: "explicit" }>["filter"],
+): { readonly track?: RunWorkflowTrackRetryOptions } {
+  if (filter.mode === "default") {
+    return {};
+  }
+  if (filter.mode === "failed-only") {
+    return { track: { mode: "failed-only" } };
+  }
+  return { track: { mode: "branch", branchId: filter.branchId } };
+}
+
+async function readOriginalInput(runDir: string): Promise<PlainObject> {
+  const events = await readRunEvents(runDir);
+  const startedEvent = events.find((event) => event.type === "workflow.started");
+  const input = startedEvent?.payload.input;
+  if (!isPlainObject(input)) {
+    throw new CliUsageError(`Run ${runDir} does not record an object workflow input for --fresh.`);
+  }
+  return input;
+}
+
+function isPlainObject(value: unknown): value is PlainObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 class NoEligibleRetryRuns extends Error {}

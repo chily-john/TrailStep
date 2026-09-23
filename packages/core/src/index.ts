@@ -207,6 +207,8 @@ export type {
   InteractiveProcessRunner,
   Result,
   RunWorkflowOptions,
+  RunWorkflowRetryOptions,
+  RunWorkflowTrackRetryOptions,
   WaitResultDetails,
   WorkingAgentProcessRequest,
   WorkingAgentProcessResult,

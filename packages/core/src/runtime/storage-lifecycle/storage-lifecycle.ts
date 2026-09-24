@@ -324,7 +324,7 @@ async function readDirectoryPayload(root: string): Promise<ArchivePayload["files
         await visit(entryPath);
       } else if (entry.isFile()) {
         files.push({
-          path: relative(root, entryPath),
+          path: normalizeArchivePath(relative(root, entryPath)),
           contentBase64: await streamFileBase64(entryPath),
         });
       }
@@ -332,6 +332,10 @@ async function readDirectoryPayload(root: string): Promise<ArchivePayload["files
   }
   await visit(root);
   return files;
+}
+
+function normalizeArchivePath(path: string): string {
+  return path.replace(/\\/g, "/");
 }
 
 async function streamFileBase64(path: string): Promise<string> {

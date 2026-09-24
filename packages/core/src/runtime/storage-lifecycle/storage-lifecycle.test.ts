@@ -1,5 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 import { listRunSummaries } from "../runs/run-summaries.js";
@@ -11,6 +13,8 @@ import {
   restoreArchivedRun,
   unpinRun,
 } from "./storage-lifecycle.js";
+
+const gunzipAsync = promisify(gunzip);
 
 describe("storage lifecycle", () => {
   it("does nothing when lifecycle is disabled", async ({ task }) => {
@@ -139,6 +143,56 @@ describe("storage lifecycle", () => {
     );
   });
 
+  it("archives, restores, and deletes tracked run artifacts as one cleanup unit", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeTerminalRun(runsRoot, "tracked-run", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await writeTrackArtifacts(runsRoot, "tracked-run");
+
+    await applyStorageLifecycle({
+      cwd,
+      runsRoot,
+      policy: { enabled: true, archiveAfterDays: 1 },
+      now: new Date("2026-01-03T00:00:00.000Z"),
+    });
+
+    await expect(stat(join(runsRoot, "tracked-run"))).rejects.toMatchObject({ code: "ENOENT" });
+    const archivedPayload = JSON.parse(
+      String(await gunzipAsync(await readFile(join(runsRoot, ".archive", "tracked-run.json.gz")))),
+    ) as { readonly files: readonly { readonly path: string }[] };
+    expect(archivedPayload.files.map((file) => file.path).sort()).toEqual([
+      "branches/branch-1.json",
+      "branches/branch-1.state.json",
+      "events.jsonl",
+      "global-state.json",
+      "steps/0001-branch-step/document-1.md",
+      "track.json",
+    ]);
+
+    await restoreArchivedRun({ runsRoot, runId: "tracked-run" });
+    await expect(readFile(join(runsRoot, "tracked-run", "track.json"), "utf8")).resolves.toBe(
+      '{"status":"completed"}\n',
+    );
+    await expect(
+      readFile(join(runsRoot, "tracked-run", "branches", "branch-1.json"), "utf8"),
+    ).resolves.toBe('{"branchId":"branch-1","status":"done"}\n');
+    await expect(
+      readFile(join(runsRoot, "tracked-run", "branches", "branch-1.state.json"), "utf8"),
+    ).resolves.toBe('{"claimed":true}\n');
+    await expect(
+      readFile(join(runsRoot, "tracked-run", "global-state.json"), "utf8"),
+    ).resolves.toBe('{"counter":1}\n');
+
+    await deleteRun({ runsRoot, runId: "tracked-run" });
+    await expect(stat(join(runsRoot, "tracked-run"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(runsRoot, "tracked-run", "branches"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("rejects pin and unpin for archived or missing runs", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
     const runsRoot = join(cwd, ".trailstep", "runs");
@@ -219,6 +273,25 @@ async function writeActiveRun(
     `${eventLine({ runId, workflowId, type: "workflow.started", timestamp })}\n`,
     "utf8",
   );
+}
+
+async function writeTrackArtifacts(runsRoot: string, runId: string): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(join(runDir, "branches"), { recursive: true });
+  await mkdir(join(runDir, "steps", "0001-branch-step"), { recursive: true });
+  await writeFile(join(runDir, "track.json"), '{"status":"completed"}\n', "utf8");
+  await writeFile(join(runDir, "global-state.json"), '{"counter":1}\n', "utf8");
+  await writeFile(
+    join(runDir, "branches", "branch-1.json"),
+    '{"branchId":"branch-1","status":"done"}\n',
+    "utf8",
+  );
+  await writeFile(
+    join(runDir, "branches", "branch-1.state.json"),
+    '{"claimed":true}\n',
+    "utf8",
+  );
+  await writeFile(join(runDir, "steps", "0001-branch-step", "document-1.md"), "done", "utf8");
 }
 
 function eventLine(options: {

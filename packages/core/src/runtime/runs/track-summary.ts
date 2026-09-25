@@ -10,6 +10,10 @@ export interface TrackSummary {
   readonly workers?: number;
   readonly failurePolicy?: string;
   readonly rootBranchId?: string;
+  readonly terminalBranchId?: string;
+  readonly terminalKind?: string;
+  readonly terminalOutput?: unknown;
+  readonly failure?: unknown;
   readonly splitOccurred?: boolean;
   readonly branches: readonly BranchSummary[];
 }
@@ -56,6 +60,14 @@ export async function readTrackSummary(options: {
     ...(stringValue(track.rootBranchId) === undefined
       ? {}
       : { rootBranchId: stringValue(track.rootBranchId) }),
+    ...(stringValue(track.terminalBranchId) === undefined
+      ? {}
+      : { terminalBranchId: stringValue(track.terminalBranchId) }),
+    ...(stringValue(track.terminalKind) === undefined
+      ? {}
+      : { terminalKind: stringValue(track.terminalKind) }),
+    ...(track.terminalOutput === undefined ? {} : { terminalOutput: track.terminalOutput }),
+    ...(track.failure === undefined ? {} : { failure: track.failure }),
     ...(typeof track.splitOccurred === "boolean" ? { splitOccurred: track.splitOccurred } : {}),
     branches,
   };

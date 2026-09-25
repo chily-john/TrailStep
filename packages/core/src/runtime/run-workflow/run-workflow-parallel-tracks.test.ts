@@ -23,6 +23,14 @@ function readJsonObject(path: string): Promise<Record<string, unknown>> {
   return readFile(path, "utf8").then((contents) => JSON.parse(contents) as Record<string, unknown>);
 }
 
+async function readJsonLines(path: string): Promise<readonly Record<string, unknown>[]> {
+  const contents = await readFile(path, "utf8");
+  return contents
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 interface Deferred {
   readonly promise: Promise<void>;
   resolve(): void;
@@ -2046,6 +2054,234 @@ describe("runWorkflow parallel tracks", () => {
       ]),
     );
     expect(new Set(outputs.flatMap((output) => output?.sharedBranches ?? []))).toEqual(new Set(["a", "b"]));
+  });
+
+  it("proves the main parallel track path end-to-end with artifacts and sequential compatibility", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-tracer-bullet-"));
+    const globalState = Core.globalState;
+    type ClaimState = { readonly remaining: readonly string[]; readonly claimed: readonly string[] };
+
+    const childStep = step({ id: "tracer-child-step" }).do(async (input: { readonly seed: number }) => {
+      await globalState.update<readonly string[]>("timeline", (current) => [
+        ...(current ?? []),
+        `child:${input.seed}`,
+      ]);
+      return done({ seed: input.seed + 1 });
+    });
+    const ChildWorkflow = defineWorkflow<{ readonly seed: number }, { readonly seed: number }>({
+      id: "tracer-child-workflow",
+      inputShape: { seed: "number" },
+      outputShape: { seed: "number" },
+      start(input) {
+        return childStep(input);
+      },
+    });
+
+    const finalizeStep = step({ id: "tracer-finalize-step" }).do(
+      (input: { readonly branch: string; readonly claim: string }) =>
+        done({ branch: input.branch, claim: input.claim, finalized: true }),
+    );
+    const claimStep = step({ id: "tracer-claim-step" }).do(
+      async (input: { readonly branch: string; readonly seed: number }) => {
+        const claims = await globalState.update<ClaimState>("claims", (current) => {
+          const stateValue = current ?? { remaining: ["one", "two"], claimed: [] };
+          const [claim, ...remaining] = stateValue.remaining;
+          expect(claim).toBeDefined();
+          return { remaining, claimed: [...stateValue.claimed, `${input.branch}:${claim!}`] };
+        });
+        const claim = claims.claimed.at(-1)?.split(":").at(1);
+        return done({ branch: input.branch, seed: input.seed, claim });
+      },
+    );
+    const WorkerWorkflow = defineWorkflow<
+      { readonly branch: string; readonly seed: number },
+      { readonly branch: string; readonly seed: number; readonly claim: string }
+    >({
+      id: "tracer-worker-workflow",
+      inputShape: { branch: "string", seed: "number" },
+      outputShape: { branch: "string", seed: "number", claim: "string" },
+      start(input) {
+        return claimStep(input);
+      },
+    });
+
+    const rootStep = step({ id: "tracer-root-step" }).do((input: { readonly seed: number }) =>
+      ChildWorkflow(input, {
+        onDone(output) {
+          return [
+            WorkerWorkflow({ branch: "a", seed: output.seed }, { branch: "requested-a" }),
+            WorkerWorkflow(
+              { branch: "b", seed: output.seed },
+              {
+                branch: "requested-b",
+                onDone(workerOutput) {
+                  return finalizeStep(workerOutput);
+                },
+              },
+            ),
+          ];
+        },
+      }),
+    );
+    const workflow: Workflow<{ readonly seed: number }, PlainObject> = {
+      id: "parallel-tracer-bullet-workflow",
+      inputShape: { seed: "number" },
+      start(input) {
+        return rootStep(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { seed: 1 },
+      runName: "parallel-tracer-bullet",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.status).toBe("success");
+    expect(result.output).toMatchObject({ status: "completed", branches: expect.any(Object) });
+    expect(Object.values(result.output.branches ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "done",
+          output: expect.objectContaining({ branch: "a", claim: expect.stringMatching(/^(one|two)$/) }),
+        }),
+        expect.objectContaining({
+          status: "done",
+          output: { branch: "b", claim: expect.stringMatching(/^(one|two)$/), finalized: true },
+        }),
+      ]),
+    );
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({
+      runId: result.runId,
+      status: "completed",
+      splitOccurred: true,
+      rootBranchId: "root",
+      branches: ["root", expect.any(String), expect.any(String)],
+    });
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ branchId: "root", status: "split", latestStepId: "tracer-child-step" }),
+        expect.objectContaining({ requestedBranchId: "requested-a", status: "done" }),
+        expect.objectContaining({ requestedBranchId: "requested-b", status: "done" }),
+      ]),
+    );
+
+    const startedByBranch = new Map<string, string[]>();
+    for (const event of result.events) {
+      if (event.type !== "step.started") {
+        continue;
+      }
+      const branchId = String(event.payload.branchId);
+      startedByBranch.set(branchId, [...(startedByBranch.get(branchId) ?? []), event.stepId ?? ""]);
+    }
+    expect(startedByBranch.get("root")).toEqual(["tracer-root-step", "tracer-child-step"]);
+    expect([...startedByBranch.values()]).toContainEqual(["tracer-claim-step"]);
+    expect([...startedByBranch.values()]).toContainEqual(["tracer-claim-step", "tracer-finalize-step"]);
+    expect(await readJsonLines(join(result.runDir, "events.jsonl"))).toHaveLength(result.events.length);
+    const persistedGlobalState = (await readJsonObject(join(result.runDir, "global-state.json"))) as {
+      readonly timeline?: readonly string[];
+      readonly claims?: ClaimState;
+    };
+    expect(persistedGlobalState.timeline).toEqual(["child:1"]);
+    expect(persistedGlobalState.claims?.remaining).toEqual([]);
+    const persistedClaims = persistedGlobalState.claims?.claimed ?? [];
+    expect(new Set(persistedClaims.map((claim) => claim.split(":")[0]))).toEqual(new Set(["a", "b"]));
+    expect(new Set(persistedClaims.map((claim) => claim.split(":")[1]))).toEqual(new Set(["one", "two"]));
+
+    const sequentialFirst = step({ id: "tracer-sequential-first" }).do((input: { readonly value: number }) =>
+      done({ value: input.value + 1 }),
+    );
+    const sequentialWorkflow: Workflow<{ readonly value: number }, { readonly value: number }> = {
+      id: "tracer-sequential-workflow",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return sequentialFirst(input);
+      },
+    };
+    const sequential = await runWorkflow({
+      workflow: sequentialWorkflow,
+      input: { value: 41 },
+      runName: "parallel-tracer-sequential-regression",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+    expect(sequential.status).toBe("success");
+    if (sequential.status !== "success") {
+      throw new Error(sequential.failure.message);
+    }
+    expect(sequential.output).toEqual({ value: 42 });
+    await expect(readJsonObject(join(sequential.runDir, "track.json"))).resolves.toMatchObject({
+      splitOccurred: false,
+      branches: ["root"],
+    });
+
+    const absoluteDoneStep = step({ id: "tracer-absolute-done" }).do(() =>
+      absoluteDone({ terminal: "winner" }),
+    );
+    const absoluteFailStep = step({ id: "tracer-absolute-fail" }).do(() =>
+      absoluteFail({ code: "tracer_absolute_failed", message: "absolute loser" }),
+    );
+    const queuedStep = step({ id: "tracer-absolute-queued" }).do(() => done({ terminal: "queued" }));
+    const absoluteDoneWorkflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "tracer-absolute-done-workflow",
+      start() {
+        return [absoluteDoneStep(), queuedStep()];
+      },
+    };
+    const absoluteFailWorkflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "tracer-absolute-fail-workflow",
+      start() {
+        return [absoluteFailStep(), queuedStep()];
+      },
+    };
+    const absoluteDoneResult = await runWorkflow({
+      workflow: absoluteDoneWorkflow,
+      input: {},
+      runName: "parallel-tracer-absolute-done",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+    const absoluteFailResult = await runWorkflow({
+      workflow: absoluteFailWorkflow,
+      input: {},
+      runName: "parallel-tracer-absolute-fail",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+    expect(absoluteDoneResult.status).toBe("success");
+    expect(absoluteFailResult.status).toBe("failure");
+    await expect(readJsonObject(join(absoluteDoneResult.runDir, "track.json"))).resolves.toMatchObject({
+      terminalKind: "absoluteDone",
+      terminalOutput: { terminal: "winner" },
+    });
+    await expect(readJsonObject(join(absoluteFailResult.runDir, "track.json"))).resolves.toMatchObject({
+      terminalKind: "absoluteFail",
+      failure: { code: "tracer_absolute_failed", message: "absolute loser" },
+    });
+
+    const summaries = await Core.listRunSummaries({ cwd });
+    const doneSummary = summaries.find((summary) => summary.runId === absoluteDoneResult.runId);
+    const failSummary = summaries.find((summary) => summary.runId === absoluteFailResult.runId);
+    expect(doneSummary?.track).toMatchObject({
+      terminalKind: "absoluteDone",
+      terminalOutput: { terminal: "winner" },
+    });
+    expect(failSummary?.track).toMatchObject({
+      terminalKind: "absoluteFail",
+      failure: { code: "tracer_absolute_failed", message: "absolute loser" },
+    });
   });
 
   it("executes a root continuation array as branch candidates with aggregate output, unique artifacts, persisted state, and branch event metadata", async () => {

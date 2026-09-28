@@ -56,7 +56,9 @@ export async function listRunSummaries(options: {
     const runDir = join(runsRoot, runId);
 
     try {
-      summaries.push(await summarizeReadableRun({ runId, runDir, events: await readRunEvents(runDir) }));
+      summaries.push(
+        await summarizeReadableRun({ runId, runDir, events: await readRunEvents(runDir) }),
+      );
     } catch (error) {
       summaries.push({
         runId,

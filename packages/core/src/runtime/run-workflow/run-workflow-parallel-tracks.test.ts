@@ -51,6 +51,22 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function expectDefinedValue<T>(value: T | undefined): T {
+  expect(value).toBeDefined();
+  if (value === undefined) {
+    throw new Error("Expected value to be defined.");
+  }
+  return value;
+}
+
+function resolveStartedGate(
+  starts: readonly string[],
+  gates: ReadonlyMap<string, Deferred>,
+  index: number,
+): void {
+  gates.get(expectDefinedValue(starts[index]))?.resolve();
+}
+
 describe("runWorkflow parallel tracks", () => {
   it("executes a workflow invocation on the same branch without creating a branch", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-same-branch-"));
@@ -273,7 +289,10 @@ describe("runWorkflow parallel tracks", () => {
     );
 
     const track = await readJsonObject(join(result.runDir, "track.json"));
-    expect(track).toMatchObject({ splitOccurred: true, branches: ["root", "branch-1", "branch-2"] });
+    expect(track).toMatchObject({
+      splitOccurred: true,
+      branches: ["root", "branch-1", "branch-2"],
+    });
     const rootBranch = await readJsonObject(join(result.runDir, "branches", "root.json"));
     expect(rootBranch).toMatchObject({
       branchId: "root",
@@ -406,23 +425,23 @@ describe("runWorkflow parallel tracks", () => {
           await expect.poll(() => starts.length).toBe(1);
           await delay(25);
           expect(starts).toHaveLength(1);
-          gates.get(starts[0]!)?.resolve();
+          resolveStartedGate(starts, gates, 0);
 
           await expect.poll(() => starts.length).toBe(2);
           await delay(25);
           expect(starts).toHaveLength(2);
-          gates.get(starts[1]!)?.resolve();
+          resolveStartedGate(starts, gates, 1);
 
           await expect.poll(() => starts.length).toBe(3);
           await delay(25);
           expect(starts).toHaveLength(3);
-          gates.get(starts[2]!)?.resolve();
+          resolveStartedGate(starts, gates, 2);
         } else {
           await expect.poll(() => starts.length).toBe(2);
-          gates.get(starts[0]!)?.resolve();
-          gates.get(starts[1]!)?.resolve();
+          resolveStartedGate(starts, gates, 0);
+          resolveStartedGate(starts, gates, 1);
           await expect.poll(() => starts.length).toBe(3);
-          gates.get(starts[2]!)?.resolve();
+          resolveStartedGate(starts, gates, 2);
         }
       } catch (error) {
         for (const gate of gates.values()) {
@@ -583,7 +602,9 @@ describe("runWorkflow parallel tracks", () => {
     });
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -641,7 +662,9 @@ describe("runWorkflow parallel tracks", () => {
     });
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -699,7 +722,9 @@ describe("runWorkflow parallel tracks", () => {
     });
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -755,9 +780,9 @@ describe("runWorkflow parallel tracks", () => {
     });
 
     try {
-      await expect.poll(() => observed).toEqual(
-        expect.arrayContaining(["failing-start", "splitter-start"]),
-      );
+      await expect
+        .poll(() => observed)
+        .toEqual(expect.arrayContaining(["failing-start", "splitter-start"]));
       failGate.resolve();
       await expect
         .poll(async () => {
@@ -802,7 +827,9 @@ describe("runWorkflow parallel tracks", () => {
     });
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -813,9 +840,9 @@ describe("runWorkflow parallel tracks", () => {
       ]),
     );
     expect(branches.every((branch) => branch.status !== "queued")).toBe(true);
-    expect(branches.filter((branch) => branch.status === "cancelled").length).toBeGreaterThanOrEqual(
-      2,
-    );
+    expect(
+      branches.filter((branch) => branch.status === "cancelled").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(branches).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ source: "step concurrent-fail-fast-splitter" }),
@@ -825,12 +852,14 @@ describe("runWorkflow parallel tracks", () => {
 
   it("manual retry preserves completed sibling branches and retries the failed branch", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-retry-preserve-sibling-"));
-    const globalState = (Core as unknown as {
-      readonly globalState?: {
-        get<T>(key: string): Promise<T | undefined>;
-        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
-      };
-    }).globalState;
+    const globalState = (
+      Core as unknown as {
+        readonly globalState?: {
+          get<T>(key: string): Promise<T | undefined>;
+          update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+        };
+      }
+    ).globalState;
     const sideEffects: string[] = [];
     let shouldFailBranchB = true;
 
@@ -838,10 +867,10 @@ describe("runWorkflow parallel tracks", () => {
       expect(globalState).toBeDefined();
       sideEffects.push("branch-a-dispatched");
       await state.set("branch-local", "a-only");
-      const sharedLog = await globalState!.update<readonly string[]>("shared-log", (current) => [
-        ...(current ?? []),
-        "a",
-      ]);
+      const sharedLog = await expectDefinedValue(globalState).update<readonly string[]>(
+        "shared-log",
+        (current) => [...(current ?? []), "a"],
+      );
       return done({ branch: "a", branchLocal: await state.get<string>("branch-local"), sharedLog });
     });
     const branchBStep = step({ id: "retry-failed-branch-b" }).do(async () => {
@@ -851,11 +880,12 @@ describe("runWorkflow parallel tracks", () => {
         return fail({ code: "branch_b_failed", message: "branch B failed on first attempt" });
       }
       await state.set("branch-local", "b-only");
-      const sharedLogBefore = await globalState!.get<readonly string[]>("shared-log");
-      const sharedLogAfter = await globalState!.update<readonly string[]>("shared-log", (current) => [
-        ...(current ?? []),
-        "b",
-      ]);
+      const sharedLogBefore =
+        await expectDefinedValue(globalState).get<readonly string[]>("shared-log");
+      const sharedLogAfter = await expectDefinedValue(globalState).update<readonly string[]>(
+        "shared-log",
+        (current) => [...(current ?? []), "b"],
+      );
       return done({
         branch: "b",
         branchLocal: await state.get<string>("branch-local"),
@@ -974,7 +1004,7 @@ describe("runWorkflow parallel tracks", () => {
     });
   });
 
-  it("failed-only track retry retries failed and cancelled branches while preserving completed siblings", async () => {
+  it("failed-only track retry retries failed branches while preserving completed and cancelled siblings", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-retry-failed-only-"));
     const sideEffects: string[] = [];
     let shouldFailBranchB = true;
@@ -1053,7 +1083,6 @@ describe("runWorkflow parallel tracks", () => {
       "branch-a-dispatched",
       "branch-b-dispatched",
       "branch-b-dispatched",
-      "branch-c-dispatched",
     ]);
     expect(Object.values(retried.output.branches ?? {})).toEqual(
       expect.arrayContaining([
@@ -1066,8 +1095,8 @@ describe("runWorkflow parallel tracks", () => {
           output: expect.objectContaining({ branch: "b" }),
         }),
         expect.objectContaining({
-          status: "done",
-          output: expect.objectContaining({ branch: "c" }),
+          status: "cancelled",
+          output: {},
         }),
       ]),
     );
@@ -1240,7 +1269,9 @@ describe("runWorkflow parallel tracks", () => {
     });
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -1257,33 +1288,36 @@ describe("runWorkflow parallel tracks", () => {
     ["done", () => done({ value: "not-runnable" })],
     ["fail", () => fail({ code: "not_runnable", message: "not runnable" })],
     ["malformed", () => ({ nope: true }) as never],
-  ])("rejects arrays containing non-runnable candidates clearly (%s)", async (_label, makeCandidate) => {
-    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invalid-array-candidate-"));
-    const runnable = step({ id: "valid-array-candidate" }).do(() => done({ value: "ok" }));
-    const workflow: Workflow<Record<string, never>, PlainObject> = {
-      id: "invalid-array-candidate-workflow",
-      start() {
-        return [runnable(), makeCandidate()] as never;
-      },
-    };
+  ])(
+    "rejects arrays containing non-runnable candidates clearly (%s)",
+    async (_label, makeCandidate) => {
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invalid-array-candidate-"));
+      const runnable = step({ id: "valid-array-candidate" }).do(() => done({ value: "ok" }));
+      const workflow: Workflow<Record<string, never>, PlainObject> = {
+        id: "invalid-array-candidate-workflow",
+        start() {
+          return [runnable(), makeCandidate()] as never;
+        },
+      };
 
-    const result = await runWorkflow({
-      workflow,
-      input: {},
-      runName: `invalid-array-candidate-${_label}`,
-      cwd,
-      scheduler: { workers: 2 },
-    });
+      const result = await runWorkflow({
+        workflow,
+        input: {},
+        runName: `invalid-array-candidate-${_label}`,
+        cwd,
+        scheduler: { workers: 2 },
+      });
 
-    expect(result.status).toBe("failure");
-    if (result.status !== "failure") {
-      throw new Error("expected invalid array candidate to fail");
-    }
-    expect(result.failure).toMatchObject({
-      code: "invalid_continuation",
-      message: expect.stringContaining("array candidates must be runnable"),
-    });
-  });
+      expect(result.status).toBe("failure");
+      if (result.status !== "failure") {
+        throw new Error("expected invalid array candidate to fail");
+      }
+      expect(result.failure).toMatchObject({
+        code: "invalid_continuation",
+        message: expect.stringContaining("array candidates must be runnable"),
+      });
+    },
+  );
 
   it.each([0, 1.5, Infinity])(
     "fails clearly when scheduler.workers is invalid (%s)",
@@ -1682,7 +1716,9 @@ describe("runWorkflow parallel tracks", () => {
 
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -1702,6 +1738,65 @@ describe("runWorkflow parallel tracks", () => {
         }),
       ]),
     );
+  });
+
+  it("rejects continue from a waiting parallel track with a clear unsupported error", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-continue-"));
+
+    const waitingStep = step({ id: "parallel-wait-continue-branch" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve parallel branch continue?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const siblingStep = step({ id: "parallel-wait-continue-sibling" }).do(() =>
+      done({ value: "sibling" }),
+    );
+    const WaitingWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "parallel-wait-continue-waiting-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return waitingStep({});
+      },
+    });
+    const SiblingWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "parallel-wait-continue-sibling-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return siblingStep({});
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-wait-continue-parent-workflow",
+      start() {
+        return [
+          WaitingWorkflow({}, { branch: "waiting" }),
+          SiblingWorkflow({}, { branch: "sibling" }),
+        ];
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-wait-continue",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    const continued = await runWorkflow({ workflow, continue: { runDir: waiting.runDir }, cwd });
+
+    expect(continued.status).toBe("failure");
+    if (continued.status !== "failure") {
+      throw new Error("expected parallel wait continue to fail");
+    }
+    expect(continued.failure).toMatchObject({
+      code: "continue_parallel_track_unsupported",
+      message: expect.stringContaining("Continuing a waiting parallel track is not yet supported"),
+    });
   });
 
   it("persists observable branch and track lifecycle state", async () => {
@@ -1762,11 +1857,15 @@ describe("runWorkflow parallel tracks", () => {
       terminalBranchId: expect.any(String),
       failure: { code: "observable_branch_failed", message: "observable failure" },
     });
-    expect(track.branches).toEqual(expect.arrayContaining([expect.any(String), expect.any(String)]));
+    expect(track.branches).toEqual(
+      expect.arrayContaining([expect.any(String), expect.any(String)]),
+    );
 
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -1881,33 +1980,48 @@ describe("runWorkflow parallel tracks", () => {
 
     expect(result.status).toBe("success");
     const stepDirs = await readdir(join(result.runDir, "steps"));
-    expect(stepDirs).toEqual(expect.arrayContaining(["0001-concurrent-same-id", "0002-concurrent-same-id"]));
+    expect(stepDirs).toEqual(
+      expect.arrayContaining(["0001-concurrent-same-id", "0002-concurrent-same-id"]),
+    );
     expect(new Set(stepDirs).size).toBe(stepDirs.length);
   });
 
   it("lets parallel branches atomically claim unique shared items with globalState.update", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-global-state-claims-"));
-    const globalState = (Core as unknown as {
-      readonly globalState?: {
-        get<T>(key: string): Promise<T | undefined>;
-        set(key: string, value: unknown): Promise<void>;
-        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
-      };
-    }).globalState;
+    const globalState = (
+      Core as unknown as {
+        readonly globalState?: {
+          get<T>(key: string): Promise<T | undefined>;
+          set(key: string, value: unknown): Promise<void>;
+          update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+        };
+      }
+    ).globalState;
 
-    type ClaimState = { readonly remaining: readonly string[]; readonly claimed: readonly string[] };
+    type ClaimState = {
+      readonly remaining: readonly string[];
+      readonly claimed: readonly string[];
+    };
 
-    const claimStep = step({ id: "claim-shared-item" }).do(async (input: { readonly branch: string }) => {
-      expect(globalState).toBeDefined();
-      const next = await globalState!.update<ClaimState>("claims", async (current) => {
-        await delay(25);
-        const stateValue = current ?? { remaining: ["item-1", "item-2", "item-3", "item-4"], claimed: [] };
-        const [claim, ...remaining] = stateValue.remaining;
-        expect(claim).toBeDefined();
-        return { remaining, claimed: [...stateValue.claimed, claim!] };
-      });
-      return done({ branch: input.branch, claimed: next.claimed.at(-1) });
-    });
+    const claimStep = step({ id: "claim-shared-item" }).do(
+      async (input: { readonly branch: string }) => {
+        expect(globalState).toBeDefined();
+        const next = await expectDefinedValue(globalState).update<ClaimState>(
+          "claims",
+          async (current) => {
+            await delay(25);
+            const stateValue = current ?? {
+              remaining: ["item-1", "item-2", "item-3", "item-4"],
+              claimed: [],
+            };
+            const [claim, ...remaining] = stateValue.remaining;
+            expect(claim).toBeDefined();
+            return { remaining, claimed: [...stateValue.claimed, expectDefinedValue(claim)] };
+          },
+        );
+        return done({ branch: input.branch, claimed: next.claimed.at(-1) });
+      },
+    );
 
     const workflow: Workflow<Record<string, never>, PlainObject> = {
       id: "global-state-claim-workflow",
@@ -1929,36 +2043,48 @@ describe("runWorkflow parallel tracks", () => {
       throw new Error(result.failure.message);
     }
 
-    const aggregateBranches = (result.output.branches ?? {}) as Record<string, { readonly output?: { readonly claimed?: string } }>;
+    const aggregateBranches = (result.output.branches ?? {}) as Record<
+      string,
+      { readonly output?: { readonly claimed?: string } }
+    >;
     const claimed = Object.values(aggregateBranches).map((branch) => branch.output?.claimed);
     expect(claimed).toHaveLength(4);
     expect(new Set(claimed)).toEqual(new Set(["item-1", "item-2", "item-3", "item-4"]));
 
-    const persisted = (await readJsonObject(join(result.runDir, "global-state.json"))) as { readonly claims?: ClaimState };
+    const persisted = (await readJsonObject(join(result.runDir, "global-state.json"))) as {
+      readonly claims?: ClaimState;
+    };
     expect(persisted.claims?.remaining).toEqual([]);
     expect(persisted.claims?.claimed).toHaveLength(4);
-    expect(new Set(persisted.claims?.claimed)).toEqual(new Set(["item-1", "item-2", "item-3", "item-4"]));
+    expect(new Set(persisted.claims?.claimed)).toEqual(
+      new Set(["item-1", "item-2", "item-3", "item-4"]),
+    );
   });
 
   it("shares globalState between a parent branch step and a workflow invocation branch", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-global-state-invocation-"));
-    const globalState = (Core as unknown as {
-      readonly globalState?: {
-        get<T>(key: string): Promise<T | undefined>;
-        set(key: string, value: unknown): Promise<void>;
-        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
-      };
-    }).globalState;
+    const globalState = (
+      Core as unknown as {
+        readonly globalState?: {
+          get<T>(key: string): Promise<T | undefined>;
+          set(key: string, value: unknown): Promise<void>;
+          update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+        };
+      }
+    ).globalState;
 
     const childStep = step({ id: "child-global-state-step" }).do(async () => {
       expect(globalState).toBeDefined();
-      const sharedLog = await globalState!.update<readonly string[]>("shared-log", (current) => [
-        ...(current ?? []),
-        "child",
-      ]);
+      const sharedLog = await expectDefinedValue(globalState).update<readonly string[]>(
+        "shared-log",
+        (current) => [...(current ?? []), "child"],
+      );
       return done({ childSaw: sharedLog });
     });
-    const ChildWorkflow = defineWorkflow<Record<string, never>, { readonly childSaw: readonly string[] }>({
+    const ChildWorkflow = defineWorkflow<
+      Record<string, never>,
+      { readonly childSaw: readonly string[] }
+    >({
       id: "global-state-child-workflow",
       start() {
         return childStep({});
@@ -1966,11 +2092,13 @@ describe("runWorkflow parallel tracks", () => {
     });
     const parentReadStep = step({ id: "parent-global-state-read-step" }).do(async () => {
       expect(globalState).toBeDefined();
-      return done({ parentSaw: await globalState!.get<readonly string[]>("shared-log") });
+      return done({
+        parentSaw: await expectDefinedValue(globalState).get<readonly string[]>("shared-log"),
+      });
     });
     const parentStep = step({ id: "parent-global-state-step" }).do(async () => {
       expect(globalState).toBeDefined();
-      await globalState!.set("shared-log", ["parent"]);
+      await expectDefinedValue(globalState).set("shared-log", ["parent"]);
       return [parentReadStep({}), ChildWorkflow({}, { branch: "child-invocation" })];
     });
     const workflow: Workflow<Record<string, never>, PlainObject> = {
@@ -1999,28 +2127,32 @@ describe("runWorkflow parallel tracks", () => {
 
   it("keeps state branch-local while sibling branches share globalState", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-branch-local-state-"));
-    const globalState = (Core as unknown as {
-      readonly globalState?: {
-        get<T>(key: string): Promise<T | undefined>;
-        set(key: string, value: unknown): Promise<void>;
-        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
-      };
-    }).globalState;
+    const globalState = (
+      Core as unknown as {
+        readonly globalState?: {
+          get<T>(key: string): Promise<T | undefined>;
+          set(key: string, value: unknown): Promise<void>;
+          update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+        };
+      }
+    ).globalState;
 
-    const setAndReadStep = step({ id: "set-and-read-branch-state" }).do(async (input: { readonly branch: string }) => {
-      expect(globalState).toBeDefined();
-      await state.set("branchValue", input.branch);
-      const sharedBranches = await globalState!.update<readonly string[]>("branches", (current) => [
-        ...(current ?? []),
-        input.branch,
-      ]);
-      await delay(25);
-      return done({
-        branch: input.branch,
-        branchValue: await state.get<string>("branchValue"),
-        sharedBranches,
-      });
-    });
+    const setAndReadStep = step({ id: "set-and-read-branch-state" }).do(
+      async (input: { readonly branch: string }) => {
+        expect(globalState).toBeDefined();
+        await state.set("branchValue", input.branch);
+        const sharedBranches = await expectDefinedValue(globalState).update<readonly string[]>(
+          "branches",
+          (current) => [...(current ?? []), input.branch],
+        );
+        await delay(25);
+        return done({
+          branch: input.branch,
+          branchValue: await state.get<string>("branchValue"),
+          sharedBranches,
+        });
+      },
+    );
 
     const workflow: Workflow<Record<string, never>, PlainObject> = {
       id: "branch-local-state-global-state-workflow",
@@ -2044,7 +2176,13 @@ describe("runWorkflow parallel tracks", () => {
 
     const aggregateBranches = (result.output.branches ?? {}) as Record<
       string,
-      { readonly output?: { readonly branch?: string; readonly branchValue?: string; readonly sharedBranches?: readonly string[] } }
+      {
+        readonly output?: {
+          readonly branch?: string;
+          readonly branchValue?: string;
+          readonly sharedBranches?: readonly string[];
+        };
+      }
     >;
     const outputs = Object.values(aggregateBranches).map((branch) => branch.output);
     expect(outputs).toEqual(
@@ -2053,21 +2191,28 @@ describe("runWorkflow parallel tracks", () => {
         expect.objectContaining({ branch: "b", branchValue: "b" }),
       ]),
     );
-    expect(new Set(outputs.flatMap((output) => output?.sharedBranches ?? []))).toEqual(new Set(["a", "b"]));
+    expect(new Set(outputs.flatMap((output) => output?.sharedBranches ?? []))).toEqual(
+      new Set(["a", "b"]),
+    );
   });
 
   it("proves the main parallel track path end-to-end with artifacts and sequential compatibility", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-tracer-bullet-"));
     const globalState = Core.globalState;
-    type ClaimState = { readonly remaining: readonly string[]; readonly claimed: readonly string[] };
+    type ClaimState = {
+      readonly remaining: readonly string[];
+      readonly claimed: readonly string[];
+    };
 
-    const childStep = step({ id: "tracer-child-step" }).do(async (input: { readonly seed: number }) => {
-      await globalState.update<readonly string[]>("timeline", (current) => [
-        ...(current ?? []),
-        `child:${input.seed}`,
-      ]);
-      return done({ seed: input.seed + 1 });
-    });
+    const childStep = step({ id: "tracer-child-step" }).do(
+      async (input: { readonly seed: number }) => {
+        await globalState.update<readonly string[]>("timeline", (current) => [
+          ...(current ?? []),
+          `child:${input.seed}`,
+        ]);
+        return done({ seed: input.seed + 1 });
+      },
+    );
     const ChildWorkflow = defineWorkflow<{ readonly seed: number }, { readonly seed: number }>({
       id: "tracer-child-workflow",
       inputShape: { seed: "number" },
@@ -2087,7 +2232,10 @@ describe("runWorkflow parallel tracks", () => {
           const stateValue = current ?? { remaining: ["one", "two"], claimed: [] };
           const [claim, ...remaining] = stateValue.remaining;
           expect(claim).toBeDefined();
-          return { remaining, claimed: [...stateValue.claimed, `${input.branch}:${claim!}`] };
+          return {
+            remaining,
+            claimed: [...stateValue.claimed, `${input.branch}:${expectDefinedValue(claim)}`],
+          };
         });
         const claim = claims.claimed.at(-1)?.split(":").at(1);
         return done({ branch: input.branch, seed: input.seed, claim });
@@ -2148,7 +2296,10 @@ describe("runWorkflow parallel tracks", () => {
       expect.arrayContaining([
         expect.objectContaining({
           status: "done",
-          output: expect.objectContaining({ branch: "a", claim: expect.stringMatching(/^(one|two)$/) }),
+          output: expect.objectContaining({
+            branch: "a",
+            claim: expect.stringMatching(/^(one|two)$/),
+          }),
         }),
         expect.objectContaining({
           status: "done",
@@ -2167,11 +2318,17 @@ describe("runWorkflow parallel tracks", () => {
     });
     const branchIds = track.branches as readonly string[];
     const branches = await Promise.all(
-      branchIds.map((branchId) => readJsonObject(join(result.runDir, "branches", `${branchId}.json`))),
+      branchIds.map((branchId) =>
+        readJsonObject(join(result.runDir, "branches", `${branchId}.json`)),
+      ),
     );
     expect(branches).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ branchId: "root", status: "split", latestStepId: "tracer-child-step" }),
+        expect.objectContaining({
+          branchId: "root",
+          status: "split",
+          latestStepId: "tracer-child-step",
+        }),
         expect.objectContaining({ requestedBranchId: "requested-a", status: "done" }),
         expect.objectContaining({ requestedBranchId: "requested-b", status: "done" }),
       ]),
@@ -2187,20 +2344,31 @@ describe("runWorkflow parallel tracks", () => {
     }
     expect(startedByBranch.get("root")).toEqual(["tracer-root-step", "tracer-child-step"]);
     expect([...startedByBranch.values()]).toContainEqual(["tracer-claim-step"]);
-    expect([...startedByBranch.values()]).toContainEqual(["tracer-claim-step", "tracer-finalize-step"]);
-    expect(await readJsonLines(join(result.runDir, "events.jsonl"))).toHaveLength(result.events.length);
-    const persistedGlobalState = (await readJsonObject(join(result.runDir, "global-state.json"))) as {
+    expect([...startedByBranch.values()]).toContainEqual([
+      "tracer-claim-step",
+      "tracer-finalize-step",
+    ]);
+    expect(await readJsonLines(join(result.runDir, "events.jsonl"))).toHaveLength(
+      result.events.length,
+    );
+    const persistedGlobalState = (await readJsonObject(
+      join(result.runDir, "global-state.json"),
+    )) as {
       readonly timeline?: readonly string[];
       readonly claims?: ClaimState;
     };
     expect(persistedGlobalState.timeline).toEqual(["child:1"]);
     expect(persistedGlobalState.claims?.remaining).toEqual([]);
     const persistedClaims = persistedGlobalState.claims?.claimed ?? [];
-    expect(new Set(persistedClaims.map((claim) => claim.split(":")[0]))).toEqual(new Set(["a", "b"]));
-    expect(new Set(persistedClaims.map((claim) => claim.split(":")[1]))).toEqual(new Set(["one", "two"]));
+    expect(new Set(persistedClaims.map((claim) => claim.split(":")[0]))).toEqual(
+      new Set(["a", "b"]),
+    );
+    expect(new Set(persistedClaims.map((claim) => claim.split(":")[1]))).toEqual(
+      new Set(["one", "two"]),
+    );
 
-    const sequentialFirst = step({ id: "tracer-sequential-first" }).do((input: { readonly value: number }) =>
-      done({ value: input.value + 1 }),
+    const sequentialFirst = step({ id: "tracer-sequential-first" }).do(
+      (input: { readonly value: number }) => done({ value: input.value + 1 }),
     );
     const sequentialWorkflow: Workflow<{ readonly value: number }, { readonly value: number }> = {
       id: "tracer-sequential-workflow",
@@ -2233,7 +2401,9 @@ describe("runWorkflow parallel tracks", () => {
     const absoluteFailStep = step({ id: "tracer-absolute-fail" }).do(() =>
       absoluteFail({ code: "tracer_absolute_failed", message: "absolute loser" }),
     );
-    const queuedStep = step({ id: "tracer-absolute-queued" }).do(() => done({ terminal: "queued" }));
+    const queuedStep = step({ id: "tracer-absolute-queued" }).do(() =>
+      done({ terminal: "queued" }),
+    );
     const absoluteDoneWorkflow: Workflow<Record<string, never>, PlainObject> = {
       id: "tracer-absolute-done-workflow",
       start() {
@@ -2262,11 +2432,15 @@ describe("runWorkflow parallel tracks", () => {
     });
     expect(absoluteDoneResult.status).toBe("success");
     expect(absoluteFailResult.status).toBe("failure");
-    await expect(readJsonObject(join(absoluteDoneResult.runDir, "track.json"))).resolves.toMatchObject({
+    await expect(
+      readJsonObject(join(absoluteDoneResult.runDir, "track.json")),
+    ).resolves.toMatchObject({
       terminalKind: "absoluteDone",
       terminalOutput: { terminal: "winner" },
     });
-    await expect(readJsonObject(join(absoluteFailResult.runDir, "track.json"))).resolves.toMatchObject({
+    await expect(
+      readJsonObject(join(absoluteFailResult.runDir, "track.json")),
+    ).resolves.toMatchObject({
       terminalKind: "absoluteFail",
       failure: { code: "tracer_absolute_failed", message: "absolute loser" },
     });

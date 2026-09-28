@@ -17,9 +17,9 @@ export type {
   TrailStepWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
 export {
-  Document,
   absoluteDone,
   absoluteFail,
+  Document,
   defineWorkflow,
   document,
   done,
@@ -48,10 +48,10 @@ export {
 } from "./authoring/authoring.js";
 export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
-  CheckWaitCallback,
-  CheckWaitContext,
   AbsoluteDoneNode,
   AbsoluteFailNode,
+  CheckWaitCallback,
+  CheckWaitContext,
   CheckWaitHelpers,
   ContinuationArray,
   ContinuationResult,
@@ -63,6 +63,7 @@ export type {
   PromptOptions,
   PromptPhase,
   PromptTemplateSource,
+  RunnableContinuationNode,
   StepConfig,
   StepContextContinuation,
   StepContinuation,
@@ -80,7 +81,6 @@ export type {
   StepFactory,
   StepNode,
   StepPhase,
-  RunnableContinuationNode,
   StepWaitContext,
   SubPromptFactory,
   SubPromptOptions,
@@ -97,8 +97,11 @@ export type {
   WorkflowInvocationNode,
   WorkflowInvocationOptions,
 } from "./authoring/step/continuation.types.js";
+export type {
+  DefinedWorkflow,
+  WorkflowBuilderOptions,
+} from "./authoring/workflow/define-workflow.js";
 export type { DeepReadonly, WorkflowInputApi } from "./authoring/workflow/workflow.js";
-export type { DefinedWorkflow, WorkflowBuilderOptions } from "./authoring/workflow/define-workflow.js";
 export type { Workflow, WorkflowSkillOptions } from "./authoring/workflow/workflow.types.js";
 export type {
   ManagedSessionPromptInjectionMode,
@@ -215,12 +218,12 @@ export type {
   WorkingAgentProcessRunner,
 } from "./runtime/run-workflow/run-workflow.types.js";
 export type { RunSummary, RunSummaryStatus } from "./runtime/runs/run-summaries.js";
-export type { BranchSummary, TrackSummary } from "./runtime/runs/track-summary.js";
 export {
   listRunSummaries,
   newestFirst,
   selectRecentFailedRunSummaries,
 } from "./runtime/runs/run-summaries.js";
+export type { BranchSummary, TrackSummary } from "./runtime/runs/track-summary.js";
 export type {
   StorageLifecycleAction,
   StorageLifecyclePolicy,

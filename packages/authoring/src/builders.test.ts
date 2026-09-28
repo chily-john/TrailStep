@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { jsonSchema, runWorkflow, type Workflow } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 import {
+  type ContinuationArray,
   defineWorkflow,
   done,
   isWorkflowInvocationNode,
   step,
-  type ContinuationArray,
 } from "./index.js";
 
 interface GreetingInput extends Record<string, unknown> {

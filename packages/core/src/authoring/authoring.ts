@@ -16,9 +16,13 @@ export { promptTemplate } from "./prompt-template/prompt-template.js";
 export { type JsonSchemaObject, jsonSchema, normalizeShape, shape } from "./shape/json-schema.js";
 export { state } from "./state/state.js";
 export type {
+  AbsoluteDoneNode,
+  AbsoluteFailNode,
   CheckWaitCallback,
   CheckWaitContext,
   CheckWaitHelpers,
+  ContinuationArray,
+  RunnableContinuationNode,
   StepContextContinuation,
   StepContinuationOutput,
   StepCwdCallback,
@@ -40,10 +44,6 @@ export type {
   WaitInput,
   WaitOptions,
   WaitPendingInput,
-  AbsoluteDoneNode,
-  AbsoluteFailNode,
-  ContinuationArray,
-  RunnableContinuationNode,
   WaitPendingResult,
   WorkflowInvocationNode,
   WorkflowInvocationOptions,
@@ -62,5 +62,9 @@ export {
   step,
 } from "./step/step-node.js";
 export { subPrompt } from "./step/sub-prompt.js";
-export { defineWorkflow, type DefinedWorkflow, type WorkflowBuilderOptions } from "./workflow/define-workflow.js";
+export {
+  type DefinedWorkflow,
+  defineWorkflow,
+  type WorkflowBuilderOptions,
+} from "./workflow/define-workflow.js";
 export { type DeepReadonly, type WorkflowInputApi, workflow } from "./workflow/workflow.js";

@@ -30,7 +30,9 @@ export const runsCommand: CliCommand<{ readonly json: boolean }> = {
     writeSection(context, "All runs:", summaries);
 
     for (const warning of summaries.flatMap((summary) =>
-      [summary.warning, summary.trackWarning].filter((value): value is string => value !== undefined),
+      [summary.warning, summary.trackWarning].filter(
+        (value): value is string => value !== undefined,
+      ),
     )) {
       context.io.writeError(warning);
     }
@@ -79,11 +81,10 @@ function formatTrackContext(summary: RunSummary): string | undefined {
     const status = branch.status ?? "unknown";
     counts.set(status, (counts.get(status) ?? 0) + 1);
   }
-  const countText = [...counts.entries()]
-    .map(([status, count]) => `${count} ${status}`)
-    .join(", ");
+  const countText = [...counts.entries()].map(([status, count]) => `${count} ${status}`).join(", ");
   const interestingBranches = track.branches.filter(
-    (branch) => branch.status === "failed" || branch.status === "waiting" || branch.output !== undefined,
+    (branch) =>
+      branch.status === "failed" || branch.status === "waiting" || branch.output !== undefined,
   );
   const branchText = interestingBranches
     .map((branch) => {

@@ -1,7 +1,8 @@
 import { CliUsageError } from "../../command.types.js";
 import type { RetryCommandArgs, RetryCommandTrackFilter } from "./retry-command.types.js";
 
-const retryUsage = "Expected trailstep retry <workflow-ref> <runName>.";
+const retryUsage =
+  "Expected trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh].";
 
 export function parseRetryInvocation(argv: readonly string[]): RetryCommandArgs {
   const [, workflowId, workflowRunName, ...rest] = argv;
@@ -9,7 +10,7 @@ export function parseRetryInvocation(argv: readonly string[]): RetryCommandArgs 
 
   if (unsupportedStepFlag) {
     throw new CliUsageError(
-      `${unsupportedStepFlag} is not supported by retry V1; retry targets the latest unresolved failure for an explicit workflow run. ${retryUsage}`,
+      `${unsupportedStepFlag} is not supported; use --failed to retry failed track branches, --branch <branchId> to retry one persisted branch, or omit filters to retry unresolved work. ${retryUsage}`,
     );
   }
 

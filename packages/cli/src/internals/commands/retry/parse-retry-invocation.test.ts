@@ -75,13 +75,7 @@ describe("parseRetryInvocation", () => {
       parseRetryInvocation(["retry", "project/review", "failed-run", "--branch"]),
     ).toThrow(/Expected branch id/);
     expect(() =>
-      parseRetryInvocation([
-        "retry",
-        "project/review",
-        "failed-run",
-        "--fresh",
-        "--failed",
-      ]),
+      parseRetryInvocation(["retry", "project/review", "failed-run", "--fresh", "--failed"]),
     ).toThrow(/--fresh cannot be combined/);
   });
 });

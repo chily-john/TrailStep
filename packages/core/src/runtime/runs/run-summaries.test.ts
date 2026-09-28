@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import { listRunSummaries } from "./run-summaries.js";
 
 describe("listRunSummaries", () => {
-  it("summarizes persisted parallel track branches without mutating run artifacts", async ({ task }) => {
+  it("summarizes persisted parallel track branches without mutating run artifacts", async ({
+    task,
+  }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-run-summaries-tests",

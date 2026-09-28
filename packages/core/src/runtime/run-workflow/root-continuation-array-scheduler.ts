@@ -784,9 +784,7 @@ function selectPersistedBranchesForRetry(
     return {
       status: "success",
       branchIds: new Set(
-        branches
-          .filter((branch) => !(branch.status === "done" && branch.output !== undefined))
-          .map((branch) => branch.branchId),
+        branches.filter((branch) => branch.status === "failed").map((branch) => branch.branchId),
       ),
     };
   }

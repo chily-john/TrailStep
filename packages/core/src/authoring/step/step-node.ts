@@ -206,10 +206,7 @@ export function absoluteDone<TOutput extends PlainObject = PlainObject>(
   };
 }
 
-export function absoluteFail(
-  failure: Failure,
-  options?: TerminalMessageOptions,
-): AbsoluteFailNode {
+export function absoluteFail(failure: Failure, options?: TerminalMessageOptions): AbsoluteFailNode {
   return {
     kind: "absoluteFail",
     failure,

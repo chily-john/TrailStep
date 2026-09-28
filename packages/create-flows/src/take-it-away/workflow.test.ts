@@ -1657,8 +1657,6 @@ describe("take-it-away", () => {
       },
       requiredImprovements: [],
     };
-    const failedValidationSummary = "Focused validation failed";
-    const failedValidationResult = "failed: exit 1";
     const trailstepConfig = {
       version: 1 as const,
       customProviders: { worker: { binary: "worker-agent" } },
@@ -2249,10 +2247,6 @@ describe("take-it-away", () => {
       },
       requiredImprovements: [],
     };
-    const failedValidationSummary =
-      "Focused validation failed because widget output still misses the red-test assertion.";
-    const failedValidationResult = "failed: expected widget export to include stable metadata";
-    const passingValidationSummary = "Focused validation passed after fixing the widget exporter.";
     const implementGreenPrompts: string[] = [];
     const reviewPrompts: string[] = [];
     let implementGreenAttempts = 0;

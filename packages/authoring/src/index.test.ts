@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import * as Authoring from "./index.js";
 import {
+  type AbsoluteDoneNode,
+  type AbsoluteFailNode,
   absoluteDone,
   absoluteFail,
+  type ContinuationArray,
+  type ContinuationResult,
+  type DefinedWorkflow,
   defineWorkflow,
   done,
   isAbsoluteDoneNode,
@@ -11,16 +16,12 @@ import {
   isWorkflowInvocationNode,
   jsonSchema,
   notify,
+  type RunnableContinuationNode,
   step,
   subPrompt,
-  workflow,
-  type AbsoluteDoneNode,
-  type AbsoluteFailNode,
-  type ContinuationArray,
-  type DefinedWorkflow,
-  type RunnableContinuationNode,
   type WorkflowInvocationNode,
   type WorkflowInvocationOptions,
+  workflow,
 } from "./index.js";
 
 describe("@trailstep/authoring exports", () => {
@@ -39,13 +40,15 @@ describe("@trailstep/authoring exports", () => {
   });
 
   it("re-exports globalState from the public authoring entrypoint", () => {
-    const globalState = (Authoring as unknown as {
-      readonly globalState?: {
-        get<T>(key: string): Promise<T | undefined>;
-        set(key: string, value: unknown): Promise<void>;
-        update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
-      };
-    }).globalState;
+    const globalState = (
+      Authoring as unknown as {
+        readonly globalState?: {
+          get<T>(key: string): Promise<T | undefined>;
+          set(key: string, value: unknown): Promise<void>;
+          update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
+        };
+      }
+    ).globalState;
 
     expect(globalState?.get).toBeTypeOf("function");
     expect(globalState?.set).toBeTypeOf("function");
@@ -100,12 +103,16 @@ describe("@trailstep/authoring exports", () => {
     >;
     const runnable = invocation satisfies RunnableContinuationNode;
     const array = [runnable] satisfies ContinuationArray;
-    const doneNode = absoluteDone({ value: 1 }) satisfies AbsoluteDoneNode<{
-      readonly value: number;
-    } & Record<string, unknown>>;
+    const continuation = invocation satisfies ContinuationResult;
+    const doneNode = absoluteDone({ value: 1 }) satisfies AbsoluteDoneNode<
+      {
+        readonly value: number;
+      } & Record<string, unknown>
+    >;
     const failNode = absoluteFail({ code: "failed", message: "Failed" }) satisfies AbsoluteFailNode;
 
     expect(isWorkflowInvocationNode(invocation)).toBe(true);
+    expect(isWorkflowInvocationNode(continuation)).toBe(true);
     expect(array).toHaveLength(1);
     expect(isAbsoluteDoneNode(doneNode)).toBe(true);
     expect(isAbsoluteFailNode(failNode)).toBe(true);

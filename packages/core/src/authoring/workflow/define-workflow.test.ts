@@ -8,9 +8,9 @@ import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js"
 import { runWorkflow } from "../../runtime/run-workflow/run-workflow.js";
 import type { ContinuationResult } from "../step/continuation.types.js";
 import { done, isDoneNode, isWorkflowInvocationNode, step } from "../step/step-node.js";
-import type { Workflow } from "./workflow.types.js";
-import { defineWorkflow } from "./define-workflow.js";
 import type { DefinedWorkflow } from "./define-workflow.js";
+import { defineWorkflow } from "./define-workflow.js";
+import type { Workflow } from "./workflow.types.js";
 
 type Input = { value: number };
 type Output = { ok: boolean };
@@ -51,7 +51,10 @@ describe("defineWorkflow", () => {
     expect(typeof workflow).toBe("function");
     expect(workflow.id).toBe("callable-workflow");
     expect(workflow.description).toBe("A callable workflow definition.");
-    expect(workflow.skill).toEqual({ description: "Use this workflow.", instructions: "Return ok." });
+    expect(workflow.skill).toEqual({
+      description: "Use this workflow.",
+      instructions: "Return ok.",
+    });
     expect(workflow.input).toBe(inputSchema);
     expect(workflow.output).toBe(outputSchema);
     expect(workflow.inputShape).toEqual({ value: "number" });

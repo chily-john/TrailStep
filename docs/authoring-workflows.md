@@ -119,14 +119,18 @@ The optional `skill` block customizes generated workflow skill frontmatter and g
 
 ## Core primitives
 
-- `defineWorkflow(...)`: defines the exported workflow boundary.
+- `defineWorkflow(...)`: defines the exported workflow boundary and returns a callable workflow value. Calling that value creates a workflow-invocation continuation.
 - `shape(...)`: validates simple JSON-object inputs/outputs with string, number, and boolean fields.
 - `jsonSchema(...)`: validates richer JSON Schema shapes.
 - `step({ id })`: defines a durable continuation step.
 - `.prompt(...)`: dispatches that step to an agent.
 - `.do(...)`: receives the step output and returns the next continuation.
-- `done(...)`: completes the workflow successfully.
-- `fail(...)`: completes the workflow as a failure without dispatching another step.
+- `done(...)`: completes the current workflow invocation or branch successfully. In a sequential workflow this is also the workflow result.
+- `fail(...)`: completes the current branch as a failure without dispatching another step.
+- `absoluteDone(...)`: completes the entire track successfully and cancels sibling branches. Use this only for exceptional track-wide short-circuiting.
+- `absoluteFail(...)`: fails the entire track and cancels sibling branches.
+- `state`: branch-local durable state for the current continuation path.
+- `globalState`: track-shared durable state for coordination between parallel branches.
 
 ## Working and interactive steps
 
@@ -142,6 +146,47 @@ export const clarifyRequirementsStep = step({ id: "clarify-requirements" })
 ```
 
 Use `trailstep continue` to continue waiting or interrupted interactive work.
+
+## Parallel tracks and callable workflows
+
+`defineWorkflow(...)` returns a callable workflow value. Use the object as the exported workflow definition, or call it from another workflow/step to create a workflow-invocation continuation:
+
+```ts
+return ImplementStoryWorkflow(
+  { storyId: story.id, cwd: input.cwd },
+  {
+    branch: `story-${story.id}`,
+    onDone: (output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }),
+  },
+);
+```
+
+Workflow invocation options currently include:
+
+- `branch?: string`: a requested stable branch name. Persisted branch ids are the ids to use for retry/inspection; when names collide, TrailStep keeps the requested name as `requestedBranchId` metadata and assigns unique persisted branch ids such as `branch-1`.
+- `onDone?: (output) => ContinuationResult`: a follow-up continuation for the same branch when the invoked workflow returns `done(...)`.
+
+A continuation may return an array of runnable branch candidates to split work:
+
+```ts
+return readyStories.map((story) =>
+  ImplementStoryWorkflow({ storyId: story.id }, { branch: `story-${story.id}` }),
+);
+```
+
+Arrays replace the current branch with queued child branches. They are not a reducer/fan-in primitive. Array entries must be runnable step nodes or workflow invocation nodes; return `done(...)`, `fail(...)`, `absoluteDone(...)`, or `absoluteFail(...)` directly instead of placing them in an array.
+
+Normal `done(output)` finishes the current workflow invocation or branch. If a workflow invocation has `onDone`, TrailStep passes the validated output to that callback and continues the same branch. The whole track completes when all branches are terminal unless a failure policy or absolute terminal ends it earlier. Use `absoluteDone(...)` or `absoluteFail(...)` only when one branch should terminate the entire track and cancel siblings.
+
+`state` remains branch-local. Sibling branches do not see each other's `state` values. Use `globalState` for shared coordination:
+
+```ts
+const next = await globalState.update("stories", (current) => claimReadyStory(current));
+```
+
+`globalState.update(...)` is atomic within the running TrailStep scheduler/process, so it is safe for concurrent foreground workers in one command. It is not a cross-daemon or multi-process lock; future daemon/process support may strengthen that scope. Prefer `update(...)` over `get(...)` plus `set(...)` for claims, counters, and other read-modify-write coordination.
+
+TrailStep does not prevent two branches from using the same cwd or editing the same files. Workflow authors remain responsible for avoiding file conflicts, for example by passing distinct cwd/worktree inputs or coordinating through `globalState`.
 
 ## Retry and timeout
 

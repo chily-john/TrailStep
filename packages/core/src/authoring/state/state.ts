@@ -15,7 +15,7 @@ export const state = {
   async set(key: string, value: unknown): Promise<void> {
     const context = currentRunContext();
     await context.state.set(key, value, {
-      persist: context.currentStep?.replay?.kind === "completed-step" ? false : true,
+      persist: context.currentStep?.replay?.kind !== "completed-step",
     });
   },
   get id(): string {

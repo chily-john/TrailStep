@@ -84,7 +84,9 @@ describe("runWorkflow retry", () => {
           stepId: "work",
           type: "step.started",
         }),
-      ].map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      ]
+        .map((persistedEvent) => JSON.stringify(persistedEvent))
+        .join("\n")}\n`,
       "utf8",
     );
 
@@ -152,7 +154,9 @@ describe("runWorkflow retry", () => {
           stepId: "work",
           type: "step.started",
         }),
-      ].map((persistedEvent) => JSON.stringify(persistedEvent)).join("\n")}\n`,
+      ]
+        .map((persistedEvent) => JSON.stringify(persistedEvent))
+        .join("\n")}\n`,
       "utf8",
     );
 

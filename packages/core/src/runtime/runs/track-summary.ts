@@ -81,7 +81,8 @@ async function summarizeBranch(
   const branch = (await readJsonObject(join(runDir, "branches", `${branchId}.json`))) ?? {};
   const branchEvents = events.filter((event) => event.payload.branchId === branchId);
   const latestFailureMessage = selectLatestEventFailureMessage(branchEvents);
-  const latestMessage = latestFailureMessage ?? stringValue(branch.message) ?? selectLatestEventMessage(branchEvents);
+  const latestMessage =
+    latestFailureMessage ?? stringValue(branch.message) ?? selectLatestEventMessage(branchEvents);
   const failure = branch.failure ?? selectLatestEventFailure(branchEvents);
 
   return {

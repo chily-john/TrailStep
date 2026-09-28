@@ -352,9 +352,16 @@ export interface AbsoluteFailNode {
   readonly message?: string;
 }
 
+export interface RunnableWorkflowInvocationNode {
+  readonly kind: "workflowInvocation";
+  readonly workflow: unknown;
+  readonly input: PlainObject;
+  readonly options?: unknown;
+}
+
 export type RunnableContinuationNode =
   | StepNode<PlainObject, PlainObject>
-  | WorkflowInvocationNode<any, any>;
+  | RunnableWorkflowInvocationNode;
 
 export type ContinuationArray = readonly RunnableContinuationNode[];
 
@@ -362,7 +369,7 @@ export type ContinuationResult<TOutput extends PlainObject = PlainObject> =
   | StepNode<PlainObject, PlainObject>
   | DoneNode<TOutput>
   | FailNode
-  | WorkflowInvocationNode<any, any>
+  | RunnableWorkflowInvocationNode
   | AbsoluteDoneNode<TOutput>
   | AbsoluteFailNode
   | ContinuationArray;

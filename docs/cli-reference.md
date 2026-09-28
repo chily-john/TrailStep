@@ -34,8 +34,8 @@ trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--foll
 trailstep continue [--interactive-file <path> | --session-file <path> | --json-file <path> | --json '<json>']
 trailstep cancel <runNameOrRunDir> [--reason '<text>']
 trailstep cancel [--reason '<text>']
-trailstep retry <workflow-ref> <runName>
-trailstep runs
+trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh]
+trailstep runs [--json]
 trailstep doctor
 trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
 ```
@@ -164,7 +164,21 @@ Use TrailStep continuation commands rather than inventing custom resume paths. W
 trailstep continue
 trailstep cancel delegate-run --reason "Need to change requirements"
 trailstep retry project/review failed-run-name
+trailstep retry project/review failed-run-name --failed
+trailstep retry project/review failed-run-name --branch branch-2
+trailstep retry project/review failed-run-name --fresh
 ```
+
+Retry without a filter retries unresolved track work while preserving completed branches where possible. `--failed` retries failed track branches only while preserving cancelled branches, `--branch <branchId>` retries one persisted branch id, and `--fresh` starts a new run from the original root input instead of reusing branch state. Use the persisted `branchId` shown in run summaries/JSON for `--branch`; an invocation `branch` option is a requested name and may appear separately as `requestedBranchId` when TrailStep assigns unique ids.
+
+## List runs
+
+```bash
+trailstep runs
+trailstep runs --json
+```
+
+Human output includes compact parallel-track context such as track status, branch counts, and notable branch statuses. With `--json`, each run summary includes a `track` object when track metadata exists. The track summary contains branch entries with persisted `branchId`, optional `requestedBranchId`, status, workflow id, latest step/message, waits, failures, and outputs where available.
 
 ## Update
 

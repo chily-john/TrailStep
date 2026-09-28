@@ -1,6 +1,6 @@
 # Parallel tracks, callable workflows, and branch-oriented execution
 
-Status: Draft design anchor for the parallel TrailStep implementation work.
+Status: Implementation notes and remaining design anchor. The first implementation is foreground-only and supports root/continuation arrays, callable workflow invocations, branch artifacts, branch retry filters, and in-process global state.
 
 ## Purpose
 
@@ -29,9 +29,20 @@ The target model is not a small fan-out/fan-in helper. `subPrompt(...)` already 
 8. Support retrying the whole track, failed branches, and individual branches without re-running already completed successful branches by default.
 9. Treat storage cleanup at the track level so branch artifacts, state, and event references stay consistent.
 
+## Current implementation limits
+
+- There is no daemon/service. A foreground `trailstep` run/retry/continue command owns scheduling only while that command is running.
+- Scheduling is foreground and worker-pool based. A waiting, failed, cancelled, or absolute-terminal branch currently terminalizes the track under fail-fast semantics rather than letting all other active branches continue indefinitely.
+- Continuation arrays are accepted only when every array entry is a runnable step node or workflow invocation node. Arrays containing `done(...)`, `fail(...)`, `absoluteDone(...)`, or `absoluteFail(...)` are rejected. Return those nodes directly instead.
+- Nested workflow invocations are supported inside a branch, including `onDone`, but branch spawning still uses persisted branch metadata and deterministic generated branch ids rather than making requested `branch` names authoritative.
+- Retry filters support default unresolved-work retry, `--failed`, `--branch <branchId>`, and `--fresh`. Branch-specific retry requires a persisted branch id from branch metadata; requested branch names are recorded as `requestedBranchId` only.
+- `globalState.update(...)` is atomic inside the in-process scheduler/queued run context. It is not yet a daemon-safe or cross-process file lock contract.
+- Events remain the existing workflow/step event stream. Branch metadata is currently added to relevant step events, and `track.json` plus `branches/*.json` provide branch status/outputs; dedicated `track.*`/`branch.*` lifecycle event names are not emitted yet.
+- No implicit file conflict prevention. Authors remain responsible for coordinating cwd/file overlap.
+
 ## Non-goals for the first implementation wave
 
-- No background daemon/service in the initial implementation. The scheduler should be driven by a foreground command such as `trailstep <workflow> ... --follow` or existing run/retry/continue commands.
+- No background daemon/service in the initial implementation. The scheduler is driven by foreground run/retry/continue commands.
 - No implicit file conflict prevention. Authors remain responsible for coordinating cwd/file overlap. TrailStep may provide optional worktree helpers, locks, and clear documentation, but concurrent mutation conflicts are not prevented by default.
 - No mandatory fan-in node. Authors can build fan-in workflows if they want, but arrays of continuations should not imply a reducer-style parent step.
 - No special root-output behavior. Track output should aggregate all terminal branch outcomes; users can build a root-controller workflow if they want root-specific semantics.
@@ -140,13 +151,13 @@ globalState.set(key: string, value: unknown): Promise<void>;
 globalState.update<T>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
 ```
 
-`update(...)` must be atomic across concurrent workers. Design it with future daemon/process concurrency in mind, even if the first scheduler is foreground-only. File locks or a single scheduler-owned mutation queue are acceptable initially if the artifact shape can evolve to process locks later.
+`update(...)` is atomic across concurrent workers in the current foreground scheduler through the queued in-process run context. Design future daemon/process concurrency as a stronger contract; do not assume today's implementation is a cross-process lock.
 
 Story-claiming workflows should use `globalState.update(...)`, not `get` + `set`, to avoid duplicate branch claims.
 
 ## Runtime and scheduler semantics
 
-The current runtime loop should evolve into a foreground scheduler that owns a track while a command is running.
+The current runtime loop has evolved into a foreground scheduler that owns a track while a command is running; there is still no background daemon.
 
 Scheduler responsibilities:
 
@@ -184,24 +195,14 @@ A future daemon can allow other branches to keep running while one branch waits,
 
 The user and parent agent need one clean view of active work. Add branch-aware event payloads and terminal output support.
 
-Suggested event concepts:
+Actual first implementation event strategy:
 
-- `track.started`
-- `track.completed`
-- `track.failed`
-- `track.cancelled`
-- `branch.queued`
-- `branch.started`
-- `branch.completed`
-- `branch.failed`
-- `branch.cancelled`
-- `workflow.invoked`
-- `workflow.invocationCompleted`
-- `workflow.invocationFailed`
+- Existing `workflow.started`, `workflow.retryStarted`, `step.started`, `step.completed`, `workflow.completed`, and `workflow.failed` events remain the compatibility surface.
+- Parallel execution persists track/branch state in `track.json` and `branches/<branchId>.json`.
+- `step.started` and `step.completed` events for split branches are decorated with `payload.trackId`, `payload.branchId`, optional `payload.requestedBranchId`, and branch-local step artifact fields.
+- Dedicated `track.*`, `branch.*`, and `workflow.invocation*` events are still design candidates, not current emitted events.
 
-Compatibility note: existing `workflow.started`, `step.started`, `step.completed`, etc. can remain for single-branch workflows. The branch/track events can be additive. If event schema changes are broad, maintain old event names for existing CLI/tests and add branch metadata in payloads.
-
-The terminal/watch view should summarize:
+`trailstep runs` and `trailstep runs --json` summarize persisted track metadata. A richer terminal/watch view could summarize:
 
 ```text
 Track: create-flows-123
@@ -213,7 +214,7 @@ Branches
   story-storage           failed     Provider usage limit
 ```
 
-For each branch, display the latest useful message from events such as `step.display`, `step.progress`, `step.warning`, `workflow.invocationCompleted`, or terminal output messages.
+Current run summaries combine branch records with branch-decorated step events to show latest branch status/message/failure/output where available. Dedicated branch display/progress event correlation remains future work.
 
 ## Track output
 
@@ -269,20 +270,20 @@ Persist at minimum per branch:
 
 Retry modes:
 
-- `trailstep retry <trackId>`: retry incomplete/failed/interrupted work while preserving successful branch outputs by default.
-- `trailstep retry <trackId> --failed`: retry only failed branches.
-- `trailstep retry <trackId> --branch <branchId>`: retry one branch.
-- `trailstep retry <trackId> --fresh`: start a new track from the original root input.
+- `trailstep retry <workflow-ref> <runName>`: retry unresolved track work while preserving successful branch outputs by default.
+- `trailstep retry <workflow-ref> <runName> --failed`: retry failed branches only while preserving cancelled branches.
+- `trailstep retry <workflow-ref> <runName> --branch <branchId>`: retry one persisted branch id.
+- `trailstep retry <workflow-ref> <runName> --fresh`: start a new run/track from the original root input.
 
 Avoid blindly restarting all live branches. Completed branches should stay completed unless the user requests a fresh retry or explicitly selects them.
 
-Replay rule for branch spawning: when a branch returns an array, the spawned branches must get stable identities so retry/resume does not duplicate them. Use explicit `branch` option when provided. Otherwise derive deterministic branch ids from parent branch id, step id/index, array ordinal, and a fingerprint of the returned task.
+Replay rule for branch spawning: when a branch returns an array, the spawned branches must get stable identities so retry/resume does not duplicate them. The current implementation records explicit `branch` options as `requestedBranchId` metadata and assigns unique persisted ids (`root`, `branch-1`, `branch-2`, ...). Retry and summaries use the persisted ids.
 
 ## Storage layout and cleanup
 
 Track should be the cleanup unit. Do not delete branch artifacts independently unless a future compactor can rewrite references safely.
 
-A possible layout:
+Current layout uses a track-level run directory:
 
 ```text
 .trailstep/runs/<trackId>/
@@ -290,15 +291,14 @@ A possible layout:
   events.jsonl
   global-state.json
   branches/
-    <branchId>/
-      branch.json
-      state.json
-      steps/
-      artifacts/
-  locks/
-  outputs/
-    track-output.json
+    <branchId>.json
+    <branchId>.state.json
+  steps/
+    <artifactStepId>/
+  artifacts/
 ```
+
+Future layouts may add per-branch subdirectories, locks, or output indexes if compaction/daemon support requires them.
 
 The exact layout can vary, but it must support:
 

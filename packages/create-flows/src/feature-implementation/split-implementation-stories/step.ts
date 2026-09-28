@@ -1,5 +1,9 @@
 import { type Document, document, fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
+import {
+  planningCheckpointStep,
+  shouldPauseForPlanningCheckpoint,
+} from "../planning-checkpoint/step.js";
 import { STORY_BOUNDARY, STORY_CONTEXT_END, STORY_CONTEXT_START } from "../shared/constants.js";
 import {
   resetStoryLocalState,
@@ -7,10 +11,6 @@ import {
   type StoryPhaseContexts,
   type StoryRoutedContextPhase,
 } from "../shared/story-state.js";
-import {
-  planningCheckpointStep,
-  shouldPauseForPlanningCheckpoint,
-} from "../planning-checkpoint/step.js";
 import { storyRouterStep } from "../story-router/step.js";
 import {
   type ParsedStoryContextBlock,
@@ -24,7 +24,10 @@ export interface SplitImplementationStoriesInput extends Record<string, unknown>
 }
 
 export const splitImplementationStoriesStep = step({ id: "split-implementation-stories" }).do(
-  async ({ featureDoc, implementationDoc }: SplitImplementationStoriesInput): Promise<ContinuationResult> => {
+  async ({
+    featureDoc,
+    implementationDoc,
+  }: SplitImplementationStoriesInput): Promise<ContinuationResult> => {
     const contextStartCount = countStandaloneMarkerLines(
       implementationDoc.content,
       STORY_CONTEXT_START,
@@ -64,7 +67,9 @@ export const splitImplementationStoriesStep = step({ id: "split-implementation-s
       .slice(1) // drop overview-only text before the first boundary
       .map((chunk) => chunk.trim())
       .filter((chunk) => chunk.length > 0);
-    const storyContexts = chunks.map((chunk) => buildStoryPhaseContexts(parsedContextBlocks, chunk));
+    const storyContexts = chunks.map((chunk) =>
+      buildStoryPhaseContexts(parsedContextBlocks, chunk),
+    );
 
     if (chunks.length === 0) {
       return fail({

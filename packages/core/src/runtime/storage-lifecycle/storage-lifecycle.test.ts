@@ -286,11 +286,7 @@ async function writeTrackArtifacts(runsRoot: string, runId: string): Promise<voi
     '{"branchId":"branch-1","status":"done"}\n',
     "utf8",
   );
-  await writeFile(
-    join(runDir, "branches", "branch-1.state.json"),
-    '{"claimed":true}\n',
-    "utf8",
-  );
+  await writeFile(join(runDir, "branches", "branch-1.state.json"), '{"claimed":true}\n', "utf8");
   await writeFile(join(runDir, "steps", "0001-branch-step", "document-1.md"), "done", "utf8");
 }
 

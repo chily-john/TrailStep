@@ -7,7 +7,11 @@ import { main } from "../../../index.js";
 
 describe("runs command", () => {
   it("prints compact branch status context for parallel track runs", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-trailstep-runs-command-tests", `${task.id}-parallel-human`);
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-runs-command-tests",
+      `${task.id}-parallel-human`,
+    );
     await writeParallelTrackFixture(cwd);
     const lines: string[] = [];
 
@@ -27,7 +31,11 @@ describe("runs command", () => {
   });
 
   it("emits structured branch summaries for parallel track runs as json", async ({ task }) => {
-    const cwd = join("node_modules", ".tmp-trailstep-runs-command-tests", `${task.id}-parallel-json`);
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-runs-command-tests",
+      `${task.id}-parallel-json`,
+    );
     await writeParallelTrackFixture(cwd);
     const lines: string[] = [];
 

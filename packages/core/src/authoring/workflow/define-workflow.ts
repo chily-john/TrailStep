@@ -1,9 +1,6 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type { WorkflowInvocationOptions } from "../step/continuation.types.js";
-import type {
-  DefinedWorkflow,
-  WorkflowBuilderOptions,
-} from "./workflow.types.js";
+import type { DefinedWorkflow, WorkflowBuilderOptions } from "./workflow.types.js";
 
 export type { DefinedWorkflow, WorkflowBuilderOptions } from "./workflow.types.js";
 

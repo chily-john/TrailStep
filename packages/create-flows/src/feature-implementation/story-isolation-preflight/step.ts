@@ -188,9 +188,11 @@ async function loadRecordedBaseline(): Promise<string | null> {
 async function loadPersistedRecordedBaseline(): Promise<string | null> {
   return (
     (await state.getPersisted<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
-    (await state.getPersisted<{ readonly commit?: string } | null>(
-      STORY_STATE_KEYS.activeStoryStartCommit,
-    ))?.commit ??
+    (
+      await state.getPersisted<{ readonly commit?: string } | null>(
+        STORY_STATE_KEYS.activeStoryStartCommit,
+      )
+    )?.commit ??
     null
   );
 }

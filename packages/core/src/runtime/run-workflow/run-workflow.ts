@@ -230,6 +230,14 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }),
       );
     } else if (isWaitContinue) {
+      if (await hasSupportedRootParallelTrackRetryMetadata(runDir)) {
+        return failResumeValidation({
+          code: "continue_parallel_track_unsupported",
+          message:
+            "Continuing a waiting parallel track is not yet supported; retry the run or restart the workflow instead.",
+        });
+      }
+
       const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
         replayToWaitingStep({
           workflow: options.workflow,

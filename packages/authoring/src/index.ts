@@ -5,6 +5,7 @@ export type {
   CheckWaitContext,
   CheckWaitHelpers,
   ContinuationArray,
+  ContinuationResult,
   DeepReadonly,
   DisplayPhase,
   DoPhase,
@@ -57,9 +58,9 @@ export type {
   WorkflowSkillOptions,
 } from "@trailstep/core";
 export {
-  Document,
   absoluteDone,
   absoluteFail,
+  Document,
   document,
   done,
   fail,

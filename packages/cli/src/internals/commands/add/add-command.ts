@@ -17,6 +17,11 @@ import {
   promptText,
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
+import {
+  type RecommendedConfigPlan,
+  mergeRecommendedConfig,
+  readRecommendedConfigPlanFromPackageJsonFile,
+} from "../../recommended-config/recommended-config.js";
 import { workflowPackageInstallRootForScope } from "../../workflow-packages/install-root.js";
 import {
   type InstalledNpmWorkflowPackage,
@@ -392,12 +397,6 @@ function reportDryRunRegistrationPlan(
   }
 }
 
-interface RecommendedConfigPlan {
-  readonly packageName: string;
-  readonly agents: Record<string, unknown>;
-  readonly workflows: Record<string, unknown>;
-}
-
 async function applyRecommendedConfigForPreparedSource(
   preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
   scope: WorkflowRegistryScope,
@@ -453,34 +452,7 @@ async function buildRecommendedConfigPlanForPreparedSource(
   if (packageJsonPath === undefined) {
     return undefined;
   }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as unknown;
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-  if (!isRecord(parsed) || !isRecord(parsed.trailstep)) {
-    return undefined;
-  }
-  const recommendedConfig = parsed.trailstep.recommendedConfig;
-  if (!isRecord(recommendedConfig)) {
-    return undefined;
-  }
-
-  const packageName =
-    typeof parsed.name === "string" && parsed.name.trim().length > 0
-      ? parsed.name
-      : preparedSource.source;
-  const agents = isRecord(recommendedConfig.agents) ? recommendedConfig.agents : {};
-  const workflows = isRecord(recommendedConfig.workflows) ? recommendedConfig.workflows : {};
-  if (Object.keys(agents).length === 0 && Object.keys(workflows).length === 0) {
-    return undefined;
-  }
-  return { packageName, agents, workflows };
+  return readRecommendedConfigPlanFromPackageJsonFile(packageJsonPath, preparedSource.source);
 }
 
 function packageJsonPathForPreparedSource(
@@ -503,82 +475,6 @@ function packageJsonPathForPreparedSource(
     ...preparedSource.source.split("/"),
     "package.json",
   );
-}
-
-function mergeRecommendedConfig(
-  config: Record<string, unknown>,
-  plan: RecommendedConfigPlan,
-): {
-  readonly config: Record<string, unknown>;
-  readonly addedAgents: readonly string[];
-  readonly addedWorkflowRoles: readonly string[];
-  readonly conflicts: readonly string[];
-} {
-  const agents = toMutableRecord(config.agents);
-  const workflows = toMutableWorkflowConfigRecord(config.workflows);
-  const addedAgents: string[] = [];
-  const addedWorkflowRoles: string[] = [];
-  const conflicts: string[] = [];
-
-  for (const [agentName, recommendedAgent] of Object.entries(plan.agents)) {
-    const existingAgent = agents[agentName];
-    if (existingAgent === undefined) {
-      agents[agentName] = recommendedAgent;
-      addedAgents.push(agentName);
-      continue;
-    }
-    if (!jsonEqual(existingAgent, recommendedAgent)) {
-      conflicts.push(
-        `${plan.packageName} agents.${agentName} already exists; leaving existing value unchanged.`,
-      );
-    }
-  }
-
-  for (const [workflowId, recommendedWorkflow] of Object.entries(plan.workflows)) {
-    if (!isRecord(recommendedWorkflow)) {
-      continue;
-    }
-    const recommendedAgents = isRecord(recommendedWorkflow.agents)
-      ? recommendedWorkflow.agents
-      : {};
-    if (Object.keys(recommendedAgents).length === 0) {
-      continue;
-    }
-    const workflowConfig = toMutableRecord(workflows[workflowId]);
-    const workflowAgents = toMutableRecord(workflowConfig.agents);
-    for (const [roleName, recommendedRoleTargets] of Object.entries(recommendedAgents)) {
-      const existingRoleTargets = workflowAgents[roleName];
-      if (existingRoleTargets === undefined) {
-        workflowAgents[roleName] = recommendedRoleTargets;
-        addedWorkflowRoles.push(`${workflowId}.${roleName}`);
-        continue;
-      }
-      if (!jsonEqual(existingRoleTargets, recommendedRoleTargets)) {
-        conflicts.push(
-          `${plan.packageName} workflows.${workflowId}.agents.${roleName} already exists; leaving existing value unchanged.`,
-        );
-      }
-    }
-    workflows[workflowId] = { ...workflowConfig, agents: workflowAgents };
-  }
-
-  const nextConfig: Record<string, unknown> = { ...config };
-  if (Object.keys(agents).length > 0) {
-    nextConfig.agents = agents;
-  }
-  if (Object.keys(workflows).length > 0) {
-    nextConfig.workflows = workflows;
-  }
-
-  return { config: nextConfig, addedAgents, addedWorkflowRoles, conflicts };
-}
-
-function toMutableWorkflowConfigRecord(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? { ...value } : {};
-}
-
-function jsonEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 type AddRegistrationPlan =

@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { type CliCommand, type CliCommandContext, CliUsageError } from "../../command.types.js";
 import { formatDeprecationFinding } from "../../deprecation-scan/deprecation-formatter.js";
 import {
@@ -13,6 +15,10 @@ import {
   rewritePackageJsonDependencies,
 } from "../../package-manager/package-json-rewrite.js";
 import {
+  mergeRecommendedConfig,
+  readRecommendedConfigPlanFromPackageJsonFile,
+} from "../../recommended-config/recommended-config.js";
+import {
   defaultPackageCommandRunner,
   detectPackageManager,
 } from "../../package-manager/package-manager.js";
@@ -20,6 +26,13 @@ import {
   findStaleTrackedPackagedTrailStepSkillInstallations,
   refreshTrackedPackagedTrailStepSkills,
 } from "../../trailstep-skill/trailstep-skill.js";
+import { workflowPackageInstallRootForMetadata } from "../../workflow-packages/install-root.js";
+import {
+  configPathForScope,
+  listRegisteredWorkflowEntries,
+  readRawTrailStepConfigFile,
+  writeRawTrailStepConfigFile,
+} from "../../workflow-registry/workflow-registry.js";
 import {
   type GlobalCliUpdatePlan,
   resolveGlobalCliUpdateTarget,
@@ -102,13 +115,35 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         context.io.writeLine(skip.message);
       }
 
+      const recommendedConfigApplications = await planRecommendedConfigApplications(context);
+      const hasRecommendedConfigAdditions = recommendedConfigApplications.some(
+        (application) =>
+          application.addedAgents.length > 0 || application.addedWorkflowRoles.length > 0,
+      );
+      for (const application of recommendedConfigApplications) {
+        if (application.addedAgents.length > 0 || application.addedWorkflowRoles.length > 0) {
+          context.io.writeLine(
+            `Planned recommended config additions from ${application.packageName}: add ${application.addedAgents.length} agent(s), ${application.addedWorkflowRoles.length} workflow role mapping(s).`,
+          );
+        }
+        for (const conflict of application.conflicts) {
+          context.io.writeError(`Warning: recommended config conflict: ${conflict}`);
+        }
+      }
+
       const staleSkillInstallations =
         await findStaleTrackedPackagedTrailStepSkillInstallations(context);
       const hasGlobalCliChanges = (globalCliPlan?.targets.length ?? 0) > 0;
       const hasSelfChanges = (selfPlan?.targets.length ?? 0) > 0;
       const hasWorkflowChanges = workflowTargetsToApply.length > 0;
       const hasSkillChanges = staleSkillInstallations.length > 0;
-      if (!hasGlobalCliChanges && !hasSelfChanges && !hasWorkflowChanges && !hasSkillChanges) {
+      if (
+        !hasGlobalCliChanges &&
+        !hasSelfChanges &&
+        !hasWorkflowChanges &&
+        !hasSkillChanges &&
+        !hasRecommendedConfigAdditions
+      ) {
         context.io.writeLine(noChangesMessage(args, globalCliPlan, selfPlan, workflowPlan));
         return 0;
       }
@@ -154,6 +189,8 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       });
       const confirmed = await confirmUpdate(args, context, {
         hasPackageChanges: hasGlobalCliChanges || hasSelfChanges || hasWorkflowChanges,
+        hasSkillChanges,
+        hasRecommendedConfigAdditions,
       });
       if (!confirmed) {
         context.io.writeLine("Update cancelled.");
@@ -209,6 +246,17 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       if (hasSkillChanges || hasGlobalCliChanges) {
         await refreshTrailStepSkillsAfterUpdate(context);
       }
+      if (hasRecommendedConfigAdditions) {
+        for (const application of recommendedConfigApplications) {
+          if (application.addedAgents.length === 0 && application.addedWorkflowRoles.length === 0) {
+            continue;
+          }
+          await writeRawTrailStepConfigFile(application.configPath, application.nextConfig);
+          context.io.writeLine(
+            `Applied recommended config from ${application.packageName}: added ${application.addedAgents.length} agent(s), ${application.addedWorkflowRoles.length} workflow role mapping(s).`,
+          );
+        }
+      }
       context.io.writeLine("Update complete.");
       return 0;
     } catch (error) {
@@ -226,6 +274,74 @@ interface CollectPreflightFindingsOptions {
   readonly context: CliCommandContext;
   readonly selfPlan?: TrailStepSelfUpdatePlan;
   readonly workflowPlan?: WorkflowPackageUpdatePlan;
+}
+
+interface RecommendedConfigApplication {
+  readonly packageName: string;
+  readonly configPath: string;
+  readonly addedAgents: readonly string[];
+  readonly addedWorkflowRoles: readonly string[];
+  readonly conflicts: readonly string[];
+  readonly nextConfig: Record<string, unknown>;
+}
+
+/**
+ * Additively re-applies each registered workflow package's `trailstep.recommendedConfig`
+ * (same merge semantics as `add`: missing agents and missing workflow role mappings only,
+ * never overwriting existing values). Conflicts are surfaced as warnings; `doctor` remains
+ * the drift detector for anything left behind.
+ */
+async function planRecommendedConfigApplications(
+  context: CliCommandContext,
+): Promise<readonly RecommendedConfigApplication[]> {
+  const applications: RecommendedConfigApplication[] = [];
+  const seenPackages = new Set<string>();
+  const configByPath = new Map<string, Record<string, unknown>>();
+
+  for (const entry of await listRegisteredWorkflowEntries(context)) {
+    const metadata = entry.packageMetadata;
+    if (metadata === undefined) {
+      continue;
+    }
+    const packageKey = `${metadata.installScope}:${metadata.packageName}`;
+    if (seenPackages.has(packageKey)) {
+      continue;
+    }
+    seenPackages.add(packageKey);
+
+    const packageJsonPath = join(
+      workflowPackageInstallRootForMetadata(metadata, context),
+      "node_modules",
+      ...metadata.packageName.split("/"),
+      "package.json",
+    );
+    const plan = await readRecommendedConfigPlanFromPackageJsonFile(
+      packageJsonPath,
+      metadata.packageName,
+    );
+    if (plan === undefined) {
+      continue;
+    }
+
+    const configPath = configPathForScope(metadata.installScope, context);
+    let config = configByPath.get(configPath);
+    if (config === undefined) {
+      config = await readRawTrailStepConfigFile(configPath);
+      configByPath.set(configPath, config);
+    }
+    const merge = mergeRecommendedConfig(config, plan);
+    configByPath.set(configPath, merge.config);
+    applications.push({
+      packageName: plan.packageName,
+      configPath,
+      addedAgents: merge.addedAgents,
+      addedWorkflowRoles: merge.addedWorkflowRoles,
+      conflicts: merge.conflicts,
+      nextConfig: merge.config,
+    });
+  }
+
+  return applications;
 }
 
 async function collectPreflightFindings({
@@ -395,7 +511,11 @@ function noChangesMessage(
 async function confirmUpdate(
   args: UpdateCommandArgs,
   context: CliCommandContext,
-  plan: { readonly hasPackageChanges: boolean },
+  plan: {
+    readonly hasPackageChanges: boolean;
+    readonly hasSkillChanges: boolean;
+    readonly hasRecommendedConfigAdditions: boolean;
+  },
 ): Promise<boolean> {
   if (args.assumeYes) {
     return true;
@@ -408,7 +528,9 @@ async function confirmUpdate(
   return context.prompts.confirm(
     plan.hasPackageChanges
       ? "Apply package updates and run install?"
-      : "Refresh tracked TrailStep skills?",
+      : plan.hasSkillChanges
+        ? "Refresh tracked TrailStep skills?"
+        : "Apply recommended config additions?",
   );
 }
 

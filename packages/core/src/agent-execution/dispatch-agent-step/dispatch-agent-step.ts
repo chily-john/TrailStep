@@ -134,6 +134,21 @@ export async function dispatchAgentStep(options: {
         cwd: options.cwd,
         runner: options.workingAgentProcessRunner,
         providerWorkingRunner: options.providerWorkingRunner,
+        onTargetAttempt: async (target) => {
+          await options.emit(
+            createEvent({
+              runId: options.runId,
+              workflowId: options.workflowId,
+              stepId: config.id,
+              type: "step.progress",
+              payload: {
+                message: `agent ${resolvedRole.roleName} via ${target.provider}${
+                  target.model === undefined ? "" : ` ${target.model}`
+                }`,
+              },
+            }),
+          );
+        },
         stepIndex: options.stepIndex,
         signal: options.signal,
       })

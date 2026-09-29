@@ -44,12 +44,18 @@ describe("public package positioning", () => {
     });
     expect(packageJson.trailstep?.recommendedConfig).toMatchObject({
       agents: {
-        "orchestrator-planner": [{ provider: "pi" }],
-        "relentless-debugger": [{ provider: "pi" }],
+        generalist: [
+          { provider: "pi", model: "openrouter/meta/muse-spark-1.3" },
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
+        ],
+        planner: [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        explorer: [{ provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731" }],
+        "smart-implementor": [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        fixer: [{ ref: "debugger" }],
       },
       workflows: {
         "take-it-away": { agents: { storyImplementer: [{ ref: "smart-implementor" }] } },
-        "grill-it-away": { agents: { grillingAgent: [{ ref: "orchestrator-planner" }] } },
+        "grill-it-away": { agents: { grillingAgent: [{ ref: "planner" }] } },
       },
     });
 

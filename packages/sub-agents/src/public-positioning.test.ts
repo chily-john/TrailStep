@@ -52,11 +52,18 @@ describe("public package positioning", () => {
     });
     expect(packageJson.trailstep?.recommendedConfig).toMatchObject({
       agents: {
-        "simple-explore": [{ provider: "pi" }],
-        "smart-implementor": [{ provider: "pi" }],
-        fixer: [{ ref: "relentless-debugger" }],
+        generalist: [
+          { provider: "pi", model: "openrouter/meta/muse-spark-1.3" },
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
+        ],
+        explorer: [{ provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731" }],
+        "quick-implementor": [{ provider: "pi", model: "openrouter/z-ai/glm-5.3-flash" }],
+        "smart-implementor": [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        fixer: [{ ref: "debugger" }],
       },
       workflows: {
+        delegate: { agents: { delegateAgent: [{ ref: "smart-implementor" }] } },
+        delegateExplore: { agents: { delegateAgent: [{ ref: "explorer" }] } },
         delegateSmartImplementor: { agents: { delegateAgent: [{ ref: "smart-implementor" }] } },
       },
     });

@@ -1,7 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 
 import { resolveAgentTargets } from "../../agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
-import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
+import type {
+  TrailStepAgentTarget,
+  TrailStepConfig,
+} from "../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../authoring/step/agent-step.types.js";
 import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
@@ -32,6 +35,8 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly providerWorkingRunner?: ProviderWorkingRunner;
+  /** Called with the selected target immediately before each target attempt runs. */
+  readonly onTargetAttempt?: (target: TrailStepAgentTarget) => void | Promise<void>;
   readonly stepIndex: number;
   readonly files?: WorkingAgentFiles;
   readonly signal?: AbortSignal;
@@ -65,6 +70,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   const failures: WorkingAgentAttemptFailure[] = [];
 
   for (const target of targets) {
+    await options.onTargetAttempt?.(target);
     try {
       return await runWorkingAgentTargetAttempt({ ...options, target, files });
     } catch (error) {

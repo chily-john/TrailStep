@@ -491,6 +491,176 @@ describe("updateCommand", () => {
     ).toContain("@acme/workflows#release");
   });
 
+  it("re-applies missing package recommendedConfig additively and warns on conflicts", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        agents: { reviewer: [{ provider: "claude" }] },
+        workflows: {
+          project: { release: "@acme/workflows#release" },
+          release: { agents: { delegateAgent: [{ ref: "expert" }] } },
+        },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: { release: "./dist/release.mjs#releaseWorkflow" },
+          recommendedConfig: {
+            agents: {
+              reviewer: [{ provider: "pi", model: "glm" }],
+              planner: [{ provider: "pi", model: "mimo" }],
+            },
+            workflows: {
+              release: {
+                agents: {
+                  delegateAgent: [{ ref: "planner" }],
+                  slicer: [{ ref: "planner" }],
+                },
+              },
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--project", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestWorkflowPackage,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    expect(errors.join("\n")).toContain(
+      "Warning: recommended config conflict: @acme/workflows agents.reviewer already exists; leaving existing value unchanged.",
+    );
+    expect(errors.join("\n")).toContain(
+      "Warning: recommended config conflict: @acme/workflows workflows.release.agents.delegateAgent already exists; leaving existing value unchanged.",
+    );
+    const config = JSON.parse(
+      await readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
+    ) as {
+      agents?: Record<string, unknown>;
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.agents?.reviewer).toEqual([{ provider: "claude" }]);
+    expect(config.agents?.planner).toEqual([{ provider: "pi", model: "mimo" }]);
+    expect(config.workflows?.project?.release).toBe("@acme/workflows#release");
+    expect((config.workflows?.release?.agents as Record<string, unknown>).delegateAgent).toEqual([
+      { ref: "expert" },
+    ]);
+    expect((config.workflows?.release?.agents as Record<string, unknown>).slicer).toEqual([
+      { ref: "planner" },
+    ]);
+  });
+
+  it("warns about recommended config conflicts without rewriting config when nothing is missing", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    const configJson = JSON.stringify({
+      agents: {
+        reviewer: [{ provider: "claude" }],
+        planner: [{ provider: "pi", model: "mimo" }],
+      },
+      workflows: {
+        project: { release: "@acme/workflows#release" },
+        release: {
+          agents: {
+            delegateAgent: [{ ref: "expert" }],
+            slicer: [{ ref: "planner" }],
+          },
+        },
+      },
+      workflowMetadata: {
+        project: {
+          release: workflowPackageMetadata({
+            workflowName: "release",
+            exportName: "releaseWorkflow",
+          }),
+        },
+      },
+    });
+    await writeFile(join(cwd, ".trailstep", "config.json"), configJson, "utf8");
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: { release: "./dist/release.mjs#releaseWorkflow" },
+          recommendedConfig: {
+            agents: {
+              reviewer: [{ provider: "pi", model: "glm" }],
+              planner: [{ provider: "pi", model: "mimo" }],
+            },
+            workflows: {
+              release: {
+                agents: {
+                  delegateAgent: [{ ref: "planner" }],
+                  slicer: [{ ref: "planner" }],
+                },
+              },
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--project", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestWorkflowPackage,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).not.toContain("Applied recommended config");
+    expect(errors.join("\n")).toContain("Warning: recommended config conflict");
+    expect(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")).toBe(configJson);
+  });
+
   it("blocks updating a registered bundle workflow when another workflow in the bundle has a blocking finding", async ({
     task,
   }) => {

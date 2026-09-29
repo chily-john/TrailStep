@@ -29,11 +29,13 @@ trailstep agents rename <old> <new> --scope <local|project|global>
 trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]
 trailstep remove <namespace>/<name> [--scope <local|project|global>]
 trailstep workflows
-trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
+trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]
+trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--follow | --no-follow]
 trailstep continue [--interactive-file <path> | --session-file <path> | --json-file <path> | --json '<json>']
+trailstep cancel <runNameOrRunDir> [--reason '<text>']
 trailstep cancel [--reason '<text>']
-trailstep retry <workflow-ref> <runName>
-trailstep runs
+trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh]
+trailstep runs [--json]
 trailstep doctor
 trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
 ```
@@ -109,6 +111,7 @@ TrailStep accepts direct refs, registered refs, and bundle refs:
 
 ```bash
 trailstep ./workflow.ts#reviewWorkflow --input-file input.json
+printf '%s\n' '{"request":"review this"}' | trailstep ./workflow.ts#reviewWorkflow --input-file -
 trailstep ./workflows#takeItAway
 trailstep project/review
 trailstep global/cleanup
@@ -142,15 +145,41 @@ trailstep remove project/review --scope project
 
 Removal deletes the registration and only uninstalls orphaned TrailStep-owned package installs. User-owned installs, still-referenced packages, and missing or stale metadata are preserved.
 
+## Watch run events
+
+Watch streams `.trailstep/runs/<run>/events.jsonl` from the beginning and follows by default until a terminal workflow event or pending wait is observed:
+
+```bash
+trailstep watch delegate-run
+trailstep watch delegate-run --jsonl
+trailstep watch .trailstep/runs/delegate-run --no-follow
+```
+
+Use `--jsonl` for parent agents that need machine-readable live events. `--json` is also accepted and emits one compact event JSON object per line.
+
 ## Continue, cancel, and retry
 
-Use TrailStep continuation commands rather than inventing custom resume paths:
+Use TrailStep continuation commands rather than inventing custom resume paths. Workflow cancellation writes `.trailstep/runs/<run>/cancel.json`; continuing a cancelled run reports it without resuming work. With no run target, `trailstep cancel` cancels the active interactive session named by `TRAILSTEP_INTERACTIVE_FILE`.
 
 ```bash
 trailstep continue
-trailstep cancel --reason "Need to change requirements"
+trailstep cancel delegate-run --reason "Need to change requirements"
 trailstep retry project/review failed-run-name
+trailstep retry project/review failed-run-name --failed
+trailstep retry project/review failed-run-name --branch branch-2
+trailstep retry project/review failed-run-name --fresh
 ```
+
+Retry without a filter retries unresolved track work while preserving completed branches where possible. `--failed` retries failed track branches only while preserving cancelled branches, `--branch <branchId>` retries one persisted branch id, and `--fresh` starts a new run from the original root input instead of reusing branch state. Use the persisted `branchId` shown in run summaries/JSON for `--branch`; an invocation `branch` option is a requested name and may appear separately as `requestedBranchId` when TrailStep assigns unique ids.
+
+## List runs
+
+```bash
+trailstep runs
+trailstep runs --json
+```
+
+Human output includes compact parallel-track context such as track status, branch counts, and notable branch statuses. With `--json`, each run summary includes a `track` object when track metadata exists. The track summary contains branch entries with persisted `branchId`, optional `requestedBranchId`, status, workflow id, latest step/message, waits, failures, and outputs where available.
 
 ## Update
 

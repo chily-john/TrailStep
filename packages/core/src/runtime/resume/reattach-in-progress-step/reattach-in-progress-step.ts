@@ -1,4 +1,5 @@
 import type { ContinuationResult } from "../../../authoring/step/continuation.types.js";
+import { firstPromptPhase, getStepPhases } from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.js";
@@ -127,7 +128,8 @@ export async function reattachInProgressStep<
     stepIndex,
   });
 
-  const outputSchema = resolveStepOutputSchema(node.config);
+  const promptPhase = firstPromptPhase(getStepPhases(node));
+  const outputSchema = promptPhase ? resolveStepOutputSchema(promptPhase) : undefined;
   if (!outputSchema) {
     return {
       status: "failure",
@@ -148,9 +150,9 @@ export async function reattachInProgressStep<
   }
 
   const nextNode = await withStepContext(anchor.stepId, artifactPaths.stepDir, async () =>
-    node.onOutput(
+    continueAfterPromptPhase(
+      node,
       outputSchema.assert(reattached.output, `step ${node.config.id} output`),
-      node.config.input,
     ),
   );
 
@@ -236,6 +238,42 @@ async function tryReadCompletedInteractiveOutput(options: {
 
     throw error;
   }
+}
+
+async function continueAfterPromptPhase(
+  stepNode: Extract<ContinuationResult, { kind: "step" }>,
+  promptOutput: PlainObject,
+): Promise<ContinuationResult> {
+  let phaseValue = stepNode.config.input;
+  let consumedPromptOutput = false;
+  let nextNode: ContinuationResult | undefined;
+
+  for (const phase of getStepPhases(stepNode)) {
+    if (phase.kind === "display" || phase.kind === "wait") {
+      continue;
+    }
+
+    if (nextNode !== undefined) {
+      throw new Error(`step ${stepNode.config.id} has executable phases after a do phase`);
+    }
+
+    if (phase.kind === "prompt") {
+      if (consumedPromptOutput) {
+        throw new Error(`step ${stepNode.config.id} cannot reattach multiple prompt phases`);
+      }
+      phaseValue = promptOutput;
+      consumedPromptOutput = true;
+      continue;
+    }
+
+    nextNode = await phase.onOutput(phaseValue, stepNode.config.input);
+  }
+
+  if (nextNode === undefined) {
+    throw new Error(`step ${stepNode.config.id} has no do phase`);
+  }
+
+  return nextNode;
 }
 
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {

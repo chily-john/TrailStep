@@ -9,10 +9,15 @@ export interface TakeItAwayPullRequestInput extends Record<string, unknown> {
   readonly body?: string;
 }
 
+export interface TakeItAwayPlanningCheckpointInput extends Record<string, unknown> {
+  readonly enabled?: boolean;
+}
+
 export interface TakeItAwayInput extends Record<string, unknown> {
   readonly conversation: string;
   readonly autoCommit?: boolean;
   readonly pullRequest?: TakeItAwayPullRequestInput;
+  readonly planningCheckpoint?: TakeItAwayPlanningCheckpointInput;
 }
 
 export interface TakeItAwayPullRequestOptions extends Record<string, unknown> {
@@ -24,9 +29,14 @@ export interface TakeItAwayPullRequestOptions extends Record<string, unknown> {
   readonly body?: string;
 }
 
+export interface TakeItAwayPlanningCheckpointOptions extends Record<string, unknown> {
+  readonly enabled: boolean;
+}
+
 export interface TakeItAwayWorkflowOptions extends Record<string, unknown> {
   readonly autoCommit: boolean;
   readonly pullRequest: TakeItAwayPullRequestOptions;
+  readonly planningCheckpoint: TakeItAwayPlanningCheckpointOptions;
 }
 
 export const takeItAwayInput = jsonSchema<TakeItAwayInput>({
@@ -46,6 +56,13 @@ export const takeItAwayInput = jsonSchema<TakeItAwayInput>({
       },
       additionalProperties: false,
     },
+    planningCheckpoint: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
   },
   required: ["conversation"],
   additionalProperties: false,
@@ -59,6 +76,9 @@ export function defaultTakeItAwayWorkflowOptions(): TakeItAwayWorkflowOptions {
       base: "main",
       remote: "origin",
       draft: false,
+    },
+    planningCheckpoint: {
+      enabled: false,
     },
   };
 }
@@ -78,6 +98,9 @@ export function normalizeTakeItAwayWorkflowOptions(
       draft: input.pullRequest?.draft ?? defaults.pullRequest.draft,
       ...(title === undefined ? {} : { title }),
       ...(body === undefined ? {} : { body }),
+    },
+    planningCheckpoint: {
+      enabled: input.planningCheckpoint?.enabled ?? defaults.planningCheckpoint.enabled,
     },
   };
 }

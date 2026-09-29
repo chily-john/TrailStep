@@ -41,4 +41,17 @@ describe("implementGreenPrompt", () => {
     expect(prompt).not.toContain("SubPrompts");
     expect(prompt).not.toContain("sub-prompt");
   });
+
+  it("includes green scoped implementation context without leaking red-test scoped context", () => {
+    const prompt = implementGreenPrompt({
+      input: {
+        currentStory: activeStory,
+        attempt: 1,
+        implementationContext: "GREEN_CONTEXT_TOKEN",
+      },
+    });
+
+    expect(prompt).toContain("GREEN_CONTEXT_TOKEN");
+    expect(prompt).not.toContain("RED_TEST_CONTEXT_TOKEN");
+  });
 });

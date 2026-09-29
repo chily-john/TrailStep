@@ -21,12 +21,10 @@ import { runInteractiveAgentCommand } from "../interactive-agent/run-interactive
 import { runWorkingAgentCommand } from "../working-agent/run-working-agent-command.js";
 
 /**
- * Runs a `.prompt(...)` step's agent dispatch: resolves the workflow agent
- * role, renders the prompt, and executes it in adapter, working, or
- * interactive mode. Only called when `config.prompt` is defined — a step
- * with no prompt is never dispatched at all (see `runContinuation` in
- * `engine.ts`, which calls `stepNode.onOutput` directly on the step's input
- * in that case).
+ * Runs a prompt phase's agent dispatch: resolves the workflow agent role,
+ * renders the prompt, and executes it in adapter, working, or interactive
+ * mode. Steps with no prompt phase are never dispatched at all; their do
+ * phase receives the step input directly.
  */
 export async function dispatchAgentStep(options: {
   readonly config: ContinuationStepConfig & {
@@ -39,6 +37,7 @@ export async function dispatchAgentStep(options: {
   readonly emit: (event: Event) => Promise<void>;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly runDir: string;
+  readonly projectCwd: string;
   readonly cwd: string;
   readonly trailstepConfig: TrailStepConfig | undefined;
   readonly workingAgentProcessRunner: RunWorkflowOptions["workingAgentProcessRunner"];
@@ -56,7 +55,7 @@ export async function dispatchAgentStep(options: {
     stepId: config.id,
   });
 
-  const renderedPrompt = await resolvePromptSource(config.prompt, config.input, options.cwd);
+  const renderedPrompt = await resolvePromptSource(config.prompt, config.input, options.projectCwd);
   const agentMode = config.mode ?? "working";
 
   const agentStep = {
@@ -100,6 +99,7 @@ export async function dispatchAgentStep(options: {
       stepId: config.id,
       renderedPrompt,
       runDir: options.runDir,
+      cwd: options.cwd,
       runner: options.processRunner,
       outputSchema,
       outputMode: options.interactiveOutputMode,
@@ -156,7 +156,7 @@ export async function dispatchAgentStep(options: {
 
 /**
  * Resolves a step's prompt source to a rendered string. A `promptTemplate(...)`
- * source is read from disk relative to the workflow's `cwd`; a thrown/rejected
+ * source is read from disk relative to the workflow/project `cwd`; a thrown/rejected
  * read propagates up through the same try/catch that already wraps step
  * dispatch, so an unreadable file becomes a normal step failure. Any other
  * source (string or callback) renders synchronously via `renderAgentPrompt`.

@@ -11,6 +11,7 @@ export interface RunContextWorkingAgentProcessRequest {
   readonly promptFile: string;
   readonly outputFile: string;
   readonly model?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface RunContextWorkingAgentProcessResult {
@@ -26,6 +27,7 @@ export interface RunContextProviderWorkingProcessRequest {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface RunContextProviderWorkingProcessResult {
@@ -39,7 +41,13 @@ export type RunContextProviderWorkingRunner = (
 
 export interface RunContextState {
   get<T = unknown>(key: string): Promise<T | undefined>;
-  set(key: string, value: unknown): Promise<void>;
+  getPersisted<T = unknown>(key: string): Promise<T | undefined>;
+  hydratePersisted(): Promise<void>;
+  set(key: string, value: unknown, options?: { readonly persist?: boolean }): Promise<void>;
+}
+
+export interface RunContextGlobalState extends RunContextState {
+  update<T = unknown>(key: string, updater: (current: T | undefined) => T | Promise<T>): Promise<T>;
 }
 
 export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
@@ -51,10 +59,20 @@ export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
     | "workflow.started"
     | "workflow.resumed"
     | "workflow.retryStarted"
+    | "workflow.cancelRequested"
     | "workflow.failed"
+    | "workflow.cancelled"
     | "step.started"
     | "step.completed"
     | "step.failed"
+    | "step.cancelled"
+    | "step.display"
+    | "step.progress"
+    | "step.warning"
+    | "step.artifact"
+    | "wait.started"
+    | "wait.satisfied"
+    | "wait.failed"
     | "subPrompt.started"
     | "subPrompt.completed"
     | "subPrompt.failed"
@@ -73,17 +91,26 @@ export interface RunContext {
   readonly path: string;
   readonly workflowId?: string;
   readonly workflowAgents?: Readonly<Record<string, WorkflowAgentRole>>;
+  /** Root used for workflow/config-relative resolution and default artifact storage. */
+  readonly projectCwd?: string;
+  /** Current execution cwd. In step context this includes any step-level cwd override. */
   readonly cwd?: string;
+  /** Alias for `cwd`, exposed to make execution-vs-project cwd intent explicit. */
+  readonly executionCwd?: string;
   readonly trailstepConfig?: TrailStepConfig;
   readonly workingAgentProcessRunner?: RunContextWorkingAgentProcessRunner;
   readonly providerWorkingRunner?: RunContextProviderWorkingRunner;
   readonly emit?: (event: RunContextEvent) => Promise<void>;
   readonly events?: () => readonly RunContextEvent[];
   readonly state: RunContextState;
+  readonly globalState: RunContextGlobalState;
   readonly currentStep?: {
     readonly id: string;
     readonly dir: string;
     readonly maxSubPrompts?: unknown;
+    readonly cwd?: string;
+    readonly executionCwd?: string;
+    readonly replay?: { readonly kind: "completed-step" };
     nextDocumentIndex(): number;
     nextSubPromptIndex(): number;
   };

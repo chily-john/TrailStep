@@ -351,13 +351,18 @@ describe("updateCommand", () => {
     const config = JSON.parse(
       await readFile(join(homeDir, ".trailstep", "config.json"), "utf8"),
     ) as {
-      skillInstallations: { trailstep: { contentHash: string } };
+      skillInstallations: {
+        trailstep: { contentHash: string };
+        "trailstep-authoring": { contentHash: string };
+      };
     };
     expect(exitCode).toBe(0);
-    expect(lines).toContain("Refreshed tracked TrailStep usage skill installation(s).");
-    expect(skillRuns).toHaveLength(1);
+    expect(lines).toContain("Refreshed tracked TrailStep skill installation(s).");
+    expect(skillRuns).toHaveLength(2);
     expect(skillRuns[0]?.args).toContain("-g");
+    expect(skillRuns[1]?.args).toContain("-g");
     expect(config.skillInstallations.trailstep.contentHash).not.toBe("sha256:old");
+    expect(config.skillInstallations["trailstep-authoring"].contentHash).toMatch(/^sha256:/u);
   });
 
   it("prints a global CLI no-op when the installed CLI is current", async ({ task }) => {

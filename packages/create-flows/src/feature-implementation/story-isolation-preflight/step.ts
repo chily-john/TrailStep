@@ -2,9 +2,10 @@ import type { Document } from "@trailstep/authoring";
 import { fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
 import { runGit } from "../commit-reviewed-story/run-git.js";
-import { exploreStoryStep } from "../explore-story/step.js";
+import { deterministicContextPreflightStep } from "../deterministic-context-preflight/step.js";
 import {
   incrementStoryPhaseAttempt,
+  loadStoryPhaseContext,
   STORY_STATE_KEYS,
   type StoryPreflightStatus,
   type StoryRouterState,
@@ -21,17 +22,28 @@ export const storyIsolationPreflightStep = step({ id: "story-isolation-preflight
       return result.failure;
     }
 
-    await state.set(STORY_STATE_KEYS.activePhase, "explore-story");
-    await incrementStoryPhaseAttempt("explore-story");
-    const implementationContext =
-      (await state.get<string | null>(STORY_STATE_KEYS.activeStoryContext)) ?? undefined;
-    return exploreStoryStep({ currentStory, implementationContext });
+    const implementationContext = await loadStoryPhaseContext("deterministic-context-preflight");
+    return deterministicContextPreflightStep({ currentStory, implementationContext });
   },
 );
 
 export async function runStoryIsolationPreflight(
   currentStory: Document,
 ): Promise<StoryIsolationPreflightResult> {
+  const completedReplay = await loadCompletedReplayPreflightState(currentStory);
+  if (completedReplay) {
+    await state.set(STORY_STATE_KEYS.activePhase, "story-isolation-preflight");
+    await state.set(STORY_STATE_KEYS.storyBaseline, completedReplay.baseline);
+    await state.set(STORY_STATE_KEYS.activeStoryStartCommit, { commit: completedReplay.baseline });
+    await state.set(STORY_STATE_KEYS.latestPreflightStatus, {
+      ok: true,
+      code: "story_preflight_replayed",
+      message: "Completed story isolation preflight was replayed from durable state.",
+      baseline: completedReplay.baseline,
+    } satisfies StoryPreflightStatus);
+    return { ok: true, baseline: completedReplay.baseline };
+  }
+
   await state.set(STORY_STATE_KEYS.activePhase, "story-isolation-preflight");
   await incrementStoryPhaseAttempt("story-isolation-preflight");
 
@@ -127,6 +139,25 @@ type StoryIsolationPreflightResult =
   | { readonly ok: true; readonly baseline: string }
   | { readonly ok: false; readonly failure: ContinuationResult };
 
+async function loadCompletedReplayPreflightState(
+  currentStory: Document,
+): Promise<{ readonly baseline: string } | null> {
+  if (!state.isReplayingCompletedStep) {
+    return null;
+  }
+
+  const activeStory = await state.getPersisted<Document | null>(STORY_STATE_KEYS.activeStory);
+  const baseline = await loadPersistedRecordedBaseline();
+  if (!activeStory || documentsMatch(activeStory, currentStory)) {
+    return baseline ? { baseline } : { baseline: "replayed-completed-step" };
+  }
+
+  // Historical story preflights are replayed only to reconstruct the continuation graph.
+  // They must not re-check today's worktree cleanliness, because later story work may
+  // legitimately be dirty after the completed preflight originally succeeded.
+  return { baseline: "replayed-completed-step" };
+}
+
 async function loadBlockedReplayPreflightState(
   currentStory: Document,
 ): Promise<{ readonly baseline: string } | null> {
@@ -141,11 +172,33 @@ async function loadBlockedReplayPreflightState(
     return null;
   }
 
-  const baseline =
+  const baseline = await loadRecordedBaseline();
+  return baseline ? { baseline } : null;
+}
+
+async function loadRecordedBaseline(): Promise<string | null> {
+  return (
     (await state.get<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
     (await state.get<{ readonly commit?: string } | null>(STORY_STATE_KEYS.activeStoryStartCommit))
-      ?.commit;
-  return baseline ? { baseline } : null;
+      ?.commit ??
+    null
+  );
+}
+
+async function loadPersistedRecordedBaseline(): Promise<string | null> {
+  return (
+    (await state.getPersisted<string | null>(STORY_STATE_KEYS.storyBaseline)) ??
+    (
+      await state.getPersisted<{ readonly commit?: string } | null>(
+        STORY_STATE_KEYS.activeStoryStartCommit,
+      )
+    )?.commit ??
+    null
+  );
+}
+
+function documentsMatch(left: Document, right: Document): boolean {
+  return left.path === right.path && left.content === right.content;
 }
 
 async function preflightFailure(

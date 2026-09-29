@@ -16,10 +16,11 @@ import {
 } from "../../providers/official-providers.js";
 import { loadProviderPackage } from "../../providers/provider-package-loader.js";
 import {
-  createPackagedTrailStepSkillInstallationMarker,
-  hasCurrentTrailStepSkillInstallationMarker,
-  installPackagedTrailStepSkill,
-  setTrailStepSkillInstallationMarker,
+  createPackagedTrailStepSkillInstallationMarkers,
+  hasCurrentTrailStepSkillInstallationMarkers,
+  installPackagedTrailStepSkills,
+  type PackagedTrailStepSkillName,
+  setTrailStepSkillInstallationMarkers,
   type TrailStepSkillInstallationMarker,
   trailStepSkillInstallTargetForScope,
 } from "../../trailstep-skill/trailstep-skill.js";
@@ -38,7 +39,8 @@ interface InitCommandArgs {
 }
 
 const SCOPE_PROMPT_LABEL = "Where should agent config be written?";
-const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage/authoring skill?";
+const SKILL_INSTALL_PROMPT_LABEL = "Install the TrailStep usage and authoring skills?";
+const STORAGE_LIFECYCLE_PROMPT_LABEL = "Configure recommended run artifact lifecycle storage?";
 const OFFICIAL_PROVIDER_ADD_GUIDANCE =
   "Don't see your provider? Add any TrailStep-compatible provider manifest/package with trailstep providers add <path-or-package>.";
 const PROVIDER_CHOICES = OFFICIAL_PROVIDER_PACKAGES.map((provider) => provider.packageName).sort();
@@ -100,19 +102,21 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       });
     }
 
+    nextConfig = await configureStorageLifecyclePreset(nextConfig, context);
+
     await writeRawTrailStepConfigFile(configPath, nextConfig);
     context.io.writeLine(`Wrote TrailStep agent config to ${configPath}.`);
 
     if (args.skillInstallMode !== "skip") {
-      const skillMarker = await createPackagedTrailStepSkillInstallationMarker(
+      const skillMarkers = await createPackagedTrailStepSkillInstallationMarkers(
         trailStepSkillInstallTargetForScope(scope),
       );
-      if (await hasTrackedTrailStepSkillInstallation(scope, context, skillMarker)) {
-        context.io.writeLine("TrailStep usage skill is already installed.");
+      if (await hasTrackedTrailStepSkillInstallation(scope, context, skillMarkers)) {
+        context.io.writeLine("TrailStep usage and authoring skills are already installed.");
       } else if (await shouldInstallSkill(args.skillInstallMode, context)) {
         await installTrailStepSkillOrThrow(scope, context);
-        await markTrailStepSkillInstalled(scope, context, skillMarker);
-        context.io.writeLine("Installed TrailStep usage skill.");
+        await markTrailStepSkillInstalled(scope, context, skillMarkers);
+        context.io.writeLine("Installed TrailStep usage and authoring skills.");
       }
     }
 
@@ -164,6 +168,31 @@ function resolveSkillInstallMode(flags: Record<string, string | undefined>): Ski
   return "prompt";
 }
 
+async function configureStorageLifecyclePreset(
+  config: Record<string, unknown>,
+  context: CliCommandContext,
+): Promise<Record<string, unknown>> {
+  const shouldConfigure = context.prompts?.confirm
+    ? await context.prompts.confirm(STORAGE_LIFECYCLE_PROMPT_LABEL)
+    : (await promptSelect(
+        STORAGE_LIFECYCLE_PROMPT_LABEL,
+        ["no", "yes"] as const,
+        context.prompts,
+        "trailstep init requires a yes/no answer.",
+      )) === "yes";
+  if (!shouldConfigure) {
+    return config;
+  }
+  const storage = toMutableRecord(config.storage);
+  storage.lifecycle = {
+    ...toMutableRecord(toMutableRecord(config.storage).lifecycle),
+    enabled: true,
+    compressAfter: "7d",
+    deleteAfter: "30d",
+  };
+  return { ...config, storage };
+}
+
 async function shouldInstallSkill(
   mode: SkillInstallMode,
   context: CliCommandContext,
@@ -190,15 +219,15 @@ async function shouldInstallSkill(
 async function hasTrackedTrailStepSkillInstallation(
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
-  expectedMarker: TrailStepSkillInstallationMarker,
+  expectedMarkers: Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>,
 ): Promise<boolean> {
   for (const configScope of skillInstallationMarkerScopesForScope(scope)) {
     const config = await readRawTrailStepConfigFile(configPathForScope(configScope, context));
-    const markerForConfigScope = {
-      ...expectedMarker,
-      target: trailStepSkillInstallTargetForScope(configScope),
-    };
-    if (hasCurrentTrailStepSkillInstallationMarker(config, markerForConfigScope)) {
+    const markersForConfigScope = retargetSkillMarkers(
+      expectedMarkers,
+      trailStepSkillInstallTargetForScope(configScope),
+    );
+    if (hasCurrentTrailStepSkillInstallationMarkers(config, markersForConfigScope)) {
       return true;
     }
   }
@@ -215,14 +244,23 @@ function skillInstallationMarkerScopesForScope(
 async function markTrailStepSkillInstalled(
   scope: WorkflowRegistryScope,
   context: CliCommandContext,
-  marker: TrailStepSkillInstallationMarker,
+  markers: Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>,
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
   const config = await readRawTrailStepConfigFile(configPath);
   await writeRawTrailStepConfigFile(
     configPath,
-    setTrailStepSkillInstallationMarker(config, marker),
+    setTrailStepSkillInstallationMarkers(config, markers),
   );
+}
+
+function retargetSkillMarkers(
+  markers: Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>,
+  target: TrailStepSkillInstallationMarker["target"],
+): Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker> {
+  return Object.fromEntries(
+    Object.entries(markers).map(([name, marker]) => [name, { ...marker, target }]),
+  ) as Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>;
 }
 
 async function installTrailStepSkillOrThrow(
@@ -230,10 +268,10 @@ async function installTrailStepSkillOrThrow(
   context: CliCommandContext,
 ): Promise<void> {
   try {
-    await installPackagedTrailStepSkill(scope, context);
+    await installPackagedTrailStepSkills(scope, context);
   } catch (error) {
     throw new CliUsageError(
-      `Failed to install TrailStep usage skill after writing TrailStep agent config: ${error instanceof Error ? error.message : "unknown error"}`,
+      `Failed to install TrailStep usage and authoring skills after writing TrailStep agent config: ${error instanceof Error ? error.message : "unknown error"}`,
     );
   }
 }

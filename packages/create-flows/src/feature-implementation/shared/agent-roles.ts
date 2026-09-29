@@ -8,12 +8,17 @@ export const featureImplementationAgents = {
     size: "large",
     thinking: "high",
     description:
-      "Creates or improves the implementation doc: architecture-aware, TDD/vertical-slice/tracer-bullet story design.",
+      "Creates or improves the implementation strategy: architecture-aware, TDD/vertical-slice/tracer-bullet story design.",
   },
   reviewer: {
     size: "large",
     thinking: "high",
-    description: "Reviews implementation docs before story execution.",
+    description: "Reviews implementation strategies before story slicing.",
+  },
+  slicer: {
+    size: "large",
+    thinking: "high",
+    description: "Slices an approved implementation strategy into coherent implementation stories.",
   },
   storyExplorer: {
     size: "small",

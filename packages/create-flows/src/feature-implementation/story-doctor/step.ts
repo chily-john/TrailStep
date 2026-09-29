@@ -33,6 +33,7 @@ export const storyDoctorStep = step({ id: "story-doctor" })
     }
 
     await state.set(STORY_STATE_KEYS.latestImplementationSummary, promptOutput);
+    await state.set(STORY_STATE_KEYS.latestStoryRouterState, null);
     await state.set(STORY_STATE_KEYS.activePhase, "validate-story");
     const attempt = await incrementStoryPhaseAttempt("validate-story");
     return validateStoryStep({

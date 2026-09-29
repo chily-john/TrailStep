@@ -7,7 +7,7 @@ import { readDashboardRunEvents } from "./events";
 export interface DashboardRunSummary {
   readonly runId: string;
   readonly path: string;
-  readonly status: "running" | "completed" | "failed" | "unknown";
+  readonly status: "running" | "completed" | "failed" | "cancelled" | "unknown";
   readonly latestTimestamp?: string;
 }
 
@@ -52,6 +52,8 @@ function statusFromEventType(type: string | undefined): DashboardRunSummary["sta
     case "workflow.failed":
     case "step.failed":
       return "failed";
+    case "workflow.cancelled":
+      return "cancelled";
     case undefined:
       return "unknown";
     default:

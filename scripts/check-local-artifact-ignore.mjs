@@ -120,6 +120,7 @@ for (const path of [
 assertNotIgnored(".trailstep/.gitignore");
 assertNotIgnored(".trailstep/config.json");
 assertNotIgnored("packages/cli/trailstep-skill/SKILL.md");
+assertNotIgnored("packages/cli/trailstep-authoring-skill/SKILL.md");
 assertNoTrackedLocalArtifacts();
 assertPackageFilesExcludeLocalArtifacts();
 

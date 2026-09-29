@@ -967,7 +967,7 @@ describe("continuation interactive agent roles", () => {
     expect(runnerCalls[0]).toMatchObject({
       command: "terminal-agent",
       args: ["--message-file", promptFile, "--literal", "&&"],
-      cwd: stepDir,
+      cwd,
       shell: false,
       stdio: "inherit",
     });
@@ -1055,7 +1055,7 @@ describe("continuation interactive agent roles", () => {
     expect(runnerCalls[0]).toMatchObject({
       command: "claude",
       args: ["--model", "opus", "--effort", "high", "--append-system-prompt-file", promptFilePath],
-      cwd: manifestStepDir,
+      cwd,
       shell: false,
       stdio: "inherit",
     });

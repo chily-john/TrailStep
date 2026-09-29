@@ -45,6 +45,7 @@ describe("public package positioning", () => {
     expect(readme).toMatch(/general-purpose/i);
     expect(readme).toContain("@trailstep/create-flows#takeItAway");
     expect(readme).toContain("@trailstep/create-flows#grillItAway");
+    expect(readme).not.toContain("@trailstep/create-flows#delegate");
 
     const forbiddenPublicPhraseSources = [
       ["Per", "sonal collection"],
@@ -62,9 +63,12 @@ describe("public package positioning", () => {
       String(name),
     );
     const exportedWorkflowNames = Array.from(
-      indexSource.matchAll(/export \{ ([^ }]+) \} from/g),
-      ([, name]) => String(name),
-    );
+      indexSource.matchAll(/export \{([\s\S]*?)\} from/g),
+      ([, names]) => String(names),
+    )
+      .flatMap((names) => names.split(","))
+      .map((name) => name.trim())
+      .filter(Boolean);
     expect([...readmeWorkflowNames].sort()).toEqual([...exportedWorkflowNames].sort());
   });
 });

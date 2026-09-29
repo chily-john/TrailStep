@@ -1,5 +1,6 @@
 export type ContinueCommandArgs =
   | { readonly mode: "select" }
+  | { readonly mode: "run"; readonly runNameOrRunDir: string }
   | { readonly mode: "interactive-file"; readonly path: string }
   | { readonly mode: "session-file"; readonly path: string }
   | { readonly mode: "json-file"; readonly path: string }

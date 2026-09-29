@@ -57,6 +57,41 @@ The generated skill explains:
 - how to call `trailstep <workflow-ref>`
 - how to continue or retry through TrailStep instead of inventing a custom resume path
 
+## Customize generated skill guidance
+
+Workflow authors can set `skill` in `defineWorkflow` when the generated skill needs agent-specific guidance. For full control, provide raw `SKILL.md` markdown:
+
+```ts
+export const review = defineWorkflow({
+  id: "review",
+  description: "Reviews a change set.",
+  skill: `---
+name: trst-review
+description: Use when an agent needs focused review of local changes.
+x-trailstep-user-facing: false
+---
+# Review workflow
+
+Keep the review focused on the requested files and cite concrete issues.`,
+  start(input) {
+    // ...
+  },
+});
+```
+
+When raw markdown starts with YAML frontmatter, TrailStep preserves that frontmatter exactly so authors can define fields such as `name`, `description`, or project-specific markers. When raw markdown does not start with YAML frontmatter, TrailStep adds generated `name` and `description` frontmatter before the custom body so the result is a valid `SKILL.md`. TrailStep appends the generated registered ref, input-file/schema, and run-command instructions after the custom body, so authors should not duplicate CLI details.
+
+For simpler customization, the object form is still supported:
+
+```ts
+skill: {
+  description: "Use when an agent needs focused review of local changes.",
+  instructions: "Keep the review focused on the requested files and cite concrete issues.",
+}
+```
+
+Without raw `skill` markdown, `skill.description` is used for the generated skill frontmatter, falling back to the workflow `description` when omitted, and `skill.instructions` are prepended to the generated skill body.
+
 ## Packaged TrailStep usage skill
 
 `trailstep init --install-skill` installs the packaged TrailStep usage/authoring skill. That skill teaches agents the general TrailStep workflow lifecycle: authoring, registering, running, continuing, and retrying.

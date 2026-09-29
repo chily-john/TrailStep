@@ -51,7 +51,8 @@ Each step can be treated as a focused unit of work. Larger workflows compose tho
 - `@trailstep/core`: framework-neutral runtime primitives, validation, continuation execution, events, provider contracts, retry state, and run artifacts.
 - `@trailstep/authoring`: TypeScript authoring helpers layered over core primitives.
 - `@trailstep/cli`: workflow discovery, registration, config, provider targeting, execution, continuation, retry, and package lifecycle commands.
-- `@trailstep/create-flows`: reusable workflow package demonstrating larger workflow architectures.
+- `@trailstep/create-flows`: reusable workflow package demonstrating larger implementation workflow architectures.
+- `@trailstep/sub-agents`: reusable workflow package for delegated focused sub-agent work.
 
 ## Provider boundary
 

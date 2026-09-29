@@ -13,6 +13,7 @@ export interface ImplementGreenInput extends Record<string, unknown> {
   readonly explorationBrief?: ExploreStoryOutput;
   readonly redTestSummary?: WriteRedTestsOutput;
   readonly attempt: number;
+  readonly implementationContext?: string;
   readonly previousReviewSummary?: string;
   readonly requiredImprovements?: readonly string[];
   readonly failedValidationSummary?: string;
@@ -52,6 +53,7 @@ export function implementGreenPrompt({ input }: { readonly input: ImplementGreen
       "Active story implementation view",
       storyViewForImplementer(input.currentStory.content),
     ),
+    section("Implementation context", input.implementationContext),
     section("Exploration summary", input.explorationBrief?.summary ?? "Not provided."),
     section("Red-test summary", input.redTestSummary?.summary ?? "Not provided."),
     section("Red evidence", input.redTestSummary?.redEvidence ?? "Not provided."),

@@ -301,6 +301,73 @@ describe("parseTrailStepConfig", () => {
     expect(parsed.workflows?.review?.settings).toEqual({});
   });
 
+  it("parses storage lifecycle retention durations and workflow overrides", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {},
+      agents: {},
+      storage: {
+        lifecycle: {
+          enabled: true,
+          compressAfter: "7d",
+          deleteAfter: "30d",
+          runOn: ["run", "runs"],
+          throttle: "12h",
+          workflows: {
+            review: { compressAfter: "2d", deleteAfter: false },
+          },
+        },
+      },
+    });
+
+    expect(parsed.storage?.lifecycle).toEqual({
+      enabled: true,
+      compressAfter: "7d",
+      deleteAfter: "30d",
+      runOn: ["run", "runs"],
+      throttle: "12h",
+      workflows: {
+        review: { compressAfter: "2d", deleteAfter: false },
+      },
+    });
+  });
+
+  it("reports storage lifecycle parsing diagnostics", () => {
+    try {
+      parseTrailStepConfig({
+        version: 1,
+        customProviders: {},
+        agents: {},
+        storage: {
+          lifecycle: {
+            enabled: "yes",
+            compressAfter: "soon",
+            deleteAfter: 30,
+            runOn: ["run", "invalid"],
+            throttle: 1,
+            workflows: {
+              review: { compressAfter: "1fortnight" },
+            },
+          },
+        },
+      });
+      throw new Error("Expected parseTrailStepConfig to reject invalid storage lifecycle config.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TrailStepFailureError);
+      expect((error as TrailStepFailureError).failure.code).toBe("validation_failed");
+      expect((error as TrailStepFailureError).failure.details).toEqual({
+        diagnostics: [
+          "storage.lifecycle.runOn entries must be one of run, open, or runs.",
+          "storage.lifecycle.enabled must be a boolean when present.",
+          "storage.lifecycle.throttle must be a string or false when present.",
+          "storage.lifecycle.compressAfter must be a duration string (for example 7d, 12h, or 2w) or false when present.",
+          "storage.lifecycle.deleteAfter must be a duration string (for example 7d, 12h, or 2w) or false when present.",
+          "storage.lifecycle.workflows.review.compressAfter must be a duration string (for example 7d, 12h, or 2w) or false when present.",
+        ],
+      });
+    }
+  });
+
   it("rejects object timeout settings", () => {
     try {
       parseTrailStepConfig({

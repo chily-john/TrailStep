@@ -1,5 +1,5 @@
 import { Document, state, step } from "@trailstep/authoring";
-import { createOrImproveImplementationDocStep } from "../create-or-improve-implementation-doc/step.js";
+import { createOrImproveImplementationStrategyStep } from "../create-or-improve-implementation-strategy/step.js";
 import { createFeatureDocPrompt } from "./prompt.js";
 
 export const createFeatureDocStep = step({ id: "create-feature-doc" })
@@ -9,5 +9,5 @@ export const createFeatureDocStep = step({ id: "create-feature-doc" })
   })
   .do(async (featureDoc) => {
     await state.set("featureDoc", featureDoc);
-    return createOrImproveImplementationDocStep({ featureDoc, attempt: 1 });
+    return createOrImproveImplementationStrategyStep({ featureDoc, attempt: 1 });
   });

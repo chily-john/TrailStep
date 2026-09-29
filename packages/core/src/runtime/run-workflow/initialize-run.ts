@@ -2,6 +2,7 @@ import { basename } from "node:path";
 
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import { createRunDirectory, readRunEvents } from "../artifacts/run-storage.js";
+import { resolveAndValidateRunCwds } from "./cwd.js";
 import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 
 export async function initializeRun<TInput extends PlainObject, TOutput extends PlainObject>(
@@ -12,7 +13,8 @@ export async function initializeRun<TInput extends PlainObject, TOutput extends 
   readonly runDir: string;
   readonly previousEvents: readonly Event[];
 }> {
-  const existingRunDir = options.resume?.runDir ?? options.retry?.runDir;
+  const existingRunDir =
+    options.resume?.runDir ?? options.retry?.runDir ?? options.continue?.runDir;
   if (existingRunDir) {
     const previousEvents = await readRunEvents(existingRunDir);
     const startedEvent = previousEvents.find((event) => event.type === "workflow.started");
@@ -24,13 +26,13 @@ export async function initializeRun<TInput extends PlainObject, TOutput extends 
     };
   }
 
-  const cwd = options.cwd ?? process.cwd();
+  const { projectCwd } = await resolveAndValidateRunCwds(options);
   const runName = options.runName;
   if (runName === undefined) {
     throw new Error("Expected runName for a new workflow run.");
   }
   const { runId, runDir } = await createRunDirectory({
-    cwd,
+    cwd: projectCwd,
     runName,
     runsRoot: options.runsRoot,
   });

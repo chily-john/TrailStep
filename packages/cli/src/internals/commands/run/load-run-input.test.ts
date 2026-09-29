@@ -33,6 +33,14 @@ describe("loadJsonInput", () => {
     await expect(loadJsonInput({ kind: "file", path })).resolves.toEqual({ from: "file" });
   });
 
+  it("loads JSON from stdin when input-file is dash", async () => {
+    await expect(
+      loadJsonInput({ kind: "file", path: "-" }, process.cwd(), {
+        readStdin: async () => '{"from":"stdin"}',
+      }),
+    ).resolves.toEqual({ from: "stdin" });
+  });
+
   it("rejects invalid inline JSON", async () => {
     await expect(loadJsonInput({ kind: "inline", json: "{" })).rejects.toThrow(CliInputError);
   });
@@ -49,5 +57,11 @@ describe("loadJsonInput", () => {
     await writeFile(path, "{", "utf8");
 
     await expect(loadJsonInput({ kind: "file", path })).rejects.toThrow(/invalid JSON/i);
+  });
+
+  it("rejects invalid stdin JSON", async () => {
+    await expect(
+      loadJsonInput({ kind: "file", path: "-" }, process.cwd(), { readStdin: async () => "{" }),
+    ).rejects.toThrow(/stdin/i);
   });
 });

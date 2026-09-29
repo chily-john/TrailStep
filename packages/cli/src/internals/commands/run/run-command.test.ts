@@ -32,6 +32,83 @@ async function writeDirectWorkflowFile(cwd: string): Promise<void> {
   );
 }
 
+async function writeInputEchoWorkflowFile(cwd: string): Promise<void> {
+  const workflowDir = join(cwd, "workflows");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    join(workflowDir, "input-echo.mjs"),
+    `import { done, jsonSchema, step } from '@trailstep/core';
+    export default {
+      id: 'input-echo',
+      input: jsonSchema({
+        type: 'object',
+        properties: {
+          task: { type: 'string' },
+          mode: { type: 'string', default: 'general' },
+          summarize: { type: 'boolean', default: true },
+          worktree: {
+            type: 'object',
+            properties: { cleanup: { type: 'string' } },
+            additionalProperties: false,
+          },
+          nested: {
+            type: 'object',
+            properties: { value: { type: 'boolean' } },
+            additionalProperties: false,
+          },
+        },
+        required: ['task', 'mode', 'summarize'],
+        additionalProperties: false,
+      }),
+      output: jsonSchema({
+        type: 'object',
+        properties: {
+          task: { type: 'string' },
+          mode: { type: 'string' },
+          summarize: { type: 'boolean' },
+          worktree: {
+            type: 'object',
+            properties: { cleanup: { type: 'string' } },
+            additionalProperties: false,
+          },
+          nested: {
+            type: 'object',
+            properties: { value: { type: 'boolean' } },
+            additionalProperties: false,
+          },
+        },
+        required: ['task', 'mode', 'summarize'],
+        additionalProperties: false,
+      }),
+      start: (input) => step({ id: 'echo' }).do((stepInput) => done(stepInput))(input),
+    };`,
+    "utf8",
+  );
+}
+
+async function writeWaitingWorkflowFile(cwd: string): Promise<void> {
+  const workflowDir = join(cwd, "workflows");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    join(workflowDir, "waiting.mjs"),
+    `import { done, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value) => value,
+    };
+    export default {
+      id: 'waiting',
+      input: schema,
+      output: schema,
+      start: (input) => step({ id: 'publish' })
+        .wait({ id: 'approval', kind: 'input', message: 'Approve this change?', output: { approved: 'boolean' } })
+        .do(() => done({ ok: true }))(input),
+    };`,
+    "utf8",
+  );
+}
+
 async function writeAmbiguousDirectWorkflowFile(cwd: string): Promise<void> {
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
@@ -290,6 +367,112 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
+  it("builds workflow input from generated input flags like input-file JSON", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeInputEchoWorkflowFile(cwd);
+    await writeJson(join(cwd, "input.json"), {
+      task: "Investigate failing tests",
+      mode: "explore",
+      summarize: true,
+    });
+
+    await expect(
+      main({
+        argv: [
+          "./workflows/input-echo.mjs",
+          "flags-run",
+          "--task",
+          "Investigate failing tests",
+          "--mode",
+          "explore",
+          "--summarize",
+          "true",
+        ],
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      main({
+        argv: ["./workflows/input-echo.mjs", "file-run", "--input-file", "input.json"],
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    const flagEvents = await readFile(
+      join(cwd, ".trailstep", "runs", "flags-run", "events.jsonl"),
+      "utf8",
+    );
+    const fileEvents = await readFile(
+      join(cwd, ".trailstep", "runs", "file-run", "events.jsonl"),
+      "utf8",
+    );
+    expect(flagEvents).toContain('"task":"Investigate failing tests"');
+    expect(flagEvents).toContain('"mode":"explore"');
+    expect(flagEvents).toContain('"summarize":true');
+    expect(fileEvents).toContain('"task":"Investigate failing tests"');
+    expect(fileEvents).toContain('"mode":"explore"');
+    expect(fileEvents).toContain('"summarize":true');
+  });
+
+  it("applies --set nested paths with JSON-like scalar values", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeInputEchoWorkflowFile(cwd);
+
+    await expect(
+      main({
+        argv: [
+          "./workflows/input-echo.mjs",
+          "set-run",
+          "--input",
+          '{"task":"Investigate","mode":"general","summarize":true}',
+          "--set",
+          "nested.value=true",
+          "--set",
+          "worktree.cleanup=on-success",
+        ],
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    const events = await readFile(
+      join(cwd, ".trailstep", "runs", "set-run", "events.jsonl"),
+      "utf8",
+    );
+    expect(events).toContain('"nested":{"value":true}');
+    expect(events).toContain('"worktree":{"cleanup":"on-success"}');
+  });
+
+  it("prints a clear waiting message and exits successfully when a workflow waits", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true });
+    await writeWaitingWorkflowFile(cwd);
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["./workflows/waiting.mjs", "delegate-run", "--input", "{}"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    expect(errors).toEqual([]);
+    expect(lines.join("\n")).toContain("Workflow waiting: delegate-run");
+    expect(lines.join("\n")).toContain("Waiting for approval:");
+    expect(lines.join("\n")).toContain("Approve this change?");
+    expect(lines.join("\n")).toContain(
+      "trailstep answer delegate-run approval --json '{\"approved\":true}'",
+    );
+  });
+
   it("runs a directly referenced workflow file into TRAILSTEP_RUNS_ROOT", async ({ task }) => {
     const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "worktree");
@@ -454,6 +637,37 @@ describe("run command", () => {
     ).resolves.toContain('"userSelected":true');
     expect(projectLines.join("\n")).toContain("project/review");
     expect(userLines.join("\n")).toContain("global/review");
+  });
+
+  it("prints a non-blocking update notice when starting a workflow run", async ({ task }) => {
+    const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
+    const cwd = join(root, "project");
+    const homeDir = join(root, "home");
+    await rm(root, { recursive: true, force: true });
+    await mkdir(cwd, { recursive: true });
+    await writeDirectWorkflowFile(cwd);
+    const lines: string[] = [];
+    const packageRequests: unknown[] = [];
+
+    const exitCode = await main({
+      argv: ["./workflows/review.mjs", "notice-run", "--input", "{}"],
+      cwd,
+      homeDir,
+      env: { NODE_ENV: "development" },
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      packageCommandRunner: async (request) => {
+        packageRequests.push(request);
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "99.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(packageRequests).toHaveLength(1);
+    expect(lines.join("\n")).toContain("TrailStep update available:");
+    expect(lines.join("\n")).toContain(
+      "Run `trailstep update` to update the CLI and refresh tracked skills.",
+    );
+    expect(lines.join("\n")).toContain("Workflow completed");
   });
 
   it("runs a global package-backed workflow from the managed global package store", async ({

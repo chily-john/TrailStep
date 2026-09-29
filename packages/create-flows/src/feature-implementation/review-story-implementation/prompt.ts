@@ -12,6 +12,7 @@ const REVIEW_RUBRIC = [
 export interface ReviewStoryImplementationInput extends Record<string, unknown> {
   readonly currentStory: Document;
   readonly attempt: number;
+  readonly implementationContext?: string;
   readonly explorationSummary?: string;
   readonly redTestSummary?: string;
   readonly redEvidence?: string;
@@ -38,6 +39,7 @@ export function reviewStoryImplementationPrompt({
     ),
     section("Review rubric", REVIEW_RUBRIC),
     section("Story review view", storyViewForReviewer(input.currentStory.content)),
+    section("Implementation context", input.implementationContext),
     section("Exploration summary", input.explorationSummary ?? "Not provided."),
     section("Red-test summary", input.redTestSummary ?? "Not provided."),
     section("Red-test evidence", input.redEvidence ?? "Not provided."),

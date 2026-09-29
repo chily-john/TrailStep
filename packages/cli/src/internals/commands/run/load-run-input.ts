@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { stdin } from "node:process";
 
 import type { PlainObject } from "@trailstep/core";
 
@@ -15,6 +16,7 @@ export class CliInputError extends Error {
 export async function loadJsonInput(
   input?: InputSource,
   cwd = process.cwd(),
+  options: { readonly readStdin?: () => Promise<string> } = {},
 ): Promise<PlainObject> {
   if (!input) {
     return {};
@@ -22,6 +24,18 @@ export async function loadJsonInput(
 
   if (input.kind === "inline") {
     return parseJson(input.json, "Invalid JSON supplied to --input.");
+  }
+
+  if (input.path === "-") {
+    let stdinContents: string;
+
+    try {
+      stdinContents = await (options.readStdin ?? readProcessStdin)();
+    } catch (error) {
+      throw new CliInputError("Unable to read input from stdin.", { cause: error });
+    }
+
+    return parseJson(stdinContents, "Invalid JSON in stdin input.");
   }
 
   const inputPath = isAbsolute(input.path) ? input.path : join(cwd, input.path);
@@ -34,6 +48,17 @@ export async function loadJsonInput(
   }
 
   return parseJson(fileContents, `Invalid JSON in input file: ${input.path}`);
+}
+
+async function readProcessStdin(): Promise<string> {
+  const chunks: string[] = [];
+  stdin.setEncoding("utf8");
+
+  for await (const chunk of stdin) {
+    chunks.push(String(chunk));
+  }
+
+  return chunks.join("");
 }
 
 function parseJson(json: string, message: string): PlainObject {

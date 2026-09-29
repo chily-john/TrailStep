@@ -19,6 +19,19 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 async function handleNonGreenStoryPhase(request: {
   readonly outputFile: string;
 }): Promise<{ readonly exitCode: number } | undefined> {
+  if (request.outputFile.includes("create-or-improve-implementation-strategy")) {
+    await writeFile(
+      request.outputFile,
+      [
+        "# Implementation Strategy",
+        "",
+        "Build the widget exporter in small, reviewed story slices.",
+      ].join("\n"),
+      "utf8",
+    );
+    return { exitCode: 0 };
+  }
+
   if (request.outputFile.includes("explore-story")) {
     await writeFile(
       request.outputFile,
@@ -181,7 +194,7 @@ describe("grill-it-away", () => {
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("create-or-improve-implementation-doc")) {
+        if (request.outputFile.includes("slice-implementation-stories")) {
           await writeFile(
             request.outputFile,
             [
@@ -194,13 +207,17 @@ describe("grill-it-away", () => {
               "## Story 001: Build the widget exporter core",
               "",
               "Implement the core widget exporter behavior.",
+              "",
+              "### Validation Commands",
+              "",
+              "- `git status --short`",
             ].join("\n"),
             "utf8",
           );
           return { exitCode: 0 };
         }
 
-        if (request.outputFile.includes("review-implementation-doc")) {
+        if (request.outputFile.includes("review-implementation-strategy")) {
           await writeFile(request.outputFile, JSON.stringify(passingReview), "utf8");
           return { exitCode: 0 };
         }

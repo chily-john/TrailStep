@@ -25,7 +25,8 @@ Enter here when deciding which workspace package should own a change. Package bo
 - `cli/`: Enter for the `trailstep` binary, workflow package discovery/installation, skill checks, doctor/update command UX, interactive continuation, JSON input loading, agent/config initialization/editing UX, `.trailstep/config.json` loading, retry handling, and local workflow execution UX.
 - `dashboard/`: Enter for Svelte/Vite local workflow run observability surfaces backed by read-only `.trailstep/runs` APIs.
 - `testkit/`: Enter for reusable workflow testing utilities and package-level testing helpers.
-- `create-flows/`: Enter for TrailStep workflow definitions, implementation-doc story splitting with `<!-- trailstep-story-boundary -->`, git-backed story routing/preflight including failed-review and failed-validation retries with clean story boundaries, phase-tracked explore/red/green/validate/review story loops, package workflow manifest wiring, bundled markdown prompt fragments, and build verification for non-TS prompt fragments; currently exposes `takeItAway` and `grillItAway`.
+- `create-flows/`: Enter for TrailStep implementation workflow definitions, implementation-doc story splitting with `<!-- trailstep-story-boundary -->`, git-backed story routing/preflight including failed-review and failed-validation retries with clean story boundaries, phase-tracked explore/red/green/validate/review story loops, package workflow manifest wiring, bundled markdown prompt fragments, and build verification for non-TS prompt fragments; currently exposes `takeItAway` and `grillItAway`.
+- `sub-agents/`: Enter for reusable delegate/sub-agent workflows, focused research/review/implementation delegate variants, run-local delegate memory, parent questions, terminal delegate messages, and managed delegate worktree lifecycle.
 
 ## Rules
 

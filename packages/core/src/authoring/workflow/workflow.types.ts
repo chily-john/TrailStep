@@ -2,13 +2,25 @@ import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.
 import type { PlainObject, Schema, ShapeInput } from "../../contracts/shapes/shape.types.js";
 import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
-import type { ContinuationResult } from "../step/continuation.types.js";
+import type {
+  ContinuationResult,
+  WorkflowInvocationNode,
+  WorkflowInvocationOptions,
+} from "../step/continuation.types.js";
+
+export interface WorkflowSkillOptions {
+  readonly description?: string;
+  readonly instructions?: string;
+  readonly markdown?: string;
+}
 
 export interface Workflow<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > {
   readonly id: string;
+  readonly description?: string;
+  readonly skill?: string | WorkflowSkillOptions;
   readonly input?: Schema<TInput>;
   readonly output?: Schema<TOutput>;
   readonly inputShape?: ShapeInput<TInput>;
@@ -18,3 +30,14 @@ export interface Workflow<
   readonly timeout?: TimeoutPolicyInput;
   readonly start: (input: TInput) => ContinuationResult<TOutput>;
 }
+
+export type WorkflowBuilderOptions<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = Workflow<TInput, TOutput>;
+
+export type DefinedWorkflow<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> = Workflow<TInput, TOutput> &
+  ((input: TInput, options?: WorkflowInvocationOptions) => WorkflowInvocationNode<TInput, TOutput>);

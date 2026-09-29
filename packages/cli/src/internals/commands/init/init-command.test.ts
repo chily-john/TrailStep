@@ -39,10 +39,31 @@ async function writeProviderPackage(
 
 async function packagedSkillMarker(target: "project" | "user"): Promise<Record<string, string>> {
   const skillMarkdown = await readFile(resolve("trailstep-skill/SKILL.md"));
+  const hash = createHash("sha256");
+  hash.update("SKILL.md");
+  hash.update("\0");
+  hash.update(skillMarkdown);
+  hash.update("\0");
   return {
     source: "@trailstep/cli/trailstep-skill",
     target,
-    contentHash: `sha256:${createHash("sha256").update(skillMarkdown).digest("hex")}`,
+    contentHash: `sha256:${hash.digest("hex")}`,
+  };
+}
+
+async function packagedAuthoringSkillMarker(
+  target: "project" | "user",
+): Promise<Record<string, string>> {
+  const skillMarkdown = await readFile(resolve("trailstep-authoring-skill/SKILL.md"));
+  const hash = createHash("sha256");
+  hash.update("SKILL.md");
+  hash.update("\0");
+  hash.update(skillMarkdown);
+  hash.update("\0");
+  return {
+    source: "@trailstep/cli/trailstep-authoring-skill",
+    target,
+    contentHash: `sha256:${hash.digest("hex")}`,
   };
 }
 
@@ -118,7 +139,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -196,7 +220,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -250,7 +277,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -334,7 +364,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -427,7 +460,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -512,7 +548,10 @@ describe("initCommand", () => {
           if (prompt === "Custom provider supports thinking overrides?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (
+            prompt === "Install the TrailStep usage and authoring skills?" ||
+            prompt === "Configure recommended run artifact lifecycle storage?"
+          ) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -537,7 +576,7 @@ describe("initCommand", () => {
     });
   });
 
-  it("prompts interactively to install the TrailStep usage skill when no skill flag is passed", async ({
+  it("prompts interactively to install the TrailStep usage and authoring skills when no skill flag is passed", async ({
     task,
   }) => {
     const cwd = join(
@@ -576,7 +615,10 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
-          if (prompt === "Install the TrailStep usage/authoring skill?") {
+          if (prompt === "Configure recommended run artifact lifecycle storage?") {
+            return false;
+          }
+          if (prompt === "Install the TrailStep usage and authoring skills?") {
             return true;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -590,8 +632,8 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(confirmPrompts).toContain("Install the TrailStep usage/authoring skill?");
-    expect(skillsCalls).toHaveLength(1);
+    expect(confirmPrompts).toContain("Install the TrailStep usage and authoring skills?");
+    expect(skillsCalls).toHaveLength(2);
   });
 
   it("skips project skill installation when the global config already tracks the current skill", async ({
@@ -610,7 +652,10 @@ describe("initCommand", () => {
       "home",
     );
     await writeJson(resolve(homeDir, ".trailstep", "config.json"), {
-      skillInstallations: { trailstep: await packagedSkillMarker("user") },
+      skillInstallations: {
+        trailstep: await packagedSkillMarker("user"),
+        "trailstep-authoring": await packagedAuthoringSkillMarker("user"),
+      },
     });
 
     const command = resolveCommand(["init", "--scope", "project"]);
@@ -645,6 +690,9 @@ describe("initCommand", () => {
           if (prompt === "Configure another agent?") {
             return false;
           }
+          if (prompt === "Configure recommended run artifact lifecycle storage?") {
+            return false;
+          }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
         },
       },
@@ -656,7 +704,7 @@ describe("initCommand", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(confirmPrompts).not.toContain("Install the TrailStep usage/authoring skill?");
+    expect(confirmPrompts).not.toContain("Install the TrailStep usage and authoring skills?");
     expect(skillsCalls).toHaveLength(0);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
@@ -704,6 +752,9 @@ describe("initCommand", () => {
             if (prompt === "Configure another agent?") {
               return false;
             }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
           },
         },
@@ -716,7 +767,7 @@ describe("initCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(confirmPrompts).not.toContain("Install the TrailStep usage/authoring skill?");
+    expect(confirmPrompts).not.toContain("Install the TrailStep usage and authoring skills?");
     expect(skillsCalls).toHaveLength(0);
   });
 
@@ -746,7 +797,7 @@ describe("initCommand", () => {
     expect(skillsCalls).toHaveLength(0);
   });
 
-  it("installs the packaged TrailStep usage skill when --install-skill is passed", async ({
+  it("installs the packaged TrailStep usage and authoring skills when --install-skill is passed", async ({
     task,
   }) => {
     const cwd = join(
@@ -800,6 +851,9 @@ describe("initCommand", () => {
             if (prompt === "Configure another agent?") {
               return false;
             }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
           },
         },
@@ -812,22 +866,31 @@ describe("initCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(skillsCalls).toHaveLength(1);
+    expect(skillsCalls).toHaveLength(2);
     expect(skillsCalls[0]?.command).toBe(process.execPath);
     expect(skillsCalls[0]?.args.slice(0, 3)).toEqual([
       "/repo/node_modules/skills/dist/index.js",
       "add",
       expect.stringContaining("trailstep-skill"),
     ]);
+    expect(skillsCalls[1]?.args.slice(0, 3)).toEqual([
+      "/repo/node_modules/skills/dist/index.js",
+      "add",
+      expect.stringContaining("trailstep-authoring-skill"),
+    ]);
     expect(skillsCalls[0]?.args.slice(3)).toEqual(["--agent", "*", "-y"]);
-    expect(lines).toContain("Installed TrailStep usage skill.");
+    expect(skillsCalls[1]?.args.slice(3)).toEqual(["--agent", "*", "-y"]);
+    expect(lines).toContain("Installed TrailStep usage and authoring skills.");
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
-      skillInstallations: { trailstep: await packagedSkillMarker("project") },
+      skillInstallations: {
+        trailstep: await packagedSkillMarker("project"),
+        "trailstep-authoring": await packagedAuthoringSkillMarker("project"),
+      },
     });
   });
 
-  it("installs the packaged TrailStep usage skill globally for --scope global", async ({
+  it("installs the packaged TrailStep usage and authoring skills globally for --scope global", async ({
     task,
   }) => {
     const cwd = join(
@@ -874,6 +937,9 @@ describe("initCommand", () => {
             if (prompt === "Configure another agent?") {
               return false;
             }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
           },
         },
@@ -886,10 +952,15 @@ describe("initCommand", () => {
     );
 
     expect(exitCode).toBe(0);
+    expect(skillsCalls).toHaveLength(2);
     expect(skillsCalls[0]?.args.slice(-1)).toEqual(["-g"]);
+    expect(skillsCalls[1]?.args.slice(-1)).toEqual(["-g"]);
     expect(await readJson(resolve(homeDir, ".trailstep", "config.json"))).toEqual({
       agents: { default: [{ provider: "claude", model: "sonnet" }] },
-      skillInstallations: { trailstep: await packagedSkillMarker("user") },
+      skillInstallations: {
+        trailstep: await packagedSkillMarker("user"),
+        "trailstep-authoring": await packagedAuthoringSkillMarker("user"),
+      },
     });
   });
 
@@ -928,6 +999,9 @@ describe("initCommand", () => {
             if (prompt === "Configure another agent?") {
               return false;
             }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
           },
         },
@@ -935,7 +1009,7 @@ describe("initCommand", () => {
         skillsCliProcessRunner: async () => ({ exitCode: 2 }),
       }),
     ).rejects.toThrow(
-      "Failed to install TrailStep usage skill after writing TrailStep agent config: skills CLI exited with code 2.",
+      "Failed to install TrailStep usage and authoring skills after writing TrailStep agent config: skills CLI exited with code 2.",
     );
 
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({

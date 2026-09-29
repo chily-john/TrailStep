@@ -14,7 +14,7 @@ Optional high-level planning notes that do not need to be seen by story implemen
 <context>
 audience: implementer
 stories: all
-phases: explore-story
+phases: deterministic-context-preflight
 
 ## Shared Implementer Exploration Context
 
@@ -62,12 +62,16 @@ Dependencies: Story 001
 Rules:
 
 - Text above the first `<!-- trailstep-story-boundary -->` is never part of an active story body. Only scoped `<context>` ... `</context>` blocks with recognized metadata can be selected as separate phase context.
-- Context blocks must begin with metadata lines before the first blank line. Recognized keys are `audience: implementer|reviewer|all`, `stories: all|Story 001|Story 001: Title`, and `phases: all|explore-story|write-red-tests|implement-green|validate-story|review-story-implementation`.
+- Context blocks must begin with metadata lines before the first blank line. Recognized keys are `audience: implementer|reviewer|all`, `stories: all|Story 001|Story 001: Title`, and `phases: all|deterministic-context-preflight|explore-story|write-red-tests|implement-green|validate-story|review-story-implementation`.
 - Unscoped context blocks are ignored instead of being blindly prepended to every story. If a detail applies to only one story, prefer putting it directly in that story. No story-critical detail may live only in non-context overview text.
 - Every `<context>` marker must have a matching `</context>` marker. Context markers are recognized only when the marker is the sole non-whitespace content on its line; inline mentions of `<context>` in prose are ignored by the splitter.
 - Every story must start right after a `<!-- trailstep-story-boundary -->` line, on its own line, with nothing else on that line. Splitting is mechanical and depends on this exact marker — do not use markdown headings alone to separate stories, and do not add or omit a boundary marker except between/before stories.
 - Stories must be topologically ordered.
 - Every story must be implementation-ready and self-contained, written as instructions to an implementer who will not see this file, only their own story's content.
 - Avoid horizontal stories unless they are embedded in an observable vertical slice.
+- Split versus bundle by delivery value, risk, and validation distinctness, not by numeric story budgets.
+- Split a candidate story when it contains separable integration-visible outcomes, independent high-risk seams, or true hard dependency boundaries that can each be proven by a distinct behavioral red test.
+- Bundle small changes when splitting would produce micro-stories, duplicate validation paths, docs/package-metadata-only stories, package metadata wiring without behavior, or horizontal setup/refactor/test-only work that is not independently observable.
+- Keep slicing rationale in the overview or reviewer context only; do not put split/bundle justification inside story bodies shown to implementers.
 - Name concrete files/tests/commands when they can be inferred from the repository.
 - Preserve uncertainty as assumptions or blocked states instead of guessing.

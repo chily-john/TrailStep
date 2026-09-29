@@ -16,7 +16,10 @@ describe("public package positioning", () => {
       publishConfig?: { access?: string };
       files?: string[];
       keywords?: string[];
-      trailstep?: { workflows?: Record<string, string>; recommendedConfig?: Record<string, unknown> };
+      trailstep?: {
+        workflows?: Record<string, string>;
+        recommendedConfig?: Record<string, unknown>;
+      };
     };
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");

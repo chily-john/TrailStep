@@ -13,8 +13,8 @@ import {
   delegateSmartImplementor,
 } from "../delegate/workflow.js";
 import {
-  type DelegateParallelInput,
   type DelegateParallelDelegate,
+  type DelegateParallelInput,
   type DelegateParallelOutput,
   delegateParallelInputShape,
   delegateParallelOutputShape,
@@ -172,7 +172,9 @@ function normalizeDelegateSelection(
   return value === undefined ? undefined : value;
 }
 
-function defaultModeForDelegate(delegateSelection: DelegateParallelDelegate | undefined): DelegateMode {
+function defaultModeForDelegate(
+  delegateSelection: DelegateParallelDelegate | undefined,
+): DelegateMode {
   switch (delegateSelection) {
     case "simple-explore":
     case "architect-planner":

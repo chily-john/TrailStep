@@ -497,7 +497,12 @@ function packageJsonPathForPreparedSource(
   if (isDirectWorkflowFileReference(preparedSource.source)) {
     return undefined;
   }
-  return resolve(preparedSource.cwd, "node_modules", ...preparedSource.source.split("/"), "package.json");
+  return resolve(
+    preparedSource.cwd,
+    "node_modules",
+    ...preparedSource.source.split("/"),
+    "package.json",
+  );
 }
 
 function mergeRecommendedConfig(
@@ -523,7 +528,9 @@ function mergeRecommendedConfig(
       continue;
     }
     if (!jsonEqual(existingAgent, recommendedAgent)) {
-      conflicts.push(`${plan.packageName} agents.${agentName} already exists; leaving existing value unchanged.`);
+      conflicts.push(
+        `${plan.packageName} agents.${agentName} already exists; leaving existing value unchanged.`,
+      );
     }
   }
 
@@ -531,7 +538,9 @@ function mergeRecommendedConfig(
     if (!isRecord(recommendedWorkflow)) {
       continue;
     }
-    const recommendedAgents = isRecord(recommendedWorkflow.agents) ? recommendedWorkflow.agents : {};
+    const recommendedAgents = isRecord(recommendedWorkflow.agents)
+      ? recommendedWorkflow.agents
+      : {};
     if (Object.keys(recommendedAgents).length === 0) {
       continue;
     }

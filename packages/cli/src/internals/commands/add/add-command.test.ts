@@ -2655,7 +2655,9 @@ describe("addCommand", () => {
     });
   });
 
-  it("applies package recommended config additively when registering a package", async ({ task }) => {
+  it("applies package recommended config additively when registering a package", async ({
+    task,
+  }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-add-command-tests",
@@ -2694,10 +2696,13 @@ describe("addCommand", () => {
     const lines: string[] = [];
     const errors: string[] = [];
     const command = resolveCommand(["add", "@acme/workflows"]);
-    const exitCode = await command.run(command.parseArgs(["add", "@acme/workflows", "--yes"]) as never, {
-      cwd,
-      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
-    });
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows", "--yes"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      },
+    );
 
     expect(exitCode).toBe(0);
     expect(lines).toContain(

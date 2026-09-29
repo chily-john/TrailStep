@@ -218,6 +218,10 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
+    if (successfulRegistrations.length > 0) {
+      await applyRecommendedConfigForPreparedSource(preparedSource, scope, context);
+    }
+
     if (!args.yes) {
       await promptForUncoveredWorkflowRolesForRegistrations(
         { scope, registrations: successfulRegistrations },
@@ -320,6 +324,20 @@ async function runPackageAddDryRun(
   }
 
   reportDryRunRegistrationPlan(registrationPlan, scope, context);
+  await reportDryRunRecommendedConfigPlan(
+    await buildRecommendedConfigPlanForPreparedSource(
+      {
+        status: "ready",
+        source: existingPackage.packageName,
+        cwd: existingPackage.installRoot,
+        installedPackage: existingPackage,
+      },
+      scope,
+      context,
+    ),
+    scope,
+    context,
+  );
   return 0;
 }
 
@@ -372,6 +390,186 @@ function reportDryRunRegistrationPlan(
       `Dry run summary: would register ${registrationPlan.successfulRegistrations.length}, skipped conflicts ${registrationPlan.skippedConflicts}.`,
     );
   }
+}
+
+interface RecommendedConfigPlan {
+  readonly packageName: string;
+  readonly agents: Record<string, unknown>;
+  readonly workflows: Record<string, unknown>;
+}
+
+async function applyRecommendedConfigForPreparedSource(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<void> {
+  const plan = await buildRecommendedConfigPlanForPreparedSource(preparedSource, scope, context);
+  if (plan === undefined) {
+    return;
+  }
+
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  const merge = mergeRecommendedConfig(config, plan);
+  if (merge.addedAgents.length === 0 && merge.addedWorkflowRoles.length === 0) {
+    context.io.writeLine(`Recommended config from ${plan.packageName}: nothing to add.`);
+  } else {
+    await writeRawTrailStepConfigFile(configPath, merge.config);
+    context.io.writeLine(
+      `Applied recommended config from ${plan.packageName}: added ${merge.addedAgents.length} agent(s), ${merge.addedWorkflowRoles.length} workflow role mapping(s).`,
+    );
+  }
+  for (const conflict of merge.conflicts) {
+    context.io.writeError(`Recommended config conflict: ${conflict}`);
+  }
+}
+
+async function reportDryRunRecommendedConfigPlan(
+  plan: RecommendedConfigPlan | undefined,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<void> {
+  if (plan === undefined) {
+    return;
+  }
+
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  const merge = mergeRecommendedConfig(config, plan);
+  context.io.writeLine(
+    `Would apply recommended config from ${plan.packageName}: add ${merge.addedAgents.length} agent(s), ${merge.addedWorkflowRoles.length} workflow role mapping(s), ${merge.conflicts.length} conflict(s).`,
+  );
+  for (const conflict of merge.conflicts) {
+    context.io.writeLine(`Would report recommended config conflict: ${conflict}`);
+  }
+}
+
+async function buildRecommendedConfigPlanForPreparedSource(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+  _scope: WorkflowRegistryScope,
+  _context: CliCommandContext,
+): Promise<RecommendedConfigPlan | undefined> {
+  const packageJsonPath = packageJsonPathForPreparedSource(preparedSource);
+  if (packageJsonPath === undefined) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as unknown;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.trailstep)) {
+    return undefined;
+  }
+  const recommendedConfig = parsed.trailstep.recommendedConfig;
+  if (!isRecord(recommendedConfig)) {
+    return undefined;
+  }
+
+  const packageName =
+    typeof parsed.name === "string" && parsed.name.trim().length > 0
+      ? parsed.name
+      : preparedSource.source;
+  const agents = isRecord(recommendedConfig.agents) ? recommendedConfig.agents : {};
+  const workflows = isRecord(recommendedConfig.workflows) ? recommendedConfig.workflows : {};
+  if (Object.keys(agents).length === 0 && Object.keys(workflows).length === 0) {
+    return undefined;
+  }
+  return { packageName, agents, workflows };
+}
+
+function packageJsonPathForPreparedSource(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+): string | undefined {
+  if (preparedSource.installedPackage !== undefined) {
+    return join(
+      preparedSource.installedPackage.installRoot,
+      "node_modules",
+      ...preparedSource.installedPackage.packageName.split("/"),
+      "package.json",
+    );
+  }
+  if (isDirectWorkflowFileReference(preparedSource.source)) {
+    return undefined;
+  }
+  return resolve(preparedSource.cwd, "node_modules", ...preparedSource.source.split("/"), "package.json");
+}
+
+function mergeRecommendedConfig(
+  config: Record<string, unknown>,
+  plan: RecommendedConfigPlan,
+): {
+  readonly config: Record<string, unknown>;
+  readonly addedAgents: readonly string[];
+  readonly addedWorkflowRoles: readonly string[];
+  readonly conflicts: readonly string[];
+} {
+  const agents = toMutableRecord(config.agents);
+  const workflows = toMutableWorkflowConfigRecord(config.workflows);
+  const addedAgents: string[] = [];
+  const addedWorkflowRoles: string[] = [];
+  const conflicts: string[] = [];
+
+  for (const [agentName, recommendedAgent] of Object.entries(plan.agents)) {
+    const existingAgent = agents[agentName];
+    if (existingAgent === undefined) {
+      agents[agentName] = recommendedAgent;
+      addedAgents.push(agentName);
+      continue;
+    }
+    if (!jsonEqual(existingAgent, recommendedAgent)) {
+      conflicts.push(`${plan.packageName} agents.${agentName} already exists; leaving existing value unchanged.`);
+    }
+  }
+
+  for (const [workflowId, recommendedWorkflow] of Object.entries(plan.workflows)) {
+    if (!isRecord(recommendedWorkflow)) {
+      continue;
+    }
+    const recommendedAgents = isRecord(recommendedWorkflow.agents) ? recommendedWorkflow.agents : {};
+    if (Object.keys(recommendedAgents).length === 0) {
+      continue;
+    }
+    const workflowConfig = toMutableRecord(workflows[workflowId]);
+    const workflowAgents = toMutableRecord(workflowConfig.agents);
+    for (const [roleName, recommendedRoleTargets] of Object.entries(recommendedAgents)) {
+      const existingRoleTargets = workflowAgents[roleName];
+      if (existingRoleTargets === undefined) {
+        workflowAgents[roleName] = recommendedRoleTargets;
+        addedWorkflowRoles.push(`${workflowId}.${roleName}`);
+        continue;
+      }
+      if (!jsonEqual(existingRoleTargets, recommendedRoleTargets)) {
+        conflicts.push(
+          `${plan.packageName} workflows.${workflowId}.agents.${roleName} already exists; leaving existing value unchanged.`,
+        );
+      }
+    }
+    workflows[workflowId] = { ...workflowConfig, agents: workflowAgents };
+  }
+
+  const nextConfig: Record<string, unknown> = { ...config };
+  if (Object.keys(agents).length > 0) {
+    nextConfig.agents = agents;
+  }
+  if (Object.keys(workflows).length > 0) {
+    nextConfig.workflows = workflows;
+  }
+
+  return { config: nextConfig, addedAgents, addedWorkflowRoles, conflicts };
+}
+
+function toMutableWorkflowConfigRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? { ...value } : {};
+}
+
+function jsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 type AddRegistrationPlan =

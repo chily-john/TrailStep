@@ -19,6 +19,179 @@
     "workflows": {
       "takeItAway": "./dist/index.js#takeItAway",
       "grillItAway": "./dist/index.js#grillItAway"
+    },
+    "recommendedConfig": {
+      "agents": {
+        "orchestrator-planner": [
+          {
+            "provider": "pi",
+            "model": "meta-llama/muse-spark-1.3",
+            "thinking": "high"
+          }
+        ],
+        "simple-explore": [
+          {
+            "provider": "pi",
+            "model": "xiaomi/mimo-v2.6-flash",
+            "thinking": "low"
+          }
+        ],
+        "architect-planner": [
+          {
+            "provider": "pi",
+            "model": "z.ai/glm-5.3-flash",
+            "thinking": "high"
+          }
+        ],
+        "quick-implementor": [
+          {
+            "provider": "pi",
+            "model": "deepseek/deepseek-v4.1-flash",
+            "thinking": "medium"
+          }
+        ],
+        "smart-implementor": [
+          {
+            "provider": "pi",
+            "model": "meta-llama/muse-spark-1.3",
+            "thinking": "high"
+          }
+        ],
+        "relentless-debugger": [
+          {
+            "provider": "pi",
+            "model": "deepseek/deepseek-v4.1-flash",
+            "thinking": "high"
+          }
+        ],
+        "fixer": [
+          {
+            "ref": "relentless-debugger"
+          }
+        ],
+        "schema-formatter": [
+          {
+            "provider": "pi",
+            "model": "xiaomi/mimo-v2.6-flash",
+            "thinking": "low"
+          }
+        ]
+      },
+      "workflows": {
+        "take-it-away": {
+          "agents": {
+            "featureWriter": [
+              {
+                "ref": "orchestrator-planner"
+              }
+            ],
+            "planner": [
+              {
+                "ref": "architect-planner"
+              }
+            ],
+            "reviewer": [
+              {
+                "ref": "architect-planner"
+              }
+            ],
+            "slicer": [
+              {
+                "ref": "architect-planner"
+              }
+            ],
+            "storyExplorer": [
+              {
+                "ref": "simple-explore"
+              }
+            ],
+            "testWriter": [
+              {
+                "ref": "quick-implementor"
+              }
+            ],
+            "storyImplementer": [
+              {
+                "ref": "smart-implementor"
+              }
+            ],
+            "storyDoctor": [
+              {
+                "ref": "relentless-debugger"
+              }
+            ],
+            "validator": [
+              {
+                "ref": "simple-explore"
+              }
+            ],
+            "storyReviewer": [
+              {
+                "ref": "architect-planner"
+              }
+            ]
+          }
+        },
+        "grill-it-away": {
+          "agents": {
+            "grillingAgent": [
+              {
+                "ref": "orchestrator-planner"
+              }
+            ],
+            "featureWriter": [
+              {
+                "ref": "orchestrator-planner"
+              }
+            ],
+            "planner": [
+              {
+                "ref": "architect-planner"
+              }
+            ],
+            "reviewer": [
+              {
+                "ref": "architect-planner"
+              }
+            ],
+            "slicer": [
+              {
+                "ref": "architect-planner"
+              }
+            ],
+            "storyExplorer": [
+              {
+                "ref": "simple-explore"
+              }
+            ],
+            "testWriter": [
+              {
+                "ref": "quick-implementor"
+              }
+            ],
+            "storyImplementer": [
+              {
+                "ref": "smart-implementor"
+              }
+            ],
+            "storyDoctor": [
+              {
+                "ref": "relentless-debugger"
+              }
+            ],
+            "validator": [
+              {
+                "ref": "simple-explore"
+              }
+            ],
+            "storyReviewer": [
+              {
+                "ref": "architect-planner"
+              }
+            ]
+          }
+        }
+      }
     }
   },
   "main": "./dist/index.js",

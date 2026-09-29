@@ -18,7 +18,7 @@ export type {
   DelegateWorktreeInput,
 } from "./schema.js";
 
-type DelegateWorkflowConfig = {
+export type DelegateWorkflowConfig = {
   readonly id: string;
   readonly description: string;
   readonly skillName: string;
@@ -31,7 +31,7 @@ type DelegateWorkflowConfig = {
   readonly agentThinking?: "low" | "medium" | "high";
 };
 
-function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
+export function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
   return defineWorkflow<DelegateInput, DelegateOutput>({
     id: config.id,
     description: config.description,
@@ -80,6 +80,35 @@ export const delegateExplore = defineDelegateWorkflow({
   summarize: true,
 });
 
+export const delegateSimpleExplore = defineDelegateWorkflow({
+  id: "delegateSimpleExplore",
+  description: "Runs narrow, low-cost read-only exploration while preserving run-local continuity.",
+  skillName: "trst-delegate-simple-explore",
+  skillDescription: "Use as a sub-agent for quick, bounded read-only lookups and summaries.",
+  skillFocus:
+    "Simple explore is read-only and narrow: answer focused repo questions, inspect one area, summarize concise findings, and avoid edits.",
+  defaultMode: "explore",
+  defaultMaxTurns: 4,
+  summarize: true,
+  agentSize: "small",
+  agentThinking: "low",
+});
+
+export const delegateArchitectPlanner = defineDelegateWorkflow({
+  id: "delegateArchitectPlanner",
+  description: "Scouts the codebase to identify the few files or seams likely needing edits.",
+  skillName: "trst-delegate-architect-planner",
+  skillDescription:
+    "Use as a read-only scout that maps a bug or feature request to likely edit targets.",
+  skillFocus:
+    "Architect planner is read-only: grep/read the repo, identify the 3-4 files or seams most likely to need edits, explain why, and do not write code.",
+  defaultMode: "explore",
+  defaultMaxTurns: 6,
+  summarize: true,
+  agentSize: "medium",
+  agentThinking: "medium",
+});
+
 export const delegateReview = defineDelegateWorkflow({
   id: "delegateReview",
   description: "Runs delegated review work while preserving run-local continuity.",
@@ -104,6 +133,64 @@ export const delegateImplement = defineDelegateWorkflow({
   defaultMaxTurns: 12,
   summarize: false,
   agentThinking: "medium",
+});
+
+export const delegateQuickImplementor = defineDelegateWorkflow({
+  id: "delegateQuickImplementor",
+  description: "Runs strict localized implementation work for mechanical changes.",
+  skillName: "trst-delegate-quick-implementor",
+  skillDescription: "Use as a sub-agent for strict, localized boilerplate implementation tasks.",
+  skillFocus:
+    "Quick implementor is the typist: follow concrete instructions, make localized edits only, avoid broad architecture decisions, run focused checks when practical, and report changedFiles.",
+  defaultMode: "implement",
+  defaultMaxTurns: 8,
+  summarize: false,
+  agentSize: "medium",
+  agentThinking: "medium",
+});
+
+export const delegateSmartImplementor = defineDelegateWorkflow({
+  id: "delegateSmartImplementor",
+  description: "Runs complex implementation, algorithmic work, or cross-file refactors.",
+  skillName: "trst-delegate-smart-implementor",
+  skillDescription:
+    "Use as a sub-agent for complex logic, cross-file refactoring, or algorithmic design.",
+  skillFocus:
+    "Smart implementor is the heavy-lifter: handle complex interconnected changes, refactors, algorithms, and non-trivial systems; keep scope bounded and report changedFiles.",
+  defaultMode: "implement",
+  defaultMaxTurns: 14,
+  summarize: false,
+  agentSize: "large",
+  agentThinking: "high",
+});
+
+export const delegateRelentlessDebugger = defineDelegateWorkflow({
+  id: "delegateRelentlessDebugger",
+  description: "Diagnoses and fixes validation, lint, test, or runtime failures.",
+  skillName: "trst-delegate-relentless-debugger",
+  skillDescription:
+    "Use as a sub-agent for repairing linter failures, test failures, stack traces, and diagnostics.",
+  skillFocus:
+    "Relentless debugger is the janitor: consume diagnostics, preserve the intended change, fix failures iteratively, and avoid redesign unless required by the failure evidence.",
+  defaultMode: "implement",
+  defaultMaxTurns: 12,
+  summarize: false,
+  agentSize: "large",
+  agentThinking: "high",
+});
+
+export const delegateSchemaFormatter = defineDelegateWorkflow({
+  id: "delegateSchemaFormatter",
+  description: "Produces exact structured output for schema-bound handoffs.",
+  skillName: "trst-delegate-schema-formatter",
+  skillDescription: "Use as a sub-agent for exact JSON/XML/schema-constrained formatting tasks.",
+  skillFocus:
+    "Schema formatter is the translator: prioritize exact requested structure, avoid extra prose, and do not perform broad implementation work unless explicitly requested.",
+  defaultMode: "general",
+  defaultMaxTurns: 4,
+  summarize: false,
+  agentSize: "small",
+  agentThinking: "low",
 });
 
 function delegateSkill(config: DelegateWorkflowConfig): string {

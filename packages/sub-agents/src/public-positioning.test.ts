@@ -16,7 +16,7 @@ describe("public package positioning", () => {
       publishConfig?: { access?: string };
       files?: string[];
       keywords?: string[];
-      trailstep?: { workflows?: Record<string, string> };
+      trailstep?: { workflows?: Record<string, string>; recommendedConfig?: Record<string, unknown> };
     };
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");
@@ -37,9 +37,25 @@ describe("public package positioning", () => {
     expect(packageJson.trailstep?.workflows).toEqual({
       delegate: "./dist/index.js#delegate",
       delegateExplore: "./dist/index.js#delegateExplore",
+      delegateSimpleExplore: "./dist/index.js#delegateSimpleExplore",
+      delegateArchitectPlanner: "./dist/index.js#delegateArchitectPlanner",
       delegateReview: "./dist/index.js#delegateReview",
       delegateImplement: "./dist/index.js#delegateImplement",
+      delegateQuickImplementor: "./dist/index.js#delegateQuickImplementor",
+      delegateSmartImplementor: "./dist/index.js#delegateSmartImplementor",
+      delegateRelentlessDebugger: "./dist/index.js#delegateRelentlessDebugger",
+      delegateSchemaFormatter: "./dist/index.js#delegateSchemaFormatter",
       delegateParallel: "./dist/index.js#delegateParallel",
+    });
+    expect(packageJson.trailstep?.recommendedConfig).toMatchObject({
+      agents: {
+        "simple-explore": [{ provider: "pi" }],
+        "smart-implementor": [{ provider: "pi" }],
+        fixer: [{ ref: "relentless-debugger" }],
+      },
+      workflows: {
+        delegateSmartImplementor: { agents: { delegateAgent: [{ ref: "smart-implementor" }] } },
+      },
     });
 
     expect(readme).toMatch(/public/i);

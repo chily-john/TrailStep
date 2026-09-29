@@ -16,7 +16,7 @@ describe("public package positioning", () => {
       publishConfig?: { access?: string };
       files?: string[];
       keywords?: string[];
-      trailstep?: { workflows?: Record<string, string> };
+      trailstep?: { workflows?: Record<string, string>; recommendedConfig?: Record<string, unknown> };
     };
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");
@@ -38,6 +38,16 @@ describe("public package positioning", () => {
     expect(packageJson.trailstep?.workflows).toEqual({
       takeItAway: "./dist/index.js#takeItAway",
       grillItAway: "./dist/index.js#grillItAway",
+    });
+    expect(packageJson.trailstep?.recommendedConfig).toMatchObject({
+      agents: {
+        "orchestrator-planner": [{ provider: "pi" }],
+        "relentless-debugger": [{ provider: "pi" }],
+      },
+      workflows: {
+        "take-it-away": { agents: { storyImplementer: [{ ref: "smart-implementor" }] } },
+        "grill-it-away": { agents: { grillingAgent: [{ ref: "orchestrator-planner" }] } },
+      },
     });
 
     expect(readme).toMatch(/public/i);

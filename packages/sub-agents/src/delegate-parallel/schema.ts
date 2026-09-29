@@ -6,9 +6,20 @@ import type {
   DelegateWorktreeInput,
 } from "../delegate/schema.js";
 
+export type DelegateParallelDelegate =
+  | "delegate"
+  | "simple-explore"
+  | "architect-planner"
+  | "quick-implementor"
+  | "smart-implementor"
+  | "relentless-debugger"
+  | "fixer"
+  | "schema-formatter";
+
 export interface DelegateParallelTaskInput extends Record<string, unknown> {
   readonly id: string;
-  readonly mode: DelegateMode;
+  readonly mode?: DelegateMode;
+  readonly delegate?: DelegateParallelDelegate;
   readonly task: string;
   readonly context?: string;
   readonly cwd?: string;
@@ -40,6 +51,7 @@ export interface DelegateParallelOutput extends Record<string, unknown> {
 export interface NormalizedDelegateParallelTask extends Record<string, unknown> {
   readonly id: string;
   readonly mode: DelegateMode;
+  readonly delegate?: DelegateParallelDelegate;
   readonly branchId: string;
   readonly input: DelegateInput;
 }
@@ -71,6 +83,19 @@ export const delegateParallelInputShape = jsonSchema<DelegateParallelInput>({
         properties: {
           id: { type: "string" },
           mode: { type: "string", enum: ["explore", "implement", "review", "general"] },
+          delegate: {
+            type: "string",
+            enum: [
+              "delegate",
+              "simple-explore",
+              "architect-planner",
+              "quick-implementor",
+              "smart-implementor",
+              "relentless-debugger",
+              "fixer",
+              "schema-formatter",
+            ],
+          },
           task: { type: "string" },
           context: { type: "string" },
           cwd: { type: "string" },
@@ -90,7 +115,8 @@ export const delegateParallelInputShape = jsonSchema<DelegateParallelInput>({
             additionalProperties: false,
           },
         },
-        required: ["id", "mode", "task"],
+        anyOf: [{ required: ["mode"] }, { required: ["delegate"] }],
+        required: ["id", "task"],
         additionalProperties: false,
       },
     },

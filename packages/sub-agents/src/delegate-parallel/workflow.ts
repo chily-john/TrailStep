@@ -2,12 +2,19 @@ import { defineWorkflow, done, parallel, state, step } from "@trailstep/authorin
 import type { DelegateMode, DelegateWorktreeInput } from "../delegate/schema.js";
 import {
   delegate,
+  delegateArchitectPlanner,
   delegateExplore,
   delegateImplement,
+  delegateQuickImplementor,
+  delegateRelentlessDebugger,
   delegateReview,
+  delegateSchemaFormatter,
+  delegateSimpleExplore,
+  delegateSmartImplementor,
 } from "../delegate/workflow.js";
 import {
   type DelegateParallelInput,
+  type DelegateParallelDelegate,
   type DelegateParallelOutput,
   delegateParallelInputShape,
   delegateParallelOutputShape,
@@ -46,7 +53,7 @@ const initializeDelegateParallelStep = step({
 
     return parallel<DelegateParallelOutput>(
       normalized.tasks.map((task) =>
-        delegateWorkflowForMode(task.mode)(task.input, { branchId: task.branchId }),
+        delegateWorkflowForTask(task)(task.input, { branchId: task.branchId }),
       ),
     );
   });
@@ -91,6 +98,8 @@ export function normalizeDelegateParallelTasks(
     }
     seenBranches.add(branchId);
 
+    const delegateSelection = normalizeDelegateSelection(task.delegate);
+    const mode = task.mode ?? defaultModeForDelegate(delegateSelection);
     const cwd = nonEmpty(task.cwd) ?? nonEmpty(input.cwd);
     const worktree = normalizeTaskWorktree({
       parent: input.worktree,
@@ -105,11 +114,12 @@ export function normalizeDelegateParallelTasks(
 
     tasks.push({
       id,
-      mode: task.mode,
+      mode,
+      ...(delegateSelection === undefined ? {} : { delegate: delegateSelection }),
       branchId,
       input: {
         task: taskText,
-        mode: task.mode,
+        mode,
         ...(context === undefined ? {} : { context }),
         ...(cwd === undefined ? {} : { cwd }),
         ...(maxTurns === undefined ? {} : { maxTurns }),
@@ -122,6 +132,27 @@ export function normalizeDelegateParallelTasks(
   return { status: "ready", tasks };
 }
 
+function delegateWorkflowForTask(task: NormalizedDelegateParallelTask): typeof delegate {
+  switch (task.delegate) {
+    case "simple-explore":
+      return delegateSimpleExplore;
+    case "architect-planner":
+      return delegateArchitectPlanner;
+    case "quick-implementor":
+      return delegateQuickImplementor;
+    case "smart-implementor":
+      return delegateSmartImplementor;
+    case "relentless-debugger":
+    case "fixer":
+      return delegateRelentlessDebugger;
+    case "schema-formatter":
+      return delegateSchemaFormatter;
+    case "delegate":
+    case undefined:
+      return delegateWorkflowForMode(task.mode);
+  }
+}
+
 function delegateWorkflowForMode(mode: DelegateMode): typeof delegate {
   switch (mode) {
     case "explore":
@@ -132,6 +163,29 @@ function delegateWorkflowForMode(mode: DelegateMode): typeof delegate {
       return delegateReview;
     case "general":
       return delegate;
+  }
+}
+
+function normalizeDelegateSelection(
+  value: DelegateParallelDelegate | undefined,
+): DelegateParallelDelegate | undefined {
+  return value === undefined ? undefined : value;
+}
+
+function defaultModeForDelegate(delegateSelection: DelegateParallelDelegate | undefined): DelegateMode {
+  switch (delegateSelection) {
+    case "simple-explore":
+    case "architect-planner":
+      return "explore";
+    case "quick-implementor":
+    case "smart-implementor":
+    case "relentless-debugger":
+    case "fixer":
+      return "implement";
+    case "schema-formatter":
+    case "delegate":
+    case undefined:
+      return "general";
   }
 }
 

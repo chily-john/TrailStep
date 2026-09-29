@@ -46,7 +46,7 @@ const initializeDelegateParallelStep = step({
 
     return parallel<DelegateParallelOutput>(
       normalized.tasks.map((task) =>
-        delegateWorkflowForMode(task.mode)(task.input, { branch: task.branchId }),
+        delegateWorkflowForMode(task.mode)(task.input, { branchId: task.branchId }),
       ),
     );
   });

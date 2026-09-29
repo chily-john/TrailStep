@@ -29,7 +29,7 @@ trailstep agents rename <old> <new> --scope <local|project|global>
 trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--project-skill] [--user-skill] [--force] [--yes] [--dry-run]
 trailstep remove <namespace>/<name> [--scope <local|project|global>]
 trailstep workflows
-trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
+trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]
 trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--follow | --no-follow]
 trailstep continue [--interactive-file <path> | --session-file <path> | --json-file <path> | --json '<json>']
 trailstep cancel <runNameOrRunDir> [--reason '<text>']
@@ -111,6 +111,7 @@ TrailStep accepts direct refs, registered refs, and bundle refs:
 
 ```bash
 trailstep ./workflow.ts#reviewWorkflow --input-file input.json
+printf '%s\n' '{"request":"review this"}' | trailstep ./workflow.ts#reviewWorkflow --input-file -
 trailstep ./workflows#takeItAway
 trailstep project/review
 trailstep global/cleanup

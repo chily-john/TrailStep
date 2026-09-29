@@ -15,7 +15,8 @@ Use TrailStep to install, discover, run, continue, retry, and observe durable ty
 - List registered workflows with `trailstep workflows`.
 - Add reusable workflow packages with `trailstep add <package-or-ref>`; request generated workflow skills with `--project-skill` or `--user-skill` when supported agents should discover those workflows from their agent UI.
 - Run a workflow with inline JSON: `trailstep <workflow-ref> --input '{"request":"..."}'`.
-- Run a workflow with a JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
+- Pipe one-shot JSON on stdin: `printf '%s\n' '{"request":"..."}' | trailstep <workflow-ref> --input-file -`.
+- Run a workflow with a reusable JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
 - Continue waiting or interrupted runs with `trailstep continue`.
 - Answer human/parent waits with `trailstep answer <runName> <waitId> --json '{"answer":"..."}'`.
 - Retry failed work with `trailstep retry <workflow-ref> <runName>`; retry instead of inventing a separate resume mechanism.
@@ -36,7 +37,7 @@ Use direct refs for local files, registered refs for named project or user workf
 ## Inputs and generated skills
 
 - Workflow inputs should be JSON object values, not raw prose or arrays.
-- Prefer `--input-file` for large context and reproducible runs.
+- Prefer `--input-file -` for one-shot agent-generated JSON; use a named `--input-file` for large context and reproducible runs.
 - Generated workflow skills are separate from the packaged TrailStep usage/authoring skills. They are created by `trailstep add` for specific installed workflows and should describe when an agent should invoke that workflow.
 - Use project skills for team-shared repository workflows and user skills for personal/global workflows.
 

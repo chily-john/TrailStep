@@ -83,6 +83,7 @@ export type {
   StepDisplayValue,
   StepErrorContinuation,
   StepFactory,
+  StepInvocationOptions,
   StepNode,
   StepPhase,
   StepWaitContext,

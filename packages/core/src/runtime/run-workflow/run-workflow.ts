@@ -342,11 +342,12 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     }
 
     const rootNode = startNode ?? options.workflow.start(workflowInput);
+    const rootNodes = Array.isArray(rootNode) ? rootNode : [rootNode];
     const shouldUseRootArrayScheduler = (!isResume && !isRetry && !isWaitContinue) || isTrackRetry;
     const continuationResult = shouldUseRootArrayScheduler
       ? await runRootContinuationArrayScheduler({
-          nodes: Array.isArray(rootNode) ? rootNode : [rootNode],
-          rootIsArray: Array.isArray(rootNode),
+          nodes: rootNodes,
+          ...(Array.isArray(rootNode) ? { rootIsArray: true } : {}),
           runId,
           workflowId: options.workflow.id,
           emit,

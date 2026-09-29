@@ -2,7 +2,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
-import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
+import type {
+  ContinuationResult,
+  ParallelFailurePolicy,
+  ParallelOptions,
+} from "../../authoring/step/continuation.types.js";
 import {
   isParallelNode,
   isStepNode,
@@ -94,6 +98,7 @@ interface PendingJoin {
   readonly parentBranchId: string;
   readonly childBranchIds: readonly string[];
   readonly source: string;
+  readonly failurePolicy: ParallelFailurePolicy;
   readonly postContinuation: (
     output: PlainObject,
   ) => ContinuationResult | Promise<ContinuationResult>;
@@ -129,6 +134,9 @@ interface QueuedBranch {
   readonly branch: BranchState;
   readonly source: string;
   readonly requireRunnableBranchCandidate: boolean;
+  readonly parallelGroupId?: string;
+  readonly parallelConcurrency?: number;
+  readonly failurePolicy: ParallelFailurePolicy;
 }
 
 export async function runRootContinuationArrayScheduler(
@@ -150,6 +158,7 @@ export async function runRootContinuationArrayScheduler(
   let terminalBranchId: string | undefined;
   let terminalKind: TrackTerminalKind | undefined;
   const pendingJoins: PendingJoin[] = [];
+  const activeByParallelGroup = new Map<string, number>();
 
   const allocateStepIndex = (branch: BranchState): number => {
     if (nextStepIndex >= options.maxSteps) {
@@ -161,12 +170,32 @@ export async function runRootContinuationArrayScheduler(
     return nextStepIndex;
   };
 
+  const allocateBranchId = (node: ContinuationResult): string => {
+    const explicitBranchId = requestedBranchMetadata(node).requestedBranchId;
+    if (explicitBranchId !== undefined) {
+      return explicitBranchId;
+    }
+
+    const baseBranchId = branchIdBaseForNode(node);
+    let suffix = 1;
+    while (branches.some((branch) => branch.branchId === `${baseBranchId}-${suffix}`)) {
+      suffix += 1;
+    }
+    nextBranchId = Math.max(nextBranchId, suffix + 1);
+    return `${baseBranchId}-${suffix}`;
+  };
+
   const enqueue = (
     node: ContinuationResult,
     parentBranchId: string | undefined,
     source: string,
     requireRunnableBranchCandidate: boolean,
     joinContinuation = false,
+    scheduling?: {
+      readonly parallelGroupId?: string;
+      readonly parallelConcurrency?: number;
+      readonly failurePolicy?: ParallelFailurePolicy;
+    },
   ): BranchState => {
     const branch = createBranchRecord({
       node,
@@ -176,12 +205,24 @@ export async function runRootContinuationArrayScheduler(
       branchId:
         parentBranchId === undefined && branches.length === 0
           ? rootBranchId
-          : `branch-${nextBranchId++}`,
+          : allocateBranchId(node),
       joinContinuation,
     });
     branches.push(branch);
     if (terminalResult === undefined) {
-      queue.push({ node, branch, source, requireRunnableBranchCandidate });
+      queue.push({
+        node,
+        branch,
+        source,
+        requireRunnableBranchCandidate,
+        failurePolicy: scheduling?.failurePolicy ?? "fail-fast",
+        ...(scheduling?.parallelGroupId === undefined
+          ? {}
+          : { parallelGroupId: scheduling.parallelGroupId }),
+        ...(scheduling?.parallelConcurrency === undefined
+          ? {}
+          : { parallelConcurrency: scheduling.parallelConcurrency }),
+      });
     } else {
       branch.status = "cancelled";
       branch.updatedAt = new Date().toISOString();
@@ -225,6 +266,14 @@ export async function runRootContinuationArrayScheduler(
     if (!options.nodes.every(isRunnableBranchCandidate)) {
       return invalidArrayCandidateFailure(options.initialSource);
     }
+    const duplicateBranchIdFailure = explicitDuplicateBranchIdFailure(
+      options.nodes,
+      options.initialSource,
+      branches,
+    );
+    if (duplicateBranchIdFailure !== undefined) {
+      return duplicateBranchIdFailure;
+    }
     for (const node of options.nodes) {
       enqueue(node, rootBranchId, options.initialSource, true);
     }
@@ -256,11 +305,15 @@ export async function runRootContinuationArrayScheduler(
       }
 
       while (terminalResult === undefined && activeWorkers < workers && queue.length > 0) {
-        const queued = queue.shift();
+        const queued = shiftRunnableQueuedBranch(queue, activeByParallelGroup);
         if (queued === undefined) {
+          if (activeWorkers === 0) {
+            resolve();
+          }
           return;
         }
         activeWorkers += 1;
+        incrementActiveParallelGroup(queued.parallelGroupId, activeByParallelGroup);
 
         void runBranch(queued)
           .then(async (branchResult) => {
@@ -271,6 +324,7 @@ export async function runRootContinuationArrayScheduler(
           .then(
             () => {
               activeWorkers -= 1;
+              decrementActiveParallelGroup(queued.parallelGroupId, activeByParallelGroup);
               schedule();
             },
             (error: unknown) => {
@@ -337,13 +391,7 @@ export async function runRootContinuationArrayScheduler(
     output: {
       status: "completed",
       branches: Object.fromEntries(
-        terminalBranches.map((branch) => [
-          branch.branchId,
-          {
-            status: branch.status,
-            output: branch.output ?? {},
-          },
-        ]),
+        terminalBranches.map((branch) => [branch.branchId, branchSettlementForSummary(branch)]),
       ),
     },
   };
@@ -365,7 +413,7 @@ export async function runRootContinuationArrayScheduler(
   }
 
   async function runBranch(queued: QueuedBranch): Promise<RunContinuationResult> {
-    const { node, branch, source, requireRunnableBranchCandidate } = queued;
+    const { node, branch, source, requireRunnableBranchCandidate, failurePolicy } = queued;
     if (requireRunnableBranchCandidate && !isRunnableBranchCandidate(node)) {
       branch.status = "failed";
       branch.updatedAt = new Date().toISOString();
@@ -450,6 +498,12 @@ export async function runRootContinuationArrayScheduler(
       branch.status = "failed";
       branch.failure = branchResult.failure;
       branch.message = branchResult.message;
+      if (failurePolicy === "all-settled") {
+        await enqueueSatisfiedJoins(branch);
+        await persistBranch(options.runDir, branch);
+        await persistTrack(options, workers, rootBranchId, branches, "running", splitOccurred);
+        return { status: "success", output: {} };
+      }
       await terminalizeTrack(branchResult, { branchId: branch.branchId, kind: "failure" });
       await persistBranch(options.runDir, branch);
       return branchResult;
@@ -477,6 +531,17 @@ export async function runRootContinuationArrayScheduler(
         await persistBranch(options.runDir, branch);
         return invalidArrayCandidateFailure(branchResult.source);
       }
+      const duplicateBranchIdFailure = explicitDuplicateBranchIdFailure(
+        branchResult.nodes,
+        branchResult.source,
+        branches,
+      );
+      if (duplicateBranchIdFailure !== undefined) {
+        branch.status = "failed";
+        branch.failure = duplicateBranchIdFailure.failure;
+        await persistBranch(options.runDir, branch);
+        return duplicateBranchIdFailure;
+      }
       splitOccurred = true;
       branch.status = "split";
       branch.splitSource = branchResult.source;
@@ -494,8 +559,15 @@ export async function runRootContinuationArrayScheduler(
         await persistBranch(options.runDir, branch);
         return { status: "cancelled", cancellation: { requestedAt: branch.updatedAt } };
       }
+      const parallelOptions = normalizeParallelOptions(branchResult.parallelOptions);
       const childBranches = branchResult.nodes.map((childNode) =>
-        enqueue(childNode, branch.branchId, branchResult.source, true),
+        enqueue(childNode, branch.branchId, branchResult.source, true, false, {
+          parallelGroupId: branch.branchId,
+          ...(parallelOptions.concurrency === undefined
+            ? {}
+            : { parallelConcurrency: parallelOptions.concurrency }),
+          failurePolicy: parallelOptions.failurePolicy,
+        }),
       );
       if (branchResult.postContinuation !== undefined) {
         branch.pendingPostJoin = true;
@@ -503,6 +575,7 @@ export async function runRootContinuationArrayScheduler(
           parentBranchId: branch.branchId,
           childBranchIds: childBranches.map((childBranch) => childBranch.branchId),
           source: branchResult.source,
+          failurePolicy: parallelOptions.failurePolicy,
           postContinuation: branchResult.postContinuation,
           ...(branchResult.afterPostContinuation === undefined
             ? {}
@@ -526,10 +599,14 @@ export async function runRootContinuationArrayScheduler(
 
   async function enqueueSatisfiedJoins(branch: BranchState): Promise<void> {
     for (const join of pendingJoins) {
-      if (!join.childBranchIds.includes(branch.branchId) || branch.output === undefined) {
+      if (!join.childBranchIds.includes(branch.branchId)) {
         continue;
       }
-      join.completed = { ...join.completed, [branch.branchId]: branch.output };
+      const settlement = branchSettlementForJoin(branch, join.failurePolicy);
+      if (settlement === undefined) {
+        continue;
+      }
+      join.completed = { ...join.completed, [branch.branchId]: settlement };
       if (Object.keys(join.completed).length !== join.childBranchIds.length) {
         continue;
       }
@@ -560,6 +637,7 @@ export async function runRootContinuationArrayScheduler(
           parentBranchId: join.parentBranchId,
           childBranchIds: [postBranch.branchId],
           source: `post for ${join.source}`,
+          failurePolicy: "fail-fast",
           postContinuation: async (aggregateOutput) => {
             const branches = aggregateOutput.branches as Record<string, PlainObject> | undefined;
             const [output] = Object.values(branches ?? {});
@@ -606,11 +684,50 @@ function workflowIdForBranchNode(node: ContinuationResult, fallbackWorkflowId: s
 function requestedBranchMetadata(node: ContinuationResult): {
   readonly requestedBranchId?: string;
 } {
-  if (isWorkflowInvocationNode(node) && node.options?.branch !== undefined) {
-    return { requestedBranchId: node.options.branch };
+  if (isWorkflowInvocationNode(node) && node.options?.branchId !== undefined) {
+    return { requestedBranchId: node.options.branchId };
+  }
+  if (isStepNode(node) && node.options?.branchId !== undefined) {
+    return { requestedBranchId: node.options.branchId };
   }
 
   return {};
+}
+
+function branchIdBaseForNode(node: ContinuationResult): string {
+  const rawId = isWorkflowInvocationNode(node)
+    ? node.workflow.id
+    : isStepNode(node)
+      ? node.config.id
+      : "branch";
+  return rawId.replaceAll(/[^A-Za-z0-9._-]/g, "-") || "branch";
+}
+
+function explicitDuplicateBranchIdFailure(
+  nodes: readonly ContinuationResult[],
+  source: string,
+  existingBranches: readonly BranchState[],
+): (RunContinuationResult & { readonly status: "failure" }) | undefined {
+  const seen = new Set<string>(existingBranches.map((branch) => branch.branchId));
+  for (const node of nodes) {
+    const branchId = requestedBranchMetadata(node).requestedBranchId;
+    if (branchId === undefined) {
+      continue;
+    }
+    if (seen.has(branchId)) {
+      return {
+        status: "failure",
+        failure: {
+          code: "duplicate_branch_id",
+          message: `${source} scheduled multiple parallel branches with branchId ${JSON.stringify(
+            branchId,
+          )}; explicit branchId values must be unique within a parallel track.`,
+        },
+      };
+    }
+    seen.add(branchId);
+  }
+  return undefined;
 }
 
 function isRunnableBranchCandidate(node: ContinuationResult): boolean {
@@ -631,6 +748,87 @@ function invalidArrayCandidateFailure(
 
 function isBranchTerminalStatus(status: BranchStatus): boolean {
   return status === "done" || status === "failed" || status === "cancelled";
+}
+
+function normalizeParallelOptions(options: ParallelOptions | undefined): {
+  readonly concurrency?: number;
+  readonly failurePolicy: ParallelFailurePolicy;
+} {
+  const concurrency = options?.concurrency;
+  return {
+    ...(concurrency === undefined ? {} : { concurrency }),
+    failurePolicy: options?.failurePolicy ?? "fail-fast",
+  };
+}
+
+function shiftRunnableQueuedBranch(
+  queue: QueuedBranch[],
+  activeByParallelGroup: ReadonlyMap<string, number>,
+): QueuedBranch | undefined {
+  const index = queue.findIndex((candidate) => {
+    if (candidate.parallelGroupId === undefined || candidate.parallelConcurrency === undefined) {
+      return true;
+    }
+    return (
+      (activeByParallelGroup.get(candidate.parallelGroupId) ?? 0) < candidate.parallelConcurrency
+    );
+  });
+  if (index < 0) {
+    return undefined;
+  }
+  const [queued] = queue.splice(index, 1);
+  return queued;
+}
+
+function incrementActiveParallelGroup(
+  parallelGroupId: string | undefined,
+  activeByParallelGroup: Map<string, number>,
+): void {
+  if (parallelGroupId === undefined) {
+    return;
+  }
+  activeByParallelGroup.set(parallelGroupId, (activeByParallelGroup.get(parallelGroupId) ?? 0) + 1);
+}
+
+function decrementActiveParallelGroup(
+  parallelGroupId: string | undefined,
+  activeByParallelGroup: Map<string, number>,
+): void {
+  if (parallelGroupId === undefined) {
+    return;
+  }
+  const next = (activeByParallelGroup.get(parallelGroupId) ?? 1) - 1;
+  if (next <= 0) {
+    activeByParallelGroup.delete(parallelGroupId);
+  } else {
+    activeByParallelGroup.set(parallelGroupId, next);
+  }
+}
+
+function branchSettlementForJoin(
+  branch: BranchState,
+  failurePolicy: ParallelFailurePolicy,
+): PlainObject | undefined {
+  if (failurePolicy === "all-settled") {
+    return branchSettlementForSummary(branch);
+  }
+  return branch.status === "done" && branch.output !== undefined ? branch.output : undefined;
+}
+
+function branchSettlementForSummary(branch: BranchState): PlainObject {
+  if (branch.status === "failed") {
+    return {
+      status: "failed",
+      ...(branch.failure === undefined ? {} : { failure: branch.failure }),
+      ...(branch.message === undefined ? {} : { message: branch.message }),
+    };
+  }
+
+  return {
+    status: branch.status,
+    output: branch.output ?? {},
+    ...(branch.message === undefined ? {} : { message: branch.message }),
+  };
 }
 
 function trackStatusFromTerminalResult(result: RunContinuationResult): string {
@@ -871,6 +1069,7 @@ async function createPersistedTrackRetryPlan(input: {
       branch,
       source: branch.splitSource ?? branch.source ?? input.initialSource,
       requireRunnableBranchCandidate: true,
+      failurePolicy: "fail-fast",
     });
   }
 

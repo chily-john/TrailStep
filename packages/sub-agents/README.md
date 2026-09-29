@@ -58,7 +58,7 @@ Use the generic `delegate` when you want to choose `mode`, `maxTurns`, and conte
 trailstep project/delegate --task "Investigate failing parser tests" --mode explore
 ```
 
-JSON input-file usage is useful for richer context:
+JSON stdin input is useful for one-shot richer context:
 
 ```json
 {
@@ -69,6 +69,12 @@ JSON input-file usage is useful for richer context:
   "maxTurns": 6
 }
 ```
+
+```bash
+printf '%s\n' '{"task":"Investigate failing parser tests","context":"Parser fixtures fail only on Windows paths.","mode":"explore","cwd":"./packages/parser","maxTurns":6}' | trailstep project/delegate --input-file -
+```
+
+For reusable/debuggable inputs, save the JSON and run:
 
 ```bash
 trailstep project/delegate --input-file delegate-input.json
@@ -91,7 +97,7 @@ Parallel input uses required stable task ids, modes, and task text. Shared value
 Parent-agent tips:
 
 - For simple tasks, pass direct flags such as `--task`, `--mode`, `--cwd`, and `--maxTurns`.
-- For long context, write JSON and use `--input-file` instead of stuffing the CLI command.
+- For one-shot JSON, pipe it to `--input-file -`; for long/reusable context, write JSON and use a named `--input-file` instead of stuffing the CLI command.
 - Use unique run names for parallel delegates so run-local state does not collide.
 - Use `cwd` for an existing worktree or subdirectory TrailStep should not manage. Use `worktree.enabled=true` to let the delegate create a managed git worktree.
 - Managed worktrees default to `.trailstep/worktrees/<runName>`, branch `trailstep/delegate/<runName>`, and `cleanup="auto"`: clean completed worktrees are removed, while dirty/blocked/unsafe worktrees are kept and reported.

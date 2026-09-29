@@ -121,7 +121,7 @@ Use this workflow as a parent-agent/delegate tool when a parent agent needs boun
 ## Parent-agent usage
 
 - For simple tasks, pass direct flags: \`trailstep @trailstep/sub-agents#${config.id} --task "..."\`.
-- For long context, write an input JSON file and run \`trailstep @trailstep/sub-agents#${config.id} --input-file delegate-input.json\`.
+- For one-shot JSON, pipe it to \`trailstep @trailstep/sub-agents#${config.id} --input-file -\`; for long/reusable context, write an input JSON file and run \`trailstep @trailstep/sub-agents#${config.id} --input-file delegate-input.json\`.
 - Use unique run names for parallel delegates so their run-local state stays separate.
 - Use \`cwd\` for an existing worktree or subdirectory that TrailStep should not manage. Use \`worktree.enabled=true\` when the delegate should create a managed git worktree and safely clean it up/report it.
 - Do not pass both \`cwd\` and \`worktree.enabled=true\`; choose one execution location strategy.

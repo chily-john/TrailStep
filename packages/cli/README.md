@@ -68,7 +68,7 @@ trailstep init [--scope <local|project|global>] [--install-skill | --no-install-
 trailstep agents
 trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--workflow <workflow>] [--project-skill] [--user-skill] [--yes] [--dry-run]
 trailstep workflows
-trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]
+trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]
 trailstep watch <runNameOrRunDir> [--jsonl]
 trailstep continue
 trailstep retry <workflow-ref> <runName>
@@ -108,6 +108,7 @@ TrailStep accepts these workflow reference forms:
 
 ```bash
 trailstep ./workflow.ts#reviewWorkflow --input-file input.json
+printf '%s\n' '{"request":"review this"}' | trailstep ./workflow.ts#reviewWorkflow --input-file -
 trailstep project/review
 trailstep global/cleanup
 trailstep @acme/workflows#release

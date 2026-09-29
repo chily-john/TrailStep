@@ -12,6 +12,7 @@ import type {
   DoPhase,
   FailNode,
   ParallelNode,
+  ParallelOptions,
   PostContinuation,
   PromptOptions,
   PromptPhase,
@@ -22,6 +23,7 @@ import type {
   StepDisplayContent,
   StepErrorContinuation,
   StepFactory,
+  StepInvocationOptions,
   StepNode,
   StepPhase,
   TerminalMessageOptions,
@@ -147,20 +149,26 @@ export function step(config: StepConfig): StepBuilder {
     onOutput: StepContinuation<TInput, TStepOutput> | StepContextContinuation<TInput, TStepOutput>,
     onError?: StepErrorContinuation,
   ): FluentStepFactory<TInput, TStepOutput> => {
-    const factory = ((input?: TInput): StepNode<TInput, TStepOutput> => {
+    const factory = ((
+      input?: TInput,
+      options?: StepInvocationOptions,
+    ): StepNode<TInput, TStepOutput> => {
       const phases = phaseTemplates.slice();
       const prompt = firstPromptPhase(phases);
+      const { branchId: _branchId, ...configOverrides } = options ?? {};
 
       return {
         kind: "step",
         config: {
           ...config,
+          ...configOverrides,
           ...(prompt ? promptOptionsForConfig(prompt) : {}),
           input: input ?? ({} as TInput),
         } as ContinuationStepConfig<TInput, TStepOutput>,
         phases,
         onOutput: onOutput as StepContinuation<TInput, TStepOutput>,
         onError,
+        ...(options === undefined ? {} : { options }),
       };
     }) as FluentStepFactory<TInput, TStepOutput>;
 
@@ -219,10 +227,12 @@ export function absoluteFail(failure: Failure, options?: TerminalMessageOptions)
 
 export function parallel<TOutput extends PlainObject = PlainObject>(
   nodes: ContinuationArray,
+  options?: ParallelOptions,
 ): ParallelNode<TOutput> {
   const makeParallel = (postContinuation?: PostContinuation<TOutput>): ParallelNode<TOutput> => ({
     kind: "parallel",
     nodes,
+    ...(options === undefined ? {} : { options }),
     ...(postContinuation === undefined ? {} : { postContinuation }),
     post(continuation: PostContinuation<TOutput>) {
       return makeParallel(continuation);

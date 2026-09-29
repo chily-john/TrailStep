@@ -231,6 +231,7 @@ describe("agent steps", () => {
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.completed",
       "workflow.completed",
     ]);
@@ -301,6 +302,8 @@ describe("agent steps", () => {
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
+      "step.progress",
       "step.completed",
       "workflow.completed",
     ]);

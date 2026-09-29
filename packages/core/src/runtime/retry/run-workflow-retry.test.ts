@@ -288,16 +288,17 @@ describe("runWorkflow retry", () => {
     expect(eventTypes(failed.events)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.completed",
       "step.failed",
       "workflow.failed",
     ]);
-    expect(failed.events[3]).toMatchObject({
+    expect(failed.events[4]).toMatchObject({
       type: "step.failed",
       stepId: "review",
       payload: { failure: { code: "review_rejected", message: "review rejected" } },
     });
-    expect(failed.events[4]).toMatchObject({ type: "workflow.failed" });
+    expect(failed.events[5]).toMatchObject({ type: "workflow.failed" });
 
     shouldFail = false;
     const retried = await runWorkflow({
@@ -321,21 +322,23 @@ describe("runWorkflow retry", () => {
     expect(eventTypes(retried.events)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.completed",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",
       "step.started",
+      "step.progress",
       "step.completed",
       "workflow.completed",
     ]);
-    expect(retried.events[5]).toMatchObject({
+    expect(retried.events[6]).toMatchObject({
       type: "workflow.retryStarted",
       payload: {
         retryKind: "manual",
         retriedStepId: "review",
-        sourceFailureEventId: failed.events[3]?.id,
-        sourceFailureReplayPosition: 3,
+        sourceFailureEventId: failed.events[4]?.id,
+        sourceFailureReplayPosition: 4,
       },
     });
   });
@@ -409,6 +412,7 @@ describe("runWorkflow retry", () => {
     expect(eventTypes(failedReview.events)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.completed",
       "step.failed",
       "workflow.failed",
@@ -426,11 +430,13 @@ describe("runWorkflow retry", () => {
     expect(eventTypes(failedPublish.events)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.completed",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",
       "step.started",
+      "step.progress",
       "step.completed",
       "step.started",
       "step.failed",
@@ -1242,10 +1248,12 @@ describe("runWorkflow retry", () => {
     expect(eventTypes(retried.events)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",
       "step.started",
+      "step.progress",
       "step.completed",
       "workflow.completed",
     ]);

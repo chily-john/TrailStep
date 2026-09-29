@@ -115,6 +115,7 @@ describe("workflow cancellation", () => {
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.cancelled",
       "workflow.cancelRequested",
       "workflow.cancelled",

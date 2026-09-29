@@ -85,6 +85,7 @@ describe("workflow step timeouts", () => {
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
       "step.failed",
       "workflow.failed",
     ]);

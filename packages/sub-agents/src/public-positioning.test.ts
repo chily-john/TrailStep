@@ -39,6 +39,7 @@ describe("public package positioning", () => {
       delegateExplore: "./dist/index.js#delegateExplore",
       delegateReview: "./dist/index.js#delegateReview",
       delegateImplement: "./dist/index.js#delegateImplement",
+      delegateParallel: "./dist/index.js#delegateParallel",
     });
 
     expect(readme).toMatch(/public/i);
@@ -48,6 +49,7 @@ describe("public package positioning", () => {
     expect(readme).toContain("@trailstep/sub-agents#delegateExplore");
     expect(readme).toContain("@trailstep/sub-agents#delegateReview");
     expect(readme).toContain("@trailstep/sub-agents#delegateImplement");
+    expect(readme).toContain("@trailstep/sub-agents#delegateParallel");
 
     const workflowSection = readme.slice(
       readme.indexOf("## Workflows"),

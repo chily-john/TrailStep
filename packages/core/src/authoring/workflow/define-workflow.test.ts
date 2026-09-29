@@ -83,10 +83,10 @@ describe("defineWorkflow", () => {
     expect(node.input).toEqual({ value: 1 });
   });
 
-  it("preserves invocation options without executing onDone", () => {
-    let onDoneCalls = 0;
-    const onDone = (output: Output) => {
-      onDoneCalls += 1;
+  it("preserves invocation options without executing post", () => {
+    let postCalls = 0;
+    const post = (output: Output) => {
+      postCalls += 1;
       return done({ complete: output.ok });
     };
     const workflow = defineWorkflow<Input, Output>({
@@ -96,12 +96,12 @@ describe("defineWorkflow", () => {
       start: () => done({ ok: true }),
     });
 
-    const node = workflow({ value: 1 }, { branch: "existing-plus-followup", onDone });
+    const node = workflow({ value: 1 }, { branch: "existing-plus-followup" }).post(post);
 
     expect(isWorkflowInvocationNode(node)).toBe(true);
     expect(node.options?.branch).toBe("existing-plus-followup");
-    expect(node.options?.onDone).toBe(onDone);
-    expect(onDoneCalls).toBe(0);
+    expect(node.postContinuation).toBe(post);
+    expect(postCalls).toBe(0);
   });
 
   it("runs sequentially through runWorkflow without changing existing behavior", async () => {

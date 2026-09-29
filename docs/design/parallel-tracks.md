@@ -34,7 +34,7 @@ The target model is not a small fan-out/fan-in helper. `subPrompt(...)` already 
 - There is no daemon/service. A foreground `trailstep` run/retry/continue command owns scheduling only while that command is running.
 - Scheduling is foreground and worker-pool based. A waiting, failed, cancelled, or absolute-terminal branch currently terminalizes the track under fail-fast semantics rather than letting all other active branches continue indefinitely.
 - Continuation arrays are accepted only when every array entry is a runnable step node or workflow invocation node. Arrays containing `done(...)`, `fail(...)`, `absoluteDone(...)`, or `absoluteFail(...)` are rejected. Return those nodes directly instead.
-- Nested workflow invocations are supported inside a branch, including `onDone`, but branch spawning still uses persisted branch metadata and deterministic generated branch ids rather than making requested `branch` names authoritative.
+- Nested workflow invocations are supported inside a branch, including `.post(...)` follow-up continuations, but branch spawning still uses persisted branch metadata and deterministic generated branch ids rather than making requested `branch` names authoritative.
 - Retry filters support default unresolved-work retry, `--failed`, `--branch <branchId>`, and `--fresh`. Branch-specific retry requires a persisted branch id from branch metadata; requested branch names are recorded as `requestedBranchId` only.
 - `globalState.update(...)` is atomic inside the in-process scheduler/queued run context. It is not yet a daemon-safe or cross-process file lock contract.
 - Events remain the existing workflow/step event stream. Branch metadata is currently added to relevant step events, and `track.json` plus `branches/*.json` provide branch status/outputs; dedicated `track.*`/`branch.*` lifecycle event names are not emitted yet.
@@ -77,23 +77,21 @@ return ImplementStoryWorkflow({
 
 The call returns an internal workflow invocation continuation node. Authors should not need to manually construct a `childWorkflow(...)` wrapper.
 
-Workflow invocation options should support at least:
+Workflow invocation options should support branch naming, while follow-up continuations are attached with `.post(...)`:
 
 ```ts
 return ImplementStoryWorkflow(
   { storyId: story.id },
-  {
-    branch: `story-${story.id}`,
-    onDone: (output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }),
-  },
-);
+  { branch: `story-${story.id}` },
+).post((output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }));
 ```
 
 Recommended initial option names:
 
 - `branch?: string`: requested stable branch id/name. TrailStep may suffix or reject collisions according to deterministic replay rules.
-- `onDone?: (output, context?) => ContinuationResult`: continuation to run when the invoked workflow calls `done(...)`. This is the hook for extending a pre-existing workflow with custom follow-up steps/workflows.
 - Future-compatible room for worktree or cwd options, but cwd can continue to be specified at workflow/step input level where existing workflows already support it.
+
+Use `.post((output) => nextContinuation)` to extend a pre-existing workflow with custom follow-up steps/workflows after it completes successfully.
 
 ### Arrays of continuations
 
@@ -116,7 +114,7 @@ Avoid supporting arrays containing `done(...)`, `fail(...)`, or absolute termina
 
 ### `done(...)`, `absoluteDone(...)`, and `absoluteFail(...)`
 
-Normal `done(output)` completes the current branch or current workflow invocation. If an invocation has an `onDone` hook, TrailStep passes the typed workflow output to that hook instead of marking the branch terminal.
+Normal `done(output)` completes the current branch or current workflow invocation. If an invocation has a `.post(...)` continuation, TrailStep passes the typed workflow output to that continuation instead of marking the branch terminal.
 
 Track completion is computed by the scheduler:
 
@@ -169,7 +167,7 @@ Scheduler responsibilities:
    - step node: continue branch with that step;
    - workflow invocation node: start/continue that invocation in the branch;
    - array: replace branch with queued sibling branches;
-   - done: terminal branch result or invocation `onDone` continuation;
+   - done: terminal branch result or invocation `.post(...)` continuation;
    - fail: branch failure subject to failure policy;
    - absolute terminal: terminate track.
 6. Persist enough branch state to resume or retry without duplicating completed work.
@@ -345,7 +343,7 @@ Scope:
 - workflow invocation node shape;
 - continuation arrays in public types;
 - `absoluteDone(...)` and `absoluteFail(...)` public helpers/types;
-- workflow invocation options including `branch` and `onDone`;
+- workflow invocation options including `branch` plus fluent `.post(...)` continuations;
 - exports through `@trailstep/core` and `@trailstep/authoring`;
 - type/runtime tests that prove authoring syntax produces recognizable nodes.
 
@@ -357,10 +355,9 @@ Acceptance example:
 return [
   SomeStep(input),
   SomeWorkflow({ value: 1 }),
-  ExistingWorkflow(input, {
-    branch: "existing-plus-followup",
-    onDone: (output) => FollowupStep(output),
-  }),
+  ExistingWorkflow(input, { branch: "existing-plus-followup" }).post((output) =>
+    FollowupStep(output),
+  ),
 ];
 ```
 
@@ -372,7 +369,7 @@ Scope:
 - foreground scheduler with worker pool;
 - arrays spawn parallel branches;
 - normal `done(...)` completes branches;
-- `onDone` routes workflow output into another continuation;
+- `.post(...)` routes workflow output into another continuation;
 - aggregate track output with branch outcomes;
 - branch-aware events;
 - single-branch backward compatibility tests.

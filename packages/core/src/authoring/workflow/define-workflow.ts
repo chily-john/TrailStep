@@ -13,12 +13,20 @@ export function defineWorkflow<
     throw new TypeError("defineWorkflow requires a start function.");
   }
 
-  const workflow = ((input: TInput, invocationOptions?: WorkflowInvocationOptions<TOutput>) => ({
-    kind: "workflowInvocation",
-    workflow,
-    input,
-    ...(invocationOptions === undefined ? {} : { options: invocationOptions }),
-  })) as unknown as DefinedWorkflow<TInput, TOutput>;
+  const workflow = ((input: TInput, invocationOptions?: WorkflowInvocationOptions) => {
+    const makeInvocation = (postContinuation?: (output: TOutput) => unknown) => ({
+      kind: "workflowInvocation" as const,
+      workflow,
+      input,
+      ...(invocationOptions === undefined ? {} : { options: invocationOptions }),
+      ...(postContinuation === undefined ? {} : { postContinuation }),
+      post(continuation: (output: TOutput) => unknown) {
+        return makeInvocation(continuation);
+      },
+    });
+
+    return makeInvocation();
+  }) as unknown as DefinedWorkflow<TInput, TOutput>;
 
   return Object.assign(workflow, options);
 }

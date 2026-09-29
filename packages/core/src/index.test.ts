@@ -79,9 +79,7 @@ describe("@trailstep/core public API", () => {
       { value: number },
       { ok: boolean }
     >;
-    type PublicWorkflowInvocationOptions = import("./index.js").WorkflowInvocationOptions<{
-      ok: boolean;
-    }>;
+    type PublicWorkflowInvocationOptions = import("./index.js").WorkflowInvocationOptions;
     type PublicRunnableContinuationNode = import("./index.js").RunnableContinuationNode;
     type PublicContinuationArray = import("./index.js").ContinuationArray;
     type PublicAbsoluteDoneNode = import("./index.js").AbsoluteDoneNode<{ ok: boolean }>;

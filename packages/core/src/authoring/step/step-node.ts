@@ -5,11 +5,14 @@ import type {
   AbsoluteDoneNode,
   AbsoluteFailNode,
   CheckWaitCallback,
+  ContinuationArray,
   ContinuationStepConfig,
   DisplayPhase,
   DoneNode,
   DoPhase,
   FailNode,
+  ParallelNode,
+  PostContinuation,
   PromptOptions,
   PromptPhase,
   PromptTemplateSource,
@@ -214,6 +217,21 @@ export function absoluteFail(failure: Failure, options?: TerminalMessageOptions)
   };
 }
 
+export function parallel<TOutput extends PlainObject = PlainObject>(
+  nodes: ContinuationArray,
+): ParallelNode<TOutput> {
+  const makeParallel = (postContinuation?: PostContinuation<TOutput>): ParallelNode<TOutput> => ({
+    kind: "parallel",
+    nodes,
+    ...(postContinuation === undefined ? {} : { postContinuation }),
+    post(continuation: PostContinuation<TOutput>) {
+      return makeParallel(continuation);
+    },
+  });
+
+  return makeParallel();
+}
+
 export function isStepNode(value: unknown): value is StepNode {
   return isPlainObject(value) && value.kind === "step";
 }
@@ -228,6 +246,10 @@ export function isFailNode(value: unknown): value is FailNode {
 
 export function isWorkflowInvocationNode(value: unknown): value is WorkflowInvocationNode {
   return isPlainObject(value) && value.kind === "workflowInvocation";
+}
+
+export function isParallelNode(value: unknown): value is ParallelNode {
+  return isPlainObject(value) && value.kind === "parallel" && Array.isArray(value.nodes);
 }
 
 export function isAbsoluteDoneNode(value: unknown): value is AbsoluteDoneNode {

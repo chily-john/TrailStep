@@ -94,13 +94,10 @@ describe("@trailstep/authoring exports", () => {
 
     const options = {
       branch: "existing-plus-followup",
-      onDone: (output: { readonly value: number } & Record<string, unknown>) =>
-        done({ value: output.value + 1 }),
-    } satisfies WorkflowInvocationOptions<{ readonly value: number } & Record<string, unknown>>;
-    const invocation = workflowDefinition({ value: 1 }, options) satisfies WorkflowInvocationNode<
-      { readonly value: number } & Record<string, unknown>,
-      { readonly value: number } & Record<string, unknown>
-    >;
+    } satisfies WorkflowInvocationOptions;
+    const invocation = workflowDefinition({ value: 1 }, options).post((output) =>
+      done({ value: Number(output.value) + 1 }),
+    ) satisfies WorkflowInvocationNode<{ readonly value: number } & Record<string, unknown>>;
     const runnable = invocation satisfies RunnableContinuationNode;
     const array = [runnable] satisfies ContinuationArray;
     const continuation = invocation satisfies ContinuationResult;

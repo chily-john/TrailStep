@@ -234,7 +234,7 @@ describe("runWorkflow failure paths", () => {
     ]);
   });
 
-  it("fails clearly when invocation onDone throws", async () => {
+  it("fails clearly when invocation post throws", async () => {
     const cwd = await testCwd();
     const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
       id: "throwing-on-done-child-workflow",
@@ -247,10 +247,8 @@ describe("runWorkflow failure paths", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start: (input) =>
-        SomeWorkflow(input, {
-          onDone() {
-            throw new Error("onDone blew up");
-          },
+        SomeWorkflow(input).post(() => {
+          throw new Error("post blew up");
         }),
     };
 
@@ -261,16 +259,16 @@ describe("runWorkflow failure paths", () => {
       cwd,
     });
 
-    expectFailure(result, "step_execution_failed", "workflow invocation onDone failed");
+    expectFailure(result, "step_execution_failed", "workflow invocation post failed");
     expectFailure(result, "step_execution_failed", "throwing-on-done-child-workflow");
-    expectFailure(result, "step_execution_failed", "onDone blew up");
+    expectFailure(result, "step_execution_failed", "post blew up");
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "workflow.failed",
     ]);
   });
 
-  it("fails the current branch when invocation onDone returns fail", async () => {
+  it("fails the current branch when invocation post returns fail", async () => {
     const cwd = await testCwd();
     const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
       id: "failing-on-done-child-workflow",
@@ -283,13 +281,11 @@ describe("runWorkflow failure paths", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start: (input) =>
-        SomeWorkflow(input, {
-          onDone(output) {
-            return fail({
-              code: "on_done_rejected",
-              message: `Rejected value ${output.value}.`,
-            });
-          },
+        SomeWorkflow(input).post((output) => {
+          return fail({
+            code: "on_done_rejected",
+            message: `Rejected value ${output.value}.`,
+          });
         }),
     };
 
@@ -307,7 +303,7 @@ describe("runWorkflow failure paths", () => {
     ]);
   });
 
-  it("labels invalid invocation onDone continuations with the invoked workflow id", async () => {
+  it("labels invalid invocation post continuations with the invoked workflow id", async () => {
     const cwd = await testCwd();
     const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
       id: "invalid-on-done-child-workflow",
@@ -320,10 +316,8 @@ describe("runWorkflow failure paths", () => {
       inputShape: { value: "number" },
       outputShape: { value: "number" },
       start: (input) =>
-        SomeWorkflow(input, {
-          onDone() {
-            return { nope: true } as never;
-          },
+        SomeWorkflow(input).post(() => {
+          return { nope: true } as never;
         }),
     };
 
@@ -337,7 +331,7 @@ describe("runWorkflow failure paths", () => {
     expectFailure(
       result,
       "invalid_continuation",
-      "onDone for workflow invocation invalid-on-done-child-workflow returned an invalid continuation node",
+      "post for workflow invocation invalid-on-done-child-workflow returned an invalid continuation node",
     );
   });
 

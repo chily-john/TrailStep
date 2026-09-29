@@ -99,15 +99,15 @@ describe("authoring workflow builders", () => {
     expect(node.input).toEqual({ value: 2 });
 
     let invoked = false;
-    const onDone = (output: { readonly doubled: number } & Record<string, unknown>) => {
+    const post = (output: { readonly doubled: number } & Record<string, unknown>) => {
       invoked = true;
       return done({ doubled: output.doubled + 1 });
     };
-    const nodeWithOptions = workflow({ value: 3 }, { branch: "existing-plus-followup", onDone });
+    const nodeWithOptions = workflow({ value: 3 }, { branch: "existing-plus-followup" }).post(post);
 
     expect(isWorkflowInvocationNode(nodeWithOptions)).toBe(true);
     expect(nodeWithOptions.options?.branch).toBe("existing-plus-followup");
-    expect(nodeWithOptions.options?.onDone).toBe(onDone);
+    expect(nodeWithOptions.postContinuation).toBe(post);
     expect(invoked).toBe(false);
   });
 

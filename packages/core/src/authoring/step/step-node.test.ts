@@ -45,10 +45,10 @@ describe("Slice 1 continuation nodes", () => {
     expect(isFailNode(node)).toBe(false);
   });
 
-  it("identifies workflow invocation nodes and preserves invocation metadata without calling onDone", () => {
-    let onDoneCalls = 0;
-    const onDone = (_output: { ok: boolean }) => {
-      onDoneCalls += 1;
+  it("identifies workflow invocation nodes and preserves invocation metadata without calling post", () => {
+    let postCalls = 0;
+    const post = (_output: { ok: boolean }) => {
+      postCalls += 1;
       return done({ complete: true });
     };
     const workflow: Workflow<{ value: number }, { ok: boolean }> = {
@@ -63,7 +63,10 @@ describe("Slice 1 continuation nodes", () => {
       input: { value: 1 },
       options: {
         branch: "child-branch",
-        onDone,
+      },
+      postContinuation: post,
+      post(continuation) {
+        return { ...this, postContinuation: continuation };
       },
     };
 
@@ -71,8 +74,8 @@ describe("Slice 1 continuation nodes", () => {
     expect(invocationNode.workflow).toBe(workflow);
     expect(invocationNode.input).toEqual({ value: 1 });
     expect(invocationNode.options?.branch).toBe("child-branch");
-    expect(invocationNode.options?.onDone).toBe(onDone);
-    expect(onDoneCalls).toBe(0);
+    expect(invocationNode.postContinuation).toBe(post);
+    expect(postCalls).toBe(0);
   });
 
   it("types continuation arrays as runnable nodes only", () => {
@@ -87,6 +90,9 @@ describe("Slice 1 continuation nodes", () => {
       kind: "workflowInvocation",
       workflow,
       input: { value: 1 },
+      post(continuation) {
+        return { ...this, postContinuation: continuation };
+      },
     };
 
     const result: ContinuationResult = [someStep({ value: 1 }), invocationNode];

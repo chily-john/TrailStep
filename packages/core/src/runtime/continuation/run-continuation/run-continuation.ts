@@ -16,12 +16,14 @@ import type {
   WaitPhase,
 } from "../../../authoring/step/continuation.types.js";
 import {
+  done,
   firstPromptPhase,
   getStepPhases,
   isAbsoluteDoneNode,
   isAbsoluteFailNode,
   isDoneNode,
   isFailNode,
+  isParallelNode,
   isStepNode,
   isWorkflowInvocationNode,
 } from "../../../authoring/step/step-node.js";
@@ -112,7 +114,9 @@ interface WorkflowInvocationFrame {
   readonly workflowTimeout?: TimeoutPolicyInput;
   readonly workflowOutputSchema?: ReturnType<typeof normalizeShape>;
   readonly invocationWorkflowId: string;
-  readonly onDone?: (output: PlainObject) => ContinuationResult | Promise<ContinuationResult>;
+  readonly postContinuation?: (
+    output: PlainObject,
+  ) => ContinuationResult | Promise<ContinuationResult>;
 }
 
 export type RunContinuationResult =
@@ -126,6 +130,12 @@ export type RunContinuationResult =
       readonly status: "split";
       readonly nodes: readonly ContinuationResult[];
       readonly source: string;
+      readonly postContinuation?: (
+        output: PlainObject,
+      ) => ContinuationResult | Promise<ContinuationResult>;
+      readonly afterPostContinuation?: (
+        output: PlainObject,
+      ) => ContinuationResult | Promise<ContinuationResult>;
     };
 
 export async function runContinuation(
@@ -145,6 +155,56 @@ export async function runContinuation(
   let currentWorkflowAgents = options.workflowAgents;
   let currentWorkflowTimeout = options.workflowTimeout;
   let currentWorkflowOutputSchema: ReturnType<typeof normalizeShape> | undefined;
+
+  const splitPostContinuationForInvocationFrames = ():
+    | ((output: PlainObject) => ContinuationResult | Promise<ContinuationResult>)
+    | undefined => {
+    if (invocationFrames.length === 0) {
+      return undefined;
+    }
+
+    const frames = [...invocationFrames];
+    const splitWorkflowOutputSchema = currentWorkflowOutputSchema;
+    return async (aggregateOutput: PlainObject): Promise<ContinuationResult> => {
+      let output: PlainObject;
+      try {
+        output =
+          splitWorkflowOutputSchema === undefined
+            ? aggregateOutput
+            : splitWorkflowOutputSchema.assert(
+                aggregateOutput,
+                `invoked workflow ${frames[frames.length - 1]?.invocationWorkflowId ?? currentWorkflowId} output`,
+              );
+      } catch (error) {
+        throw failureFromError(error);
+      }
+
+      while (frames.length > 0) {
+        const frame = frames.pop();
+        if (frame?.postContinuation !== undefined) {
+          return await frame.postContinuation(output);
+        }
+      }
+
+      return done(output);
+    };
+  };
+
+  const splitPostContinuations = (
+    postContinuation:
+      | ((output: PlainObject) => ContinuationResult | Promise<ContinuationResult>)
+      | undefined,
+  ) => {
+    const invocationPostContinuation = splitPostContinuationForInvocationFrames();
+    if (postContinuation === undefined) {
+      return invocationPostContinuation === undefined
+        ? {}
+        : { postContinuation: invocationPostContinuation };
+    }
+    return invocationPostContinuation === undefined
+      ? { postContinuation }
+      : { postContinuation, afterPostContinuation: invocationPostContinuation };
+  };
 
   while (true) {
     const pendingCancellation = await readCancellationMarker(options.runDir);
@@ -174,20 +234,20 @@ export async function runContinuation(
         currentWorkflowTimeout = frame.workflowTimeout;
         currentWorkflowOutputSchema = frame.workflowOutputSchema;
 
-        if (frame.onDone !== undefined) {
+        if (frame.postContinuation !== undefined) {
           try {
-            node = await frame.onDone(output);
+            node = await frame.postContinuation(output);
           } catch (error) {
             return {
               status: "failure",
               failure: stepExecutionFailure(
                 new Error(
-                  `workflow invocation onDone failed for ${invocationWorkflowId}: ${errorMessage(error)}`,
+                  `workflow invocation post failed for ${invocationWorkflowId}: ${errorMessage(error)}`,
                 ),
               ),
             };
           }
-          source = `onDone for workflow invocation ${invocationWorkflowId}`;
+          source = `post for workflow invocation ${invocationWorkflowId}`;
           continue;
         }
 
@@ -230,7 +290,21 @@ export async function runContinuation(
     }
 
     if (Array.isArray(node) && options.returnContinuationArrays === true) {
-      return { status: "split", nodes: node, source };
+      return {
+        status: "split",
+        nodes: node,
+        source,
+        ...splitPostContinuations(undefined),
+      };
+    }
+
+    if (isParallelNode(node) && options.returnContinuationArrays === true) {
+      return {
+        status: "split",
+        nodes: node.nodes,
+        source,
+        ...splitPostContinuations(node.postContinuation),
+      };
     }
 
     if (isWorkflowInvocationNode(node)) {
@@ -261,7 +335,9 @@ export async function runContinuation(
           ? {}
           : { workflowOutputSchema: currentWorkflowOutputSchema }),
         invocationWorkflowId: invocation.workflow.id,
-        ...(invocation.options?.onDone === undefined ? {} : { onDone: invocation.options.onDone }),
+        ...(invocation.postContinuation === undefined
+          ? {}
+          : { postContinuation: invocation.postContinuation }),
       });
       currentWorkflowId = invocation.workflow.id;
       currentWorkflowAgents = invocation.workflow.agents ?? {};
@@ -526,7 +602,21 @@ export async function runContinuation(
 
       const nextNode = stepResult.node;
       if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
-        return { status: "split", nodes: nextNode, source: `step ${config.id}` };
+        return {
+          status: "split",
+          nodes: nextNode,
+          source: `step ${config.id}`,
+          ...splitPostContinuations(undefined),
+        };
+      }
+
+      if (isParallelNode(nextNode) && options.returnContinuationArrays === true) {
+        return {
+          status: "split",
+          nodes: nextNode.nodes,
+          source: `step ${config.id}`,
+          ...splitPostContinuations(nextNode.postContinuation),
+        };
       }
 
       if (options.returnContinuationArrays === true && isAbsoluteDoneNode(nextNode)) {
@@ -622,7 +712,21 @@ export async function runContinuation(
         const nextNode = stepNode.onError(failure);
         const errorSource = `error continuation for step ${config.id}`;
         if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
-          return { status: "split", nodes: nextNode, source: errorSource };
+          return {
+            status: "split",
+            nodes: nextNode,
+            source: errorSource,
+            ...splitPostContinuations(undefined),
+          };
+        }
+
+        if (isParallelNode(nextNode) && options.returnContinuationArrays === true) {
+          return {
+            status: "split",
+            nodes: nextNode.nodes,
+            source: errorSource,
+            ...splitPostContinuations(nextNode.postContinuation),
+          };
         }
 
         if (options.returnContinuationArrays === true && isAbsoluteDoneNode(nextNode)) {

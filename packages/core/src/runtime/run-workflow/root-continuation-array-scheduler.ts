@@ -69,6 +69,7 @@ interface BranchState {
   readonly branchId: string;
   readonly parentBranchId?: string;
   readonly requestedBranchId?: string;
+  readonly joinContinuation?: boolean;
   readonly workflowId: string;
   readonly createdAt: string;
   status: BranchStatus;
@@ -84,10 +85,24 @@ interface BranchState {
   latestStepId?: string;
 }
 
+interface PendingJoin {
+  readonly parentBranchId: string;
+  readonly childBranchIds: readonly string[];
+  readonly source: string;
+  readonly postContinuation: (
+    output: PlainObject,
+  ) => ContinuationResult | Promise<ContinuationResult>;
+  readonly afterPostContinuation?: (
+    output: PlainObject,
+  ) => ContinuationResult | Promise<ContinuationResult>;
+  completed: Readonly<Record<string, PlainObject>>;
+}
+
 interface BranchStateJson {
   readonly branchId: string;
   readonly parentBranchId?: string;
   readonly requestedBranchId?: string;
+  readonly joinContinuation?: boolean;
   readonly status: BranchStatus;
   readonly workflowId: string;
   readonly source: string;
@@ -128,6 +143,7 @@ export async function runRootContinuationArrayScheduler(
   let terminalResult: RunContinuationResult | undefined;
   let terminalBranchId: string | undefined;
   let terminalKind: TrackTerminalKind | undefined;
+  const pendingJoins: PendingJoin[] = [];
 
   const allocateStepIndex = (branch: BranchState): number => {
     if (nextStepIndex >= options.maxSteps) {
@@ -144,6 +160,7 @@ export async function runRootContinuationArrayScheduler(
     parentBranchId: string | undefined,
     source: string,
     requireRunnableBranchCandidate: boolean,
+    joinContinuation = false,
   ): BranchState => {
     const branch = createBranchRecord({
       node,
@@ -154,6 +171,7 @@ export async function runRootContinuationArrayScheduler(
         parentBranchId === undefined && branches.length === 0
           ? rootBranchId
           : `branch-${nextBranchId++}`,
+      joinContinuation,
     });
     branches.push(branch);
     if (terminalResult === undefined) {
@@ -285,6 +303,19 @@ export async function runRootContinuationArrayScheduler(
   await persistTrack(options, workers, rootBranchId, branches, "completed", splitOccurred);
 
   const terminalBranches = branches.filter((branch) => isBranchTerminalStatus(branch.status));
+  const joinContinuationBranch = [...terminalBranches]
+    .reverse()
+    .find((branch) => branch.joinContinuation === true && branch.status === "done");
+  if (joinContinuationBranch !== undefined) {
+    return {
+      status: "success",
+      output: joinContinuationBranch.output ?? {},
+      ...(joinContinuationBranch.message === undefined
+        ? {}
+        : { message: joinContinuationBranch.message }),
+    };
+  }
+
   if (!splitOccurred && terminalBranches.length === 1 && terminalBranches[0]?.status === "done") {
     return {
       status: "success",
@@ -457,8 +488,20 @@ export async function runRootContinuationArrayScheduler(
         await persistBranch(options.runDir, branch);
         return { status: "cancelled", cancellation: { requestedAt: branch.updatedAt } };
       }
-      for (const childNode of branchResult.nodes) {
-        enqueue(childNode, branch.branchId, branchResult.source, true);
+      const childBranches = branchResult.nodes.map((childNode) =>
+        enqueue(childNode, branch.branchId, branchResult.source, true),
+      );
+      if (branchResult.postContinuation !== undefined) {
+        pendingJoins.push({
+          parentBranchId: branch.branchId,
+          childBranchIds: childBranches.map((childBranch) => childBranch.branchId),
+          source: branchResult.source,
+          postContinuation: branchResult.postContinuation,
+          ...(branchResult.afterPostContinuation === undefined
+            ? {}
+            : { afterPostContinuation: branchResult.afterPostContinuation }),
+          completed: {},
+        });
       }
       await Promise.all(
         branches.map((persistedBranch) => persistBranch(options.runDir, persistedBranch)),
@@ -467,10 +510,58 @@ export async function runRootContinuationArrayScheduler(
       branch.status = "done";
       branch.output = branchResult.output;
       branch.message = branchResult.message;
+      await enqueueSatisfiedJoins(branch);
     }
     await persistBranch(options.runDir, branch);
     await persistTrack(options, workers, rootBranchId, branches, "running", splitOccurred);
     return branchResultWasSplit ? { status: "success", output: {} } : branchResult;
+  }
+
+  async function enqueueSatisfiedJoins(branch: BranchState): Promise<void> {
+    for (const join of pendingJoins) {
+      if (!join.childBranchIds.includes(branch.branchId) || branch.output === undefined) {
+        continue;
+      }
+      join.completed = { ...join.completed, [branch.branchId]: branch.output };
+      if (Object.keys(join.completed).length !== join.childBranchIds.length) {
+        continue;
+      }
+
+      let nextNode: ContinuationResult;
+      try {
+        nextNode = await join.postContinuation({ status: "completed", branches: join.completed });
+      } catch (error) {
+        await terminalizeTrack({
+          status: "failure",
+          failure: {
+            code: "step_execution_failed",
+            message: `parallel post failed for ${join.source}: ${String(error)}`,
+          },
+        });
+        continue;
+      }
+      const postBranch = enqueue(
+        nextNode,
+        join.parentBranchId,
+        `post for ${join.source}`,
+        false,
+        true,
+      );
+      if (join.afterPostContinuation !== undefined) {
+        const afterPostContinuation = join.afterPostContinuation;
+        pendingJoins.push({
+          parentBranchId: join.parentBranchId,
+          childBranchIds: [postBranch.branchId],
+          source: `post for ${join.source}`,
+          postContinuation: async (aggregateOutput) => {
+            const branches = aggregateOutput.branches as Record<string, PlainObject> | undefined;
+            const [output] = Object.values(branches ?? {});
+            return afterPostContinuation(output ?? {});
+          },
+          completed: {},
+        });
+      }
+    }
   }
 }
 
@@ -480,11 +571,13 @@ function createBranchRecord(input: {
   readonly source: string;
   readonly workflowId: string;
   readonly branchId: string;
+  readonly joinContinuation: boolean;
 }): BranchState {
   const now = new Date().toISOString();
   return {
     branchId: input.branchId,
     ...(input.parentBranchId === undefined ? {} : { parentBranchId: input.parentBranchId }),
+    ...(input.joinContinuation ? { joinContinuation: true } : {}),
     ...requestedBranchMetadata(input.node),
     workflowId: input.workflowId,
     createdAt: now,
@@ -837,6 +930,7 @@ function branchFromJson(json: BranchStateJson): BranchState {
     branchId: json.branchId,
     ...(json.parentBranchId === undefined ? {} : { parentBranchId: json.parentBranchId }),
     ...(json.requestedBranchId === undefined ? {} : { requestedBranchId: json.requestedBranchId }),
+    ...(json.joinContinuation === undefined ? {} : { joinContinuation: json.joinContinuation }),
     workflowId: json.workflowId,
     createdAt: json.createdAt,
     updatedAt: json.updatedAt,
@@ -888,6 +982,7 @@ async function persistBranch(runDir: string, branch: BranchState): Promise<void>
     ...(branch.requestedBranchId === undefined
       ? {}
       : { requestedBranchId: branch.requestedBranchId }),
+    ...(branch.joinContinuation === undefined ? {} : { joinContinuation: branch.joinContinuation }),
     status: branch.status,
     workflowId: branch.workflowId,
     source: branch.source,

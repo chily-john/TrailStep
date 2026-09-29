@@ -22,6 +22,8 @@ export type {
   CheckWaitContext,
   CheckWaitHelpers,
   ContinuationArray,
+  ParallelNode,
+  PostContinuation,
   RunnableContinuationNode,
   StepContextContinuation,
   StepContinuationOutput,
@@ -57,8 +59,10 @@ export {
   isAbsoluteFailNode,
   isDoneNode,
   isFailNode,
+  isParallelNode,
   isStepNode,
   isWorkflowInvocationNode,
+  parallel,
   step,
 } from "./step/step-node.js";
 export { subPrompt } from "./step/sub-prompt.js";

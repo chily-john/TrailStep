@@ -13,6 +13,7 @@ import {
   type Event,
   fail,
   type PlainObject,
+  parallel,
   runWorkflow,
   state,
   step,
@@ -121,7 +122,7 @@ describe("runWorkflow parallel tracks", () => {
     expect(rootBranch).toMatchObject({ branchId: "root", status: "done", output: { value: 42 } });
   });
 
-  it("routes invocation onDone on the same branch", async () => {
+  it("routes invocation post on the same branch", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-ondone-same-branch-"));
     const observedOutputs: PlainObject[] = [];
     const branchIds: string[] = [];
@@ -141,11 +142,9 @@ describe("runWorkflow parallel tracks", () => {
       },
     });
     const parentStep = step({ id: "parent-on-done-step" }).do((input: { value: number }) =>
-      ChildWorkflow(input, {
-        onDone(output) {
-          observedOutputs.push(output);
-          return followUpStep(output);
-        },
+      ChildWorkflow(input).post((output) => {
+        observedOutputs.push(output);
+        return followUpStep(output);
       }),
     );
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -190,7 +189,76 @@ describe("runWorkflow parallel tracks", () => {
     });
   });
 
-  it("schedules an onDone continuation array after same-branch workflow invocation", async () => {
+  it("runs workflow invocation post after invoked workflow parallel branches join", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-post-child-parallel-"));
+    const observed: string[] = [];
+
+    const branchStep = step({ id: "child-parallel-post-branch" }).do(
+      (input: { readonly branch: string; readonly value: number }) => {
+        observed.push(input.branch);
+        return done({ value: input.value });
+      },
+    );
+    const childFinalizeStep = step({ id: "child-parallel-post-finalize" }).do(
+      (input: {
+        readonly status: string;
+        readonly branches: Record<string, { readonly value: number }>;
+      }) => {
+        observed.push(`child-post:${Object.keys(input.branches).length}`);
+        return done({
+          total: Object.values(input.branches).reduce((sum, output) => sum + output.value, 0),
+        });
+      },
+    );
+    const parentFinalizeStep = step({ id: "parent-post-after-child-parallel-post" }).do(
+      (input: { readonly total: number }) => {
+        observed.push(`parent-post:${input.total}`);
+        return done({ doubled: input.total * 2 });
+      },
+    );
+    const ChildWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "child-parallel-post-child-workflow",
+      start() {
+        return parallel<{ readonly status: string; readonly branches: PlainObject }>([
+          branchStep({ branch: "a", value: 2 }),
+          branchStep({ branch: "b", value: 3 }),
+        ]).post((output) =>
+          childFinalizeStep(
+            output as {
+              readonly status: string;
+              readonly branches: Record<string, { value: number }>;
+            },
+          ),
+        );
+      },
+    });
+    const parentStep = step({ id: "child-parallel-post-parent-step" }).do(() =>
+      ChildWorkflow({}).post((output) => parentFinalizeStep(output as { readonly total: number })),
+    );
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "child-parallel-post-parent-workflow",
+      start() {
+        return parentStep();
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "invocation-post-child-parallel",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ doubled: 10 });
+    expect(observed).toEqual(expect.arrayContaining(["a", "b", "child-post:2", "parent-post:5"]));
+  });
+
+  it("schedules an post continuation array after same-branch workflow invocation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-ondone-array-"));
     const observed: string[] = [];
     const branchIds: string[] = [];
@@ -227,11 +295,9 @@ describe("runWorkflow parallel tracks", () => {
       },
     });
     const parentStep = step({ id: "on-done-array-parent-step" }).do((input: { value: number }) =>
-      ChildWorkflow(input, {
-        onDone(output) {
-          observed.push(`onDone:${output.value}`);
-          return [branchA(), branchB()];
-        },
+      ChildWorkflow(input).post((output) => {
+        observed.push(`post:${output.value}`);
+        return [branchA(), branchB()];
       }),
     );
     const workflow: Workflow<{ value: number }, PlainObject> = {
@@ -256,11 +322,11 @@ describe("runWorkflow parallel tracks", () => {
     });
 
     try {
-      await expect.poll(() => observed).toEqual(["child", "onDone:41", "a"]);
+      await expect.poll(() => observed).toEqual(["child", "post:41", "a"]);
       await delay(25);
-      expect(observed).toEqual(["child", "onDone:41", "a"]);
+      expect(observed).toEqual(["child", "post:41", "a"]);
       gates.get("a")?.resolve();
-      await expect.poll(() => observed).toEqual(["child", "onDone:41", "a", "b"]);
+      await expect.poll(() => observed).toEqual(["child", "post:41", "a", "b"]);
       gates.get("b")?.resolve();
     } catch (error) {
       gates.get("a")?.resolve();
@@ -297,7 +363,7 @@ describe("runWorkflow parallel tracks", () => {
     expect(rootBranch).toMatchObject({
       branchId: "root",
       status: "split",
-      splitSource: "onDone for workflow invocation on-done-array-child-workflow",
+      splitSource: "post for workflow invocation on-done-array-child-workflow",
       latestStepId: "on-done-array-child-step",
     });
     for (const branchId of ["branch-1", "branch-2"]) {
@@ -305,7 +371,7 @@ describe("runWorkflow parallel tracks", () => {
       expect(branch).toMatchObject({
         branchId,
         parentBranchId: "root",
-        source: "onDone for workflow invocation on-done-array-child-workflow",
+        source: "post for workflow invocation on-done-array-child-workflow",
         status: "done",
       });
     }
@@ -317,7 +383,7 @@ describe("runWorkflow parallel tracks", () => {
     expect(new Set(stepDirs).size).toBe(stepDirs.length);
   });
 
-  it("terminalizes the same branch when invocation onDone returns done", async () => {
+  it("terminalizes the same branch when invocation post returns done", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-ondone-done-"));
     const observedOutputs: PlainObject[] = [];
     const branchIds: string[] = [];
@@ -334,11 +400,9 @@ describe("runWorkflow parallel tracks", () => {
       },
     });
     const parentStep = step({ id: "parent-on-done-terminal-step" }).do((input: { value: number }) =>
-      ChildWorkflow(input, {
-        onDone(output) {
-          observedOutputs.push(output);
-          return done({ value: output.value + 1 });
-        },
+      ChildWorkflow(input).post((output) => {
+        observedOutputs.push(output);
+        return done({ value: output.value + 1 });
       }),
     );
     const workflow: Workflow<{ value: number }, { value: number }> = {
@@ -1383,6 +1447,54 @@ describe("runWorkflow parallel tracks", () => {
     });
   });
 
+  it("runs parallel post after all branches finish with aggregate output", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-post-"));
+    const observed: string[] = [];
+    const branchStep = step({ id: "parallel-post-branch" }).do(
+      (input: { readonly branch: string; readonly value: number }) => {
+        observed.push(input.branch);
+        return done({ value: input.value });
+      },
+    );
+    const finalizeStep = step({ id: "parallel-post-finalize" }).do(
+      (input: {
+        readonly status: string;
+        readonly branches: Record<string, { value: number }>;
+      }) => {
+        observed.push(`post:${Object.keys(input.branches).length}`);
+        return done({
+          total: Object.values(input.branches).reduce((sum, output) => sum + output.value, 0),
+        });
+      },
+    );
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-post-workflow",
+      start() {
+        return parallel<{
+          readonly status: string;
+          readonly branches: Record<string, { value: number }>;
+        }>([branchStep({ branch: "a", value: 2 }), branchStep({ branch: "b", value: 3 })]).post(
+          (output) => finalizeStep(output),
+        );
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-post",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ total: 5 });
+    expect(observed).toEqual(expect.arrayContaining(["a", "b", "post:2"]));
+  });
+
   it("schedules an array returned by a non-root step", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-non-root-"));
     const observed: string[] = [];
@@ -2254,21 +2366,13 @@ describe("runWorkflow parallel tracks", () => {
     });
 
     const rootStep = step({ id: "tracer-root-step" }).do((input: { readonly seed: number }) =>
-      ChildWorkflow(input, {
-        onDone(output) {
-          return [
-            WorkerWorkflow({ branch: "a", seed: output.seed }, { branch: "requested-a" }),
-            WorkerWorkflow(
-              { branch: "b", seed: output.seed },
-              {
-                branch: "requested-b",
-                onDone(workerOutput) {
-                  return finalizeStep(workerOutput);
-                },
-              },
-            ),
-          ];
-        },
+      ChildWorkflow(input).post((output) => {
+        return [
+          WorkerWorkflow({ branch: "a", seed: output.seed }, { branch: "requested-a" }),
+          WorkerWorkflow({ branch: "b", seed: output.seed }, { branch: "requested-b" }).post(
+            (workerOutput) => finalizeStep(workerOutput),
+          ),
+        ];
       }),
     );
     const workflow: Workflow<{ readonly seed: number }, PlainObject> = {

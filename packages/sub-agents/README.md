@@ -8,8 +8,9 @@
 - `delegateExplore`: default registered id `delegateExplore`; read-oriented investigation with explore defaults.
 - `delegateReview`: default registered id `delegateReview`; focused review with edit-avoidant guidance.
 - `delegateImplement`: default registered id `delegateImplement`; bounded implementation with a larger turn budget.
+- `delegateParallel`: default registered id `delegateParallel`; parent-agent fan-out for required task ids/modes/text using the existing delegate workflows in parallel.
 
-The delegate workflows end with completed/blocked/cancelled status, summary/result text, changed files/artifacts, turn/question counts, optional worktree lifecycle details, and a terminal message readable with `trailstep output <runName> --message`.
+The delegate workflows end with completed/blocked/cancelled status, summary/result text, changed files/artifacts, turn/question counts, optional worktree lifecycle details, and a terminal message readable with `trailstep output <runName> --message`. `delegateParallel` returns the raw parallel branch outputs; final aggregation/merge is intentionally left to the parent.
 
 ## Recommended setup
 
@@ -46,11 +47,12 @@ trailstep project/delegate --task "Investigate failing parser tests" --mode expl
 trailstep project/delegateExplore --task "Map the parser failure area"
 trailstep project/delegateReview --task "Review the parser fix"
 trailstep project/delegateImplement --task "Fix parser path normalization"
+trailstep project/delegateParallel --input-file delegate-parallel-input.json
 ```
 
 ## Which delegate should I use?
 
-Use the generic `delegate` when you want to choose `mode`, `maxTurns`, and context explicitly for explore, implement, review, or general work. Use `delegateExplore`, `delegateReview`, or `delegateImplement` when you want focused skill guidance and defaults while reusing the same delegate engine/steps.
+Use the generic `delegate` when you want to choose `mode`, `maxTurns`, and context explicitly for explore, implement, review, or general work. Use `delegateExplore`, `delegateReview`, or `delegateImplement` when you want focused skill guidance and defaults while reusing the same delegate engine/steps. Use `delegateParallel` only when the parent already has concrete independent tasks; it does not plan or merge results.
 
 ```bash
 trailstep project/delegate --task "Investigate failing parser tests" --mode explore
@@ -70,6 +72,20 @@ JSON input-file usage is useful for richer context:
 
 ```bash
 trailstep project/delegate --input-file delegate-input.json
+```
+
+Parallel input uses required stable task ids, modes, and task text. Shared values are defaults, and task-level `cwd`, `maxTurns`, `summarize`, or `worktree` values override them. Managed worktrees default per task to `.trailstep/worktrees/<runName>/<taskId>` and `trailstep/delegate/<runName>/<taskId>`.
+
+```json
+{
+  "context": "Shared repo context for every delegate.",
+  "worktree": { "enabled": true, "baseRef": "main" },
+  "tasks": [
+    { "id": "map-parser", "mode": "explore", "task": "Map parser failure area" },
+    { "id": "fix-parser", "mode": "implement", "task": "Fix path normalization" },
+    { "id": "review-parser", "mode": "review", "task": "Review the parser fix" }
+  ]
+}
 ```
 
 Parent-agent tips:
@@ -137,6 +153,7 @@ trailstep @trailstep/sub-agents#delegate --task "Investigate failing parser test
 trailstep @trailstep/sub-agents#delegateExplore --task "Map the parser failure area"
 trailstep @trailstep/sub-agents#delegateReview --task "Review the parser fix"
 trailstep @trailstep/sub-agents#delegateImplement --task "Fix parser path normalization"
+trailstep @trailstep/sub-agents#delegateParallel --input-file delegate-parallel-input.json
 ```
 
 Use the equivalent install command for your package manager if you use `pnpm`, `yarn`, or `bun`.

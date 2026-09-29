@@ -325,10 +325,13 @@ export interface FailNode {
   readonly message?: string;
 }
 
-export interface WorkflowInvocationOptions<TOutput extends PlainObject = PlainObject> {
+export interface WorkflowInvocationOptions {
   readonly branch?: string;
-  readonly onDone?: (output: TOutput) => ContinuationResult | Promise<ContinuationResult>;
 }
+
+export type PostContinuation<TOutput extends PlainObject = PlainObject> = {
+  bivarianceHack(output: TOutput): ContinuationResult | Promise<ContinuationResult>;
+}["bivarianceHack"];
 
 export interface WorkflowInvocationNode<
   TInput extends PlainObject = PlainObject,
@@ -337,7 +340,9 @@ export interface WorkflowInvocationNode<
   readonly kind: "workflowInvocation";
   readonly workflow: Workflow<TInput, TOutput>;
   readonly input: TInput;
-  readonly options?: WorkflowInvocationOptions<TOutput>;
+  readonly options?: WorkflowInvocationOptions;
+  post(continuation: PostContinuation<TOutput>): WorkflowInvocationNode<TInput, TOutput>;
+  readonly postContinuation?: PostContinuation<TOutput>;
 }
 
 export interface AbsoluteDoneNode<TOutput extends PlainObject = PlainObject> {
@@ -357,6 +362,7 @@ export interface RunnableWorkflowInvocationNode {
   readonly workflow: unknown;
   readonly input: PlainObject;
   readonly options?: unknown;
+  readonly postContinuation?: PostContinuation;
 }
 
 export type RunnableContinuationNode =
@@ -365,6 +371,13 @@ export type RunnableContinuationNode =
 
 export type ContinuationArray = readonly RunnableContinuationNode[];
 
+export interface ParallelNode<TOutput extends PlainObject = PlainObject> {
+  readonly kind: "parallel";
+  readonly nodes: ContinuationArray;
+  post(continuation: PostContinuation<TOutput>): ParallelNode<TOutput>;
+  readonly postContinuation?: PostContinuation<TOutput>;
+}
+
 export type ContinuationResult<TOutput extends PlainObject = PlainObject> =
   | StepNode<PlainObject, PlainObject>
   | DoneNode<TOutput>
@@ -372,4 +385,5 @@ export type ContinuationResult<TOutput extends PlainObject = PlainObject> =
   | RunnableWorkflowInvocationNode
   | AbsoluteDoneNode<TOutput>
   | AbsoluteFailNode
-  | ContinuationArray;
+  | ContinuationArray
+  | ParallelNode<TOutput>;

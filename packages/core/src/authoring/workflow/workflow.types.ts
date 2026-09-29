@@ -40,7 +40,4 @@ export type DefinedWorkflow<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > = Workflow<TInput, TOutput> &
-  ((
-    input: TInput,
-    options?: WorkflowInvocationOptions<TOutput>,
-  ) => WorkflowInvocationNode<TInput, TOutput>);
+  ((input: TInput, options?: WorkflowInvocationOptions) => WorkflowInvocationNode<TInput, TOutput>);

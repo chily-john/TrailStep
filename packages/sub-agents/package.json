@@ -20,7 +20,8 @@
       "delegate": "./dist/index.js#delegate",
       "delegateExplore": "./dist/index.js#delegateExplore",
       "delegateReview": "./dist/index.js#delegateReview",
-      "delegateImplement": "./dist/index.js#delegateImplement"
+      "delegateImplement": "./dist/index.js#delegateImplement",
+      "delegateParallel": "./dist/index.js#delegateParallel"
     }
   },
   "main": "./dist/index.js",

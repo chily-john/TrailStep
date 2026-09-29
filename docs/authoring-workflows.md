@@ -154,17 +154,15 @@ Use `trailstep continue` to continue waiting or interrupted interactive work.
 ```ts
 return ImplementStoryWorkflow(
   { storyId: story.id, cwd: input.cwd },
-  {
-    branch: `story-${story.id}`,
-    onDone: (output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }),
-  },
-);
+  { branch: `story-${story.id}` },
+).post((output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }));
 ```
 
 Workflow invocation options currently include:
 
 - `branch?: string`: a requested stable branch name. Persisted branch ids are the ids to use for retry/inspection; when names collide, TrailStep keeps the requested name as `requestedBranchId` metadata and assigns unique persisted branch ids such as `branch-1`.
-- `onDone?: (output) => ContinuationResult`: a follow-up continuation for the same branch when the invoked workflow returns `done(...)`.
+
+Use `.post((output) => nextContinuation)` on a workflow invocation when the parent should hook a follow-up continuation onto the invoked workflow's successful output.
 
 A continuation may return an array of runnable branch candidates to split work:
 
@@ -176,7 +174,7 @@ return readyStories.map((story) =>
 
 Arrays replace the current branch with queued child branches. They are not a reducer/fan-in primitive. Array entries must be runnable step nodes or workflow invocation nodes; return `done(...)`, `fail(...)`, `absoluteDone(...)`, or `absoluteFail(...)` directly instead of placing them in an array.
 
-Normal `done(output)` finishes the current workflow invocation or branch. If a workflow invocation has `onDone`, TrailStep passes the validated output to that callback and continues the same branch. The whole track completes when all branches are terminal unless a failure policy or absolute terminal ends it earlier. Use `absoluteDone(...)` or `absoluteFail(...)` only when one branch should terminate the entire track and cancel siblings.
+Normal `done(output)` finishes the current workflow invocation or branch. If a workflow invocation has `.post(...)`, TrailStep passes the validated output to that callback and continues with the returned continuation. The whole track completes when all branches are terminal unless a failure policy or absolute terminal ends it earlier. Use `absoluteDone(...)` or `absoluteFail(...)` only when one branch should terminate the entire track and cancel siblings.
 
 `state` remains branch-local. Sibling branches do not see each other's `state` values. Use `globalState` for shared coordination:
 

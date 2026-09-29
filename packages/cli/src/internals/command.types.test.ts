@@ -15,7 +15,7 @@ describe("usageText", () => {
     expect(usageText).toContain("trailstep <agent-or-provider>");
     expect(usageText).toContain("trailstep open [agent-or-provider]");
     expect(usageText).toContain(
-      "trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
+      "trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]",
     );
   });
 

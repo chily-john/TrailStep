@@ -96,10 +96,10 @@ describe("defineWorkflow", () => {
       start: () => done({ ok: true }),
     });
 
-    const node = workflow({ value: 1 }, { branch: "existing-plus-followup" }).post(post);
+    const node = workflow({ value: 1 }, { branchId: "existing-plus-followup" }).post(post);
 
     expect(isWorkflowInvocationNode(node)).toBe(true);
-    expect(node.options?.branch).toBe("existing-plus-followup");
+    expect(node.options?.branchId).toBe("existing-plus-followup");
     expect(node.postContinuation).toBe(post);
     expect(postCalls).toBe(0);
   });

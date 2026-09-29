@@ -156,7 +156,8 @@ describe("generateWorkflowSkillContent", () => {
     expect(markdown).toContain(
       "Use this only as a sub-agent review tool. Keep the review focused on the requested topic.\n\nRun the registered TrailStep workflow `project/review`.",
     );
-    expect(markdown).toContain("Create workflow input JSON");
+    expect(markdown).toContain("Prepare workflow input JSON");
+    expect(markdown).toContain("trailstep project/review --input-file -");
     expect(markdown).toContain(
       "trailstep project/review --input-file .trailstep/inputs/trst-review-input.json",
     );
@@ -227,6 +228,7 @@ describe("generateWorkflowSkillContent", () => {
       "Export dense conversation/session context to `.trailstep/inputs/trst-review-context.md`",
     );
     expect(markdown).toContain('{ "sessionFile": ".trailstep/inputs/trst-review-context.md" }');
+    expect(markdown).toContain("trailstep project/review --input-file -");
     expect(markdown).toContain(
       "trailstep project/review --input-file .trailstep/inputs/trst-review-input.json",
     );

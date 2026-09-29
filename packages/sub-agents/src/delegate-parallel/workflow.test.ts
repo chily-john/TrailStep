@@ -151,10 +151,10 @@ describe("delegateParallel", () => {
       throw new Error(result.failure.message);
     }
     expect(result.output.status).toBe("completed");
-    expect(Object.keys(result.output.branches ?? {})).toEqual(["branch-1", "branch-2"]);
+    expect(Object.keys(result.output.branches ?? {})).toEqual(["delegate-map", "delegate-fix"]);
     expect(Object.values(result.output.branches ?? {})).toEqual(
       expect.arrayContaining([
-        {
+        expect.objectContaining({
           status: "done",
           output: {
             status: "completed",
@@ -163,8 +163,8 @@ describe("delegateParallel", () => {
             questionsAsked: 0,
             turns: 1,
           },
-        },
-        {
+        }),
+        expect.objectContaining({
           status: "done",
           output: {
             status: "completed",
@@ -173,7 +173,7 @@ describe("delegateParallel", () => {
             questionsAsked: 0,
             turns: 1,
           },
-        },
+        }),
       ]),
     );
     expect(requestedBranches).toEqual(expect.arrayContaining(["delegate-map", "delegate-fix"]));

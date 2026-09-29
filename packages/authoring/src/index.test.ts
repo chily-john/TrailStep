@@ -93,7 +93,7 @@ describe("@trailstep/authoring exports", () => {
     >;
 
     const options = {
-      branch: "existing-plus-followup",
+      branchId: "existing-plus-followup",
     } satisfies WorkflowInvocationOptions;
     const invocation = workflowDefinition({ value: 1 }, options).post((output) =>
       done({ value: Number(output.value) + 1 }),

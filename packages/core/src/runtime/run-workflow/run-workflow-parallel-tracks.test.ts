@@ -414,7 +414,12 @@ describe("runWorkflow parallel tracks", () => {
     }
 
     expect(maxActive).toBe(1);
-    expect(branchIds).toEqual(["root", "root", "branch-1", "branch-2"]);
+    expect(branchIds).toEqual([
+      "root",
+      "root",
+      "on-done-array-branch-a-1",
+      "on-done-array-branch-b-1",
+    ]);
     expect(result.output).toMatchObject({
       status: "completed",
       branches: expect.any(Object),
@@ -429,7 +434,7 @@ describe("runWorkflow parallel tracks", () => {
     const track = await readJsonObject(join(result.runDir, "track.json"));
     expect(track).toMatchObject({
       splitOccurred: true,
-      branches: ["root", "branch-1", "branch-2"],
+      branches: ["root", "on-done-array-branch-a-1", "on-done-array-branch-b-1"],
     });
     const rootBranch = await readJsonObject(join(result.runDir, "branches", "root.json"));
     expect(rootBranch).toMatchObject({
@@ -438,7 +443,7 @@ describe("runWorkflow parallel tracks", () => {
       splitSource: "post for workflow invocation on-done-array-child-workflow",
       latestStepId: "on-done-array-child-step",
     });
-    for (const branchId of ["branch-1", "branch-2"]) {
+    for (const branchId of ["on-done-array-branch-a-1", "on-done-array-branch-b-1"]) {
       const branch = await readJsonObject(join(result.runDir, "branches", `${branchId}.json`));
       expect(branch).toMatchObject({
         branchId,
@@ -929,7 +934,7 @@ describe("runWorkflow parallel tracks", () => {
               "runs",
               "concurrent-branch-fail-fast",
               "branches",
-              "branch-3.json",
+              "concurrent-fail-fast-queued-1.json",
             ),
           );
           return queued.status;
@@ -1045,8 +1050,8 @@ describe("runWorkflow parallel tracks", () => {
       id: "parallel-retry-preserve-sibling-workflow",
       start() {
         return [
-          BranchAWorkflow({}, { branch: "preserved-a" }),
-          BranchBWorkflow({}, { branch: "retried-b" }),
+          BranchAWorkflow({}, { branchId: "preserved-a" }),
+          BranchBWorkflow({}, { branchId: "retried-b" }),
         ];
       },
     };
@@ -1285,9 +1290,9 @@ describe("runWorkflow parallel tracks", () => {
       id: "parallel-retry-failed-only-workflow",
       start() {
         return [
-          BranchAWorkflow({}, { branch: "preserved-a" }),
-          BranchBWorkflow({}, { branch: "retried-b" }),
-          BranchCWorkflow({}, { branch: "retried-c" }),
+          BranchAWorkflow({}, { branchId: "preserved-a" }),
+          BranchBWorkflow({}, { branchId: "retried-b" }),
+          BranchCWorkflow({}, { branchId: "retried-c" }),
         ];
       },
     };
@@ -1370,8 +1375,8 @@ describe("runWorkflow parallel tracks", () => {
       id: "parallel-retry-branch-id-workflow",
       start() {
         return [
-          BranchAWorkflow({}, { branch: "target-a" }),
-          BranchBWorkflow({}, { branch: "target-b" }),
+          BranchAWorkflow({}, { branchId: "target-a" }),
+          BranchBWorkflow({}, { branchId: "target-b" }),
         ];
       },
     };
@@ -1429,7 +1434,7 @@ describe("runWorkflow parallel tracks", () => {
     const workflow: Workflow<Record<string, never>, PlainObject> = {
       id: "parallel-retry-missing-branch-id-workflow",
       start() {
-        return [BranchWorkflow({}, { branch: "target" })];
+        return [BranchWorkflow({}, { branchId: "target" })];
       },
     };
 
@@ -1882,9 +1887,9 @@ describe("runWorkflow parallel tracks", () => {
       id: "requested-branch-parent-workflow",
       start() {
         return [
-          WorkerWorkflow({ value: "a" }, { branch: "human-readable-a" }),
-          WorkerWorkflow({ value: "b" }, { branch: "human-readable-b" }),
-          WorkerWorkflow({ value: "duplicate" }, { branch: "human-readable-a" }),
+          WorkerWorkflow({ value: "a" }, { branchId: "human-readable-a" }),
+          WorkerWorkflow({ value: "b" }, { branchId: "human-readable-b" }),
+          WorkerWorkflow({ value: "c" }, { branchId: "human-readable-c" }),
         ];
       },
     };
@@ -1917,7 +1922,7 @@ describe("runWorkflow parallel tracks", () => {
       requestedByBranch.set(branchId, branch.requestedBranchId);
     }
     expect([...requestedByBranch.values()]).toEqual(
-      expect.arrayContaining(["human-readable-a", "human-readable-b", "human-readable-a"]),
+      expect.arrayContaining(["human-readable-a", "human-readable-b", "human-readable-c"]),
     );
 
     expect(stepEvents).toHaveLength(6);
@@ -1965,8 +1970,8 @@ describe("runWorkflow parallel tracks", () => {
       id: "parallel-wait-parent-workflow",
       start() {
         return [
-          WaitingWorkflow({}, { branch: "waiting-human-branch" }),
-          SiblingWorkflow({}, { branch: "queued-human-branch" }),
+          WaitingWorkflow({}, { branchId: "waiting-human-branch" }),
+          SiblingWorkflow({}, { branchId: "queued-human-branch" }),
         ];
       },
     };
@@ -2056,8 +2061,8 @@ describe("runWorkflow parallel tracks", () => {
       id: "parallel-wait-continue-parent-workflow",
       start() {
         return [
-          WaitingWorkflow({}, { branch: "waiting" }),
-          SiblingWorkflow({}, { branch: "sibling" }),
+          WaitingWorkflow({}, { branchId: "waiting" }),
+          SiblingWorkflow({}, { branchId: "sibling" }),
         ];
       },
     };
@@ -2110,8 +2115,8 @@ describe("runWorkflow parallel tracks", () => {
       id: "observable-parent-workflow",
       start() {
         return [
-          SlowWorkflow({}, { branch: "slow-human-branch" }),
-          FailingWorkflow({}, { branch: "failing-human-branch" }),
+          SlowWorkflow({}, { branchId: "slow-human-branch" }),
+          FailingWorkflow({}, { branchId: "failing-human-branch" }),
         ];
       },
     };
@@ -2198,8 +2203,8 @@ describe("runWorkflow parallel tracks", () => {
       id: "metadata-parent-workflow",
       start() {
         return [
-          WorkerWorkflow({ value: "a" }, { branch: "requested-a" }),
-          WorkerWorkflow({ value: "b" }, { branch: "requested-b" }),
+          WorkerWorkflow({ value: "a" }, { branchId: "requested-a" }),
+          WorkerWorkflow({ value: "b" }, { branchId: "requested-b" }),
         ];
       },
     };
@@ -2383,7 +2388,7 @@ describe("runWorkflow parallel tracks", () => {
     const parentStep = step({ id: "parent-global-state-step" }).do(async () => {
       expect(globalState).toBeDefined();
       await expectDefinedValue(globalState).set("shared-log", ["parent"]);
-      return [parentReadStep({}), ChildWorkflow({}, { branch: "child-invocation" })];
+      return [parentReadStep({}), ChildWorkflow({}, { branchId: "child-invocation" })];
     });
     const workflow: Workflow<Record<string, never>, PlainObject> = {
       id: "global-state-parent-workflow",
@@ -2540,8 +2545,8 @@ describe("runWorkflow parallel tracks", () => {
     const rootStep = step({ id: "tracer-root-step" }).do((input: { readonly seed: number }) =>
       ChildWorkflow(input).post((output) => {
         return [
-          WorkerWorkflow({ branch: "a", seed: output.seed }, { branch: "requested-a" }),
-          WorkerWorkflow({ branch: "b", seed: output.seed }, { branch: "requested-b" }).post(
+          WorkerWorkflow({ branch: "a", seed: output.seed }, { branchId: "requested-a" }),
+          WorkerWorkflow({ branch: "b", seed: output.seed }, { branchId: "requested-b" }).post(
             (workerOutput) => finalizeStep(workerOutput),
           ),
         ];

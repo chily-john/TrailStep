@@ -283,6 +283,7 @@ export interface StepNode<
   /** @deprecated Prefer the `do` phase in `StepNode.phases`. Retained for compatibility with existing callers. */
   readonly onOutput: StepContinuation<TInput, TOutput>;
   readonly onError?: StepErrorContinuation;
+  readonly options?: StepInvocationOptions;
 }
 
 /**
@@ -292,13 +293,17 @@ export interface StepNode<
  * calling it. When `TInput` has no required keys (e.g. a step that ignores
  * its input), the call is `stepA()` -- the input argument is optional.
  */
+export interface StepInvocationOptions extends Partial<Omit<StepConfig, "id">> {
+  readonly branchId?: string;
+}
+
 export type StepFactory<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
   // biome-ignore lint/complexity/noBannedTypes: `{}` here is the standard conditional-type idiom for "TInput has no required keys", not a stand-in for "any value".
 > = ({} extends TInput
-  ? (input?: TInput) => StepNode<TInput, TOutput>
-  : (input: TInput) => StepNode<TInput, TOutput>) & {
+  ? (input?: TInput, options?: StepInvocationOptions) => StepNode<TInput, TOutput>
+  : (input: TInput, options?: StepInvocationOptions) => StepNode<TInput, TOutput>) & {
   catch(onError: StepErrorContinuation): StepFactory<TInput, TOutput>;
 };
 
@@ -326,7 +331,7 @@ export interface FailNode {
 }
 
 export interface WorkflowInvocationOptions {
-  readonly branch?: string;
+  readonly branchId?: string;
 }
 
 export type PostContinuation<TOutput extends PlainObject = PlainObject> = {
@@ -371,9 +376,17 @@ export type RunnableContinuationNode =
 
 export type ContinuationArray = readonly RunnableContinuationNode[];
 
+export type ParallelFailurePolicy = "fail-fast" | "all-settled";
+
+export interface ParallelOptions {
+  readonly concurrency?: number;
+  readonly failurePolicy?: ParallelFailurePolicy;
+}
+
 export interface ParallelNode<TOutput extends PlainObject = PlainObject> {
   readonly kind: "parallel";
   readonly nodes: ContinuationArray;
+  readonly options?: ParallelOptions;
   post(continuation: PostContinuation<TOutput>): ParallelNode<TOutput>;
   readonly postContinuation?: PostContinuation<TOutput>;
 }

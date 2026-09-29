@@ -43,6 +43,15 @@ describe("parseRunInvocation", () => {
     });
   });
 
+  it("parses dash as stdin input-file", () => {
+    expect(
+      parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--input-file", "-"]),
+    ).toMatchObject({
+      workflowId: "@acme/trailstep-workflows:reviewFeature",
+      input: { kind: "file", path: "-" },
+    });
+  });
+
   it("rejects legacy resume syntax and points users to retry", () => {
     expect(() =>
       parseRunInvocation(["@acme/trailstep-workflows:reviewFeature", "--resume"]),

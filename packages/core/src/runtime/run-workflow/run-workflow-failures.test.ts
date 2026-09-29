@@ -13,6 +13,7 @@ import {
   fail,
   jsonSchema,
   type PlainObject,
+  parallel,
   type Result,
   runWorkflow,
   type Schema,
@@ -385,7 +386,7 @@ describe("runWorkflow failure paths", () => {
     ]);
   });
 
-  it("validates aggregate output when workflow.start returns a continuation array", async () => {
+  it("validates aggregate output when workflow.start returns parallel branches", async () => {
     const cwd = await testCwd();
     const SomeWorkflow = defineWorkflow<{ value: number }, { value: number }>({
       id: "array-invoked-workflow",
@@ -398,7 +399,7 @@ describe("runWorkflow failure paths", () => {
       id: "start-array-output-validation-workflow",
       inputShape: { value: "number" },
       outputShape: { value: "number" },
-      start: (input) => [SomeStep(input), SomeWorkflow(input)],
+      start: (input) => parallel([SomeStep(input), SomeWorkflow(input)]),
     };
 
     const result = await runWorkflow({
@@ -492,7 +493,7 @@ describe("runWorkflow failure paths", () => {
     const cwd = await testCwd();
     const SomeStep = step({ id: "array-child" }).do((input: { value: number }) => done(input));
     const workflow: Workflow<{ value: number }, PlainObject> = {
-      id: "unsupported-step-array-workflow",
+      id: "step-array-workflow",
       inputShape: { value: "number" },
       start(input) {
         return step({ id: "choose-next" }).do(() => [SomeStep(input)])(input);
@@ -502,7 +503,7 @@ describe("runWorkflow failure paths", () => {
     const result = await runWorkflow({
       workflow,
       input: { value: 1 },
-      runName: "unsupported-step-array",
+      runName: "step-array",
       cwd,
     });
 
@@ -704,7 +705,7 @@ describe("runWorkflow failure paths", () => {
       done(input),
     );
     const workflow: Workflow<{ value: number }, PlainObject> = {
-      id: "unsupported-error-array-workflow",
+      id: "error-array-workflow",
       inputShape: { value: "number" },
       start(input) {
         return step({ id: "explode" })
@@ -718,7 +719,7 @@ describe("runWorkflow failure paths", () => {
     const result = await runWorkflow({
       workflow,
       input: { value: 1 },
-      runName: "unsupported-error-array",
+      runName: "error-array",
       cwd,
     });
 

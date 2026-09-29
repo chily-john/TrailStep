@@ -62,7 +62,7 @@ describe("Slice 1 continuation nodes", () => {
       workflow,
       input: { value: 1 },
       options: {
-        branch: "child-branch",
+        branchId: "child-branch",
       },
       postContinuation: post,
       post(continuation) {
@@ -73,9 +73,24 @@ describe("Slice 1 continuation nodes", () => {
     expect(isWorkflowInvocationNode(invocationNode)).toBe(true);
     expect(invocationNode.workflow).toBe(workflow);
     expect(invocationNode.input).toEqual({ value: 1 });
-    expect(invocationNode.options?.branch).toBe("child-branch");
+    expect(invocationNode.options?.branchId).toBe("child-branch");
     expect(invocationNode.postContinuation).toBe(post);
     expect(postCalls).toBe(0);
+  });
+
+  it("preserves step invocation options as branch metadata and safe config overrides", () => {
+    const node = step({ id: "optioned-step", title: "Base", timeout: 30_000 }).do(
+      (input: { value: number }) => done(input),
+    )({ value: 1 }, { branchId: "worker-a", title: "Override" });
+
+    expect(node.options?.branchId).toBe("worker-a");
+    expect(node.config).toMatchObject({
+      id: "optioned-step",
+      input: { value: 1 },
+      title: "Override",
+      timeout: 30_000,
+    });
+    expect(node.config).not.toHaveProperty("branchId");
   });
 
   it("types continuation arrays as runnable nodes only", () => {

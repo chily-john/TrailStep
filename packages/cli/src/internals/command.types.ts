@@ -37,7 +37,7 @@ export const usageText = [
   "  trailstep cancel [--reason '<text>']",
   "  trailstep doctor",
   "  trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
-  "  trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>] [--set <path=value>] [--<input-key> <value>]",
+  "  trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->] [--set <path=value>] [--<input-key> <value>]",
   "  trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh]",
   "  trailstep runs",
   "  trailstep storage status",

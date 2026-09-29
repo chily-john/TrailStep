@@ -7,6 +7,7 @@ import type {
   CheckWaitHelpers,
   ContinuationResult,
   DisplayPhase,
+  ParallelOptions,
   PromptPhase,
   StepCwdInput,
   StepDisplayValue,
@@ -130,6 +131,7 @@ export type RunContinuationResult =
       readonly status: "split";
       readonly nodes: readonly ContinuationResult[];
       readonly source: string;
+      readonly parallelOptions?: ParallelOptions;
       readonly postContinuation?: (
         output: PlainObject,
       ) => ContinuationResult | Promise<ContinuationResult>;
@@ -303,6 +305,7 @@ export async function runContinuation(
         status: "split",
         nodes: node.nodes,
         source,
+        ...(node.options === undefined ? {} : { parallelOptions: node.options }),
         ...splitPostContinuations(node.postContinuation),
       };
     }

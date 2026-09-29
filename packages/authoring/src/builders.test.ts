@@ -103,10 +103,12 @@ describe("authoring workflow builders", () => {
       invoked = true;
       return done({ doubled: output.doubled + 1 });
     };
-    const nodeWithOptions = workflow({ value: 3 }, { branch: "existing-plus-followup" }).post(post);
+    const nodeWithOptions = workflow({ value: 3 }, { branchId: "existing-plus-followup" }).post(
+      post,
+    );
 
     expect(isWorkflowInvocationNode(nodeWithOptions)).toBe(true);
-    expect(nodeWithOptions.options?.branch).toBe("existing-plus-followup");
+    expect(nodeWithOptions.options?.branchId).toBe("existing-plus-followup");
     expect(nodeWithOptions.postContinuation).toBe(post);
     expect(invoked).toBe(false);
   });

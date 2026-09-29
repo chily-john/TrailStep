@@ -56,7 +56,7 @@ describe("public package positioning", () => {
           { provider: "pi", model: "openrouter/meta/muse-spark-1.3" },
           { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
         ],
-        explorer: [{ provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731" }],
+        explorer: [{ provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731", thinking: "low" }],
         "quick-implementor": [{ provider: "pi", model: "openrouter/z-ai/glm-5.3-flash" }],
         "smart-implementor": [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
         fixer: [{ ref: "debugger" }],

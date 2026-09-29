@@ -3,7 +3,11 @@ import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
-import { isStepNode, isWorkflowInvocationNode } from "../../authoring/step/step-node.js";
+import {
+  isParallelNode,
+  isStepNode,
+  isWorkflowInvocationNode,
+} from "../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
@@ -70,6 +74,7 @@ interface BranchState {
   readonly parentBranchId?: string;
   readonly requestedBranchId?: string;
   readonly joinContinuation?: boolean;
+  pendingPostJoin?: boolean;
   readonly workflowId: string;
   readonly createdAt: string;
   status: BranchStatus;
@@ -103,6 +108,7 @@ interface BranchStateJson {
   readonly parentBranchId?: string;
   readonly requestedBranchId?: string;
   readonly joinContinuation?: boolean;
+  readonly pendingPostJoin?: boolean;
   readonly status: BranchStatus;
   readonly workflowId: string;
   readonly source: string;
@@ -492,6 +498,7 @@ export async function runRootContinuationArrayScheduler(
         enqueue(childNode, branch.branchId, branchResult.source, true),
       );
       if (branchResult.postContinuation !== undefined) {
+        branch.pendingPostJoin = true;
         pendingJoins.push({
           parentBranchId: branch.branchId,
           childBranchIds: childBranches.map((childBranch) => childBranch.branchId),
@@ -767,7 +774,14 @@ async function createPersistedTrackRetryPlan(input: {
     };
   }
 
-  if (!input.nodes.every(isRunnableBranchCandidate)) {
+  const retryRootParallelNode =
+    input.nodes.length === 1 && isParallelNode(input.nodes[0]) ? input.nodes[0] : undefined;
+  const retryCandidateNodes = retryRootParallelNode?.nodes ?? input.nodes;
+  if (retryRootParallelNode?.postContinuation !== undefined) {
+    return { status: "failure", failure: unsupportedPostJoinRetryFailure() };
+  }
+
+  if (!retryCandidateNodes.every(isRunnableBranchCandidate)) {
     return { status: "failure", failure: invalidArrayCandidateFailure(input.initialSource) };
   }
 
@@ -780,8 +794,14 @@ async function createPersistedTrackRetryPlan(input: {
       ),
     ),
   );
+  if (
+    branches.some((branch) => branch.joinContinuation === true || branch.pendingPostJoin === true)
+  ) {
+    return { status: "failure", failure: unsupportedPostJoinRetryFailure() };
+  }
+
   const nodesByRequestedBranchId = new Map<string, ContinuationResult>();
-  for (const node of input.nodes) {
+  for (const node of retryCandidateNodes) {
     const requestedBranchId = requestedBranchMetadata(node).requestedBranchId;
     if (requestedBranchId !== undefined) {
       nodesByRequestedBranchId.set(requestedBranchId, node);
@@ -798,6 +818,22 @@ async function createPersistedTrackRetryPlan(input: {
     if (!selection.branchIds.has(branch.branchId)) {
       continue;
     }
+    if (retryRootParallelNode !== undefined && branch.branchId === track.rootBranchId) {
+      continue;
+    }
+
+    if (branch.status === "split") {
+      return {
+        status: "failure",
+        failure: {
+          status: "failure",
+          failure: {
+            code: "retry_track_split_branch_unsupported",
+            message: `Retrying split parent branch ${branch.branchId} is not supported; retry a failed child branch or restart the workflow instead.`,
+          },
+        },
+      };
+    }
 
     branch.status = "queued";
     branch.failure = undefined;
@@ -805,10 +841,19 @@ async function createPersistedTrackRetryPlan(input: {
     branch.terminalKind = undefined;
     branch.message = undefined;
     branch.updatedAt = new Date().toISOString();
+    const rootParallelBranchIndex =
+      retryRootParallelNode === undefined
+        ? undefined
+        : branches
+            .filter((candidate) => candidate.parentBranchId === track.rootBranchId)
+            .findIndex((candidate) => candidate.branchId === branch.branchId);
     const node =
       (branch.requestedBranchId === undefined
         ? undefined
-        : nodesByRequestedBranchId.get(branch.requestedBranchId)) ?? input.nodes[index];
+        : nodesByRequestedBranchId.get(branch.requestedBranchId)) ??
+      (rootParallelBranchIndex === undefined || rootParallelBranchIndex < 0
+        ? retryCandidateNodes[index]
+        : retryCandidateNodes[rootParallelBranchIndex]);
     if (node === undefined) {
       return {
         status: "failure",
@@ -843,6 +888,17 @@ async function createPersistedTrackRetryPlan(input: {
   };
 }
 
+function unsupportedPostJoinRetryFailure(): RunContinuationResult {
+  return {
+    status: "failure",
+    failure: {
+      code: "retry_parallel_post_join_unsupported",
+      message:
+        "Retrying parallel tracks with pending or completed parallel .post joins is not yet supported; restart the workflow instead.",
+    },
+  };
+}
+
 function selectPersistedBranchesForRetry(
   branches: readonly BranchState[],
   track: RunWorkflowTrackRetryOptions | undefined,
@@ -854,7 +910,7 @@ function selectPersistedBranchesForRetry(
       status: "success",
       branchIds: new Set(
         branches
-          .filter((branch) => !(branch.status === "done" && branch.output !== undefined))
+          .filter((branch) => ["failed", "waiting", "cancelled"].includes(branch.status))
           .map((branch) => branch.branchId),
       ),
     };
@@ -931,6 +987,7 @@ function branchFromJson(json: BranchStateJson): BranchState {
     ...(json.parentBranchId === undefined ? {} : { parentBranchId: json.parentBranchId }),
     ...(json.requestedBranchId === undefined ? {} : { requestedBranchId: json.requestedBranchId }),
     ...(json.joinContinuation === undefined ? {} : { joinContinuation: json.joinContinuation }),
+    ...(json.pendingPostJoin === undefined ? {} : { pendingPostJoin: json.pendingPostJoin }),
     workflowId: json.workflowId,
     createdAt: json.createdAt,
     updatedAt: json.updatedAt,
@@ -983,6 +1040,7 @@ async function persistBranch(runDir: string, branch: BranchState): Promise<void>
       ? {}
       : { requestedBranchId: branch.requestedBranchId }),
     ...(branch.joinContinuation === undefined ? {} : { joinContinuation: branch.joinContinuation }),
+    ...(branch.pendingPostJoin === undefined ? {} : { pendingPostJoin: branch.pendingPostJoin }),
     status: branch.status,
     workflowId: branch.workflowId,
     source: branch.source,

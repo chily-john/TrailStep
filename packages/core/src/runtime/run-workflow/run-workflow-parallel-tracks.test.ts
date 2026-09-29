@@ -258,6 +258,78 @@ describe("runWorkflow parallel tracks", () => {
     expect(observed).toEqual(expect.arrayContaining(["a", "b", "child-post:2", "parent-post:5"]));
   });
 
+  it("preserves parent invocation post when a nested child parallel post joins", async () => {
+    const cwd = await mkdtemp(
+      join(tmpdir(), "trailstep-core-nested-invocation-post-child-parallel-"),
+    );
+    const observed: string[] = [];
+
+    const branchStep = step({ id: "nested-child-parallel-branch" }).do(
+      (input: { readonly value: number }) => done({ value: input.value }),
+    );
+    const childPostStep = step({ id: "nested-child-post" }).do(
+      (input: {
+        readonly status: string;
+        readonly branches: Record<string, { value: number }>;
+      }) => {
+        observed.push("child-post");
+        return done({
+          total: Object.values(input.branches).reduce((sum, item) => sum + item.value, 0),
+        });
+      },
+    );
+    const parentPostStep = step({ id: "nested-parent-post" }).do(
+      (input: { readonly total: number }) => {
+        observed.push("parent-post");
+        return done({ total: input.total + 1 });
+      },
+    );
+    const ChildWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "nested-post-child-workflow",
+      start() {
+        return parallel<{ readonly status: string; readonly branches: PlainObject }>([
+          branchStep({ value: 2 }),
+          branchStep({ value: 3 }),
+        ]).post((output) =>
+          childPostStep(
+            output as {
+              readonly status: string;
+              readonly branches: Record<string, { value: number }>;
+            },
+          ),
+        );
+      },
+    });
+    const ParentWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "nested-post-parent-workflow",
+      start() {
+        return ChildWorkflow({}).post((output) => parentPostStep(output as { total: number }));
+      },
+    });
+    const grandparentStep = step({ id: "nested-grandparent-step" }).do(() => ParentWorkflow({}));
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "nested-post-grandparent-workflow",
+      start() {
+        return grandparentStep();
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "nested-invocation-post-child-parallel",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.output).toEqual({ total: 6 });
+    expect(observed).toEqual(["child-post", "parent-post"]);
+  });
+
   it("schedules an post continuation array after same-branch workflow invocation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-invocation-ondone-array-"));
     const observed: string[] = [];
@@ -1065,6 +1137,106 @@ describe("runWorkflow parallel tracks", () => {
     );
     await expect(readJsonObject(join(retried.runDir, "global-state.json"))).resolves.toMatchObject({
       "shared-log": ["a", "b"],
+    });
+  });
+
+  it("manual retry supports a root parallel node without a post join", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-root-parallel-node-retry-"));
+    const observed: string[] = [];
+    let failBranchB = true;
+
+    const branchAStep = step({ id: "root-parallel-node-retry-a" }).do(() => {
+      observed.push("a");
+      return done({ branch: "a" });
+    });
+    const branchBStep = step({ id: "root-parallel-node-retry-b" }).do(() => {
+      observed.push("b");
+      return failBranchB
+        ? fail({ code: "root_parallel_b_failed", message: "root parallel B failed" })
+        : done({ branch: "b" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "root-parallel-node-retry-workflow",
+      start() {
+        return parallel([branchAStep(), branchBStep()]);
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "root-parallel-node-retry",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+    expect(failed.status).toBe("failure");
+    expect(observed).toEqual(["a", "b"]);
+
+    failBranchB = false;
+    const retried = await runWorkflow({
+      workflow,
+      retry: { runDir: failed.runDir, kind: "manual" },
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(retried.status).toBe("success");
+    if (retried.status !== "success") {
+      throw new Error(retried.failure.message);
+    }
+    expect(observed).toEqual(["a", "b", "b"]);
+    expect(Object.values(retried.output.branches ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "done", output: { branch: "a" } }),
+        expect.objectContaining({ status: "done", output: { branch: "b" } }),
+      ]),
+    );
+  });
+
+  it("rejects retry for root parallel post joins with a clear unsupported error", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-root-parallel-post-retry-"));
+    let failBranchB = true;
+
+    const branchAStep = step({ id: "root-parallel-post-retry-a" }).do(() => done({ branch: "a" }));
+    const branchBStep = step({ id: "root-parallel-post-retry-b" }).do(() =>
+      failBranchB
+        ? fail({ code: "root_parallel_post_b_failed", message: "root parallel post B failed" })
+        : done({ branch: "b" }),
+    );
+    const postStep = step({ id: "root-parallel-post-retry-post" }).do((input: PlainObject) =>
+      done(input),
+    );
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "root-parallel-post-retry-workflow",
+      start() {
+        return parallel([branchAStep(), branchBStep()]).post(postStep);
+      },
+    };
+
+    const failed = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "root-parallel-post-retry",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+    expect(failed.status).toBe("failure");
+
+    failBranchB = false;
+    const retried = await runWorkflow({
+      workflow,
+      retry: { runDir: failed.runDir, kind: "manual" },
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(retried.status).toBe("failure");
+    if (retried.status !== "failure") {
+      throw new Error("expected root parallel post retry to fail");
+    }
+    expect(retried.failure).toMatchObject({
+      code: "retry_parallel_post_join_unsupported",
+      message: expect.stringContaining("parallel .post joins is not yet supported"),
     });
   });
 

@@ -514,9 +514,10 @@ async function hasSupportedRootParallelTrackRetryMetadata(runDir: string): Promi
       }),
     );
 
-    return branches.every(
-      (branch) =>
-        branch.branchId !== track.rootBranchId && branch.parentBranchId === track.rootBranchId,
+    return branches.every((branch) =>
+      branch.branchId === track.rootBranchId
+        ? branch.parentBranchId === undefined
+        : branch.parentBranchId === track.rootBranchId,
     );
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {

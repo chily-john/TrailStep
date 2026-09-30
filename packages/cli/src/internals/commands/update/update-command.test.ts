@@ -2047,6 +2047,125 @@ describe("updateCommand", () => {
     expect(installRequests).toEqual([]);
   });
 
+  it("asks a second confirm and skips only recommended config writes when declined", async ({
+    task,
+  }) => {
+    const { cwd, configJson } = await setupWorkflowPackageWithRecommendedConfig(task.id);
+    const packageJsonPath = join(cwd, "package.json");
+    const prompts: string[] = [];
+    const lines: string[] = [];
+    const installRequests: unknown[] = [];
+    let confirmCount = 0;
+
+    const exitCode = await main({
+      argv: ["update", "--workflows"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async () => "",
+        confirm: async (prompt) => {
+          prompts.push(prompt);
+          confirmCount += 1;
+          return confirmCount === 1;
+        },
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        return updateWithRecommendedConfigPackageRunner(request);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toMatch(
+      /Apply recommended config additions from @acme\/workflows \(1 agent\(s\), 1 workflow role mapping\(s\)\)\?/u,
+    );
+    expect(lines.join("\n")).toContain(
+      "Skipped recommended config additions from @acme/workflows (declined); applying the remaining updates.",
+    );
+    expect(lines.join("\n")).not.toContain("Applied recommended config");
+    const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
+    expect(installRequests).toHaveLength(1);
+    expect(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")).toBe(configJson);
+  });
+
+  it("applies package updates and recommended config additions when both confirms are accepted", async ({
+    task,
+  }) => {
+    const { cwd } = await setupWorkflowPackageWithRecommendedConfig(task.id);
+    const prompts: string[] = [];
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async () => "",
+        confirm: async (prompt) => {
+          prompts.push(prompt);
+          return true;
+        },
+      },
+      packageCommandRunner: updateWithRecommendedConfigPackageRunner,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toHaveLength(2);
+    expect(lines.join("\n")).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    const config = JSON.parse(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")) as {
+      agents?: Record<string, unknown>;
+      workflows?: { release?: { agents?: Record<string, unknown> } };
+    };
+    expect(config.agents?.planner).toEqual([{ provider: "pi", model: "mimo" }]);
+    expect(config.workflows?.release?.agents?.slicer).toEqual([{ ref: "planner" }]);
+  });
+
+  it("applies all changes without prompting when --yes is set", async ({ task }) => {
+    const { cwd } = await setupWorkflowPackageWithRecommendedConfig(task.id);
+    const prompts: string[] = [];
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async () => "",
+        confirm: async (prompt) => {
+          prompts.push(prompt);
+          return false;
+        },
+      },
+      packageCommandRunner: updateWithRecommendedConfigPackageRunner,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual([]);
+    expect(lines.join("\n")).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    const packageJson = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
+    const config = JSON.parse(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")) as {
+      agents?: Record<string, unknown>;
+    };
+    expect(config.agents?.planner).toEqual([{ provider: "pi", model: "mimo" }]);
+  });
+
   it("reports failed installs without claiming success", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
@@ -2128,6 +2247,56 @@ describe("updateCommand", () => {
     expect(errors.join("\n")).toMatch(/Malformed npm view JSON for @trailstep\/core/);
   });
 });
+
+async function setupWorkflowPackageWithRecommendedConfig(taskId: string) {
+  const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", taskId);
+  const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+  await mkdir(join(cwd, ".trailstep"), { recursive: true });
+  await mkdir(packageDir, { recursive: true });
+  await writeFile(
+    join(cwd, "package.json"),
+    `${JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }, null, 2)}\n`,
+    "utf8",
+  );
+  const configJson = JSON.stringify({
+    agents: { reviewer: [{ provider: "claude" }] },
+    workflows: { project: { release: "@acme/workflows#release" } },
+    workflowMetadata: {
+      project: {
+        release: workflowPackageMetadata({
+          workflowName: "release",
+          exportName: "releaseWorkflow",
+        }),
+      },
+    },
+  });
+  await writeFile(join(cwd, ".trailstep", "config.json"), configJson, "utf8");
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify({
+      name: "@acme/workflows",
+      version: "1.0.0",
+      trailstep: {
+        workflows: { release: "./dist/release.mjs#releaseWorkflow" },
+        recommendedConfig: {
+          agents: { planner: [{ provider: "pi", model: "mimo" }] },
+          workflows: { release: { agents: { slicer: [{ ref: "planner" }] } } },
+        },
+      },
+    }),
+    "utf8",
+  );
+  return { cwd, configJson };
+}
+
+async function updateWithRecommendedConfigPackageRunner(request: {
+  readonly args: readonly string[];
+}) {
+  if (request.args[0] === "install") {
+    return { exitCode: 0 };
+  }
+  return latestWorkflowPackage(request);
+}
 
 const removedAuthoringSymbol = {
   packageName: "@trailstep/authoring",

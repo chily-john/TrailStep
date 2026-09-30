@@ -239,6 +239,12 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         selfUpdates: selfPlan?.targets ?? [],
         workflowUpdates: workflowTargetsToApply,
       });
+      const hasOtherChanges =
+        hasGlobalCliChanges ||
+        hasSelfChanges ||
+        hasWorkflowChanges ||
+        hasSkillChanges ||
+        hasWorkflowSkillInstalls;
       const confirmed = await confirmUpdate(args, context, {
         hasPackageChanges: hasGlobalCliChanges || hasSelfChanges || hasWorkflowChanges,
         hasSkillChanges,
@@ -248,6 +254,29 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       if (!confirmed) {
         context.io.writeLine("Update cancelled.");
         return 0;
+      }
+
+      // Split consent: when recommended config additions ride along with other
+      // changes, ask separately so accepting package/skill updates does not force
+      // config additions. With --yes the blanket confirm already applies everything.
+      let applyRecommendedConfig = hasRecommendedConfigAdditions;
+      if (
+        hasRecommendedConfigAdditions &&
+        hasOtherChanges &&
+        !args.assumeYes &&
+        context.prompts?.confirm !== undefined
+      ) {
+        applyRecommendedConfig = await confirmRecommendedConfigAdditions(
+          context.prompts.confirm,
+          recommendedConfigApplications,
+        );
+        if (!applyRecommendedConfig) {
+          context.io.writeLine(
+            `Skipped recommended config additions from ${recommendedConfigPackagesWithAdditions(
+              recommendedConfigApplications,
+            ).join(", ")} (declined); applying the remaining updates.`,
+          );
+        }
       }
 
       const runPackageCommand = context.packageCommandRunner ?? defaultPackageCommandRunner;
@@ -314,7 +343,7 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
           );
         }
       }
-      if (hasRecommendedConfigAdditions) {
+      if (applyRecommendedConfig) {
         for (const application of recommendedConfigApplications) {
           if (application.addedAgents.length === 0 && application.addedWorkflowRoles.length === 0) {
             continue;
@@ -629,6 +658,44 @@ async function confirmUpdate(
         : plan.hasWorkflowSkillInstalls
           ? "Install workflow skills for untracked workflows?"
           : "Apply recommended config additions?",
+  );
+}
+
+function recommendedConfigPackagesWithAdditions(
+  applications: readonly RecommendedConfigApplication[],
+): readonly string[] {
+  return applications
+    .filter(
+      (application) =>
+        application.addedAgents.length > 0 || application.addedWorkflowRoles.length > 0,
+    )
+    .map((application) => application.packageName);
+}
+
+/**
+ * Second, split consent for recommended config additions riding along with other
+ * update changes. The blanket confirmUpdate() covers the rest of the update.
+ */
+async function confirmRecommendedConfigAdditions(
+  confirm: (prompt: string) => Promise<boolean>,
+  applications: readonly RecommendedConfigApplication[],
+): Promise<boolean> {
+  const withAdditions = applications.filter(
+    (application) =>
+      application.addedAgents.length > 0 || application.addedWorkflowRoles.length > 0,
+  );
+  const agentCount = withAdditions.reduce(
+    (total, application) => total + application.addedAgents.length,
+    0,
+  );
+  const workflowRoleCount = withAdditions.reduce(
+    (total, application) => total + application.addedWorkflowRoles.length,
+    0,
+  );
+  return confirm(
+    `Apply recommended config additions from ${recommendedConfigPackagesWithAdditions(
+      applications,
+    ).join(", ")} (${agentCount} agent(s), ${workflowRoleCount} workflow role mapping(s))?`,
   );
 }
 

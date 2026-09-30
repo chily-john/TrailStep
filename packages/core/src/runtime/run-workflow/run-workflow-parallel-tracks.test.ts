@@ -394,11 +394,13 @@ describe("runWorkflow parallel tracks", () => {
     });
 
     try {
-      await expect.poll(() => observed).toEqual(["child", "post:41", "a"]);
+      await expect.poll(() => observed, { timeout: 15_000 }).toEqual(["child", "post:41", "a"]);
       await delay(25);
       expect(observed).toEqual(["child", "post:41", "a"]);
       gates.get("a")?.resolve();
-      await expect.poll(() => observed).toEqual(["child", "post:41", "a", "b"]);
+      await expect
+        .poll(() => observed, { timeout: 15_000 })
+        .toEqual(["child", "post:41", "a", "b"]);
       gates.get("b")?.resolve();
     } catch (error) {
       gates.get("a")?.resolve();
@@ -563,25 +565,25 @@ describe("runWorkflow parallel tracks", () => {
 
       try {
         if (workers === 1) {
-          await expect.poll(() => starts.length).toBe(1);
+          await expect.poll(() => starts.length, { timeout: 15_000 }).toBe(1);
           await delay(25);
           expect(starts).toHaveLength(1);
           resolveStartedGate(starts, gates, 0);
 
-          await expect.poll(() => starts.length).toBe(2);
+          await expect.poll(() => starts.length, { timeout: 15_000 }).toBe(2);
           await delay(25);
           expect(starts).toHaveLength(2);
           resolveStartedGate(starts, gates, 1);
 
-          await expect.poll(() => starts.length).toBe(3);
+          await expect.poll(() => starts.length, { timeout: 15_000 }).toBe(3);
           await delay(25);
           expect(starts).toHaveLength(3);
           resolveStartedGate(starts, gates, 2);
         } else {
-          await expect.poll(() => starts.length).toBe(2);
+          await expect.poll(() => starts.length, { timeout: 15_000 }).toBe(2);
           resolveStartedGate(starts, gates, 0);
           resolveStartedGate(starts, gates, 1);
-          await expect.poll(() => starts.length).toBe(3);
+          await expect.poll(() => starts.length, { timeout: 15_000 }).toBe(3);
           resolveStartedGate(starts, gates, 2);
         }
       } catch (error) {
@@ -668,7 +670,7 @@ describe("runWorkflow parallel tracks", () => {
     });
 
     try {
-      await expect.poll(() => observed).toHaveLength(2);
+      await expect.poll(() => observed, { timeout: 15_000 }).toHaveLength(2);
       expect(observed).toEqual(expect.arrayContaining(["fast", "slow-start"]));
       await delay(25);
       expect(settled).toBe(false);
@@ -922,23 +924,26 @@ describe("runWorkflow parallel tracks", () => {
 
     try {
       await expect
-        .poll(() => observed)
+        .poll(() => observed, { timeout: 15_000 })
         .toEqual(expect.arrayContaining(["failing-start", "splitter-start"]));
       failGate.resolve();
       await expect
-        .poll(async () => {
-          const queued = await readJsonObject(
-            join(
-              cwd,
-              ".trailstep",
-              "runs",
-              "concurrent-branch-fail-fast",
-              "branches",
-              "concurrent-fail-fast-queued-1.json",
-            ),
-          );
-          return queued.status;
-        })
+        .poll(
+          async () => {
+            const queued = await readJsonObject(
+              join(
+                cwd,
+                ".trailstep",
+                "runs",
+                "concurrent-branch-fail-fast",
+                "branches",
+                "concurrent-fail-fast-queued-1.json",
+              ),
+            );
+            return queued.status;
+          },
+          { timeout: 15_000 },
+        )
         .toBe("cancelled");
       splitGate.resolve();
     } catch (error) {

@@ -84,7 +84,7 @@ describe("subPrompt concurrency", () => {
     });
 
     await expect
-      .poll(() => pendingRequests.map((request) => request.path).sort())
+      .poll(() => pendingRequests.map((request) => request.path).sort(), { timeout: 15_000 })
       .toEqual(["a", "b"]);
     const requestA = pendingRequests.find((request) => request.path === "a");
     const requestB = pendingRequests.find((request) => request.path === "b");

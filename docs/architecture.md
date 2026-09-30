@@ -44,7 +44,7 @@ sequenceDiagram
   WF-->>CLI: next step or done(output)
 ```
 
-Each step can be treated as a focused unit of work. Larger workflows compose those units into long-running processes such as clarify → plan → review → implement → review.
+Each step can be treated as a focused unit of work. Larger workflows compose those units into long-running processes such as clarify → plan → review → implement → review. Steps can also run ordered `.display(...)` phases for durable progress events and `.wait(...)` phases that durably pause for human or external input, and step code can emit `notify.progress`/`notify.warning`/`notify.artifact` notifications during a run.
 
 ## Packages
 
@@ -52,13 +52,13 @@ Each step can be treated as a focused unit of work. Larger workflows compose tho
 - `@trailstep/authoring`: TypeScript authoring helpers layered over core primitives.
 - `@trailstep/cli`: workflow discovery, registration, config, provider targeting, execution, continuation, retry, and package lifecycle commands.
 - `@trailstep/create-flows`: reusable workflow package demonstrating larger implementation workflow architectures.
-- `@trailstep/sub-agents`: reusable workflow package for delegated focused sub-agent work.
+- `@trailstep/sub-agents`: reusable workflow package for delegated focused sub-agent work (see [`packages/sub-agents/README.md`](../packages/sub-agents/README.md)).
 
 ## Provider boundary
 
 TrailStep dispatches prompt steps through provider targets. Provider configuration lives in TrailStep config and can select model/thinking overrides where supported.
 
-The best-tested providers today are Pi and Claude Code. TrailStep also keeps provider contracts isolated so support can expand without changing workflow source.
+The best-tested providers today are Pi and Claude Code. TrailStep also keeps provider contracts isolated so support can expand without changing workflow source. Registration is provider-agnostic: `trailstep providers add <path-or-package>` registers a provider package or local manifest, and `trailstep providers test <provider>` verifies registration without running a full workflow.
 
 ## Persistence boundary
 

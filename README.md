@@ -163,6 +163,48 @@ TrailStep's step model is the core idea:
 - **Retry and continuation**: failed or interrupted runs can continue through TrailStep instead of starting from scratch.
 - **Agent-native use**: registered workflows can generate skills so agents understand when and how to call them.
 
+## Parallel sub-agents in one minute
+
+Fan out independent tasks — explore, implement, review — to focused delegates at once:
+
+```json
+{
+  "context": "Shared repo context for every delegate.",
+  "worktree": { "enabled": true, "baseRef": "main" },
+  "tasks": [
+    { "id": "map-parser", "mode": "explore", "task": "Map parser failure area" },
+    { "id": "fix-parser", "mode": "implement", "task": "Fix path normalization" },
+    { "id": "review-parser", "mode": "review", "task": "Review the parser fix" }
+  ]
+}
+```
+
+Save that as `delegate-parallel-input.json` and run it. Inside a checkout of this repository, use the workspace build of the CLI — note that `pnpm exec trailstep` resolves to the globally installed CLI, not the dev build:
+
+```bash
+node packages/cli/dist/index.js ./packages/sub-agents#delegateParallel --input-file delegate-parallel-input.json
+```
+
+With `@trailstep/sub-agents` registered, the published equivalent is:
+
+```bash
+trailstep project/delegateParallel --input-file delegate-parallel-input.json
+```
+
+- Each task runs in a managed git worktree at `.trailstep/worktrees/<runName>/<taskId>` (branch `trailstep/delegate/<runName>/<taskId>`), cleaned up automatically when it completes cleanly.
+- `delegateParallel` returns the raw parallel branch outputs; merging and final aggregation are intentionally left to the parent agent.
+
+See [`packages/sub-agents/README.md`](packages/sub-agents/README.md) for delegate modes and options.
+
+## Why not just one long chat / LangChain / Temporal?
+
+| Concern | One long chat / generic LLM chains / heavyweight workflow engines | TrailStep |
+| --- | --- | --- |
+| Focused context | One growing transcript every stage has to read | Each step runs in its own agent session with a narrow prompt and purpose |
+| Typed handoffs | Free-text notes between stages | Steps pass validated JSON-object outputs to the next continuation |
+| Durable resume | Restart from scratch or wire retries yourself | Failed or interrupted runs resume with `trailstep retry` / `trailstep continue` |
+| Agent-native skills | Agents are driven from outside the system | Registered workflows generate skills so agents know when and how to call them |
+
 ## From tiny workflows to workflow systems
 
 The same primitives power larger reusable workflow packages. `@trailstep/sub-agents` currently publishes delegate workflows for focused sub-agent work, and `@trailstep/create-flows` currently publishes:
@@ -201,7 +243,6 @@ Public packages:
 
 Workspace packages not yet part of the initial public publish set:
 
-- [`@trailstep/dashboard`](packages/dashboard/README.md) — local run observability UI.
 - [`@trailstep/testkit`](packages/testkit/README.md) — workflow testing utilities while the public surface is finalized.
 
 ## Learn more

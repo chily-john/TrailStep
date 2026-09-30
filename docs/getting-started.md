@@ -119,7 +119,7 @@ Workflow refs may be:
 - registered refs: `project/review`
 - bundle refs: `@acme/workflows#review`
 
-Use `trailstep continue` for waiting/interrupted interactive work and `trailstep retry <workflow-ref> <runName>` for failed-run replay.
+Use `trailstep continue` for waiting/interrupted interactive work, `trailstep retry <workflow-ref> <runName>` for failed-run replay, and `trailstep cancel <runName>` to stop a run and record the reason.
 
 ## Next steps
 

@@ -32,6 +32,7 @@ trailstep workflows
 trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]
 trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--follow | --no-follow]
 trailstep continue [--interactive-file <path> | --session-file <path> | --json-file <path> | --json '<json>']
+trailstep answer <runNameOrRunDir> <waitId> [--json '<json>' | --json-file <path>] [--continue]
 trailstep cancel <runNameOrRunDir> [--reason '<text>']
 trailstep cancel [--reason '<text>']
 trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh]
@@ -160,6 +161,8 @@ Use `--jsonl` for parent agents that need machine-readable live events. `--json`
 ## Continue, cancel, and retry
 
 Use TrailStep continuation commands rather than inventing custom resume paths. Workflow cancellation writes `.trailstep/runs/<run>/cancel.json`; continuing a cancelled run reports it without resuming work. With no run target, `trailstep cancel` cancels the active interactive session named by `TRAILSTEP_INTERACTIVE_FILE`.
+
+Steps with `.wait(...)` phases pause with a pending wait recorded in run events and a wait-answer artifact in the run directory. Provide the structured answer with `trailstep answer <runNameOrRunDir> <waitId> --json '<json>'` (or `--json-file <path>`); add `--continue` to resume the run immediately, or resume later with `trailstep continue`.
 
 ```bash
 trailstep continue

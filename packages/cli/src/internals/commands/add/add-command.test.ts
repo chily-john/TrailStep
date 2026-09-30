@@ -2719,6 +2719,77 @@ describe("addCommand", () => {
     expect(config.workflows?.review?.agents).toEqual({ reviewer: [{ ref: "reviewerAgent" }] });
   });
 
+  it("applies package recommended config when registering a local directory package", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "local-pkg");
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      agents: { existing: [{ provider: "claude" }] },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/local-pkg",
+      version: "0.0.1",
+      type: "module",
+      trailstep: {
+        workflows: { review: "./index.mjs#reviewWorkflow" },
+        recommendedConfig: {
+          agents: {
+            reviewerAgent: [{ provider: "pi", model: "fast" }],
+          },
+          workflows: {
+            review: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+          },
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewWorkflow = { id: 'review', agents: { reviewer: { size: 'medium' } }, start: () => ({ kind: 'done', output: {} }) };\n",
+      "utf8",
+    );
+
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const command = resolveCommand(["add", "./local-pkg"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./local-pkg",
+        "--scope",
+        "project",
+        "--workflow",
+        "review",
+        "--yes",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain(
+      "Applied recommended config from @acme/local-pkg: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    expect(errors).toEqual([]);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      agents?: Record<string, unknown>;
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.agents?.existing).toEqual([{ provider: "claude" }]);
+    expect(config.agents?.reviewerAgent).toEqual([{ provider: "pi", model: "fast" }]);
+    expect(config.workflows?.project?.review).toBe("./local-pkg#review");
+    expect(config.workflows?.review?.agents).toEqual({ reviewer: [{ ref: "reviewerAgent" }] });
+  });
+
   it("headless package add defaults to project and registers all discovered workflows", async ({
     task,
   }) => {

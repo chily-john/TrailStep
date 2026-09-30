@@ -125,6 +125,9 @@ The optional `skill` block customizes generated workflow skill frontmatter and g
 - `step({ id })`: defines a durable continuation step.
 - `.prompt(...)`: dispatches that step to an agent.
 - `.do(...)`: receives the step output and returns the next continuation.
+- `.display(...)`: appends a display phase that emits durable progress display events (`step.display`) for the step.
+- `.wait(...)`: appends a wait phase that durably pauses the step for human or external input/checks.
+- `notify`: step-scoped API (`notify.progress`, `notify.warning`, `notify.artifact`) that emits notification events during a run.
 - `done(...)`: completes the current workflow invocation or branch successfully. In a sequential workflow this is also the workflow result.
 - `fail(...)`: completes the current branch as a failure without dispatching another step.
 - `absoluteDone(...)`: completes the entire track successfully and cancels sibling branches. Use this only for exceptional track-wide short-circuiting.
@@ -146,6 +149,35 @@ export const clarifyRequirementsStep = step({ id: "clarify-requirements" })
 ```
 
 Use `trailstep continue` to continue waiting or interrupted interactive work.
+
+## Display, wait, and notify phases
+
+Phases run in order after a step's prompt/do work. Use `.display(...)` when a step should emit durable progress display events that observers can replay from run artifacts:
+
+```ts
+step({ id: "long-scan" })
+  .display(({ input }) => ({ message: `Scanning ${input.path}`, level: "info" }))
+  .do(async (output) => done(output));
+```
+
+Display content is a string or `{ message, level, data }` (levels: `info`, `warning`, `error`, `debug`), and can be a callback over `{ input, output }`.
+
+Use `.wait(...)` when a step should durably pause for human or external input. The run records a pending wait and resumes when the wait is answered:
+
+```ts
+step({ id: "approve-plan" })
+  .wait({
+    id: "plan-approval",
+    kind: "input",
+    message: "Approve the plan?",
+    output: shape<{ approved: boolean }>({ approved: "boolean" }),
+  })
+  .do(({ waits }, input) => done({ ...input, approved: waits["plan-approval"].approved }));
+```
+
+A wait is either a wait definition (as above) or a check callback returning `wait.done(output)` / `wait.pending({ id, message, retryAfterSeconds })` to poll external conditions. Answer pending waits with `trailstep answer <runNameOrRunDir> <waitId> --json '<json>'` (add `--continue` to resume immediately), or resume later with `trailstep continue`. Wait outputs are available to later phases via `waits`.
+
+Inside `.do(...)` code, `notify.progress(...)`, `notify.warning(...)`, and `notify.artifact(...)` emit `step.progress`, `step.warning`, and `step.artifact` events. These must be called during an active run; calling `notify.*` outside a run throws.
 
 ## Parallel tracks and callable workflows
 
@@ -184,7 +216,11 @@ const next = await globalState.update("stories", (current) => claimReadyStory(cu
 
 `globalState.update(...)` is atomic within the running TrailStep scheduler/process, so it is safe for concurrent foreground workers in one command. It is not a cross-daemon or multi-process lock; future daemon/process support may strengthen that scope. Prefer `update(...)` over `get(...)` plus `set(...)` for claims, counters, and other read-modify-write coordination.
 
+TrailStep keeps project and execution working directories separate: `projectCwd` is the root for workflow/config-relative resolution and default artifact storage, while `cwd` (exposed as `executionCwd`) is the default execution directory for steps and agent processes, defaulting to `projectCwd` and reflecting any step-level cwd override in the step run context.
+
 TrailStep does not prevent two branches from using the same cwd or editing the same files. Workflow authors remain responsible for avoiding file conflicts, for example by passing distinct cwd/worktree inputs or coordinating through `globalState`.
+
+For ready-made delegate/parallel patterns (fan-out sub-agent work with per-task `cwd` or managed worktrees), see [`packages/sub-agents/README.md`](../packages/sub-agents/README.md). Track retry filters for failed branches are documented in [CLI reference](cli-reference.md).
 
 ## Retry and timeout
 

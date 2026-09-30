@@ -90,30 +90,39 @@ flowchart TD
   D --> E[review-implementation-strategy]
   E -->|needs work| D
   E -->|passes| F[slice-implementation-stories]
-  F --> P{planning checkpoint enabled?}
+  F --> F2[split-implementation-stories]
+  F2 --> P{planning checkpoint enabled?}
   P -->|yes| Q[planning-checkpoint]
-  Q -->|approve| G[story-isolation-preflight]
+  Q -->|approve| R0[story-router]
   Q -->|revise| D
-  P -->|no| G
+  P -->|no| R0
+  R0 --> G[story-isolation-preflight]
   G --> G2[deterministic-context-preflight]
   G2 --> R[write-red-tests]
   R --> S[implement-green]
   S --> T[validate-story deterministic code step]
-  T --> H[review-story-implementation]
-  H -->|needs work| S
+  T -->|failed validation| R0
+  T -->|passes| H[review-story-implementation]
+  H -->|failed review| R0
   H -->|passes| I[commit-reviewed-story / mark complete]
   I --> J{more stories?}
-  J -->|yes| G
+  J -->|yes| R0
   J -->|no| K[open-pull-request]
   K --> L[done]
+  R0 -->|validation retry escalation| SD[story-doctor]
+  SD --> T
 ```
+
+After `slice-implementation-stories`, `split-implementation-stories` turns the reviewed strategy into queued stories plus optional per-story context blocks. From there the `story-router` owns active-story routing: it starts each story, sends failed reviews and validations back through retry routes (escalating to `story-doctor` past the threshold), and either hands the next queued story back to `story-isolation-preflight` or ends the run at `open-pull-request`.
+
+Stories run strictly one at a time. Full parallelization of create-flows (running multiple stories concurrently) is roadmap and is not yet implemented.
 
 The important TrailStep pattern is not the specific feature methodology; it is the architecture:
 
 - each stage is a focused step with its own prompt and agent role
 - each step passes structured output to the next step
 - planning and implementation have review loops
-- stories are split so implementation work happens one story at a time
+- stories are split so implementation work happens one story at a time (sequential today; parallel story execution is roadmap, not yet implemented)
 - failed runs can be retried through TrailStep instead of restarting the entire conversation
 
 ### Reliability and recovery

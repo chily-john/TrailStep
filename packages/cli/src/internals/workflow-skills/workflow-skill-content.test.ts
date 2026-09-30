@@ -202,6 +202,32 @@ describe("generateWorkflowSkillContent", () => {
     expect(markdown).toContain('"count"');
   });
 
+  it("runs untracked workflows through their package bundle ref instead of a registered ref", () => {
+    const { skillName, markdown } = generateWorkflowSkillContent({
+      registeredRef: "@acme/workflows#explore",
+      namespace: "",
+      name: "explore",
+      untracked: true,
+      workflow: {
+        id: "explore",
+        inputShape: { topic: "string" },
+        start: () => ({ kind: "done", output: {} }),
+      },
+    });
+
+    expect(skillName).toBe("trst-explore");
+    expect(markdown).toContain(
+      "Run the TrailStep workflow `@acme/workflows#explore` through its package bundle ref.",
+    );
+    expect(markdown).not.toContain("Run the registered TrailStep workflow");
+    expect(markdown).toContain(
+      "trailstep @acme/workflows#explore --input-file .trailstep/inputs/trst-explore-input.json",
+    );
+    expect(markdown).toContain("Workflow source: `@acme/workflows#explore`");
+    expect(markdown).not.toContain("Registered workflow source");
+    expect(markdown).not.toContain("[project]");
+  });
+
   it("uses dense sessionFile object instructions for workflow input schemas without inputShape", () => {
     const { markdown } = generateWorkflowSkillContent({
       registeredRef: "project/review",

@@ -14,6 +14,12 @@ export interface WorkflowSkillContentInput {
   readonly name: string;
   readonly description?: string;
   readonly workflow?: WorkflowSkillMetadata;
+  /**
+   * Set for skills of workflow exports with no registry entry (for example new
+   * workflow exports of an already-installed workflow package). Untracked skills
+   * run the workflow through its package bundle ref instead of a registered ref.
+   */
+  readonly untracked?: boolean;
 }
 
 export interface WorkflowSkillContent {
@@ -25,7 +31,8 @@ export function generateWorkflowSkillContent(
   input: WorkflowSkillContentInput,
 ): WorkflowSkillContent {
   const skillName = workflowSkillName(input.namespace, input.name);
-  const registeredRef = `${input.namespace}/${input.name}`;
+  const isRegistered = input.untracked !== true;
+  const registeredRef = isRegistered ? `${input.namespace}/${input.name}` : input.registeredRef;
   const workflowSkill = normalizeWorkflowSkill(input.workflow?.skill);
   const inputMode = classifyWorkflowInput(input.workflow);
   const generatedInstructions = generatedWorkflowSkillInstructionLines({
@@ -33,6 +40,7 @@ export function generateWorkflowSkillContent(
     registeredRef,
     skillName,
     sourceRef: input.registeredRef,
+    isRegistered,
   });
   const customMarkdown = workflowSkill.markdown;
   const baseDescription =
@@ -100,12 +108,15 @@ function generatedWorkflowSkillInstructionLines(input: {
   readonly registeredRef: string;
   readonly skillName: string;
   readonly sourceRef: string;
+  readonly isRegistered: boolean;
 }): readonly string[] {
   return [
-    `Run the registered TrailStep workflow \`${input.registeredRef}\`.`,
+    input.isRegistered
+      ? `Run the registered TrailStep workflow \`${input.registeredRef}\`.`
+      : `Run the TrailStep workflow \`${input.registeredRef}\` through its package bundle ref.`,
     "",
     ...inputInstructions(input),
-    `Registered workflow source: \`${input.sourceRef}\``,
+    `${input.isRegistered ? "Registered workflow source" : "Workflow source"}: \`${input.sourceRef}\``,
     "",
   ];
 }

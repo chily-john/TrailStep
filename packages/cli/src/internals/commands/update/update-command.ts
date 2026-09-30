@@ -15,13 +15,13 @@ import {
   rewritePackageJsonDependencies,
 } from "../../package-manager/package-json-rewrite.js";
 import {
-  mergeRecommendedConfig,
-  readRecommendedConfigPlanFromPackageJsonFile,
-} from "../../recommended-config/recommended-config.js";
-import {
   defaultPackageCommandRunner,
   detectPackageManager,
 } from "../../package-manager/package-manager.js";
+import {
+  mergeRecommendedConfig,
+  readRecommendedConfigPlanFromPackageJsonFile,
+} from "../../recommended-config/recommended-config.js";
 import {
   findStaleTrackedPackagedTrailStepSkillInstallations,
   refreshTrackedPackagedTrailStepSkills,
@@ -33,6 +33,11 @@ import {
   readRawTrailStepConfigFile,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
+import {
+  installUntrackedWorkflowSkills,
+  planUntrackedWorkflowSkillInstalls,
+  type UntrackedWorkflowSkillSource,
+} from "../../workflow-skills/untracked-workflow-skills.js";
 import {
   type GlobalCliUpdatePlan,
   resolveGlobalCliUpdateTarget,
@@ -133,15 +138,26 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
 
       const staleSkillInstallations =
         await findStaleTrackedPackagedTrailStepSkillInstallations(context);
+      const workflowSkillSources = (workflowPlan?.targets ?? []).map(
+        (target): UntrackedWorkflowSkillSource => ({
+          packageName: target.packageName,
+          installRoot: target.installRoot,
+          registeredWorkflowNames: target.registeredWorkflowNames,
+        }),
+      );
+      const plannedUntrackedWorkflowSkills =
+        await planUntrackedWorkflowSkillInstalls(workflowSkillSources);
       const hasGlobalCliChanges = (globalCliPlan?.targets.length ?? 0) > 0;
       const hasSelfChanges = (selfPlan?.targets.length ?? 0) > 0;
       const hasWorkflowChanges = workflowTargetsToApply.length > 0;
       const hasSkillChanges = staleSkillInstallations.length > 0;
+      const hasWorkflowSkillInstalls = plannedUntrackedWorkflowSkills.length > 0;
       if (
         !hasGlobalCliChanges &&
         !hasSelfChanges &&
         !hasWorkflowChanges &&
         !hasSkillChanges &&
+        !hasWorkflowSkillInstalls &&
         !hasRecommendedConfigAdditions
       ) {
         context.io.writeLine(noChangesMessage(args, globalCliPlan, selfPlan, workflowPlan));
@@ -182,6 +198,13 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         }
       }
 
+      if (hasWorkflowSkillInstalls) {
+        context.io.writeLine("Planned workflow skill installs for untracked workflows:");
+        for (const entry of plannedUntrackedWorkflowSkills) {
+          context.io.writeLine(`  ${entry.bundleRef}`);
+        }
+      }
+
       const updateGroups = createDependencyUpdateGroups({
         cwd: context.cwd,
         selfUpdates: selfPlan?.targets ?? [],
@@ -190,6 +213,7 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       const confirmed = await confirmUpdate(args, context, {
         hasPackageChanges: hasGlobalCliChanges || hasSelfChanges || hasWorkflowChanges,
         hasSkillChanges,
+        hasWorkflowSkillInstalls,
         hasRecommendedConfigAdditions,
       });
       if (!confirmed) {
@@ -245,6 +269,17 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
       }
       if (hasSkillChanges || hasGlobalCliChanges) {
         await refreshTrailStepSkillsAfterUpdate(context);
+      }
+      if (workflowPlan !== undefined) {
+        // Re-detect after installs: updated packages may expose workflow exports that
+        // were not present at plan time. These installs were covered by the confirmed
+        // workflow plan (either as planned skill installs or as workflow package updates).
+        const installs = await installUntrackedWorkflowSkills(context, workflowSkillSources);
+        for (const install of installs) {
+          context.io.writeLine(
+            `Installed workflow skill ${install.skillName} for untracked workflow ${install.bundleRef}.`,
+          );
+        }
       }
       if (hasRecommendedConfigAdditions) {
         for (const application of recommendedConfigApplications) {
@@ -514,6 +549,7 @@ async function confirmUpdate(
   plan: {
     readonly hasPackageChanges: boolean;
     readonly hasSkillChanges: boolean;
+    readonly hasWorkflowSkillInstalls: boolean;
     readonly hasRecommendedConfigAdditions: boolean;
   },
 ): Promise<boolean> {
@@ -530,7 +566,9 @@ async function confirmUpdate(
       ? "Apply package updates and run install?"
       : plan.hasSkillChanges
         ? "Refresh tracked TrailStep skills?"
-        : "Apply recommended config additions?",
+        : plan.hasWorkflowSkillInstalls
+          ? "Install workflow skills for untracked workflows?"
+          : "Apply recommended config additions?",
   );
 }
 

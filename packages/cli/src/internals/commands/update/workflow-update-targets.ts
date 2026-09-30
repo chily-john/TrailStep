@@ -36,6 +36,12 @@ export interface WorkflowPackageUpdateTarget {
   readonly installScope: WorkflowRegistryScope;
   readonly installRoot: string;
   readonly registeredRefs: readonly string[];
+  /**
+   * Bundle workflow names covered by registered entries (from package workflow
+   * metadata). Workflow exports of the installed package outside this set have no
+   * registration and no generated skill yet.
+   */
+  readonly registeredWorkflowNames: readonly string[];
   readonly currentRange: string;
   readonly dependencySection: DependencySection;
   readonly installedVersion?: string;
@@ -72,9 +78,13 @@ interface MutableWorkflowPackageUpdateTarget {
   installRoot: string;
   githubRef?: string;
   registeredRefs: string[];
+  registeredWorkflowNames: string[];
 }
 
-type WorkflowPackageTargetSeed = Omit<MutableWorkflowPackageUpdateTarget, "registeredRefs">;
+type WorkflowPackageTargetSeed = Omit<
+  MutableWorkflowPackageUpdateTarget,
+  "registeredRefs" | "registeredWorkflowNames"
+>;
 
 type ResolvedWorkflowPackageEntryTarget =
   | { readonly kind: "target"; readonly target: WorkflowPackageTargetSeed }
@@ -104,7 +114,10 @@ export async function resolveWorkflowPackageUpdateTargets({
       continue;
     }
 
-    addPackageTarget(targetsByInstallKey, resolved.target, registeredRef);
+    addPackageTarget(targetsByInstallKey, resolved.target, {
+      registeredRef,
+      workflowName: entry.packageMetadata?.workflowName,
+    });
   }
 
   const targets: WorkflowPackageUpdateTarget[] = [];
@@ -205,16 +218,23 @@ function resolveWorkflowPackageTargetForEntry(
 function addPackageTarget(
   targetsByInstallKey: Map<string, MutableWorkflowPackageUpdateTarget>,
   targetSeed: WorkflowPackageTargetSeed,
-  registeredRef?: string,
+  registration: { readonly registeredRef?: string; readonly workflowName?: string } = {},
 ): void {
   const installKey = workflowPackageInstallKey(targetSeed);
   const target = targetsByInstallKey.get(installKey) ?? {
     ...targetSeed,
     registeredRefs: [],
+    registeredWorkflowNames: [],
   };
 
+  const registeredRef = registration.registeredRef;
   if (registeredRef !== undefined && !target.registeredRefs.includes(registeredRef)) {
     target.registeredRefs.push(registeredRef);
+  }
+
+  const workflowName = registration.workflowName;
+  if (workflowName !== undefined && !target.registeredWorkflowNames.includes(workflowName)) {
+    target.registeredWorkflowNames.push(workflowName);
   }
 
   targetsByInstallKey.set(installKey, target);
@@ -262,6 +282,7 @@ async function createWorkflowPackageUpdateTarget({
     installScope: target.installScope,
     installRoot: target.installRoot,
     registeredRefs: target.registeredRefs,
+    registeredWorkflowNames: target.registeredWorkflowNames,
     currentRange: current.range,
     dependencySection: current.section,
     installedVersion,

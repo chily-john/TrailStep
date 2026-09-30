@@ -38,7 +38,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `workflow-packages/`: Enter when changing npm/GitHub package spec parsing, scope-aware install roots/save types, scoped package installation used before `trailstep add` bundle discovery, or package cleanup after `trailstep remove`.
 - `workflow-resolution/`: Enter when changing run-command resolution between discovered workflow ids, project/global-registered config refs, package-metadata install roots, bundle manifest refs, and direct workflow source references.
 - `trailstep-skill/`: Enter when changing packaged TrailStep usage-skill resolution, distribution target selection, tracked install refresh, or installation markers.
-- `workflow-skills/`: Enter when changing generated workflow skill naming, content, project skill file writing, leftover generated-skill warnings, or `skills` CLI distribution.
+- `workflow-skills/`: Enter when changing generated workflow skill naming, content, project skill file writing, leftover generated-skill warnings, `skills` CLI distribution, or untracked-workflow skill pickup during `update`.
 
 ## Files
 
@@ -74,6 +74,7 @@ Enter here when changing CLI behavior behind the public `main()` entrypoint. Int
 - `trailstep-skill/trailstep-skill.ts`: Change when packaged TrailStep usage-skill resolution, project/user target mapping, tracked install refresh, content-hash installation marker creation/validation, or config marker writes change.
 - `workflow-skills/generated-skill-warning.ts`: Change when commands warn about leftover generated skill directories.
 - `workflow-skills/workflow-skill-content.ts`: Change when generated workflow skill names, frontmatter, input instructions, or metadata handling changes.
+- `workflow-skills/untracked-workflow-skills.ts`: Change when `update`'s detection or installation of skills for untracked workflow exports of tracked workflow packages changes.
 
 ## Rules
 

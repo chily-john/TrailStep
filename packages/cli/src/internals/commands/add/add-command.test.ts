@@ -2818,7 +2818,66 @@ describe("addCommand", () => {
       workflowName: "release",
       exportName: "releaseWorkflow",
     });
+    // Headless adds without skill flags make no skill choice, so nothing is persisted
+    // and `trailstep update` falls back to legacy inference for untracked workflows.
+    expect(config.workflowMetadata?.project?.review).not.toHaveProperty("skillTargets");
+    expect(config.workflowMetadata?.project?.release).not.toHaveProperty("skillTargets");
     expect(promptCalls).toEqual([]);
+  });
+
+  it("persists the chosen skill targets in workflow metadata when adding with skill flags", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--yes", "--project-skill"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        skillsCliResolver: async () => "skills.js",
+        skillsCliProcessRunner: async () => ({ exitCode: 0 }),
+        packageCommandRunner: async () => {
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.review).toMatchObject({ skillTargets: ["project"] });
+    expect(config.workflowMetadata?.project?.release).toMatchObject({ skillTargets: ["project"] });
   });
 
   it("headless package add fails on registration conflicts", async ({ task }) => {

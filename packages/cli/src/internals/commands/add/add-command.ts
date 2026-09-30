@@ -18,8 +18,8 @@ import {
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
 import {
-  type RecommendedConfigPlan,
   mergeRecommendedConfig,
+  type RecommendedConfigPlan,
   readRecommendedConfigPlanFromPackageJsonFile,
 } from "../../recommended-config/recommended-config.js";
 import { workflowPackageInstallRootForScope } from "../../workflow-packages/install-root.js";
@@ -44,6 +44,7 @@ import {
   readRawTrailStepConfigFile,
   type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryScope,
+  type WorkflowSkillInstallTarget,
   writeRawTrailStepConfigFile,
   writeWorkflowRegistryEntries,
 } from "../../workflow-registry/workflow-registry.js";
@@ -581,14 +582,42 @@ async function buildAddRegistrationPlan({
         ? { projectSkill: args.projectSkill, userSkill: args.userSkill }
         : await resolveSkillArgs(args, context.prompts);
 
+  // Persist the chosen skill target(s) per registration so `trailstep update` can later
+  // honor them for generated skills of untracked workflows. Only registrations whose
+  // user made an explicit/prompted choice are marked; others stay legacy/unmarked.
+  const recordedSkillTargets = resolvedArgs.skillTargets;
+  const markedRegistrations =
+    recordedSkillTargets === undefined
+      ? successfulRegistrations
+      : successfulRegistrations.map((registration) =>
+          withPersistedSkillTargets(registration, recordedSkillTargets),
+        );
+
   return {
     status: "ready",
     namespace,
     registrations,
     registrationConflicts,
-    successfulRegistrations,
+    successfulRegistrations: markedRegistrations,
     skippedConflicts,
     resolvedArgs,
+  };
+}
+
+function withPersistedSkillTargets(
+  registration: AddRegistration,
+  skillTargets: readonly WorkflowSkillInstallTarget[],
+): AddRegistration {
+  const metadata = registration.registryTarget.metadata;
+  if (metadata === undefined) {
+    return registration;
+  }
+  return {
+    ...registration,
+    registryTarget: {
+      ...registration.registryTarget,
+      metadata: { ...metadata, skillTargets: [...skillTargets] },
+    },
   };
 }
 
@@ -875,6 +904,12 @@ function deriveDefaultWorkflowName(registryTarget: AddRegistryTarget): string {
 interface ResolvedSkillArgs {
   readonly projectSkill: boolean;
   readonly userSkill: boolean;
+  /**
+   * Skill targets the user actually chose (explicit flags or interactive prompts),
+   * including an empty array for "no skills". Undefined when no choice was made
+   * (e.g. headless `--yes` without skill flags), leaving the registration unmarked.
+   */
+  readonly skillTargets?: readonly WorkflowSkillInstallTarget[];
 }
 
 async function resolveSkillArgs(
@@ -884,22 +919,43 @@ async function resolveSkillArgs(
   const promptSkillChoices =
     !args.yes && prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
 
-  if (!promptSkillChoices) {
-    return { projectSkill: args.projectSkill, userSkill: args.userSkill };
-  }
-
-  return {
-    projectSkill: await promptYesNo(
+  if (promptSkillChoices) {
+    const projectSkill = await promptYesNo(
       "Add to project skills?",
       prompts,
       "trailstep add requires --project-skill.",
-    ),
-    userSkill: await promptYesNo(
+    );
+    const userSkill = await promptYesNo(
       "Add to user skills?",
       prompts,
       "trailstep add requires --user-skill.",
-    ),
-  };
+    );
+    return { projectSkill, userSkill, skillTargets: skillTargetsFor(projectSkill, userSkill) };
+  }
+
+  if (args.projectSkillExplicit || args.userSkillExplicit) {
+    return {
+      projectSkill: args.projectSkill,
+      userSkill: args.userSkill,
+      skillTargets: skillTargetsFor(args.projectSkill, args.userSkill),
+    };
+  }
+
+  return { projectSkill: args.projectSkill, userSkill: args.userSkill };
+}
+
+function skillTargetsFor(
+  projectSkill: boolean,
+  userSkill: boolean,
+): readonly WorkflowSkillInstallTarget[] {
+  const targets: WorkflowSkillInstallTarget[] = [];
+  if (projectSkill) {
+    targets.push("project");
+  }
+  if (userSkill) {
+    targets.push("user");
+  }
+  return targets;
 }
 
 interface PromptForUncoveredWorkflowRolesForRegistrationsOptions {

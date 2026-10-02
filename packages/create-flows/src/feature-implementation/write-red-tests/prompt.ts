@@ -6,6 +6,7 @@ export interface WriteRedTestsInput extends Record<string, unknown> {
   readonly currentStory: Document;
   readonly explorationBrief?: ExploreStoryOutput;
   readonly attempt: number;
+  readonly implementationContext?: string;
 }
 
 export interface WriteRedTestsOutput extends Record<string, unknown> {
@@ -36,6 +37,7 @@ export function writeRedTestsPrompt({ input }: { readonly input: WriteRedTestsIn
       "You are the red-test writer. Create focused behavioral failing tests; do not implement production behavior or review the story.",
     ),
     section("Active story test view", storyViewForTestWriter(input.currentStory.content)),
+    section("Implementation context", input.implementationContext),
     section("Exploration summary", input.explorationBrief?.summary ?? "Not provided."),
     section(
       "Exploration test seams",

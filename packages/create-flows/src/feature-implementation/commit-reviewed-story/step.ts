@@ -12,6 +12,7 @@ import {
   resetActiveStoryStartCommit,
   resetStoryLocalStateForNextStory,
   STORY_STATE_KEYS,
+  type StoryPhaseContexts,
 } from "../shared/story-state.js";
 import { runGit } from "./run-git.js";
 
@@ -31,10 +32,9 @@ type StoryCommitResult =
 
 export const commitReviewedStoryStep = step({ id: "commit-reviewed-story" }).do(
   async (input: CommitReviewedStoryInput): Promise<ContinuationResult> => {
-    const activeStory =
-      (await state.get<Document | null>(STORY_STATE_KEYS.activeStory)) ?? input.currentStory;
+    const activeStory = input.currentStory;
 
-    if (await storyAutoCommitEnabled()) {
+    if (!state.isReplayingCompletedStep && (await storyAutoCommitEnabled())) {
       const commitResult = await commitReviewedStoryChanges(
         activeStory,
         input.implementationSummary,
@@ -167,15 +167,38 @@ async function commitReviewedStoryChanges(
 
 async function completeReviewedStory(activeStory: Document): Promise<ContinuationResult> {
   const completed = (await state.get<string[]>(STORY_STATE_KEYS.completedStories)) ?? [];
-  const updatedCompleted = [
-    ...completed,
-    extractStoryTitle(activeStory.content, completed.length + 1),
-  ];
+  const completedTitle = extractStoryTitle(activeStory.content, completed.length + 1);
+  const storyAlreadyCompleted = completed.includes(completedTitle);
+  const updatedCompleted = storyAlreadyCompleted ? completed : [...completed, completedTitle];
 
+  const persistedActiveStory = await state.get<Document | null>(STORY_STATE_KEYS.activeStory);
   const storyQueue = (await state.get<Document[]>(STORY_STATE_KEYS.storyQueue)) ?? [];
-  const [nextStory, ...remaining] = storyQueue;
-  const [nextStoryContext = "", ...remainingStoryContexts] =
-    (await state.get<string[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
+  const storyContextQueue =
+    (await state.get<(string | StoryPhaseContexts)[]>(STORY_STATE_KEYS.storyContextQueue)) ?? [];
+  const queuedStories = storyQueue
+    .map((story, index) => ({ story, context: storyContextQueue[index] ?? "" }))
+    .filter(({ story }) => !documentsMatch(story, activeStory));
+
+  const persistedStoryAlreadyAdvanced =
+    persistedActiveStory && !documentsMatch(persistedActiveStory, activeStory);
+  const persistedQueuedIndex = persistedStoryAlreadyAdvanced
+    ? queuedStories.findIndex(({ story }) => documentsMatch(story, persistedActiveStory))
+    : -1;
+  const activeStoryContext =
+    persistedStoryAlreadyAdvanced && persistedQueuedIndex < 0
+      ? ((await state.get<string | StoryPhaseContexts | null>(
+          STORY_STATE_KEYS.activeStoryContext,
+        )) ?? "")
+      : undefined;
+  const nextStory = persistedStoryAlreadyAdvanced ? persistedActiveStory : queuedStories[0]?.story;
+  const nextStoryContext = persistedStoryAlreadyAdvanced
+    ? persistedQueuedIndex >= 0
+      ? (queuedStories[persistedQueuedIndex]?.context ?? "")
+      : activeStoryContext
+    : (queuedStories[0]?.context ?? "");
+  const remainingStoryEntries = persistedStoryAlreadyAdvanced
+    ? queuedStories.filter(({ story }) => !documentsMatch(story, persistedActiveStory))
+    : queuedStories.slice(1);
 
   if (!nextStory) {
     await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
@@ -196,7 +219,7 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
     return openPullRequestStep(output);
   }
 
-  if (!(await storyAutoCommitEnabled())) {
+  if (!state.isReplayingCompletedStep && !(await storyAutoCommitEnabled())) {
     const cleanBoundary = await verifyCleanBoundaryBeforeNextStory(activeStory);
     if (!cleanBoundary.ok) {
       return fail({
@@ -209,12 +232,22 @@ async function completeReviewedStory(activeStory: Document): Promise<Continuatio
 
   await resetStoryLocalStateForNextStory();
   await state.set(STORY_STATE_KEYS.completedStories, updatedCompleted);
-  await state.set(STORY_STATE_KEYS.storyQueue, remaining);
-  await state.set(STORY_STATE_KEYS.storyContextQueue, remainingStoryContexts);
+  await state.set(
+    STORY_STATE_KEYS.storyQueue,
+    remainingStoryEntries.map(({ story }) => story),
+  );
+  await state.set(
+    STORY_STATE_KEYS.storyContextQueue,
+    remainingStoryEntries.map(({ context }) => context),
+  );
   await state.set(STORY_STATE_KEYS.activeStory, nextStory);
   await state.set(STORY_STATE_KEYS.activeStoryContext, nextStoryContext);
   const { storyRouterStep } = await import("../story-router/step.js");
   return storyRouterStep({ reason: "story-completed", currentStory: nextStory });
+}
+
+function documentsMatch(left: Document, right: Document): boolean {
+  return left.path === right.path && left.content === right.content;
 }
 
 async function appendWorkflowWarning(warning: string): Promise<void> {

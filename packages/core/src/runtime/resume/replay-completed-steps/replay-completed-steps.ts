@@ -1,5 +1,10 @@
 import type { ContinuationResult, StepNode } from "../../../authoring/step/continuation.types.js";
-import { isStepNode } from "../../../authoring/step/step-node.js";
+import {
+  firstPromptPhase,
+  getStepPhases,
+  hasPromptPhase,
+  isStepNode,
+} from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import type {
@@ -33,10 +38,10 @@ export async function replayCompletedSteps<
   | { readonly status: "failure"; readonly failure: Failure }
 > {
   let node: ContinuationResult = options.workflow.start(options.input as TInput);
-  const completedStepEvents = options.events.filter((event) => event.type === "step.completed");
+  const completedAttempts = pairCompletedStepAttempts(options.events);
 
-  for (const [completedIndex, completedEvent] of completedStepEvents.entries()) {
-    const stepIndex = completedIndex + 1;
+  for (const attempt of completedAttempts) {
+    const { completedEvent, stepIndex } = attempt;
     if (!isStepNode(node)) {
       return {
         status: "failure",
@@ -57,7 +62,7 @@ export async function replayCompletedSteps<
       };
     }
 
-    if (node.config.prompt !== undefined) {
+    if (hasPromptPhase(node)) {
       const recordedOutput = readPlainPayload(completedEvent, "output");
       if (!recordedOutput) {
         return {
@@ -69,7 +74,8 @@ export async function replayCompletedSteps<
         };
       }
 
-      const outputSchema = resolveStepOutputSchema(node.config);
+      const promptPhase = firstPromptPhase(getStepPhases(node));
+      const outputSchema = promptPhase ? resolveStepOutputSchema(promptPhase) : undefined;
       if (!outputSchema) {
         return {
           status: "failure",
@@ -87,8 +93,19 @@ export async function replayCompletedSteps<
         stepIndex,
       }).stepDir;
       const completedNode = node;
-      node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        completedNode.onOutput(validatedOutput, completedNode.config.input),
+      const recordedWaitOutputs = readCompletedStepWaitOutputs({
+        events: options.events,
+        attempt,
+      });
+      if (recordedWaitOutputs.status === "failure") {
+        return recordedWaitOutputs;
+      }
+      node = await withStepContext(
+        completedNode.config.id,
+        stepDir,
+        async () =>
+          replayStepPhases(completedNode, validatedOutput, recordedWaitOutputs.waitOutputs),
+        { replay: { kind: "completed-step" } },
       );
     } else {
       const stepDir = resolveStepArtifactPaths({
@@ -97,8 +114,18 @@ export async function replayCompletedSteps<
         stepIndex,
       }).stepDir;
       const completedNode = node;
-      node = await withStepContext(completedNode.config.id, stepDir, async () =>
-        completedNode.onOutput(completedNode.config.input, completedNode.config.input),
+      const recordedWaitOutputs = readCompletedStepWaitOutputs({
+        events: options.events,
+        attempt,
+      });
+      if (recordedWaitOutputs.status === "failure") {
+        return recordedWaitOutputs;
+      }
+      node = await withStepContext(
+        completedNode.config.id,
+        stepDir,
+        async () => replayStepPhases(completedNode, undefined, recordedWaitOutputs.waitOutputs),
+        { replay: { kind: "completed-step" } },
       );
     }
   }
@@ -114,6 +141,172 @@ export async function replayCompletedSteps<
   }
 
   return { status: "success", node };
+}
+
+async function replayStepPhases(
+  stepNode: StepNode,
+  recordedPromptOutput?: PlainObject,
+  recordedWaitOutputs: Readonly<Record<string, PlainObject>> = {},
+): Promise<ContinuationResult> {
+  let phaseValue = stepNode.config.input;
+  let usedRecordedPromptOutput = false;
+  let nextNode: ContinuationResult | undefined;
+
+  for (const phase of getStepPhases(stepNode)) {
+    if (phase.kind === "display" || phase.kind === "wait") {
+      continue;
+    }
+
+    if (nextNode !== undefined) {
+      throw new Error(`step ${stepNode.config.id} has executable phases after a do phase`);
+    }
+
+    if (phase.kind === "prompt") {
+      if (recordedPromptOutput === undefined || usedRecordedPromptOutput) {
+        throw new Error(`step ${stepNode.config.id} has no recorded output to replay prompt phase`);
+      }
+      phaseValue = recordedPromptOutput;
+      usedRecordedPromptOutput = true;
+      continue;
+    }
+
+    nextNode = await phase.onOutput(
+      withWaitsDoContext(phaseValue, recordedWaitOutputs),
+      stepNode.config.input,
+    );
+  }
+
+  if (nextNode === undefined) {
+    throw new Error(`step ${stepNode.config.id} has no do phase`);
+  }
+
+  return nextNode;
+}
+
+interface CompletedStepAttempt {
+  readonly stepId: string;
+  readonly stepIndex: number;
+  readonly completedEvent: Event;
+  readonly startedEventIndex: number;
+  readonly completedEventIndex: number;
+}
+
+interface CompletedStepAttemptStart {
+  readonly event: Event;
+  readonly eventIndex: number;
+  readonly stepIndex: number;
+}
+
+function pairCompletedStepAttempts(events: readonly Event[]): readonly CompletedStepAttempt[] {
+  const startedByStepId = new Map<string, CompletedStepAttemptStart[]>();
+  const attempts: CompletedStepAttempt[] = [];
+  let stepIndex = 0;
+
+  for (const [eventIndex, event] of events.entries()) {
+    if (event.type === "step.started" && event.stepId) {
+      stepIndex += 1;
+      const starts = startedByStepId.get(event.stepId) ?? [];
+      starts.push({ event, eventIndex, stepIndex });
+      startedByStepId.set(event.stepId, starts);
+      continue;
+    }
+
+    if (
+      (event.type === "step.completed" ||
+        event.type === "step.failed" ||
+        event.type === "step.cancelled") &&
+      event.stepId
+    ) {
+      const starts = startedByStepId.get(event.stepId);
+      const started = starts?.pop();
+      if (!started || event.type !== "step.completed") {
+        continue;
+      }
+
+      attempts.push({
+        stepId: event.stepId,
+        stepIndex: started.stepIndex,
+        completedEvent: event,
+        startedEventIndex: started.eventIndex,
+        completedEventIndex: eventIndex,
+      });
+    }
+  }
+
+  return attempts.sort((left, right) => left.completedEventIndex - right.completedEventIndex);
+}
+
+function readCompletedStepWaitOutputs(options: {
+  readonly events: readonly Event[];
+  readonly attempt: CompletedStepAttempt;
+}):
+  | { readonly status: "success"; readonly waitOutputs: Readonly<Record<string, PlainObject>> }
+  | { readonly status: "failure"; readonly failure: Failure } {
+  const inStepEvents = options.events.slice(
+    options.attempt.startedEventIndex + 1,
+    options.attempt.completedEventIndex,
+  );
+  const waitOutputs: Record<string, PlainObject> = {};
+
+  for (const event of inStepEvents) {
+    if (event.type !== "wait.satisfied" || event.stepId !== options.attempt.stepId) {
+      continue;
+    }
+
+    const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
+    const output = readPlainPayload(event, "output");
+    if (!waitId || !output) {
+      return {
+        status: "failure",
+        failure: replayFailure(
+          "resume_missing_wait_output",
+          `Completed step ${options.attempt.stepId} has an invalid recorded satisfied wait output.`,
+        ),
+      };
+    }
+
+    if (Object.hasOwn(waitOutputs, waitId)) {
+      return {
+        status: "failure",
+        failure: replayFailure(
+          "resume_duplicate_wait_id",
+          `Completed step ${options.attempt.stepId} has duplicate wait id '${waitId}'.`,
+        ),
+      };
+    }
+    waitOutputs[waitId] = output;
+  }
+
+  return { status: "success", waitOutputs };
+}
+
+function withWaitsDoContext(
+  output: PlainObject,
+  waits: Readonly<Record<string, PlainObject>>,
+): PlainObject {
+  return new Proxy(output, {
+    get(target, property, receiver) {
+      if (property === "output") {
+        return target;
+      }
+      if (property === "waits") {
+        return waits;
+      }
+      return Reflect.get(target, property, receiver);
+    },
+    has(target, property) {
+      return property === "output" || property === "waits" || Reflect.has(target, property);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (property === "output") {
+        return { configurable: true, enumerable: false, value: target };
+      }
+      if (property === "waits") {
+        return { configurable: true, enumerable: false, value: waits };
+      }
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
 }
 
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {

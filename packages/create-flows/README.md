@@ -1,13 +1,13 @@
 # @trailstep/create-flows
 
-`@trailstep/create-flows` is a public package of reusable, general-purpose TrailStep workflows. It demonstrates how TrailStep's small step model can grow into larger, long-horizon coding workflows with focused agent sessions, typed handoffs, review loops, and retryable boundaries.
+`@trailstep/create-flows` is a public package of reusable, general-purpose TrailStep workflows. It demonstrates how TrailStep's small step model can grow into larger, long-horizon coding workflows with typed handoffs, review loops, and retryable boundaries.
 
 ## Workflows
 
 - `grillItAway`: default registered id `grill-it-away`; starts interactively by asking clarifying questions, then runs the implementation pipeline.
 - `takeItAway`: default registered id `take-it-away`; starts from an already-organic conversation, ticket, or feature request, then runs the implementation pipeline.
 
-Both workflows end with a typed output containing implementation status, feature/implementation document paths, completed story count, completed story titles, and a summary.
+`grillItAway` and `takeItAway` end with a typed output containing implementation status, feature/implementation document paths, completed story count, completed story titles, and a summary.
 
 ## Recommended setup
 
@@ -31,7 +31,7 @@ trailstep init --scope project --install-skill
 # Preview without installing, registering, or writing skills.
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --dry-run
 
-# Install/register both workflows and generate project skills.
+# Install/register the workflows and generate project skills.
 trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
 ```
 
@@ -59,7 +59,7 @@ rough idea --> interactive grill step --> { conversation } --> implementation pi
 
 Use this when you already have enough context in a conversation, ticket, issue, or feature request. It skips the interactive grill step and starts the implementation pipeline directly.
 
-Input is a JSON object. `autoCommit` and `pullRequest.enabled` both default to `true`; disable them only when you want to manage commits or PR creation yourself.
+Input is a JSON object. `autoCommit` and `pullRequest.enabled` both default to `true`; disable them only when you want to manage commits or PR creation yourself. `planningCheckpoint.enabled` defaults to `false`; enable it to pause for human approval after plan/story slicing and before story execution.
 
 ```json
 {
@@ -70,44 +70,64 @@ Input is a JSON object. `autoCommit` and `pullRequest.enabled` both default to `
     "base": "main",
     "remote": "origin",
     "draft": false
+  },
+  "planningCheckpoint": {
+    "enabled": false
   }
 }
 ```
 
 ## Step architecture
 
-The two workflows share the same implementation pipeline after initial intake:
+`grill-it-away` and `take-it-away` share the same implementation pipeline after initial intake:
 
 ```mermaid
 flowchart TD
   A[grill-it-away interactive intake] --> B1[initialize-take-it-away]
   B[take-it-away conversation input] --> B1
   B1 --> C[create-feature-doc]
-  C --> D[create-or-improve-implementation-doc]
-  D --> E[review-implementation-doc]
+  C --> D[create-or-improve-implementation-strategy]
+  D --> E[review-implementation-strategy]
   E -->|needs work| D
-  E -->|passes| F[split-implementation-stories]
-  F --> G[implement-story]
-  G --> H[review-story-implementation]
-  H -->|needs work| G
+  E -->|passes| F[slice-implementation-stories]
+  F --> F2[split-implementation-stories]
+  F2 --> P{planning checkpoint enabled?}
+  P -->|yes| Q[planning-checkpoint]
+  Q -->|approve| R0[story-router]
+  Q -->|revise| D
+  P -->|no| R0
+  R0 --> G[story-isolation-preflight]
+  G --> G2[deterministic-context-preflight]
+  G2 --> R[write-red-tests]
+  R --> S[implement-green]
+  S --> T[validate-story deterministic code step]
+  T -->|failed validation| R0
+  T -->|passes| H[review-story-implementation]
+  H -->|failed review| R0
   H -->|passes| I[commit-reviewed-story / mark complete]
   I --> J{more stories?}
-  J -->|yes| G
+  J -->|yes| R0
   J -->|no| K[open-pull-request]
   K --> L[done]
+  R0 -->|validation retry escalation| SD[story-doctor]
+  SD --> T
 ```
+
+After `slice-implementation-stories`, `split-implementation-stories` turns the reviewed strategy into queued stories plus optional per-story context blocks. From there the `story-router` owns active-story routing: it starts each story, sends failed reviews and validations back through retry routes (escalating to `story-doctor` past the threshold), and either hands the next queued story back to `story-isolation-preflight` or ends the run at `open-pull-request`.
+
+Stories run strictly one at a time. Full parallelization of create-flows (running multiple stories concurrently) is roadmap and is not yet implemented.
 
 The important TrailStep pattern is not the specific feature methodology; it is the architecture:
 
 - each stage is a focused step with its own prompt and agent role
 - each step passes structured output to the next step
 - planning and implementation have review loops
-- stories are split so implementation work happens one story at a time
+- stories are split so implementation work happens one story at a time (sequential today; parallel story execution is roadmap, not yet implemented)
 - failed runs can be retried through TrailStep instead of restarting the entire conversation
 
 ### Reliability and recovery
 
-After `split-implementation-stories`, the story router owns active-story routing. It records the active story, route, retry counts, retry limit, and latest concise review or validation evidence so retryable story work can resume from `.trailstep/runs/<runName>/` artifacts.
+After `slice-implementation-stories`, the story router owns active-story routing. It records the active story, route, retry counts, retry limit, and latest concise review or validation evidence so retryable story work can resume from `.trailstep/runs/<runName>/` artifacts.
 
 The review retry cap is 3 failed reviews. Failed reviews route back through `implement-green` until that finite cap is reached; exhausted review routes fail explicitly and leave router state available for inspection.
 
@@ -121,7 +141,7 @@ Reviewer prompt hygiene keeps reviews bounded: reviewer prompts include the acti
 
 The `autoCommit` input option controls automatic story commits and defaults to `true`. `commit-reviewed-story` creates one commit per passing story; when `autoCommit` is `false`, TrailStep requires a clean story boundary before prompting the next story.
 
-The `pullRequest` input option controls the final code-only PR step and defaults to enabled. At the end of a successful run, TrailStep uses the existing feature doc, implementation doc, completed-story list, and reviewed commits to push the current branch and run `gh pr create`. If the working tree is dirty or PR creation is unsafe, the workflow still completes and returns a warning with suggested `git`/`gh` commands to run after review.
+The `pullRequest` input option controls the final code-only PR step and defaults to enabled. At the end of a successful run, TrailStep uses the existing feature doc, implementation strategy, completed-story list, and reviewed commits to push the current branch and run `gh pr create`. If the working tree is dirty or PR creation is unsafe, the workflow still completes and returns a warning with suggested `git`/`gh` commands to run after review.
 
 ## Agent roles
 
@@ -129,9 +149,12 @@ The workflows declare role defaults so TrailStep can target different kinds of a
 
 - **grillingAgent**: clarifies vague requests interactively.
 - **featureWriter**: turns the request/conversation into a standalone feature document.
-- **planner**: creates or improves an architecture-aware implementation plan.
-- **reviewer**: reviews implementation docs and story diffs.
-- **implementer**: implements one story at a time.
+- **planner**: creates or improves an architecture-aware implementation strategy.
+- **reviewer**: reviews the implementation strategy before story slicing.
+- **slicer**: turns the reviewed strategy into implementation-ready stories.
+- **testWriter**: writes red tests for the active story.
+- **storyImplementer**: implements one story at a time until validation passes.
+- **storyReviewer**: reviews the isolated active-story changes before commit.
 
 ## Safety notes
 

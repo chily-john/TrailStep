@@ -9,6 +9,36 @@ describe("parseRetryInvocation", () => {
       mode: "explicit",
       workflowId: "project/review",
       workflowRunName: "failed-run",
+      filter: { mode: "default" },
+      fresh: false,
+    });
+  });
+
+  it("parses parallel-track retry filters and fresh retry", () => {
+    expect(parseRetryInvocation(["retry", "project/review", "failed-run", "--failed"])).toEqual({
+      mode: "explicit",
+      workflowId: "project/review",
+      workflowRunName: "failed-run",
+      filter: { mode: "failed-only" },
+      fresh: false,
+    });
+
+    expect(
+      parseRetryInvocation(["retry", "project/review", "failed-run", "--branch", "branch-2"]),
+    ).toEqual({
+      mode: "explicit",
+      workflowId: "project/review",
+      workflowRunName: "failed-run",
+      filter: { mode: "branch", branchId: "branch-2" },
+      fresh: false,
+    });
+
+    expect(parseRetryInvocation(["retry", "project/review", "failed-run", "--fresh"])).toEqual({
+      mode: "explicit",
+      workflowId: "project/review",
+      workflowRunName: "failed-run",
+      filter: { mode: "default" },
+      fresh: true,
     });
   });
 
@@ -37,9 +67,15 @@ describe("parseRetryInvocation", () => {
     );
   });
 
-  it("rejects unknown flags", () => {
+  it("rejects unknown and invalid retry filter flags", () => {
     expect(() =>
       parseRetryInvocation(["retry", "project/review", "failed-run", "--bogus"]),
     ).toThrow(/Unknown option: --bogus/);
+    expect(() =>
+      parseRetryInvocation(["retry", "project/review", "failed-run", "--branch"]),
+    ).toThrow(/Expected branch id/);
+    expect(() =>
+      parseRetryInvocation(["retry", "project/review", "failed-run", "--fresh", "--failed"]),
+    ).toThrow(/--fresh cannot be combined/);
   });
 });

@@ -15,7 +15,7 @@ describe("usageText", () => {
     expect(usageText).toContain("trailstep <agent-or-provider>");
     expect(usageText).toContain("trailstep open [agent-or-provider]");
     expect(usageText).toContain(
-      "trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path>]",
+      "trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]",
     );
   });
 
@@ -47,6 +47,17 @@ describe("usageText", () => {
     expect(usageText).toContain(
       "trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]",
     );
+  });
+
+  it("documents storage lifecycle commands and safety behavior", () => {
+    expect(usageText).toContain("trailstep storage status");
+    expect(usageText).toContain("trailstep storage gc [--dry-run]");
+    expect(usageText).toContain("trailstep storage restore <runId>");
+    expect(usageText).toContain("trailstep storage pin <runId>");
+    expect(usageText).toContain("trailstep storage delete <runId>");
+    expect(usageText).toContain("storage.lifecycle");
+    expect(usageText).toContain('compressAfter: "7d"');
+    expect(usageText).toContain("refuses pinned runs");
   });
 
   it("documents optional model override semantics for agents set", () => {

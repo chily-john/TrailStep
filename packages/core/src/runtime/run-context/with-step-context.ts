@@ -23,7 +23,12 @@ export async function withStepContext<T>(
   stepId: string,
   stepDir: string,
   fn: () => Promise<T>,
-  options: { readonly maxSubPrompts?: unknown } = {},
+  options: {
+    readonly maxSubPrompts?: unknown;
+    readonly cwd?: string;
+    readonly executionCwd?: string;
+    readonly replay?: { readonly kind: "completed-step" };
+  } = {},
 ): Promise<T> {
   const parentContext = runContextStorage.getStore();
   if (!parentContext) {
@@ -33,12 +38,18 @@ export async function withStepContext<T>(
   let nextDocumentIndex = 0;
   let nextSubPromptIndex = 0;
 
+  const executionCwd = options.executionCwd ?? options.cwd ?? parentContext.executionCwd;
   const stepContext = {
     ...parentContext,
+    cwd: executionCwd ?? parentContext.cwd,
+    executionCwd: executionCwd ?? parentContext.executionCwd,
     currentStep: {
       id: stepId,
       dir: stepDir,
       maxSubPrompts: options.maxSubPrompts,
+      cwd: executionCwd ?? parentContext.cwd,
+      executionCwd: executionCwd ?? parentContext.executionCwd,
+      replay: options.replay,
       nextDocumentIndex(): number {
         nextDocumentIndex += 1;
         return nextDocumentIndex;

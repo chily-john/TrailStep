@@ -29,6 +29,7 @@ export async function runInteractiveAgentCommand(options: {
   readonly stepId: string;
   readonly renderedPrompt: string;
   readonly runDir: string;
+  readonly cwd?: string;
   readonly outputSchema: Schema;
   readonly artifactPaths: StepArtifactPaths;
   readonly outputMode: "session-file" | "json";
@@ -60,6 +61,7 @@ async function runInteractiveAgentTarget(options: {
   readonly stepId: string;
   readonly renderedPrompt: string;
   readonly runDir: string;
+  readonly cwd?: string;
   readonly outputSchema: Schema;
   readonly artifactPaths: StepArtifactPaths;
   readonly outputMode: "session-file" | "json";
@@ -83,6 +85,7 @@ async function runInteractiveAgentTarget(options: {
     outputMode: options.outputMode,
   });
   const env = { ...definedProcessEnv(), TRAILSTEP_INTERACTIVE_FILE: files.interactiveFile };
+  const executionCwd = options.cwd ?? files.stepDir;
 
   const abortController = new AbortController();
   options.signal?.addEventListener("abort", () => abortController.abort(), { once: true });
@@ -136,7 +139,7 @@ async function runInteractiveAgentTarget(options: {
         await (options.runner ?? spawnInteractiveProcess)({
           command,
           args,
-          cwd: files.stepDir,
+          cwd: executionCwd,
           shell: false,
           stdio: "inherit",
           env,
@@ -199,7 +202,7 @@ async function runInteractiveAgentTarget(options: {
       await (options.runner ?? spawnInteractiveProcess)({
         command: agentConfig.binary,
         args,
-        cwd: files.stepDir,
+        cwd: executionCwd,
         shell: false,
         stdio: "inherit",
         env,

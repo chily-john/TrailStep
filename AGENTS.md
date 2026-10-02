@@ -15,6 +15,7 @@ This root context file contains a map of the codebase. Path-scoped context files
 │   ├── core/             # Framework-neutral runtime, shapes, continuation engine, events, agent targeting, provider CLI registry
 │   ├── authoring/        # TypeScript authoring helpers layered over core primitives
 │   ├── cli/              # `trailstep` workflow discovery, skill checks, config loading, and local execution command
+│   ├── sub-agents/       # Reusable delegate/sub-agent workflows
 │   ├── testkit/          # Workflow testing utilities package surface
 │   └── dashboard/        # Svelte/Vite local workflow run observability UI
 ├── scripts/              # Local release-readiness and artifact hygiene checks

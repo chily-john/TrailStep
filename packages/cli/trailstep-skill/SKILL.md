@@ -1,44 +1,28 @@
 ---
 name: trailstep
-description: Use when authoring, installing, or running TrailStep workflows with the TrailStep CLI.
+description: Use when installing, configuring, updating, or running TrailStep workflows and providers with the TrailStep CLI.
 ---
 
 # TrailStep usage skill
 
-Use TrailStep to author, install, discover, run, continue, and retry durable typed coding-agent workflows from npm packages or project files.
+Use TrailStep to install, discover, run, continue, retry, and observe durable typed coding-agent workflows from project files or packages.
 
 ## CLI quick start
 
-- Install the packaged TrailStep skill and create local config with `trailstep init`.
-- Update the globally installed TrailStep CLI with `trailstep update`; use `trailstep update --project` only when intentionally updating project authoring/runtime packages.
-- Global CLI updates automatically refresh tracked installs of this packaged skill when possible.
-- List available workflows with `trailstep workflows`.
-- Run a workflow with a JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
+- Create config and install the packaged TrailStep skills with `trailstep init`.
+- Update TrailStep and refresh tracked packaged skills with `trailstep update`; use `trailstep update --project` only when intentionally updating project authoring/runtime packages.
+- Configure agent targets with `trailstep agents` or `trailstep agents set <name> --provider <provider> --scope <project|global>`.
+- List registered workflows with `trailstep workflows`.
+- Add reusable workflow packages with `trailstep add <package-or-ref>`; request generated workflow skills with `--project-skill` or `--user-skill` when supported agents should discover those workflows from their agent UI.
+- Run a workflow with inline JSON: `trailstep <workflow-ref> --input '{"request":"..."}'`.
+- Pipe one-shot JSON on stdin: `printf '%s\n' '{"request":"..."}' | trailstep <workflow-ref> --input-file -`.
+- Run a workflow with a reusable JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
 - Continue waiting or interrupted runs with `trailstep continue`.
-- Retry failed work with `trailstep retry`; retry instead of inventing a separate resume mechanism.
-
-## Author continuation workflows
-
-Prefer continuation workflows that expose one clear public entry point:
-
-```ts
-import { defineWorkflow, done, step } from "@trailstep/authoring";
-
-export const review = defineWorkflow({ start });
-
-function start(input: { readonly topic: string }) {
-  return step("review", { input, agent: "reviewer" }, ({ result }) => done({ result }));
-}
-```
-
-Authoring guidance:
-
-- Use `defineWorkflow({ start })` for workflow definitions.
-- Use `step(...)` for agent or tool work that may continue later.
-- Use `done(...)` for completed workflow output.
-- Put shared role defaults in workflow-level `agents`.
-- Override a single unit of work with step-level `agent` only when needed.
-- Workflow inputs should be JSON object values; write an object to the file passed with `--input-file`, not raw prose or arrays.
+- Answer human/parent waits with `trailstep answer <runName> <waitId> --json '{"answer":"..."}'`.
+- Retry failed work with `trailstep retry <workflow-ref> <runName>`; retry instead of inventing a separate resume mechanism.
+- Inspect active/history with `trailstep runs`, `trailstep watch`, and `trailstep output <runName>` when available in the installed CLI version.
+- Manage run artifact lifecycle with `trailstep storage status`, `trailstep storage gc --dry-run`, `trailstep storage restore <runId>`, `trailstep storage pin <runId>`, and `trailstep storage delete <runId>`.
+- Open a managed standalone agent session with `trailstep open [agent-or-provider]` or bare `trailstep` when a default agent is configured.
 
 ## Workflow refs
 
@@ -50,23 +34,35 @@ TrailStep accepts these workflow reference forms:
 
 Use direct refs for local files, registered refs for named project or user workflows, and bundle refs for exported workflows from installed packages.
 
+## Inputs and generated skills
+
+- Workflow inputs should be JSON object values, not raw prose or arrays.
+- Prefer `--input-file -` for one-shot agent-generated JSON; use a named `--input-file` for large context and reproducible runs.
+- Generated workflow skills are separate from the packaged TrailStep usage/authoring skills. They are created by `trailstep add` for specific installed workflows and should describe when an agent should invoke that workflow.
+- Use project skills for team-shared repository workflows and user skills for personal/global workflows.
+
 ## Safety and run artifacts
 
-- do not manually edit `.trailstep/runs`.
-- local run artifacts are runtime outputs, not source of truth.
+- Do not manually edit `.trailstep/runs`.
+- Local run artifacts are runtime outputs, not source of truth.
+- Configure filesystem run cleanup under `storage.lifecycle` with duration strings such as `compressAfter: "7d"` and `deleteAfter: "30d"`; per-workflow overrides live under `storage.lifecycle.workflows`.
+- `trailstep storage gc` applies the configured lifecycle and skips pinned runs. `restore` refuses to overwrite hot runs and removes the archive copy after success. `pin`/`unpin` operate on hot runs; restore archived runs first. `delete` removes hot or archived runs but refuses pinned runs.
 - Use `trailstep continue` for normal continuation and `trailstep retry` for failed steps instead of adding a custom resume path.
 - Keep reusable workflow behavior in workflow source and package exports, not in generated run directories.
+- If TrailStep reports that the CLI or packaged skills are out of date, run `trailstep update`.
 
-## Author a provider
+## Provider usage and authoring
 
-Use this when creating a TrailStep-compatible provider; this is provider authoring guidance, not a custom provider wizard.
+Use provider commands when connecting TrailStep to a coding-agent CLI or package.
+
+Common commands:
+
+- `trailstep providers add <path-or-package> --scope project`
+- `trailstep providers inspect <path-or-package>`
+- `trailstep providers test <provider> --scope project`
+- `trailstep agents set default --provider <provider> --scope project`
 
 Author either a manifest-only provider or a hook-based provider package.
-
-Authoritative docs:
-
-- provider manifest and package contract: `../README.md#provider-commands`
-- package export convention: `../../core/README.md#provider-package-export-convention`
 
 ### Manifest-only provider
 
@@ -79,6 +75,10 @@ Create a `my-provider.trailstep-provider.json` file with serializable data only:
   "displayName": "Example Provider"
 }
 ```
+
+Do not embed functions in manifests.
+
+Working args may use `{{promptFile}}`, `{{outputFile}}`, `{{model}}`, and `{{thinking}}`. Interactive args may also use `{{prompt}}`. Guard optional overrides with `{{#model}} ... {{/model}}` and `{{#thinking}} ... {{/thinking}}` conditional blocks.
 
 ### Hook-based provider package
 
@@ -97,13 +97,9 @@ export const trailstepProvider = {
 };
 ```
 
-Do not embed functions in manifests.
-
 Hook-based provider packages may execute provider package code and should be trusted like installed npm dependencies.
 
-Treat stale custom provider terminology as legacy or migration-only wording.
-
-### Checklist
+Provider authoring checklist:
 
 - provider id
 - display metadata

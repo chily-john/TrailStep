@@ -176,6 +176,62 @@ describe("runWorkingAgentCommand", () => {
     });
   });
 
+  it("emits one compact step.progress note per selected target before running", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-progress-"));
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-progress-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({
+          id: "review",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "progress" },
+      runName: "working-agent-progress-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {
+          first: { binary: "first-agent" },
+          second: { binary: "second-agent" },
+        },
+        agents: {
+          medium: [{ provider: "first" }, { provider: "second", model: "second-model" }],
+        },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        if (request.command === "first-agent") {
+          return { exitCode: 7 };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "ok" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(
+      result.events
+        .filter((event) => event.type === "step.progress")
+        .map((event) => event.payload.message),
+    ).toEqual(["agent reviewer via first", "agent reviewer via second second-model"]);
+  });
+
   it("preserves provider failure details in exhausted target attempts", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-details-"));
 

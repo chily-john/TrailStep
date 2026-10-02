@@ -1,3 +1,5 @@
+import { resolveAgentTargets, type TrailStepConfig } from "@trailstep/core";
+
 import {
   addAgentEntryItem,
   editAgentEntryItem,
@@ -7,6 +9,7 @@ import {
 } from "../../agent-config/agent-entry-items-flow.js";
 import {
   blockDeleteWhenAgentReferrersExist,
+  findAgentReferrers,
   renameAgentRefs,
 } from "../../agent-config/agent-referrers.js";
 import {
@@ -23,6 +26,7 @@ import {
 } from "../../agent-config/save-confirm-flow.js";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { loadTrailStepProjectConfig } from "../../config/config.js";
 import {
   configPathForScope,
   listRegisteredWorkflowEntries,
@@ -30,7 +34,11 @@ import {
   type WorkflowRegistryScope,
   writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
-import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
+import {
+  type ResolvedWorkflowReference,
+  resolveWorkflowReference,
+} from "../../workflow-resolution/workflow-resolution.js";
+import { WorkflowResolutionError } from "../../workflow-resolution/workflow-resolution-error.js";
 
 const THINKING_CHOICES = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
@@ -62,6 +70,15 @@ type AgentCommandArgs =
       readonly scope: WorkflowRegistryScope;
     }
   | {
+      readonly action: "explain";
+      readonly name: string;
+      readonly scope: WorkflowRegistryScope;
+    }
+  | {
+      readonly action: "explain-workflow";
+      readonly workflowRef: string;
+    }
+  | {
       readonly action: "interactive";
     };
 
@@ -82,12 +99,15 @@ export const agentsCommand: CliCommand<AgentCommandArgs> = {
     if (action === "rename") {
       return parseRenameArgs(argv.slice(2));
     }
+    if (action === "explain") {
+      return parseExplainArgs(argv.slice(2));
+    }
     if (action === undefined) {
       return { action: "interactive" };
     }
 
     throw new CliUsageError(
-      "trailstep agents requires set, delete, rename, or no subcommand for interactive mode.",
+      "trailstep agents requires set, delete, rename, explain, or no subcommand for interactive mode.",
     );
   },
   async run(args: AgentCommandArgs, context: CliCommandContext): Promise<number> {
@@ -99,6 +119,12 @@ export const agentsCommand: CliCommand<AgentCommandArgs> = {
     }
     if (args.action === "rename") {
       return renameAgent(args, context);
+    }
+    if (args.action === "explain") {
+      return explainAgent(args, context);
+    }
+    if (args.action === "explain-workflow") {
+      return explainWorkflow(args, context);
     }
     return runInteractiveAgents(context);
   },
@@ -158,6 +184,23 @@ function parseRenameArgs(argv: readonly string[]): AgentCommandArgs {
     scope: parseRequiredScope(
       flags.scope,
       "trailstep agents rename requires --scope <local|project|global>.",
+    ),
+  };
+}
+
+function parseExplainArgs(argv: readonly string[]): AgentCommandArgs {
+  const [name, ...flagsArgv] = argv;
+  assertAgentName(name, "trailstep agents explain requires <name>.");
+  const flags = parseFlags(flagsArgv, ["--scope"]);
+  if (name.includes("/")) {
+    return { action: "explain-workflow", workflowRef: name };
+  }
+  return {
+    action: "explain",
+    name,
+    scope: parseRequiredScope(
+      flags.scope,
+      "trailstep agents explain requires --scope <local|project|global>.",
     ),
   };
 }
@@ -244,6 +287,219 @@ async function renameAgent(
   await renameAgentRefs(args.oldName, args.newName, context);
   context.io.writeLine(`Renamed agent ${args.oldName} to ${args.newName}.`);
   return 0;
+}
+
+async function explainAgent(
+  args: Extract<AgentCommandArgs, { readonly action: "explain" }>,
+  context: CliCommandContext,
+): Promise<number> {
+  const configPath = configPathForScope(args.scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  const agents = toMutableRecord(config.agents);
+  if (!(args.name in agents)) {
+    throw new CliUsageError(`Agent ${args.name} does not exist in ${args.scope} config.`);
+  }
+
+  context.io.writeLine(`Agent ${args.name} (${args.scope})`);
+  context.io.writeLine(`Config path: ${configPath}`);
+  context.io.writeLine(`Entry: ${JSON.stringify(agents[args.name])}`);
+  context.io.writeLine("Resolved targets:");
+  const resolvedLines = explainAgentEntry(agents[args.name], agents, new Set([args.name]));
+  if (resolvedLines.length === 0) {
+    context.io.writeLine("  none");
+  } else {
+    resolvedLines.forEach((line, index) => {
+      context.io.writeLine(`  ${index + 1}. ${line}`);
+    });
+  }
+
+  const referrers = await findAgentReferrers(args.name, context);
+  context.io.writeLine("Used by:");
+  if (referrers.length === 0) {
+    context.io.writeLine("  none");
+  } else {
+    for (const referrer of referrers) {
+      context.io.writeLine(`  ${referrer.scope}: ${referrer.path}`);
+    }
+  }
+  return 0;
+}
+
+interface MergedRawRoleConfig {
+  readonly agents: Record<string, unknown>;
+  workflowRoleEntry(workflowId: string, roleName: string): unknown;
+}
+
+async function explainWorkflow(
+  args: Extract<AgentCommandArgs, { readonly action: "explain-workflow" }>,
+  context: CliCommandContext,
+): Promise<number> {
+  let resolved: ResolvedWorkflowReference | undefined;
+  try {
+    resolved = await resolveWorkflowReference(args.workflowRef, context);
+  } catch (error) {
+    if (error instanceof WorkflowResolutionError) {
+      throw new CliUsageError(error.message);
+    }
+    throw error;
+  }
+  if (resolved === undefined) {
+    throw new CliUsageError(`Workflow ${args.workflowRef} could not be resolved.`);
+  }
+
+  const workflowId = resolved.workflow.id;
+  context.io.writeLine(`Workflow ${args.workflowRef}`);
+  context.io.writeLine(`Workflow id: ${workflowId}`);
+
+  const roles = resolved.workflow.agents;
+  const roleNames = roles === undefined ? [] : Object.keys(roles).sort();
+  if (roleNames.length === 0) {
+    context.io.writeLine("Agent roles: none declared by the workflow.");
+    return 0;
+  }
+
+  const rawConfig = await readMergedRawRoleConfig(context);
+  const loadedConfig = await loadTrailStepProjectConfig(context.cwd, { homeDir: context.homeDir });
+
+  context.io.writeLine("Agent roles:");
+  for (const roleName of roleNames) {
+    const role = roles?.[roleName];
+    if (role === undefined) {
+      continue;
+    }
+    context.io.writeLine(`  ${roleName} (size ${role.size})`);
+
+    context.io.writeLine("    Configured targets/refs:");
+    const configuredLines = explainWorkflowRoleConfigured(
+      rawConfig,
+      workflowId,
+      roleName,
+      role.size,
+    );
+    if (configuredLines.length === 0) {
+      context.io.writeLine("      none");
+    } else {
+      configuredLines.forEach((line, index) => {
+        context.io.writeLine(`      ${index + 1}. ${line}`);
+      });
+    }
+
+    context.io.writeLine("    Final targets:");
+    const finalLines = explainWorkflowRoleFinalTargets(
+      loadedConfig.trailstepConfig,
+      workflowId,
+      roleName,
+      role.size,
+    );
+    if (finalLines.length === 0) {
+      context.io.writeLine("      unavailable (no agent targets resolve for this role)");
+    } else {
+      finalLines.forEach((line, index) => {
+        context.io.writeLine(`      ${index + 1}. ${line}`);
+      });
+    }
+  }
+  return 0;
+}
+
+/**
+ * Reads raw scope configs with local > project > global precedence so configured
+ * entries can be shown with refs intact before core expands them.
+ */
+async function readMergedRawRoleConfig(context: CliCommandContext): Promise<MergedRawRoleConfig> {
+  const scopeConfigs = await Promise.all(
+    (["global", "project", "local"] as const).map((scope) =>
+      readRawTrailStepConfigFile(configPathForScope(scope, context)),
+    ),
+  );
+
+  let agents: Record<string, unknown> = {};
+  const workflowBuckets: Record<string, Record<string, unknown>> = {};
+  for (const config of scopeConfigs) {
+    agents = { ...agents, ...toMutableRecord(config.agents) };
+    for (const [workflowKey, workflowValue] of Object.entries(toMutableRecord(config.workflows))) {
+      if (!isRecord(workflowValue)) {
+        continue;
+      }
+      const existingBucket = toMutableRecord(workflowBuckets[workflowKey]);
+      workflowBuckets[workflowKey] = {
+        ...existingBucket,
+        ...workflowValue,
+        agents: {
+          ...toMutableRecord(existingBucket.agents),
+          ...toMutableRecord(workflowValue.agents),
+        },
+      };
+    }
+  }
+
+  return {
+    agents,
+    workflowRoleEntry(workflowId: string, roleName: string): unknown {
+      return toMutableRecord(toMutableRecord(workflowBuckets[workflowId]).agents)[roleName];
+    },
+  };
+}
+
+function explainWorkflowRoleConfigured(
+  rawConfig: MergedRawRoleConfig,
+  workflowId: string,
+  roleName: string,
+  roleSize: string,
+): readonly string[] {
+  const lines: string[] = [];
+  const appendSource = (label: string, entry: unknown): void => {
+    const rendered = explainAgentEntry(entry, rawConfig.agents, new Set());
+    if (rendered.length > 0) {
+      lines.push(`${label}: ${rendered.join("; ")}`);
+    }
+  };
+
+  appendSource(
+    `workflows.${workflowId}.agents.${roleName}`,
+    rawConfig.workflowRoleEntry(workflowId, roleName),
+  );
+  for (const key of new Set([roleName, roleSize, "default"])) {
+    appendSource(`agents.${key}`, rawConfig.agents[key]);
+  }
+  return lines;
+}
+
+function explainWorkflowRoleFinalTargets(
+  effectiveConfig: TrailStepConfig | undefined,
+  workflowId: string,
+  roleName: string,
+  roleSize: string,
+): readonly string[] {
+  if (effectiveConfig === undefined) {
+    return [];
+  }
+
+  try {
+    return resolveAgentTargets({ config: effectiveConfig, workflowId, roleName, roleSize }).map(
+      (target) => {
+        const parts = [`provider ${target.provider}`];
+        if (typeof target.model === "string" && target.model.trim().length > 0) {
+          parts.push(`model ${target.model}`);
+        }
+        if (target.thinking !== undefined) {
+          parts.push(`thinking ${target.thinking}`);
+        }
+        return parts.join(", ");
+      },
+    );
+  } catch (error) {
+    if (isAgentTargetsUnavailableError(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function isAgentTargetsUnavailableError(error: unknown): boolean {
+  return (
+    isRecord(error) && isRecord(error.failure) && error.failure.code === "agent_targets_unavailable"
+  );
 }
 
 const INTERACTIVE_SCOPES = ["local", "project", "global"] as const;
@@ -997,6 +1253,53 @@ function customProviderList(
   customProvider: ConfiguredCustomProvider | undefined,
 ): readonly ConfiguredCustomProvider[] {
   return customProvider === undefined ? [] : [customProvider];
+}
+
+function explainAgentEntry(
+  value: unknown,
+  agents: Record<string, unknown>,
+  seenRefs: ReadonlySet<string>,
+): readonly string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+
+  return value.map((item) => explainAgentItem(item, agents, seenRefs));
+}
+
+function explainAgentItem(
+  item: unknown,
+  agents: Record<string, unknown>,
+  seenRefs: ReadonlySet<string>,
+): string {
+  if (!isRecord(item)) {
+    return "invalid agent item";
+  }
+  if (typeof item.ref === "string") {
+    if (seenRefs.has(item.ref)) {
+      return `ref ${item.ref} (cycle)`;
+    }
+    if (!(item.ref in agents)) {
+      return `ref ${item.ref} (missing)`;
+    }
+    const nested = explainAgentEntry(agents[item.ref], agents, new Set([...seenRefs, item.ref]));
+    if (nested.length === 0) {
+      return `ref ${item.ref} (empty)`;
+    }
+    return `ref ${item.ref} -> ${nested.join("; ")}`;
+  }
+  if (typeof item.provider !== "string") {
+    return `inline ${JSON.stringify(item)}`;
+  }
+
+  const parts = [`provider ${item.provider}`];
+  if (typeof item.model === "string" && item.model.trim().length > 0) {
+    parts.push(`model ${item.model}`);
+  }
+  if (typeof item.thinking === "string" && item.thinking.trim().length > 0) {
+    parts.push(`thinking ${item.thinking}`);
+  }
+  return parts.join(", ");
 }
 
 function withConfiguredCustomProviders(

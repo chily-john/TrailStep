@@ -97,6 +97,12 @@ export function deleteWorkflowRegistryEntry(
 
 export type WorkflowPackageSourceType = "npm" | "github";
 export type WorkflowPackageInstallOwnership = "trailstep-installed" | "reused-existing" | "unknown";
+/**
+ * Skill distribution target chosen at `trailstep add` time ("project" and/or "user").
+ * Persisted per registration so `trailstep update` can honor the original choice for
+ * generated skills of untracked workflows. Absent on legacy registrations.
+ */
+export type WorkflowSkillInstallTarget = "project" | "user";
 
 export interface WorkflowPackageRegistryMetadata {
   readonly kind: "package";
@@ -111,6 +117,12 @@ export interface WorkflowPackageRegistryMetadata {
   readonly resolvedVersion?: string;
   readonly githubRef?: string;
   readonly installOwnership?: WorkflowPackageInstallOwnership;
+  /**
+   * Skill target(s) the user chose at add time. Present whenever a choice was made
+   * (an empty array means the user explicitly chose no skills); absent on legacy
+   * registrations where update falls back to inference.
+   */
+  readonly skillTargets?: readonly WorkflowSkillInstallTarget[];
 }
 
 export interface WorkflowRegistryWriteEntry {
@@ -414,8 +426,19 @@ function isWorkflowPackageRegistryMetadata(
     typeof value.exportName === "string" &&
     isOptionalString(value.resolvedVersion) &&
     isOptionalString(value.githubRef) &&
-    isOptionalWorkflowPackageInstallOwnership(value.installOwnership)
+    isOptionalWorkflowPackageInstallOwnership(value.installOwnership) &&
+    isOptionalWorkflowSkillInstallTargets(value.skillTargets)
   );
+}
+
+function isOptionalWorkflowSkillInstallTargets(
+  value: unknown,
+): value is readonly WorkflowSkillInstallTarget[] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every(isWorkflowSkillInstallTarget));
+}
+
+function isWorkflowSkillInstallTarget(value: unknown): value is WorkflowSkillInstallTarget {
+  return value === "project" || value === "user";
 }
 
 function isWorkflowPackageSourceType(value: unknown): value is WorkflowPackageSourceType {

@@ -1,36 +1,27 @@
-import type { Dirent } from "node:fs";
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
-import type { Event, LatestUnresolvedFailure } from "@trailstep/core";
-import { defaultRunsRoot, readRunEvents, selectLatestUnresolvedFailure } from "@trailstep/core";
+import type { RunSummary } from "@trailstep/core";
+import { listRunSummaries, selectRecentFailedRunSummaries } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 
-type RunSummaryStatus = "active" | "completed" | "failed" | "unknown";
-
-interface RunSummary {
-  readonly runId: string;
-  readonly runDir: string;
-  readonly status: RunSummaryStatus;
-  readonly workflowId?: string;
-  readonly lastTimestamp?: string;
-  readonly latestFailure?: LatestUnresolvedFailure;
-  readonly warning?: string;
-}
-
-export const runsCommand: CliCommand<void> = {
+export const runsCommand: CliCommand<{ readonly json: boolean }> = {
   name: "runs",
   parseArgs(argv) {
-    if (argv.length !== 1 || argv[0] !== "runs") {
-      throw new CliUsageError("Usage: trailstep runs");
+    if (argv[0] !== "runs" || (argv.length !== 1 && !(argv.length === 2 && argv[1] === "--json"))) {
+      throw new CliUsageError("Usage: trailstep runs [--json]");
     }
+    return { json: argv[1] === "--json" };
   },
-  async run(_args, context) {
-    const summaries = await listCommandRunSummaries({
+  async run(args, context) {
+    const summaries = await listRunSummaries({
       cwd: context.cwd,
       runsRoot: resolveRunsRoot(context),
     });
+    if (args.json) {
+      context.io.writeLine(JSON.stringify(summaries));
+      return 0;
+    }
+
     const activeRuns = summaries.filter((summary) => summary.status === "active");
     const recentFailedRuns = selectRecentFailedRunSummaries(summaries);
 
@@ -39,7 +30,9 @@ export const runsCommand: CliCommand<void> = {
     writeSection(context, "All runs:", summaries);
 
     for (const warning of summaries.flatMap((summary) =>
-      summary.warning ? [summary.warning] : [],
+      [summary.warning, summary.trackWarning].filter(
+        (value): value is string => value !== undefined,
+      ),
     )) {
       context.io.writeError(warning);
     }
@@ -47,118 +40,6 @@ export const runsCommand: CliCommand<void> = {
     return 0;
   },
 };
-
-async function listCommandRunSummaries(options: {
-  readonly cwd: string;
-  readonly runsRoot?: string;
-}): Promise<RunSummary[]> {
-  const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
-
-  let entries: Dirent[];
-  try {
-    entries = await readdir(runsRoot, { withFileTypes: true });
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return [];
-    }
-
-    throw error;
-  }
-
-  const summaries: RunSummary[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const runId = entry.name;
-    const runDir = join(runsRoot, runId);
-    try {
-      summaries.push(summarizeReadableRun({ runId, runDir, events: await readRunEvents(runDir) }));
-    } catch (error) {
-      summaries.push({
-        runId,
-        runDir,
-        status: "unknown",
-        warning: `Warning: Could not read run ${runId}: ${readErrorMessage(error)}`,
-      });
-    }
-  }
-
-  return summaries.sort(newestFirst);
-}
-
-function selectRecentFailedRunSummaries(summaries: readonly RunSummary[]): RunSummary[] {
-  const cutoffMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
-
-  return summaries
-    .filter((summary) => {
-      if (summary.status !== "failed" || !summary.latestFailure) {
-        return false;
-      }
-
-      const failureTime = Date.parse(summary.latestFailure.event.timestamp);
-      return Number.isFinite(failureTime) && failureTime >= cutoffMs;
-    })
-    .sort(newestFirst)
-    .slice(0, 10);
-}
-
-function summarizeReadableRun(options: {
-  readonly runId: string;
-  readonly runDir: string;
-  readonly events: readonly Event[];
-}): RunSummary {
-  const latestFailure = selectLatestUnresolvedFailure(options.events);
-  const terminalStatus = selectTerminalStatus(options.events);
-  const lastEvent = options.events.at(-1);
-  const workflowId =
-    lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
-
-  if (terminalStatus === "completed") {
-    return {
-      runId: options.runId,
-      runDir: options.runDir,
-      status: "completed",
-      workflowId,
-      lastTimestamp: lastEvent?.timestamp,
-    };
-  }
-
-  if (latestFailure) {
-    return {
-      runId: options.runId,
-      runDir: options.runDir,
-      status: "failed",
-      workflowId: latestFailure.workflowId,
-      lastTimestamp: latestFailure.event.timestamp,
-      latestFailure,
-    };
-  }
-
-  return {
-    runId: options.runId,
-    runDir: options.runDir,
-    status: terminalStatus ?? "active",
-    workflowId,
-    lastTimestamp: lastEvent?.timestamp,
-  };
-}
-
-function selectTerminalStatus(events: readonly Event[]): "completed" | "failed" | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type === "workflow.completed") {
-      return "completed";
-    }
-
-    if (event?.type === "workflow.failed") {
-      return "failed";
-    }
-  }
-
-  return undefined;
-}
 
 function writeSection(
   context: CliCommandContext,
@@ -183,9 +64,41 @@ function formatRunSummary(summary: RunSummary): string {
     summary.workflowId,
     summary.lastTimestamp,
     formatFailureContext(summary),
+    formatTrackContext(summary),
   ].filter(Boolean);
 
   return fields.join(" | ");
+}
+
+function formatTrackContext(summary: RunSummary): string | undefined {
+  const track = summary.track;
+  if (track === undefined) {
+    return undefined;
+  }
+
+  const counts = new Map<string, number>();
+  for (const branch of track.branches) {
+    const status = branch.status ?? "unknown";
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+  const countText = [...counts.entries()].map(([status, count]) => `${count} ${status}`).join(", ");
+  const interestingBranches = track.branches.filter(
+    (branch) =>
+      branch.status === "failed" || branch.status === "waiting" || branch.output !== undefined,
+  );
+  const branchText = interestingBranches
+    .map((branch) => {
+      const details = [
+        branch.branchId,
+        branch.status,
+        readFailureMessage(branch.failure),
+        branch.latestMessage,
+      ].filter(Boolean);
+      return details.join(" ");
+    })
+    .join("; ");
+
+  return [`track ${track.status}`, countText, branchText].filter(Boolean).join(" | ");
 }
 
 function formatFailureContext(summary: RunSummary): string | undefined {
@@ -200,14 +113,6 @@ function formatFailureContext(summary: RunSummary): string | undefined {
     .join(": ");
 }
 
-function newestFirst(left: RunSummary, right: RunSummary): number {
-  const leftTime = left.lastTimestamp ? Date.parse(left.lastTimestamp) : Number.NEGATIVE_INFINITY;
-  const rightTime = right.lastTimestamp
-    ? Date.parse(right.lastTimestamp)
-    : Number.NEGATIVE_INFINITY;
-  return rightTime - leftTime || left.runId.localeCompare(right.runId);
-}
-
 function readFailureMessage(failure: unknown): string | undefined {
   if (!isPlainObject(failure)) {
     return undefined;
@@ -217,10 +122,6 @@ function readFailureMessage(failure: unknown): string | undefined {
   return typeof message === "string" && message ? message : undefined;
 }
 
-function readErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === "object" &&
@@ -228,8 +129,4 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     !Array.isArray(value) &&
     Object.getPrototypeOf(value) === Object.prototype
   );
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

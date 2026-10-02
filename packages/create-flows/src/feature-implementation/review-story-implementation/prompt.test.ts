@@ -76,4 +76,23 @@ describe("reviewStoryImplementationPrompt", () => {
     expect(prompt).not.toContain("Reviewer responsibilities");
     expect(prompt).not.toContain("Feature workflow methodology");
   });
+
+  it("includes reviewer scoped implementation context without leaking implementer scoped context", () => {
+    const prompt = reviewStoryImplementationPrompt({
+      input: {
+        currentStory: activeStory,
+        attempt: 1,
+        implementationContext: "REVIEW_CONTEXT_TOKEN",
+        gitContext: {
+          changedFiles: [],
+          committedChangedFiles: [],
+          uncommittedChangedFiles: [],
+          warnings: [],
+        },
+      },
+    });
+
+    expect(prompt).toContain("REVIEW_CONTEXT_TOKEN");
+    expect(prompt).not.toContain("IMPLEMENTER_CONTEXT_TOKEN");
+  });
 });

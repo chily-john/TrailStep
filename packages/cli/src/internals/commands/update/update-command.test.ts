@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,7 @@ function workflowPackageMetadata({
   targetRef,
   workflowName,
   exportName = workflowName,
+  skillTargets,
 }: {
   readonly installScope?: "project" | "global";
   readonly packageName?: string;
@@ -19,6 +21,7 @@ function workflowPackageMetadata({
   readonly targetRef?: string;
   readonly workflowName: string;
   readonly exportName?: string;
+  readonly skillTargets?: readonly ("project" | "user")[];
 }): Record<string, unknown> {
   return {
     kind: "package",
@@ -30,6 +33,7 @@ function workflowPackageMetadata({
     targetRef: targetRef ?? `${packageName}#${workflowName}`,
     workflowName,
     exportName,
+    ...(skillTargets === undefined ? {} : { skillTargets }),
   };
 }
 
@@ -351,13 +355,419 @@ describe("updateCommand", () => {
     const config = JSON.parse(
       await readFile(join(homeDir, ".trailstep", "config.json"), "utf8"),
     ) as {
-      skillInstallations: { trailstep: { contentHash: string } };
+      skillInstallations: {
+        trailstep: { contentHash: string };
+        "trailstep-authoring": { contentHash: string };
+      };
     };
     expect(exitCode).toBe(0);
-    expect(lines).toContain("Refreshed tracked TrailStep usage skill installation(s).");
+    expect(lines).toContain("Refreshed tracked TrailStep skill installation(s).");
+    expect(skillRuns).toHaveLength(2);
+    expect(skillRuns[0]?.args).toContain("-g");
+    expect(skillRuns[1]?.args).toContain("-g");
+    expect(config.skillInstallations.trailstep.contentHash).not.toBe("sha256:old");
+    expect(config.skillInstallations["trailstep-authoring"].contentHash).toMatch(/^sha256:/u);
+  });
+
+  it("installs workflow skills for untracked workflows of updated workflow packages", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(join(cwd, "package-lock.json"), "", "utf8");
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            explore: "./dist/explore.mjs#exploreWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const skillRuns: Array<{ args: readonly string[] }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      skillsCliResolver: async () => "skills.js",
+      skillsCliProcessRunner: async (_command, args) => {
+        skillRuns.push({ args });
+        return { exitCode: 0 };
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          return { exitCode: 0 };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify([{ version: "1.0.0" }, { version: "1.1.0" }]),
+        };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Planned workflow skill installs for untracked workflows:");
+    expect(lines.join("\n")).toContain("@acme/workflows#explore");
+    expect(lines.join("\n")).toContain(
+      "Installed workflow skill trst-explore for untracked workflow @acme/workflows#explore.",
+    );
+    const skillMarkdown = await readFile(
+      join(cwd, ".trailstep", "skills", "trst-explore", "SKILL.md"),
+      "utf8",
+    );
+    expect(skillMarkdown).toContain(
+      "Run the TrailStep workflow `@acme/workflows#explore` through its package bundle ref.",
+    );
+    expect(await readdir(join(cwd, ".trailstep", "skills"))).toEqual(["trst-explore"]);
+    // No recorded add-time preference and no existing skills: project-only default.
+    expect(skillRuns).toHaveLength(1);
+    expect(skillRuns[0]?.args).not.toContain("-g");
+    expect(skillRuns[0]?.args[2]).toBe(join(cwd, ".trailstep", "skills", "trst-explore"));
+    expect(lines.join("\n")).toContain(
+      "No recorded skill targets or existing skills for @acme/workflows; defaulting untracked workflow skills to project skills.",
+    );
+  });
+
+  it("installs missing workflow skills even when no workflow package update is available", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            explore: "./dist/explore.mjs#exploreWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const installRequests: Array<{ command: string; args: readonly string[] }> = [];
+    const skillRuns: Array<{ args: readonly string[] }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      skillsCliResolver: async () => "skills.js",
+      skillsCliProcessRunner: async (_command, args) => {
+        skillRuns.push({ args });
+        return { exitCode: 0 };
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([]);
+    expect(lines.join("\n")).toContain(
+      "Installed workflow skill trst-explore for untracked workflow @acme/workflows#explore.",
+    );
+    expect(lines.join("\n")).not.toContain("No changes needed");
+    expect(await readdir(join(cwd, ".trailstep", "skills"))).toEqual(["trst-explore"]);
+    expect(skillRuns).toHaveLength(1);
+    expect(skillRuns[0]?.args).not.toContain("-g");
+  });
+
+  it("honors add-time recorded skill targets when installing untracked workflow skills", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-update-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+              skillTargets: ["user"],
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            explore: "./dist/explore.mjs#exploreWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const skillRuns: Array<{ args: readonly string[] }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      skillsCliResolver: async () => "skills.js",
+      skillsCliProcessRunner: async (_command, args) => {
+        skillRuns.push({ args });
+        return { exitCode: 0 };
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(
+      "Installed workflow skill trst-explore for untracked workflow @acme/workflows#explore.",
+    );
     expect(skillRuns).toHaveLength(1);
     expect(skillRuns[0]?.args).toContain("-g");
-    expect(config.skillInstallations.trailstep.contentHash).not.toBe("sha256:old");
+    expect(skillRuns[0]?.args[2]).toBe(join(cwd, ".trailstep", "skills", "trst-explore"));
+    const rendered = lines.join("\n");
+    expect(rendered).not.toContain("defaulting untracked workflow skills");
+    expect(rendered).not.toContain("Inferred untracked workflow skill targets");
+  });
+
+  it("infers untracked workflow skill targets from existing skills for legacy registrations", async ({
+    task,
+  }) => {
+    const suffix = randomUUID();
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-${suffix}`);
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-update-command-tests",
+      `${task.id}-${suffix}-home`,
+    );
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    // Legacy registrations carry no recorded skillTargets; the tracked workflow's skill
+    // only exists in the user skill directory, so update must infer user-only targets.
+    await mkdir(join(homeDir, ".agents", "skills", "trst-release"), { recursive: true });
+    await writeFile(
+      join(homeDir, ".agents", "skills", "trst-release", "SKILL.md"),
+      "---\n",
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            explore: "./dist/explore.mjs#exploreWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const skillRuns: Array<{ args: readonly string[] }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      skillsCliResolver: async () => "skills.js",
+      skillsCliProcessRunner: async (_command, args) => {
+        skillRuns.push({ args });
+        return { exitCode: 0 };
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(
+      "Inferred untracked workflow skill targets for @acme/workflows from existing skills: user.",
+    );
+    expect(skillRuns).toHaveLength(1);
+    expect(skillRuns[0]?.args).toContain("-g");
+  });
+
+  it("defaults untracked workflow skills to project-only and reports the choice", async ({
+    task,
+  }) => {
+    const suffix = randomUUID();
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", `${task.id}-${suffix}`);
+    const homeDir = join(
+      "node_modules",
+      ".tmp-trailstep-update-command-tests",
+      `${task.id}-${suffix}-home`,
+    );
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(homeDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        workflows: { project: { release: "@acme/workflows#release" } },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: {
+            release: "./dist/release.mjs#releaseWorkflow",
+            explore: "./dist/explore.mjs#exploreWorkflow",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const skillRuns: Array<{ args: readonly string[] }> = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--assume-yes"],
+      cwd,
+      homeDir,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      skillsCliResolver: async () => "skills.js",
+      skillsCliProcessRunner: async (_command, args) => {
+        skillRuns.push({ args });
+        return { exitCode: 0 };
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          return { exitCode: 0 };
+        }
+        return { exitCode: 0, stdout: JSON.stringify([{ version: "1.0.0" }]) };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(
+      "No recorded skill targets or existing skills for @acme/workflows; defaulting untracked workflow skills to project skills.",
+    );
+    expect(skillRuns).toHaveLength(1);
+    expect(skillRuns[0]?.args).not.toContain("-g");
   });
 
   it("prints a global CLI no-op when the installed CLI is current", async ({ task }) => {
@@ -484,6 +894,171 @@ describe("updateCommand", () => {
         fs.readFile(join(cwd, ".trailstep", "config.json"), "utf8"),
       ),
     ).toContain("@acme/workflows#release");
+  });
+
+  it("re-applies missing package recommendedConfig additively and warns on conflicts", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, ".trailstep", "config.json"),
+      JSON.stringify({
+        agents: { reviewer: [{ provider: "claude" }] },
+        workflows: {
+          project: { release: "@acme/workflows#release" },
+          release: { agents: { delegateAgent: [{ ref: "expert" }] } },
+        },
+        workflowMetadata: {
+          project: {
+            release: workflowPackageMetadata({
+              workflowName: "release",
+              exportName: "releaseWorkflow",
+            }),
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: { release: "./dist/release.mjs#releaseWorkflow" },
+          recommendedConfig: {
+            agents: {
+              reviewer: [{ provider: "pi", model: "glm" }],
+              planner: [{ provider: "pi", model: "mimo" }],
+            },
+            workflows: {
+              release: {
+                agents: {
+                  delegateAgent: [{ ref: "planner" }],
+                  slicer: [{ ref: "planner" }],
+                },
+              },
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--project", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestWorkflowPackage,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    expect(errors.join("\n")).toContain(
+      "Warning: recommended config conflict: @acme/workflows agents.reviewer already exists; leaving existing value unchanged.",
+    );
+    expect(errors.join("\n")).toContain(
+      "Warning: recommended config conflict: @acme/workflows workflows.release.agents.delegateAgent already exists; leaving existing value unchanged.",
+    );
+    const config = JSON.parse(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")) as {
+      agents?: Record<string, unknown>;
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.agents?.reviewer).toEqual([{ provider: "claude" }]);
+    expect(config.agents?.planner).toEqual([{ provider: "pi", model: "mimo" }]);
+    expect(config.workflows?.project?.release).toBe("@acme/workflows#release");
+    const releaseAgents = config.workflows?.release?.agents as Record<string, unknown> | undefined;
+    expect(releaseAgents?.delegateAgent).toEqual([{ ref: "expert" }]);
+    expect(releaseAgents?.slicer).toEqual([{ ref: "planner" }]);
+  });
+
+  it("warns about recommended config conflicts without rewriting config when nothing is missing", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }),
+      "utf8",
+    );
+    const configJson = JSON.stringify({
+      agents: {
+        reviewer: [{ provider: "claude" }],
+        planner: [{ provider: "pi", model: "mimo" }],
+      },
+      workflows: {
+        project: { release: "@acme/workflows#release" },
+        release: {
+          agents: {
+            delegateAgent: [{ ref: "expert" }],
+            slicer: [{ ref: "planner" }],
+          },
+        },
+      },
+      workflowMetadata: {
+        project: {
+          release: workflowPackageMetadata({
+            workflowName: "release",
+            exportName: "releaseWorkflow",
+          }),
+        },
+      },
+    });
+    await writeFile(join(cwd, ".trailstep", "config.json"), configJson, "utf8");
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/workflows",
+        version: "1.0.0",
+        trailstep: {
+          workflows: { release: "./dist/release.mjs#releaseWorkflow" },
+          recommendedConfig: {
+            agents: {
+              reviewer: [{ provider: "pi", model: "glm" }],
+              planner: [{ provider: "pi", model: "mimo" }],
+            },
+            workflows: {
+              release: {
+                agents: {
+                  delegateAgent: [{ ref: "planner" }],
+                  slicer: [{ ref: "planner" }],
+                },
+              },
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--project", "--assume-yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      packageCommandRunner: latestWorkflowPackage,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).not.toContain("Applied recommended config");
+    expect(errors.join("\n")).toContain("Warning: recommended config conflict");
+    expect(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")).toBe(configJson);
   });
 
   it("blocks updating a registered bundle workflow when another workflow in the bundle has a blocking finding", async ({
@@ -1472,6 +2047,125 @@ describe("updateCommand", () => {
     expect(installRequests).toEqual([]);
   });
 
+  it("asks a second confirm and skips only recommended config writes when declined", async ({
+    task,
+  }) => {
+    const { cwd, configJson } = await setupWorkflowPackageWithRecommendedConfig(task.id);
+    const packageJsonPath = join(cwd, "package.json");
+    const prompts: string[] = [];
+    const lines: string[] = [];
+    const installRequests: unknown[] = [];
+    let confirmCount = 0;
+
+    const exitCode = await main({
+      argv: ["update", "--workflows"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async () => "",
+        confirm: async (prompt) => {
+          prompts.push(prompt);
+          confirmCount += 1;
+          return confirmCount === 1;
+        },
+      },
+      packageCommandRunner: async (request) => {
+        if (request.args[0] === "install") {
+          installRequests.push(request);
+          return { exitCode: 0 };
+        }
+        return updateWithRecommendedConfigPackageRunner(request);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toMatch(
+      /Apply recommended config additions from @acme\/workflows \(1 agent\(s\), 1 workflow role mapping\(s\)\)\?/u,
+    );
+    expect(lines.join("\n")).toContain(
+      "Skipped recommended config additions from @acme/workflows (declined); applying the remaining updates.",
+    );
+    expect(lines.join("\n")).not.toContain("Applied recommended config");
+    const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
+    expect(installRequests).toHaveLength(1);
+    expect(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")).toBe(configJson);
+  });
+
+  it("applies package updates and recommended config additions when both confirms are accepted", async ({
+    task,
+  }) => {
+    const { cwd } = await setupWorkflowPackageWithRecommendedConfig(task.id);
+    const prompts: string[] = [];
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async () => "",
+        confirm: async (prompt) => {
+          prompts.push(prompt);
+          return true;
+        },
+      },
+      packageCommandRunner: updateWithRecommendedConfigPackageRunner,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toHaveLength(2);
+    expect(lines.join("\n")).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    const config = JSON.parse(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")) as {
+      agents?: Record<string, unknown>;
+      workflows?: { release?: { agents?: Record<string, unknown> } };
+    };
+    expect(config.agents?.planner).toEqual([{ provider: "pi", model: "mimo" }]);
+    expect(config.workflows?.release?.agents?.slicer).toEqual([{ ref: "planner" }]);
+  });
+
+  it("applies all changes without prompting when --yes is set", async ({ task }) => {
+    const { cwd } = await setupWorkflowPackageWithRecommendedConfig(task.id);
+    const prompts: string[] = [];
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["update", "--workflows", "--yes"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      prompts: {
+        text: async () => "",
+        select: async () => "",
+        confirm: async (prompt) => {
+          prompts.push(prompt);
+          return false;
+        },
+      },
+      packageCommandRunner: updateWithRecommendedConfigPackageRunner,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual([]);
+    expect(lines.join("\n")).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    const packageJson = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@acme/workflows"]).toBe("^1.1.0");
+    const config = JSON.parse(await readFile(join(cwd, ".trailstep", "config.json"), "utf8")) as {
+      agents?: Record<string, unknown>;
+    };
+    expect(config.agents?.planner).toEqual([{ provider: "pi", model: "mimo" }]);
+  });
+
   it("reports failed installs without claiming success", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", task.id);
     await mkdir(cwd, { recursive: true });
@@ -1553,6 +2247,56 @@ describe("updateCommand", () => {
     expect(errors.join("\n")).toMatch(/Malformed npm view JSON for @trailstep\/core/);
   });
 });
+
+async function setupWorkflowPackageWithRecommendedConfig(taskId: string) {
+  const cwd = join("node_modules", ".tmp-trailstep-update-command-tests", taskId);
+  const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+  await mkdir(join(cwd, ".trailstep"), { recursive: true });
+  await mkdir(packageDir, { recursive: true });
+  await writeFile(
+    join(cwd, "package.json"),
+    `${JSON.stringify({ dependencies: { "@acme/workflows": "^1.0.0" } }, null, 2)}\n`,
+    "utf8",
+  );
+  const configJson = JSON.stringify({
+    agents: { reviewer: [{ provider: "claude" }] },
+    workflows: { project: { release: "@acme/workflows#release" } },
+    workflowMetadata: {
+      project: {
+        release: workflowPackageMetadata({
+          workflowName: "release",
+          exportName: "releaseWorkflow",
+        }),
+      },
+    },
+  });
+  await writeFile(join(cwd, ".trailstep", "config.json"), configJson, "utf8");
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify({
+      name: "@acme/workflows",
+      version: "1.0.0",
+      trailstep: {
+        workflows: { release: "./dist/release.mjs#releaseWorkflow" },
+        recommendedConfig: {
+          agents: { planner: [{ provider: "pi", model: "mimo" }] },
+          workflows: { release: { agents: { slicer: [{ ref: "planner" }] } } },
+        },
+      },
+    }),
+    "utf8",
+  );
+  return { cwd, configJson };
+}
+
+async function updateWithRecommendedConfigPackageRunner(request: {
+  readonly args: readonly string[];
+}) {
+  if (request.args[0] === "install") {
+    return { exitCode: 0 };
+  }
+  return latestWorkflowPackage(request);
+}
 
 const removedAuthoringSymbol = {
   packageName: "@trailstep/authoring",

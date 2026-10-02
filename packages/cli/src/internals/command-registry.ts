@@ -1,18 +1,23 @@
 import type { CliCommand } from "./command.types.js";
 import { addCommand } from "./commands/add/add-command.js";
 import { agentsCommand } from "./commands/agents/agents-command.js";
+import { answerCommand } from "./commands/answer/answer-command.js";
 import { cancelCommand } from "./commands/cancel/cancel-command.js";
 import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
+import { inputTemplateCommand } from "./commands/input-template/input-template-command.js";
 import { openCommand } from "./commands/open/open-command.js";
+import { outputCommand } from "./commands/output/output-command.js";
 import { providersCommand } from "./commands/providers/providers-command.js";
 import { removeCommand } from "./commands/remove/remove-command.js";
 import { retryCommand } from "./commands/retry/retry-command.js";
 import { runOrOpenCommand } from "./commands/run-or-open/run-or-open-command.js";
 import { runsCommand } from "./commands/runs/runs-command.js";
 import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
+import { storageCommand } from "./commands/storage/storage-command.js";
 import { updateCommand } from "./commands/update/update-command.js";
+import { watchCommand } from "./commands/watch/watch-command.js";
 import { workflowsCommand } from "./commands/workflows/workflows-command.js";
 
 /**
@@ -41,6 +46,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
     return agentsCommand;
   }
 
+  if (argv[0] === "answer") {
+    return answerCommand;
+  }
+
   if (argv[0] === "providers") {
     return providersCommand;
   }
@@ -49,12 +58,24 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
     return workflowsCommand;
   }
 
+  if (argv[0] === "input-template") {
+    return inputTemplateCommand;
+  }
+
+  if (argv[0] === "output") {
+    return outputCommand;
+  }
+
   if (argv[0] === "retry") {
     return retryCommand;
   }
 
   if (argv[0] === "runs") {
     return runsCommand;
+  }
+
+  if (argv[0] === "storage") {
+    return storageCommand;
   }
 
   if (argv.length === 1 && argv[0] === "skill-check") {
@@ -75,6 +96,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "doctor") {
     return doctorCommand;
+  }
+
+  if (argv[0] === "watch") {
+    return watchCommand;
   }
 
   if (argv[0] === "open") {

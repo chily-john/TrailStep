@@ -1,6 +1,10 @@
 import { state, step } from "@trailstep/authoring";
 import { implementGreenStep } from "../implement-green/step.js";
-import { incrementStoryPhaseAttempt, STORY_STATE_KEYS } from "../shared/story-state.js";
+import {
+  incrementStoryPhaseAttempt,
+  loadStoryPhaseContext,
+  STORY_STATE_KEYS,
+} from "../shared/story-state.js";
 import {
   type WriteRedTestsInput,
   type WriteRedTestsOutput,
@@ -40,5 +44,6 @@ export const writeRedTestsStep = step({ id: "write-red-tests" })
       explorationBrief: input.explorationBrief,
       redTestSummary: promptOutput,
       attempt,
+      implementationContext: await loadStoryPhaseContext("implement-green"),
     });
   });

@@ -3,6 +3,7 @@ import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import type { CancellationMarker } from "../cancellation/cancellation.js";
 
 export type TrailStepConfigInput = TrailStepConfig | Readonly<Record<string, unknown>>;
 
@@ -54,10 +55,20 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "workflow.started"
     | "workflow.resumed"
     | "workflow.retryStarted"
+    | "workflow.cancelRequested"
     | "workflow.failed"
+    | "workflow.cancelled"
     | "step.started"
     | "step.completed"
     | "step.failed"
+    | "step.cancelled"
+    | "step.display"
+    | "step.progress"
+    | "step.warning"
+    | "step.artifact"
+    | "wait.started"
+    | "wait.satisfied"
+    | "wait.failed"
     | "subPrompt.started"
     | "subPrompt.completed"
     | "subPrompt.failed"
@@ -68,6 +79,18 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
   readonly timestamp: string;
   readonly schemaVersion: "v0";
   readonly payload: TPayload;
+}
+
+export interface WaitResultDetails {
+  readonly stepId: string;
+  readonly waitId: string;
+  readonly kind?: "input" | "check";
+  readonly message: string;
+  readonly retryAfterSeconds?: number;
+  readonly artifactPaths: {
+    readonly requestFile: string;
+    readonly answerFile: string;
+  };
 }
 
 export type Result<TOutput extends PlainObject = PlainObject> =
@@ -84,10 +107,33 @@ export type Result<TOutput extends PlainObject = PlainObject> =
       readonly runDir: string;
       readonly failure: Failure;
       readonly events: readonly Event[];
-    };
+    }
+  | ({
+      readonly status: "waiting";
+      readonly runId: string;
+      readonly runDir: string;
+      readonly wait: WaitResultDetails;
+      readonly events: readonly Event[];
+    } & {
+      /** Type-only compatibility for existing non-success branches; waiting results do not carry a runtime failure. */
+      readonly failure: never;
+    })
+  | ({
+      readonly status: "cancelled";
+      readonly runId: string;
+      readonly runDir: string;
+      readonly cancellation: CancellationMarker;
+      readonly events: readonly Event[];
+    } & {
+      /** Type-only compatibility for existing non-success branches; cancelled results do not carry a runtime failure. */
+      readonly failure: never;
+    });
 
 interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends PlainObject> {
   readonly workflow: Workflow<TInput, TOutput>;
+  /** Root used for workflow/config-relative resolution and default artifact storage. Defaults to `cwd` for backward compatibility, then `process.cwd()`. */
+  readonly projectCwd?: string;
+  /** Default execution cwd for steps and agent processes. Defaults to `projectCwd`. */
   readonly cwd?: string;
   readonly runsRoot?: string;
   readonly eventSink?: (event: Event) => void | Promise<void>;
@@ -97,7 +143,20 @@ interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends Pla
   /** Injectable stdout-capturing runner for built-in registry provider adapters (e.g. Claude). Test-only seam. */
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly maxSteps?: number;
+  readonly scheduler?: {
+    readonly workers?: number;
+  };
 }
+
+export type RunWorkflowTrackRetryOptions =
+  | { readonly mode: "failed-only" }
+  | { readonly mode: "branch"; readonly branchId: string };
+
+export type RunWorkflowRetryOptions = {
+  readonly runDir: string;
+  readonly kind: "manual" | "automatic";
+  readonly track?: RunWorkflowTrackRetryOptions;
+};
 
 export type RunWorkflowOptions<
   TInput extends PlainObject = PlainObject,
@@ -109,17 +168,27 @@ export type RunWorkflowOptions<
         readonly runName: string;
         readonly resume?: undefined;
         readonly retry?: undefined;
+        readonly continue?: undefined;
       }
     | {
         readonly resume: { readonly runDir: string };
         readonly input?: undefined;
         readonly runName?: undefined;
         readonly retry?: undefined;
+        readonly continue?: undefined;
       }
     | {
-        readonly retry: { readonly runDir: string; readonly kind: "manual" | "automatic" };
+        readonly retry: RunWorkflowRetryOptions;
         readonly input?: undefined;
         readonly runName?: undefined;
         readonly resume?: undefined;
+        readonly continue?: undefined;
+      }
+    | {
+        readonly continue: { readonly runDir: string };
+        readonly input?: undefined;
+        readonly runName?: undefined;
+        readonly resume?: undefined;
+        readonly retry?: undefined;
       }
   );

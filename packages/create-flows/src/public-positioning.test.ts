@@ -16,7 +16,10 @@ describe("public package positioning", () => {
       publishConfig?: { access?: string };
       files?: string[];
       keywords?: string[];
-      trailstep?: { workflows?: Record<string, string> };
+      trailstep?: {
+        workflows?: Record<string, string>;
+        recommendedConfig?: Record<string, unknown>;
+      };
     };
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const indexSource = await readFile(new URL("./index.ts", import.meta.url), "utf8");
@@ -39,12 +42,31 @@ describe("public package positioning", () => {
       takeItAway: "./dist/index.js#takeItAway",
       grillItAway: "./dist/index.js#grillItAway",
     });
+    expect(packageJson.trailstep?.recommendedConfig).toMatchObject({
+      agents: {
+        generalist: [
+          { provider: "pi", model: "openrouter/meta/muse-spark-1.3" },
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
+        ],
+        planner: [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        explorer: [
+          { provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731", thinking: "low" },
+        ],
+        "smart-implementor": [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        fixer: [{ ref: "debugger" }],
+      },
+      workflows: {
+        "take-it-away": { agents: { storyImplementer: [{ ref: "smart-implementor" }] } },
+        "grill-it-away": { agents: { grillingAgent: [{ ref: "planner" }] } },
+      },
+    });
 
     expect(readme).toMatch(/public/i);
     expect(readme).toMatch(/reusable/i);
     expect(readme).toMatch(/general-purpose/i);
     expect(readme).toContain("@trailstep/create-flows#takeItAway");
     expect(readme).toContain("@trailstep/create-flows#grillItAway");
+    expect(readme).not.toContain("@trailstep/create-flows#delegate");
 
     const forbiddenPublicPhraseSources = [
       ["Per", "sonal collection"],
@@ -62,9 +84,12 @@ describe("public package positioning", () => {
       String(name),
     );
     const exportedWorkflowNames = Array.from(
-      indexSource.matchAll(/export \{ ([^ }]+) \} from/g),
-      ([, name]) => String(name),
-    );
+      indexSource.matchAll(/export \{([\s\S]*?)\} from/g),
+      ([, names]) => String(names),
+    )
+      .flatMap((names) => names.split(","))
+      .map((name) => name.trim())
+      .filter(Boolean);
     expect([...readmeWorkflowNames].sort()).toEqual([...exportedWorkflowNames].sort());
   });
 });

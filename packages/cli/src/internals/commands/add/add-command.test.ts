@@ -2655,6 +2655,141 @@ describe("addCommand", () => {
     });
   });
 
+  it("applies package recommended config additively when registering a package", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      agents: { existing: [{ provider: "claude" }] },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      type: "module",
+      exports: { "./package.json": "./package.json" },
+      trailstep: {
+        workflows: { review: "./index.mjs#reviewWorkflow" },
+        recommendedConfig: {
+          agents: {
+            reviewerAgent: [{ provider: "pi", model: "fast" }],
+          },
+          workflows: {
+            review: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+          },
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewWorkflow = { id: 'review', agents: { reviewer: { size: 'medium' } }, start: () => ({ kind: 'done', output: {} }) };\n",
+      "utf8",
+    );
+
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const command = resolveCommand(["add", "@acme/workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows", "--yes"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain(
+      "Applied recommended config from @acme/workflows: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    expect(errors).toEqual([]);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      agents?: Record<string, unknown>;
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.agents?.existing).toEqual([{ provider: "claude" }]);
+    expect(config.agents?.reviewerAgent).toEqual([{ provider: "pi", model: "fast" }]);
+    expect(config.workflows?.project?.review).toBe("@acme/workflows#review");
+    expect(config.workflows?.review?.agents).toEqual({ reviewer: [{ ref: "reviewerAgent" }] });
+  });
+
+  it("applies package recommended config when registering a local directory package", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const packageDir = join(cwd, "local-pkg");
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      agents: { existing: [{ provider: "claude" }] },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/local-pkg",
+      version: "0.0.1",
+      type: "module",
+      trailstep: {
+        workflows: { review: "./index.mjs#reviewWorkflow" },
+        recommendedConfig: {
+          agents: {
+            reviewerAgent: [{ provider: "pi", model: "fast" }],
+          },
+          workflows: {
+            review: { agents: { reviewer: [{ ref: "reviewerAgent" }] } },
+          },
+        },
+      },
+    });
+    await writeFile(
+      join(packageDir, "index.mjs"),
+      "export const reviewWorkflow = { id: 'review', agents: { reviewer: { size: 'medium' } }, start: () => ({ kind: 'done', output: {} }) };\n",
+      "utf8",
+    );
+
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const command = resolveCommand(["add", "./local-pkg"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "./local-pkg",
+        "--scope",
+        "project",
+        "--workflow",
+        "review",
+        "--yes",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(lines).toContain(
+      "Applied recommended config from @acme/local-pkg: added 1 agent(s), 1 workflow role mapping(s).",
+    );
+    expect(errors).toEqual([]);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      agents?: Record<string, unknown>;
+      workflows?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.agents?.existing).toEqual([{ provider: "claude" }]);
+    expect(config.agents?.reviewerAgent).toEqual([{ provider: "pi", model: "fast" }]);
+    expect(config.workflows?.project?.review).toBe("./local-pkg#review");
+    expect(config.workflows?.review?.agents).toEqual({ reviewer: [{ ref: "reviewerAgent" }] });
+  });
+
   it("headless package add defaults to project and registers all discovered workflows", async ({
     task,
   }) => {
@@ -2754,7 +2889,66 @@ describe("addCommand", () => {
       workflowName: "release",
       exportName: "releaseWorkflow",
     });
+    // Headless adds without skill flags make no skill choice, so nothing is persisted
+    // and `trailstep update` falls back to legacy inference for untracked workflows.
+    expect(config.workflowMetadata?.project?.review).not.toHaveProperty("skillTargets");
+    expect(config.workflowMetadata?.project?.release).not.toHaveProperty("skillTargets");
     expect(promptCalls).toEqual([]);
+  });
+
+  it("persists the chosen skill targets in workflow metadata when adding with skill flags", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const homeDir = join(cwd, "home");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+
+    const command = resolveCommand(["add", "@acme/workflows@latest"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "@acme/workflows@latest", "--yes", "--project-skill"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        skillsCliResolver: async () => "skills.js",
+        skillsCliProcessRunner: async () => ({ exitCode: 0 }),
+        packageCommandRunner: async () => {
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.2.3",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: {
+              workflows: {
+                review: "./index.mjs#reviewWorkflow",
+                release: "./index.mjs#releaseWorkflow",
+              },
+            },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            [
+              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
+              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
+            ].join("\n"),
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
+      workflowMetadata?: Record<string, Record<string, unknown>>;
+    };
+    expect(config.workflowMetadata?.project?.review).toMatchObject({ skillTargets: ["project"] });
+    expect(config.workflowMetadata?.project?.release).toMatchObject({ skillTargets: ["project"] });
   });
 
   it("headless package add fails on registration conflicts", async ({ task }) => {

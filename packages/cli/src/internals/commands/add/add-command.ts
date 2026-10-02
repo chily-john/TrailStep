@@ -17,6 +17,11 @@ import {
   promptText,
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
+import {
+  mergeRecommendedConfig,
+  type RecommendedConfigPlan,
+  readRecommendedConfigPlanFromPackageJsonFile,
+} from "../../recommended-config/recommended-config.js";
 import { workflowPackageInstallRootForScope } from "../../workflow-packages/install-root.js";
 import {
   type InstalledNpmWorkflowPackage,
@@ -39,6 +44,7 @@ import {
   readRawTrailStepConfigFile,
   type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryScope,
+  type WorkflowSkillInstallTarget,
   writeRawTrailStepConfigFile,
   writeWorkflowRegistryEntries,
 } from "../../workflow-registry/workflow-registry.js";
@@ -218,6 +224,10 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
+    if (successfulRegistrations.length > 0) {
+      await applyRecommendedConfigForPreparedSource(preparedSource, scope, context);
+    }
+
     if (!args.yes) {
       await promptForUncoveredWorkflowRolesForRegistrations(
         { scope, registrations: successfulRegistrations },
@@ -320,6 +330,20 @@ async function runPackageAddDryRun(
   }
 
   reportDryRunRegistrationPlan(registrationPlan, scope, context);
+  await reportDryRunRecommendedConfigPlan(
+    await buildRecommendedConfigPlanForPreparedSource(
+      {
+        status: "ready",
+        source: existingPackage.packageName,
+        cwd: existingPackage.installRoot,
+        installedPackage: existingPackage,
+      },
+      scope,
+      context,
+    ),
+    scope,
+    context,
+  );
   return 0;
 }
 
@@ -372,6 +396,89 @@ function reportDryRunRegistrationPlan(
       `Dry run summary: would register ${registrationPlan.successfulRegistrations.length}, skipped conflicts ${registrationPlan.skippedConflicts}.`,
     );
   }
+}
+
+async function applyRecommendedConfigForPreparedSource(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<void> {
+  const plan = await buildRecommendedConfigPlanForPreparedSource(preparedSource, scope, context);
+  if (plan === undefined) {
+    return;
+  }
+
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  const merge = mergeRecommendedConfig(config, plan);
+  if (merge.addedAgents.length === 0 && merge.addedWorkflowRoles.length === 0) {
+    context.io.writeLine(`Recommended config from ${plan.packageName}: nothing to add.`);
+  } else {
+    await writeRawTrailStepConfigFile(configPath, merge.config);
+    context.io.writeLine(
+      `Applied recommended config from ${plan.packageName}: added ${merge.addedAgents.length} agent(s), ${merge.addedWorkflowRoles.length} workflow role mapping(s).`,
+    );
+  }
+  for (const conflict of merge.conflicts) {
+    context.io.writeError(`Recommended config conflict: ${conflict}`);
+  }
+}
+
+async function reportDryRunRecommendedConfigPlan(
+  plan: RecommendedConfigPlan | undefined,
+  scope: WorkflowRegistryScope,
+  context: CliCommandContext,
+): Promise<void> {
+  if (plan === undefined) {
+    return;
+  }
+
+  const configPath = configPathForScope(scope, context);
+  const config = await readRawTrailStepConfigFile(configPath);
+  const merge = mergeRecommendedConfig(config, plan);
+  context.io.writeLine(
+    `Would apply recommended config from ${plan.packageName}: add ${merge.addedAgents.length} agent(s), ${merge.addedWorkflowRoles.length} workflow role mapping(s), ${merge.conflicts.length} conflict(s).`,
+  );
+  for (const conflict of merge.conflicts) {
+    context.io.writeLine(`Would report recommended config conflict: ${conflict}`);
+  }
+}
+
+async function buildRecommendedConfigPlanForPreparedSource(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+  _scope: WorkflowRegistryScope,
+  _context: CliCommandContext,
+): Promise<RecommendedConfigPlan | undefined> {
+  const packageJsonPath = packageJsonPathForPreparedSource(preparedSource);
+  if (packageJsonPath === undefined) {
+    return undefined;
+  }
+  return readRecommendedConfigPlanFromPackageJsonFile(packageJsonPath, preparedSource.source);
+}
+
+function packageJsonPathForPreparedSource(
+  preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
+): string | undefined {
+  if (preparedSource.installedPackage !== undefined) {
+    return join(
+      preparedSource.installedPackage.installRoot,
+      "node_modules",
+      ...preparedSource.installedPackage.packageName.split("/"),
+      "package.json",
+    );
+  }
+  if (isDirectWorkflowFileReference(preparedSource.source)) {
+    // Local file and directory sources resolve relative to the source path.
+    // Plain workflow files have no package.json there (ENOENT means no plan);
+    // local directory packages resolve to their manifest.
+    return resolve(preparedSource.cwd, preparedSource.source, "package.json");
+  }
+  return resolve(
+    preparedSource.cwd,
+    "node_modules",
+    ...preparedSource.source.split("/"),
+    "package.json",
+  );
 }
 
 type AddRegistrationPlan =
@@ -478,14 +585,42 @@ async function buildAddRegistrationPlan({
         ? { projectSkill: args.projectSkill, userSkill: args.userSkill }
         : await resolveSkillArgs(args, context.prompts);
 
+  // Persist the chosen skill target(s) per registration so `trailstep update` can later
+  // honor them for generated skills of untracked workflows. Only registrations whose
+  // user made an explicit/prompted choice are marked; others stay legacy/unmarked.
+  const recordedSkillTargets = resolvedArgs.skillTargets;
+  const markedRegistrations =
+    recordedSkillTargets === undefined
+      ? successfulRegistrations
+      : successfulRegistrations.map((registration) =>
+          withPersistedSkillTargets(registration, recordedSkillTargets),
+        );
+
   return {
     status: "ready",
     namespace,
     registrations,
     registrationConflicts,
-    successfulRegistrations,
+    successfulRegistrations: markedRegistrations,
     skippedConflicts,
     resolvedArgs,
+  };
+}
+
+function withPersistedSkillTargets(
+  registration: AddRegistration,
+  skillTargets: readonly WorkflowSkillInstallTarget[],
+): AddRegistration {
+  const metadata = registration.registryTarget.metadata;
+  if (metadata === undefined) {
+    return registration;
+  }
+  return {
+    ...registration,
+    registryTarget: {
+      ...registration.registryTarget,
+      metadata: { ...metadata, skillTargets: [...skillTargets] },
+    },
   };
 }
 
@@ -772,6 +907,12 @@ function deriveDefaultWorkflowName(registryTarget: AddRegistryTarget): string {
 interface ResolvedSkillArgs {
   readonly projectSkill: boolean;
   readonly userSkill: boolean;
+  /**
+   * Skill targets the user actually chose (explicit flags or interactive prompts),
+   * including an empty array for "no skills". Undefined when no choice was made
+   * (e.g. headless `--yes` without skill flags), leaving the registration unmarked.
+   */
+  readonly skillTargets?: readonly WorkflowSkillInstallTarget[];
 }
 
 async function resolveSkillArgs(
@@ -781,22 +922,43 @@ async function resolveSkillArgs(
   const promptSkillChoices =
     !args.yes && prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
 
-  if (!promptSkillChoices) {
-    return { projectSkill: args.projectSkill, userSkill: args.userSkill };
-  }
-
-  return {
-    projectSkill: await promptYesNo(
+  if (promptSkillChoices) {
+    const projectSkill = await promptYesNo(
       "Add to project skills?",
       prompts,
       "trailstep add requires --project-skill.",
-    ),
-    userSkill: await promptYesNo(
+    );
+    const userSkill = await promptYesNo(
       "Add to user skills?",
       prompts,
       "trailstep add requires --user-skill.",
-    ),
-  };
+    );
+    return { projectSkill, userSkill, skillTargets: skillTargetsFor(projectSkill, userSkill) };
+  }
+
+  if (args.projectSkillExplicit || args.userSkillExplicit) {
+    return {
+      projectSkill: args.projectSkill,
+      userSkill: args.userSkill,
+      skillTargets: skillTargetsFor(args.projectSkill, args.userSkill),
+    };
+  }
+
+  return { projectSkill: args.projectSkill, userSkill: args.userSkill };
+}
+
+function skillTargetsFor(
+  projectSkill: boolean,
+  userSkill: boolean,
+): readonly WorkflowSkillInstallTarget[] {
+  const targets: WorkflowSkillInstallTarget[] = [];
+  if (projectSkill) {
+    targets.push("project");
+  }
+  if (userSkill) {
+    targets.push("user");
+  }
+  return targets;
 }
 
 interface PromptForUncoveredWorkflowRolesForRegistrationsOptions {

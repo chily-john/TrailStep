@@ -6,7 +6,22 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentAdapter, AgentAdapterRequest } from "./contracts/agents/agent-adapter.types.js";
 import * as core from "./index.js";
-import { jsonSchema, runWorkflow, selectLatestUnresolvedFailure, subPrompt } from "./index.js";
+import {
+  absoluteDone,
+  absoluteFail,
+  defineWorkflow,
+  done,
+  isAbsoluteDoneNode,
+  isAbsoluteFailNode,
+  isWorkflowInvocationNode,
+  jsonSchema,
+  notify,
+  runWorkflow,
+  selectLatestUnresolvedFailure,
+  step,
+  subPrompt,
+  workflow,
+} from "./index.js";
 
 describe("@trailstep/core public API", () => {
   it("exports TrailStep config and failure APIs", () => {
@@ -28,7 +43,9 @@ describe("@trailstep/core public API", () => {
   it("exports runtime APIs and agent adapter contracts from the public entrypoint", () => {
     expect(runWorkflow).toBeTypeOf("function");
     expect(jsonSchema).toBeTypeOf("function");
+    expect(notify.progress).toBeTypeOf("function");
     expect(selectLatestUnresolvedFailure).toBeTypeOf("function");
+    expect(workflow.input).toBeTypeOf("function");
 
     type PublicLatestUnresolvedFailure = import("./index.js").LatestUnresolvedFailure;
     const retryTarget = null as unknown as PublicLatestUnresolvedFailure;
@@ -44,6 +61,37 @@ describe("@trailstep/core public API", () => {
 
     expect(publicAdapter).toBe(adapter);
     expect(publicRequest).toBe(request);
+  });
+
+  it("exports callable workflow authoring and continuation node APIs", () => {
+    expect(defineWorkflow).toBeTypeOf("function");
+    expect(absoluteDone).toBeTypeOf("function");
+    expect(absoluteFail).toBeTypeOf("function");
+    expect(isWorkflowInvocationNode).toBeTypeOf("function");
+    expect(isAbsoluteDoneNode).toBeTypeOf("function");
+    expect(isAbsoluteFailNode).toBeTypeOf("function");
+
+    type PublicDefinedWorkflow = import("./index.js").DefinedWorkflow<
+      { value: number },
+      { ok: boolean }
+    >;
+    type PublicWorkflowInvocationNode = import("./index.js").WorkflowInvocationNode<
+      { value: number },
+      { ok: boolean }
+    >;
+    type PublicWorkflowInvocationOptions = import("./index.js").WorkflowInvocationOptions;
+    type PublicRunnableContinuationNode = import("./index.js").RunnableContinuationNode;
+    type PublicContinuationArray = import("./index.js").ContinuationArray;
+    type PublicAbsoluteDoneNode = import("./index.js").AbsoluteDoneNode<{ ok: boolean }>;
+    type PublicAbsoluteFailNode = import("./index.js").AbsoluteFailNode;
+
+    expectTypeOnly<PublicDefinedWorkflow>();
+    expectTypeOnly<PublicWorkflowInvocationNode>();
+    expectTypeOnly<PublicWorkflowInvocationOptions>();
+    expectTypeOnly<PublicRunnableContinuationNode>();
+    expectTypeOnly<PublicContinuationArray>();
+    expectTypeOnly<PublicAbsoluteDoneNode>();
+    expectTypeOnly<PublicAbsoluteFailNode>();
   });
 
   it("exports subPrompt and preserves the intended curried type surface", () => {
@@ -86,8 +134,20 @@ describe("@trailstep/core public API", () => {
         mode: "interactive",
         maxSubPrompts: 3,
       } satisfies import("./index.js").PromptOptions<{ answer: string }>;
+      const waitOptions = {
+        id: "approval",
+        kind: "input",
+        message: "Approve?",
+        output: { approved: "boolean" },
+      } satisfies import("./index.js").WaitDefinition<{ approved: boolean }>;
+      step({ id: "approval" })
+        .prompt<{ task: string }, { answer: string }>("Answer.", { output })
+        .wait(({ output }) => ({ ...waitOptions, message: `Approve ${output.answer}?` }))
+        .do(({ output, waits }, input) =>
+          done({ final: `${input.task}:${output.answer}:${waits.approval?.approved}` }),
+        );
 
-      return { promptOptions, subPromptOptions, subPromptOptionsWithMode };
+      return { promptOptions, subPromptOptions, subPromptOptionsWithMode, waitOptions };
     };
 
     expect(assertPublicSubPromptTypes).toBeTypeOf("function");
@@ -113,6 +173,10 @@ describe("@trailstep/core public API", () => {
     }
   });
 });
+
+function expectTypeOnly<T>(): void {
+  expect(null as unknown as T).toBeNull();
+}
 
 async function listSourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });

@@ -1220,4 +1220,140 @@ describe("agentsCommand", () => {
       },
     });
   });
+
+  it("explains a single agent entry with resolved ref chains and referrers", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await mkdir(resolve(cwd, "workflows"), { recursive: true });
+    await writeFile(
+      resolve(cwd, "workflows", "release.mjs"),
+      "export default { id: 'release', agents: { reviewer: { size: 'medium' } }, start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      agents: {
+        reviewer: [{ ref: "base" }],
+        base: [{ provider: "claude", model: "sonnet" }],
+      },
+      workflows: {
+        project: { release: "./workflows/release.mjs" },
+        release: { agents: { reviewer: [{ ref: "reviewer" }] } },
+      },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["agents", "explain", "reviewer", "--scope", "project"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["agents", "explain", "reviewer", "--scope", "project"]) as never,
+      {
+        cwd,
+        io: {
+          writeLine: (line) => lines.push(line),
+          writeError: () => undefined,
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("Agent reviewer (project)");
+    expect(output).toContain("ref base -> provider claude, model sonnet");
+    expect(output).toContain("Used by:");
+    expect(output).toContain("workflows.release.agents.reviewer");
+  });
+
+  it("explains workflow routing with configured targets/refs and final resolved targets", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await mkdir(resolve(cwd, "workflows"), { recursive: true });
+    await writeFile(
+      resolve(cwd, "workflows", "release.mjs"),
+      "export default { id: 'release', agents: { reviewer: { size: 'medium' }, planner: { size: 'large' } }, start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      agents: {
+        "release-reviewer": [{ provider: "claude", model: "sonnet" }],
+        default: [{ provider: "gemini" }],
+      },
+      workflows: {
+        project: { release: "./workflows/release.mjs" },
+        release: { agents: { reviewer: [{ ref: "release-reviewer" }] } },
+      },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["agents", "explain", "project/release"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["agents", "explain", "project/release"]) as never,
+      {
+        cwd,
+        io: {
+          writeLine: (line) => lines.push(line),
+          writeError: () => undefined,
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("Workflow project/release");
+    expect(output).toContain("Workflow id: release");
+    expect(output).toContain("planner (size large)");
+    expect(output).toContain("reviewer (size medium)");
+    expect(output).toContain(
+      "workflows.release.agents.reviewer: ref release-reviewer -> provider claude, model sonnet",
+    );
+    expect(output).toContain("agents.default: provider gemini");
+
+    const reviewerSection = output.slice(output.indexOf("reviewer (size medium)"));
+    const finalSection = reviewerSection.slice(reviewerSection.indexOf("Final targets:"));
+    expect(finalSection).toContain("1. provider claude, model sonnet");
+    expect(finalSection).toContain("2. provider gemini");
+  });
+
+  it("reports unavailable final targets for uncovered workflow roles and rejects unknown workflow refs", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await mkdir(resolve(cwd, "workflows"), { recursive: true });
+    await writeFile(
+      resolve(cwd, "workflows", "release.mjs"),
+      "export default { id: 'release', agents: { reviewer: { size: 'medium' } }, start: () => ({ kind: 'done', output: {} }) };",
+      "utf8",
+    );
+    await writeJson(resolve(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { release: "./workflows/release.mjs" } },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["agents", "explain", "project/release"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["agents", "explain", "project/release"]) as never,
+      {
+        cwd,
+        io: {
+          writeLine: (line) => lines.push(line),
+          writeError: () => undefined,
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("Configured targets/refs:");
+    expect(output).toContain("none");
+    expect(output).toContain("unavailable (no agent targets resolve for this role)");
+
+    const unknownCommand = resolveCommand(["agents", "explain", "project/missing"]);
+    await expect(
+      unknownCommand.run(
+        unknownCommand.parseArgs(["agents", "explain", "project/missing"]) as never,
+        {
+          cwd,
+          io: { writeLine: () => undefined, writeError: () => undefined },
+        },
+      ),
+    ).rejects.toThrow(CliUsageError);
+  });
 });

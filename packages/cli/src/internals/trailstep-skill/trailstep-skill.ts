@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, readdir, readFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CliCommandContext } from "../command.types.js";
@@ -12,14 +12,25 @@ import {
 } from "../workflow-registry/workflow-registry.js";
 import { distributeWorkflowSkill } from "../workflow-skills/skills-cli.js";
 
-const TRAILSTEP_SKILL_DIRECTORY_NAME = "trailstep-skill";
-const TRAILSTEP_SKILL_NAME = "trailstep";
-const TRAILSTEP_SKILL_SOURCE = "@trailstep/cli/trailstep-skill";
+export const PACKAGED_TRAILSTEP_SKILLS = [
+  {
+    name: "trailstep",
+    directoryName: "trailstep-skill",
+    source: "@trailstep/cli/trailstep-skill",
+  },
+  {
+    name: "trailstep-authoring",
+    directoryName: "trailstep-authoring-skill",
+    source: "@trailstep/cli/trailstep-authoring-skill",
+  },
+] as const;
 
+export type PackagedTrailStepSkillName = (typeof PACKAGED_TRAILSTEP_SKILLS)[number]["name"];
+export type PackagedTrailStepSkillSource = (typeof PACKAGED_TRAILSTEP_SKILLS)[number]["source"];
 export type TrailStepSkillInstallTarget = "project" | "user";
 
 export interface TrailStepSkillInstallationMarker {
-  readonly source: typeof TRAILSTEP_SKILL_SOURCE;
+  readonly source: PackagedTrailStepSkillSource;
   readonly target: TrailStepSkillInstallTarget;
   readonly contentHash: string;
 }
@@ -29,16 +40,30 @@ export interface TrailStepSkillRefreshResult {
   readonly target: TrailStepSkillInstallTarget;
 }
 
+export interface StaleTrailStepSkillInstallation {
+  readonly configPath: string;
+  readonly target: TrailStepSkillInstallTarget;
+}
+
 export async function installPackagedTrailStepSkill(
   scope: "local" | "project" | "global",
   context: CliCommandContext,
 ): Promise<void> {
-  await distributeWorkflowSkill({
-    skillDirectory: await resolvePackagedTrailStepSkillDirectory(),
-    target: trailStepSkillInstallTargetForScope(scope),
-    resolver: context.skillsCliResolver,
-    runner: context.skillsCliProcessRunner,
-  });
+  await installPackagedTrailStepSkills(scope, context);
+}
+
+export async function installPackagedTrailStepSkills(
+  scope: "local" | "project" | "global",
+  context: CliCommandContext,
+): Promise<void> {
+  for (const skill of PACKAGED_TRAILSTEP_SKILLS) {
+    await distributeWorkflowSkill({
+      skillDirectory: await resolvePackagedTrailStepSkillDirectory(skill.name),
+      target: trailStepSkillInstallTargetForScope(scope),
+      resolver: context.skillsCliResolver,
+      runner: context.skillsCliProcessRunner,
+    });
+  }
 }
 
 export function trailStepSkillInstallTargetForScope(
@@ -60,50 +85,102 @@ export async function refreshTrackedPackagedTrailStepSkills(
   ] as const satisfies readonly WorkflowRegistryScope[]) {
     const configPath = configPathForScope(scope, context);
     const config = await readRawTrailStepConfigFile(configPath);
-    const marker = readTrailStepSkillInstallationMarker(config);
-    if (marker === undefined) {
+    const markerTarget = readPackagedTrailStepSkillInstallationTarget(config);
+    if (markerTarget === undefined) {
       continue;
     }
 
-    if (!refreshedTargets.has(marker.target)) {
-      await installPackagedTrailStepSkill(scopeForSkillInstallTarget(marker.target), context);
-      refreshedTargets.add(marker.target);
+    if (!refreshedTargets.has(markerTarget)) {
+      await installPackagedTrailStepSkills(scopeForSkillInstallTarget(markerTarget), context);
+      refreshedTargets.add(markerTarget);
     }
 
-    const nextMarker = await createPackagedTrailStepSkillInstallationMarker(marker.target);
+    const nextMarkers = await createPackagedTrailStepSkillInstallationMarkers(markerTarget);
     await writeRawTrailStepConfigFile(
       configPath,
-      setTrailStepSkillInstallationMarker(config, nextMarker),
+      setTrailStepSkillInstallationMarkers(config, nextMarkers),
     );
-    refreshed.push({ configPath, target: marker.target });
+    refreshed.push({ configPath, target: markerTarget });
   }
 
   return refreshed;
 }
 
+export async function findStaleTrackedPackagedTrailStepSkillInstallations(
+  context: Pick<CliCommandContext, "cwd" | "homeDir">,
+): Promise<readonly StaleTrailStepSkillInstallation[]> {
+  const stale: StaleTrailStepSkillInstallation[] = [];
+
+  for (const scope of [
+    "local",
+    "project",
+    "global",
+  ] as const satisfies readonly WorkflowRegistryScope[]) {
+    const configPath = configPathForScope(scope, context);
+    const config = await readRawTrailStepConfigFile(configPath);
+    const markerTarget = readPackagedTrailStepSkillInstallationTarget(config);
+    if (markerTarget === undefined) {
+      continue;
+    }
+
+    const expectedMarkers = await createPackagedTrailStepSkillInstallationMarkers(markerTarget);
+    if (!hasCurrentTrailStepSkillInstallationMarkers(config, expectedMarkers)) {
+      stale.push({ configPath, target: markerTarget });
+    }
+  }
+
+  return stale;
+}
+
 export async function createPackagedTrailStepSkillInstallationMarker(
   target: TrailStepSkillInstallTarget,
 ): Promise<TrailStepSkillInstallationMarker> {
-  const skillDirectory = await resolvePackagedTrailStepSkillDirectory();
-  const skillMarkdown = await readFile(join(skillDirectory, "SKILL.md"));
+  const markers = await createPackagedTrailStepSkillInstallationMarkers(target);
+  return markers.trailstep;
+}
 
-  return {
-    source: TRAILSTEP_SKILL_SOURCE,
-    target,
-    contentHash: `sha256:${createHash("sha256").update(skillMarkdown).digest("hex")}`,
-  };
+export async function createPackagedTrailStepSkillInstallationMarkers(
+  target: TrailStepSkillInstallTarget,
+): Promise<Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>> {
+  const entries = await Promise.all(
+    PACKAGED_TRAILSTEP_SKILLS.map(
+      async (skill) =>
+        [
+          skill.name,
+          {
+            source: skill.source,
+            target,
+            contentHash: await hashDirectory(
+              await resolvePackagedTrailStepSkillDirectory(skill.name),
+            ),
+          },
+        ] as const,
+    ),
+  );
+
+  return Object.fromEntries(entries) as Record<
+    PackagedTrailStepSkillName,
+    TrailStepSkillInstallationMarker
+  >;
 }
 
 export function hasCurrentTrailStepSkillInstallationMarker(
   config: Record<string, unknown>,
   expectedMarker: TrailStepSkillInstallationMarker,
 ): boolean {
-  const marker = readTrailStepSkillInstallationMarker(config);
-  return (
-    marker !== undefined &&
-    marker.source === expectedMarker.source &&
-    marker.target === expectedMarker.target &&
-    marker.contentHash === expectedMarker.contentHash
+  const marker = readTrailStepSkillInstallationMarker(config, "trailstep");
+  return markerMatches(marker, expectedMarker);
+}
+
+export function hasCurrentTrailStepSkillInstallationMarkers(
+  config: Record<string, unknown>,
+  expectedMarkers: Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>,
+): boolean {
+  return PACKAGED_TRAILSTEP_SKILLS.every((skill) =>
+    markerMatches(
+      readTrailStepSkillInstallationMarker(config, skill.name),
+      expectedMarkers[skill.name],
+    ),
   );
 }
 
@@ -111,11 +188,18 @@ export function setTrailStepSkillInstallationMarker(
   config: Record<string, unknown>,
   marker: TrailStepSkillInstallationMarker,
 ): Record<string, unknown> {
+  return setTrailStepSkillInstallationMarkers(config, { trailstep: marker });
+}
+
+export function setTrailStepSkillInstallationMarkers(
+  config: Record<string, unknown>,
+  markers: Partial<Record<PackagedTrailStepSkillName, TrailStepSkillInstallationMarker>>,
+): Record<string, unknown> {
   return {
     ...config,
     skillInstallations: {
       ...(isRecord(config.skillInstallations) ? config.skillInstallations : {}),
-      [TRAILSTEP_SKILL_NAME]: marker,
+      ...markers,
     },
   };
 }
@@ -124,34 +208,99 @@ function scopeForSkillInstallTarget(target: TrailStepSkillInstallTarget): Workfl
   return target === "user" ? "global" : "project";
 }
 
-export async function resolvePackagedTrailStepSkillDirectory(): Promise<string> {
+export async function resolvePackagedTrailStepSkillDirectory(
+  name: PackagedTrailStepSkillName = "trailstep",
+): Promise<string> {
+  const skill = PACKAGED_TRAILSTEP_SKILLS.find((candidate) => candidate.name === name);
+  if (skill === undefined) {
+    throw new Error(`Unknown packaged TrailStep skill: ${name}`);
+  }
+
   const packageRoot = await findCliPackageRoot(dirname(fileURLToPath(import.meta.url)));
-  const skillDirectory = join(packageRoot, TRAILSTEP_SKILL_DIRECTORY_NAME);
+  const skillDirectory = join(packageRoot, skill.directoryName);
   await access(join(skillDirectory, "SKILL.md"));
   return skillDirectory;
 }
 
+function readPackagedTrailStepSkillInstallationTarget(
+  config: Record<string, unknown>,
+): TrailStepSkillInstallTarget | undefined {
+  for (const skill of PACKAGED_TRAILSTEP_SKILLS) {
+    const marker = readTrailStepSkillInstallationMarker(config, skill.name);
+    if (marker !== undefined) {
+      return marker.target;
+    }
+  }
+
+  return undefined;
+}
+
 function readTrailStepSkillInstallationMarker(
   config: Record<string, unknown>,
+  name: PackagedTrailStepSkillName,
 ): TrailStepSkillInstallationMarker | undefined {
   if (!isRecord(config.skillInstallations)) {
     return undefined;
   }
 
-  const marker = config.skillInstallations[TRAILSTEP_SKILL_NAME];
+  const skill = PACKAGED_TRAILSTEP_SKILLS.find((candidate) => candidate.name === name);
+  if (skill === undefined) {
+    return undefined;
+  }
+
+  const marker = config.skillInstallations[name];
   if (!isRecord(marker)) {
     return undefined;
   }
 
-  return marker.source === TRAILSTEP_SKILL_SOURCE &&
+  return marker.source === skill.source &&
     (marker.target === "project" || marker.target === "user") &&
     typeof marker.contentHash === "string"
     ? {
-        source: marker.source,
+        source: skill.source,
         target: marker.target,
         contentHash: marker.contentHash,
       }
     : undefined;
+}
+
+function markerMatches(
+  marker: TrailStepSkillInstallationMarker | undefined,
+  expectedMarker: TrailStepSkillInstallationMarker,
+): boolean {
+  return (
+    marker !== undefined &&
+    marker.source === expectedMarker.source &&
+    marker.target === expectedMarker.target &&
+    marker.contentHash === expectedMarker.contentHash
+  );
+}
+
+async function hashDirectory(directory: string): Promise<string> {
+  const files = await listFiles(directory);
+  const hash = createHash("sha256");
+  for (const file of files) {
+    const relativePath = relative(directory, file).replaceAll("\\", "/");
+    hash.update(relativePath);
+    hash.update("\0");
+    hash.update(await readFile(file));
+    hash.update("\0");
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
+async function listFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return listFiles(entryPath);
+      }
+      return entry.isFile() ? [entryPath] : [];
+    }),
+  );
+  return files.flat().sort();
 }
 
 async function findCliPackageRoot(startDirectory: string): Promise<string> {

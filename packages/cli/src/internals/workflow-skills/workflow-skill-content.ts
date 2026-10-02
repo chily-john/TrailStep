@@ -6,7 +6,7 @@ import {
   type Workflow,
 } from "@trailstep/core";
 
-export type WorkflowSkillMetadata = Workflow & { readonly description?: string };
+export type WorkflowSkillMetadata = Workflow;
 
 export interface WorkflowSkillContentInput {
   readonly registeredRef: string;
@@ -14,6 +14,12 @@ export interface WorkflowSkillContentInput {
   readonly name: string;
   readonly description?: string;
   readonly workflow?: WorkflowSkillMetadata;
+  /**
+   * Set for skills of workflow exports with no registry entry (for example new
+   * workflow exports of an already-installed workflow package). Untracked skills
+   * run the workflow through its package bundle ref instead of a registered ref.
+   */
+  readonly untracked?: boolean;
 }
 
 export interface WorkflowSkillContent {
@@ -25,27 +31,50 @@ export function generateWorkflowSkillContent(
   input: WorkflowSkillContentInput,
 ): WorkflowSkillContent {
   const skillName = workflowSkillName(input.namespace, input.name);
-  const registeredRef = `${input.namespace}/${input.name}`;
+  const isRegistered = input.untracked !== true;
+  const registeredRef = isRegistered ? `${input.namespace}/${input.name}` : input.registeredRef;
+  const workflowSkill = normalizeWorkflowSkill(input.workflow?.skill);
+  const inputMode = classifyWorkflowInput(input.workflow);
+  const generatedInstructions = generatedWorkflowSkillInstructionLines({
+    inputMode,
+    registeredRef,
+    skillName,
+    sourceRef: input.registeredRef,
+    isRegistered,
+  });
+  const customMarkdown = workflowSkill.markdown;
   const baseDescription =
+    workflowSkill.description ??
     input.workflow?.description ??
     input.description ??
     `Run the TrailStep workflow "${registeredRef}".`;
   const description = workflowSkillDescription(input.namespace, baseDescription);
-  const inputMode = classifyWorkflowInput(input.workflow);
+  const generatedFrontmatter = [
+    "---",
+    `name: ${skillName}`,
+    `description: ${frontmatterString(description)}`,
+    "---",
+    "",
+  ];
+
+  if (customMarkdown !== undefined && customMarkdown.trim().length > 0) {
+    const customBody = customMarkdown.trimEnd();
+    const contentLines = startsWithYamlFrontmatter(customBody)
+      ? [customBody, ""]
+      : [...generatedFrontmatter, customBody, ""];
+
+    return {
+      skillName,
+      markdown: [...contentLines, ...generatedInstructions].join("\n"),
+    };
+  }
 
   return {
     skillName,
     markdown: [
-      "---",
-      `name: ${skillName}`,
-      `description: ${frontmatterString(description)}`,
-      "---",
-      "",
-      `Run the registered TrailStep workflow \`${registeredRef}\`.`,
-      "",
-      ...inputInstructions({ inputMode, registeredRef, skillName }),
-      `Registered workflow source: \`${input.registeredRef}\``,
-      "",
+      ...generatedFrontmatter,
+      ...customSkillInstructionLines(workflowSkill.instructions),
+      ...generatedInstructions,
     ].join("\n"),
   };
 }
@@ -74,6 +103,24 @@ function classifyWorkflowInput(workflow: WorkflowSkillMetadata | undefined): Wor
   return { kind: "none" };
 }
 
+function generatedWorkflowSkillInstructionLines(input: {
+  readonly inputMode: WorkflowInputMode;
+  readonly registeredRef: string;
+  readonly skillName: string;
+  readonly sourceRef: string;
+  readonly isRegistered: boolean;
+}): readonly string[] {
+  return [
+    input.isRegistered
+      ? `Run the registered TrailStep workflow \`${input.registeredRef}\`.`
+      : `Run the TrailStep workflow \`${input.registeredRef}\` through its package bundle ref.`,
+    "",
+    ...inputInstructions(input),
+    `${input.isRegistered ? "Registered workflow source" : "Workflow source"}: \`${input.sourceRef}\``,
+    "",
+  ];
+}
+
 function inputInstructions(input: {
   readonly inputMode: WorkflowInputMode;
   readonly registeredRef: string;
@@ -96,15 +143,21 @@ function inputInstructions(input: {
 
   if (input.inputMode.kind === "inputShape") {
     return [
-      `Create workflow input JSON at \`${inputFile}\` that matches this normalized schema:`,
+      "Prepare workflow input JSON that matches this normalized schema:",
       "",
       "```json",
       JSON.stringify(input.inputMode.jsonSchema, null, 2),
       "```",
       "",
-      "If validation fails, fix the JSON file to match the schema before retrying.",
+      "If validation fails, fix the JSON to match the schema before retrying.",
       "",
-      "When this skill is invoked, run:",
+      "When this skill is invoked, prefer piping one-shot JSON on stdin:",
+      "",
+      "```bash",
+      `printf '%s\\n' '<json-object>' | trailstep ${input.registeredRef} --input-file -`,
+      "```",
+      "",
+      `For reusable/debuggable input, save the JSON at \`${inputFile}\` and run:`,
       "",
       "```bash",
       `trailstep ${input.registeredRef} --input-file ${inputFile}`,
@@ -138,7 +191,13 @@ function inputInstructions(input: {
   lines.push(
     "If validation fails, preserve the context markdown and fix the JSON wrapper before retrying.",
     "",
-    "When this skill is invoked, run:",
+    "When this skill is invoked, prefer piping the JSON wrapper on stdin:",
+    "",
+    "```bash",
+    `printf '%s\\n' '<json-object>' | trailstep ${input.registeredRef} --input-file -`,
+    "```",
+    "",
+    `For reusable/debuggable input, save the JSON wrapper at \`${inputFile}\` and run:`,
     "",
     "```bash",
     `trailstep ${input.registeredRef} --input-file ${inputFile}`,
@@ -153,6 +212,20 @@ function schemaJsonSchema(schema: Schema<PlainObject>): Record<string, unknown> 
   return schema.jsonSchema;
 }
 
+function customSkillInstructionLines(instructions: string | undefined): readonly string[] {
+  const trimmed = instructions?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? [] : [trimmed, ""];
+}
+
+function normalizeWorkflowSkill(skill: WorkflowSkillMetadata["skill"]): {
+  readonly description?: string;
+  readonly instructions?: string;
+  readonly markdown?: string;
+} {
+  if (typeof skill === "string") return { markdown: skill };
+  return skill ?? {};
+}
+
 function workflowSkillDescription(namespace: string, description: string): string {
   const origin = namespace.trim();
   return origin.length > 0 ? `[${origin}] ${description}` : description;
@@ -160,6 +233,10 @@ function workflowSkillDescription(namespace: string, description: string): strin
 
 function frontmatterString(value: string): string {
   return JSON.stringify(value);
+}
+
+function startsWithYamlFrontmatter(markdown: string): boolean {
+  return markdown.startsWith("---\n") || markdown.startsWith("---\r\n");
 }
 
 function sanitizeSkillNamePart(value: string): string {

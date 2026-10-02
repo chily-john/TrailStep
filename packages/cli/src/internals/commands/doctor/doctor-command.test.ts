@@ -240,6 +240,80 @@ describe("doctor command", () => {
     expect(errors).toEqual(["Doctor found deprecation warnings."]);
   });
 
+  it("reports stale package recommended config", async ({ task }) => {
+    const cwd = tmpDir(task, "recommended-config-drift");
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    await writeJson(join(cwd, "package.json"), {
+      dependencies: { "@trailstep/core": "1.0.0" },
+    });
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      agents: { reviewer: [{ provider: "claude", model: "old" }] },
+      workflows: { project: { review: "@acme/workflows#review" } },
+      workflowMetadata: {
+        project: {
+          review: {
+            kind: "package",
+            sourceType: "npm",
+            packageName: "@acme/workflows",
+            requestedSpec: "@acme/workflows@^1.2.3",
+            requestedRange: "^1.2.3",
+            installScope: "project",
+            targetRef: "@acme/workflows#review",
+            workflowName: "review",
+            exportName: "reviewWorkflow",
+          },
+        },
+      },
+    });
+    await writeJson(join(packageDir, "package.json"), {
+      name: "@acme/workflows",
+      version: "1.2.3",
+      trailstep: {
+        workflows: { review: "./dist/review.mjs#reviewWorkflow" },
+        recommendedConfig: {
+          agents: {
+            reviewer: [{ provider: "claude", model: "sonnet" }],
+            implementer: [{ provider: "pi", model: "fast" }],
+          },
+          workflows: {
+            review: {
+              agents: {
+                reviewer: [{ ref: "reviewer" }],
+              },
+            },
+          },
+        },
+      },
+    });
+    await mkdir(join(packageDir, "dist"), { recursive: true });
+    await writeFile(
+      join(packageDir, "dist", "review.mjs"),
+      "import { step } from '@trailstep/core';\nexport const review = step;\n",
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["doctor"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      deprecationManifest: [],
+    });
+
+    expect(exitCode).toBe(1);
+    expect(lines).toContain(
+      "Recommended config warning: @acme/workflows agents.reviewer differs from the package recommendation in project config.",
+    );
+    expect(lines).toContain(
+      "Recommended config warning: @acme/workflows agents.implementer is missing in project config.",
+    );
+    expect(lines).toContain(
+      "Recommended config warning: @acme/workflows workflows.review.agents.reviewer is missing in project config.",
+    );
+    expect(errors).toEqual(["Doctor found recommended config warnings."]);
+  });
+
   it("prints clean output and exits zero when no findings exist", async ({ task }) => {
     const cwd = tmpDir(task, "clean-registered");
     await writeJson(join(cwd, "package.json"), {

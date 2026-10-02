@@ -30,7 +30,8 @@
     "dist",
     "README.md",
     "LICENSE",
-    "trailstep-skill"
+    "trailstep-skill",
+    "trailstep-authoring-skill"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",

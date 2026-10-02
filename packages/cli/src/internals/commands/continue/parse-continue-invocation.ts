@@ -14,9 +14,15 @@ export function parseContinueInvocation(argv: readonly string[]): ContinueComman
   const modes = ["--interactive-file", "--session-file", "--json-file", "--json"].filter((flag) =>
     args.includes(flag),
   );
+  if (modes.length === 0 && args.length === 1) {
+    const value = args[0];
+    if (value && !value.startsWith("--")) {
+      return { mode: "run", runNameOrRunDir: value };
+    }
+  }
   if (modes.length !== 1) {
     throw new CliUsageError(
-      "Expected exactly one continue mode: --interactive-file <path>, --session-file <path>, --json-file <path>, or --json '<json>'.",
+      "Expected trailstep continue <runNameOrRunDir> or exactly one interactive continue mode: --interactive-file <path>, --session-file <path>, --json-file <path>, or --json '<json>'.",
     );
   }
 

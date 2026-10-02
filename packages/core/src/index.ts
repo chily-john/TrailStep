@@ -17,18 +17,28 @@ export type {
   TrailStepWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";
 export {
+  absoluteDone,
+  absoluteFail,
   Document,
+  defineWorkflow,
   document,
   done,
   fail,
+  globalState,
+  isAbsoluteDoneNode,
+  isAbsoluteFailNode,
   isDoneNode,
   isFailNode,
+  isParallelNode,
   isStepNode,
+  isWorkflowInvocationNode,
   type JsonSchemaObject,
   jsonSchema,
   list,
   loadFragments,
   normalizeShape,
+  notify,
+  parallel,
   promptSections,
   promptTemplate,
   section,
@@ -36,23 +46,68 @@ export {
   state,
   step,
   subPrompt,
+  workflow,
 } from "./authoring/authoring.js";
+export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
+  AbsoluteDoneNode,
+  AbsoluteFailNode,
+  CheckWaitCallback,
+  CheckWaitContext,
+  CheckWaitHelpers,
+  ContinuationArray,
   ContinuationResult,
   ContinuationStepConfig,
+  DisplayPhase,
   DoneNode,
+  DoPhase,
   FailNode,
+  ParallelNode,
+  PostContinuation,
   PromptOptions,
+  PromptPhase,
   PromptTemplateSource,
+  RunnableContinuationNode,
   StepConfig,
+  StepContextContinuation,
   StepContinuation,
+  StepContinuationOutput,
+  StepCwdCallback,
+  StepCwdContext,
+  StepCwdInput,
+  StepDisplayCallback,
+  StepDisplayContent,
+  StepDisplayContext,
+  StepDisplayLevel,
+  StepDisplayObject,
+  StepDisplayValue,
   StepErrorContinuation,
   StepFactory,
+  StepInvocationOptions,
   StepNode,
+  StepPhase,
+  StepWaitContext,
   SubPromptFactory,
   SubPromptOptions,
+  TerminalMessageOptions,
+  WaitCallback,
+  WaitCheckResult,
+  WaitDefinition,
+  WaitDoneResult,
+  WaitInput,
+  WaitOptions,
+  WaitPendingInput,
+  WaitPendingResult,
+  WaitPhase,
+  WorkflowInvocationNode,
+  WorkflowInvocationOptions,
 } from "./authoring/step/continuation.types.js";
-export type { Workflow } from "./authoring/workflow/workflow.types.js";
+export type {
+  DefinedWorkflow,
+  WorkflowBuilderOptions,
+} from "./authoring/workflow/define-workflow.js";
+export type { DeepReadonly, WorkflowInputApi } from "./authoring/workflow/workflow.js";
+export type { Workflow, WorkflowSkillOptions } from "./authoring/workflow/workflow.types.js";
 export type {
   ManagedSessionPromptInjectionMode,
   ProviderAdapter,
@@ -131,10 +186,19 @@ export {
 } from "./providers/provider-manifest.js";
 export {
   defaultRunsRoot,
+  readGlobalState,
   readRunEvents,
   readRunState,
+  writeGlobalState,
   writeRunState,
 } from "./runtime/artifacts/run-storage.js";
+export type { CancellationMarker } from "./runtime/cancellation/cancellation.js";
+export {
+  CANCELLATION_MARKER_FILE,
+  cancellationMarkerPath,
+  readCancellationMarker,
+  writeCancellationMarker,
+} from "./runtime/cancellation/cancellation.js";
 export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export type {
@@ -151,6 +215,9 @@ export type {
   InteractiveProcessRunner,
   Result,
   RunWorkflowOptions,
+  RunWorkflowRetryOptions,
+  RunWorkflowTrackRetryOptions,
+  WaitResultDetails,
   WorkingAgentProcessRequest,
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
@@ -161,6 +228,26 @@ export {
   newestFirst,
   selectRecentFailedRunSummaries,
 } from "./runtime/runs/run-summaries.js";
+export type { BranchSummary, TrackSummary } from "./runtime/runs/track-summary.js";
+export type {
+  StorageLifecycleAction,
+  StorageLifecyclePolicy,
+  StorageLifecycleStatus,
+} from "./runtime/storage-lifecycle/storage-lifecycle.js";
+export {
+  applyStorageLifecycle,
+  archiveRun,
+  deleteArchivedRun,
+  deleteRun,
+  parseStorageLifecycleDurationDays,
+  pinRun,
+  planStorageLifecycle,
+  readStorageLifecycleStatus,
+  restoreArchivedRun,
+  storageArchiveDir,
+  storagePinPath,
+  unpinRun,
+} from "./runtime/storage-lifecycle/storage-lifecycle.js";
 export type {
   ResolveTimeoutPolicyOptions,
   TimeoutPolicy,

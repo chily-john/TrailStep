@@ -4,8 +4,11 @@ import { runWorkflow } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { resolveRunsRoot } from "../../runs-root.js";
+import { maybeWriteRunUpdateNotice } from "../../update-notices/run-update-notice.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
+import { writeRunWorkflowRef } from "../wait-run-helpers.js";
 import { generateRunName } from "./generate-run-name.js";
+import { applyInputOverrides } from "./input-overrides.js";
 import { loadJsonInput } from "./load-run-input.js";
 import { parseRunInvocation } from "./parse-run-invocation.js";
 import type { RunCommandArgs } from "./run-command.types.js";
@@ -18,7 +21,8 @@ export const runCommand: CliCommand<RunCommandArgs> = {
   },
   async run(args: RunCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
-    const input = await loadJsonInput(args.input, cwd);
+    await maybeWriteRunUpdateNotice(context);
+    const baseInput = await loadJsonInput(args.input, cwd);
     const trailstepConfig = await loadTrailStepConfig(cwd, { homeDir: context.homeDir });
     const resolvedWorkflow = await resolveWorkflowReference(args.workflowId, {
       cwd,
@@ -31,6 +35,8 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       );
       return 1;
     }
+
+    const input = applyInputOverrides(baseInput, args.inputOverrides, resolvedWorkflow.workflow);
 
     const terminalEventLogger = createTerminalEventLogger(io);
     const eventSink = (event: Event): void | Promise<void> => {
@@ -64,8 +70,36 @@ export const runCommand: CliCommand<RunCommandArgs> = {
       runName: workflowRunName,
     });
 
+    await writeRunWorkflowRef(result.runDir, args.workflowId);
+
     if (result.status === "success") {
       io.writeLine(`Workflow completed: ${resolvedWorkflow.id} at ${result.runDir}`);
+      return 0;
+    }
+
+    if (result.status === "waiting") {
+      io.writeLine(`Workflow waiting: ${result.runId}`);
+      io.writeLine("");
+      io.writeLine(`Waiting for ${result.wait.waitId}:`);
+      io.writeLine(`  ${result.wait.message}`);
+      if (result.wait.retryAfterSeconds !== undefined) {
+        io.writeLine(`  Retry after: ${result.wait.retryAfterSeconds}s`);
+      }
+      io.writeLine("");
+      if (result.wait.kind === "check") {
+        io.writeLine("Continue check with:");
+        io.writeLine(`  trailstep continue ${result.runId}`);
+      } else {
+        io.writeLine("Answer with:");
+        io.writeLine(
+          `  trailstep answer ${result.runId} ${result.wait.waitId} --json '{"approved":true}'`,
+        );
+      }
+      return 0;
+    }
+
+    if (result.status === "cancelled") {
+      io.writeLine(`Workflow cancelled: ${result.runId}`);
       return 0;
     }
 

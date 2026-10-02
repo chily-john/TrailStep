@@ -30,7 +30,7 @@ export async function readRecommendedConfigPlanFromPackageJsonFile(
   try {
     parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as unknown;
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
       return undefined;
     }
     throw error;

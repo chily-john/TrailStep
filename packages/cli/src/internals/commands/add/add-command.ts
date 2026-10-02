@@ -469,7 +469,7 @@ function packageJsonPathForPreparedSource(
   }
   if (isDirectWorkflowFileReference(preparedSource.source)) {
     // Local file and directory sources resolve relative to the source path.
-    // Plain workflow files have no package.json there (ENOENT means no plan);
+    // Plain workflow files have no package.json there (ENOENT/ENOTDIR means no plan);
     // local directory packages resolve to their manifest.
     return resolve(preparedSource.cwd, preparedSource.source, "package.json");
   }

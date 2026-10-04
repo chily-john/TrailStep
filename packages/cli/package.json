@@ -40,18 +40,18 @@
     "lint": "biome check src"
   },
   "dependencies": {
-    "@clack/prompts": "^1.7.0",
+    "@clack/prompts": "^1.8.1",
     "@trailstep/core": "workspace:*",
     "semver": "^7.8.5",
-    "skills": "^1.5.22",
-    "tsx": "^4.23.12"
+    "skills": "^1.7.0",
+    "tsx": "^4.23.15"
   },
   "peerDependencies": {
     "@trailstep/core": "^0.2.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
-    "@types/node": "^26.2.0",
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.3",
     "@types/semver": "^7.8.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",

@@ -1,8 +1,60 @@
 # TrailStep
 
-TrailStep turns repeatable AI coding processes into typed, resumable workflows. It is designed for long-horizon coding tasks where each step can run in a focused agent session, receive only the context it needs, and hand structured output to the next step.
+**Durable, typed workflows for AI coding agents.**
 
-Instead of asking one long chat to clarify requirements, plan, implement, review, and recover from mistakes, TrailStep lets you encode that process as a workflow: durable handoffs between focused agent sessions.
+TrailStep turns repeatable AI development work — clarify → plan → implement → review — into versioned TypeScript workflows that any CLI coding agent can run, resume, and hand off cleanly.
+
+Built for long-horizon coding tasks where a single chat transcript breaks down.
+
+> **Status:** TrailStep is early and under active iteration. Core workflows run end-to-end, but APIs, docs, and polish are still evolving — feedback and issues are welcome.
+
+### The problem: one long chat doesn't scale
+
+Single-session AI coding works for small edits, but fails on real features:
+
+- **Context rot:** every stage re-reads an ever-growing transcript
+- **Fragile handoffs:** plans and reviews passed as free text
+- **No resume:** an interruption means starting over
+- **No structure for repetition:** loops and parallel work are improvised each time
+
+### What TrailStep does
+
+Encode the process once as a workflow. TrailStep runs each stage as a focused agent session with only the context it needs, passing validated JSON between steps — looping over stories and fanning out parallel work when it helps:
+
+```mermaid
+flowchart TD
+  A[Feature idea or existing conversation] --> B[Clarify or normalize request]
+  B --> C[Write feature document]
+  C --> D[Create implementation plan]
+  D --> E[Review plan]
+  E --> F[Implement one story]
+  F --> G[Review story]
+  G --> H{More stories?}
+  H -->|yes| F
+  H -->|no| I[Done]
+```
+
+### Why it matters
+
+- **Durable:** runs persist to `.trailstep/runs/` — inspectable, resumable, and retryable with `trailstep retry` / `trailstep continue`.
+- **Typed:** TypeScript-first authoring with `defineWorkflow`, `step`, and `done`; inputs and outputs are validated at every boundary.
+- **Loops, not just chains:** implement → review → next story, with plan review and story routing built in.
+- **Parallel when it helps:** fan out independent explore / implement / review delegates to isolated git worktrees, then continue the main flow (see [Parallel sub-agents](#parallel-sub-agents-in-one-minute)).
+- **Provider-agnostic:** works with Pi, Claude Code, and pluggable providers — no lock-in.
+- **Agent-native:** `trailstep add` publishes workflows as agent skills / slash commands so agents know when and how to run them.
+- **Observable:** local run artifacts and a dashboard for every step, delegate, and review.
+
+### Without TrailStep vs. with TrailStep
+
+| Without TrailStep | With TrailStep |
+| --- | --- |
+| One growing transcript every stage must read | Each step runs in its own agent session with a narrow prompt and purpose |
+| Free-text notes between stages | Typed, validated JSON handoffs between steps |
+| Restart from scratch on failure | Failed or interrupted runs resume with `trailstep retry` / `trailstep continue` |
+| Loops and parallel work improvised per chat | Loops and parallel delegates are part of the workflow |
+| Agents driven from outside the system | Registered workflows generate skills so agents know when and how to call them |
+
+> Example in this repo: `grill-it-away` interviews you until the request is clear, then `take-it-away` plans, slices stories, implements and reviews story-by-story (in loops, with parallel delegates where useful), and opens a PR — all resumable. See [From tiny workflows to workflow systems](#from-tiny-workflows-to-workflow-systems).
 
 ## Quick start
 
@@ -153,15 +205,15 @@ trailstep feature-summary --input '{"request":"Add CSV export to reports."}'
 
 </details>
 
-## Why steps matter
+## How steps work
 
-TrailStep's step model is the core idea:
+The bullets at the top are powered by one mechanism: continuations. A workflow starts with input, returns a step, receives structured output, then returns the next step or `done(...)`.
 
-- **Focused context**: each step can run in its own agent session with a narrow prompt and purpose.
-- **Typed handoffs**: steps pass validated JSON-object outputs to the next continuation.
-- **Long-horizon work**: large jobs can be split into planning, implementation, review, and follow-up steps.
-- **Retry and continuation**: failed or interrupted runs can continue through TrailStep instead of starting from scratch.
-- **Agent-native use**: registered workflows can generate skills so agents understand when and how to call them.
+- `.prompt(...)` dispatches a focused prompt to an agent session with a declared JSON output shape.
+- `.do(...)` is plain TypeScript — run code, inspect the repo, call APIs, then route to the next step, loop back, fan out delegates, or finish.
+- `.display(...)` / `.wait(...)` add durable progress events and human-approval pauses where needed.
+
+See [Authoring workflows](docs/authoring-workflows.md) and [Architecture](docs/architecture.md) for the full lifecycle.
 
 ## Parallel sub-agents in one minute
 
@@ -196,15 +248,6 @@ trailstep project/delegateParallel --input-file delegate-parallel-input.json
 
 See [`packages/sub-agents/README.md`](packages/sub-agents/README.md) for delegate modes and options.
 
-## Why not just one long chat / LangChain / Temporal?
-
-| Concern | One long chat / generic LLM chains / heavyweight workflow engines | TrailStep |
-| --- | --- | --- |
-| Focused context | One growing transcript every stage has to read | Each step runs in its own agent session with a narrow prompt and purpose |
-| Typed handoffs | Free-text notes between stages | Steps pass validated JSON-object outputs to the next continuation |
-| Durable resume | Restart from scratch or wire retries yourself | Failed or interrupted runs resume with `trailstep retry` / `trailstep continue` |
-| Agent-native skills | Agents are driven from outside the system | Registered workflows generate skills so agents know when and how to call them |
-
 ## From tiny workflows to workflow systems
 
 The same primitives power larger reusable workflow packages. `@trailstep/sub-agents` currently publishes delegate workflows for focused sub-agent work, and `@trailstep/create-flows` currently publishes:
@@ -212,22 +255,7 @@ The same primitives power larger reusable workflow packages. `@trailstep/sub-age
 - **`grill-it-away`**: starts interactively, asks clarifying questions, then turns the result into an implementation workflow.
 - **`take-it-away`**: starts from an existing conversation or feature request and runs the implementation workflow directly.
 
-These workflows are durable and retry-aware: sub-agent memory and story routing are recorded in `.trailstep/runs/<runName>/` so interrupted work can resume with `trailstep retry` or `trailstep continue` instead of restarting planning.
-
-At a high level, the implementation workflows expand the simple step pattern into a multi-stage coding process:
-
-```mermaid
-flowchart TD
-  A[Feature idea or existing conversation] --> B[Clarify or normalize request]
-  B --> C[Write feature document]
-  C --> D[Create implementation plan]
-  D --> E[Review plan]
-  E --> F[Implement one story]
-  F --> G[Review story]
-  G --> H{More stories?}
-  H -->|yes| F
-  H -->|no| I[Done]
-```
+These workflows are durable and retry-aware: sub-agent memory and story routing are recorded in `.trailstep/runs/<runName>/` so interrupted work can resume with `trailstep retry` or `trailstep continue` instead of restarting planning. The high-level shape is the clarify → plan → review → implement loop shown at the top of this README.
 
 See [`packages/create-flows/README.md`](packages/create-flows/README.md) for the full behavior and usage details. These workflows are examples of what can be built on TrailStep; they are not the limit of the model.
 

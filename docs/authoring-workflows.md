@@ -186,13 +186,13 @@ Inside `.do(...)` code, `notify.progress(...)`, `notify.warning(...)`, and `noti
 ```ts
 return ImplementStoryWorkflow(
   { storyId: story.id, cwd: input.cwd },
-  { branch: `story-${story.id}` },
+  { branchId: `story-${story.id}` },
 ).post((output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }));
 ```
 
 Workflow invocation options currently include:
 
-- `branch?: string`: a requested stable branch name. Persisted branch ids are the ids to use for retry/inspection; when names collide, TrailStep keeps the requested name as `requestedBranchId` metadata and assigns unique persisted branch ids such as `branch-1`.
+- `branchId?: string`: a requested stable branch name. Persisted branch ids are the ids to use for retry/inspection; when names collide, TrailStep keeps the requested name as `requestedBranchId` metadata and assigns unique persisted branch ids such as `branch-1`.
 
 Use `.post((output) => nextContinuation)` on a workflow invocation when the parent should hook a follow-up continuation onto the invoked workflow's successful output.
 
@@ -200,7 +200,7 @@ A continuation may return an array of runnable branch candidates to split work:
 
 ```ts
 return readyStories.map((story) =>
-  ImplementStoryWorkflow({ storyId: story.id }, { branch: `story-${story.id}` }),
+  ImplementStoryWorkflow({ storyId: story.id }, { branchId: `story-${story.id}` }),
 );
 ```
 

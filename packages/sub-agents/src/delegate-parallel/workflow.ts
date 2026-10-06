@@ -31,7 +31,8 @@ export type {
 
 export const delegateParallel = defineWorkflow<DelegateParallelInput, DelegateParallelOutput>({
   id: "delegateParallel",
-  description: "Fans out required delegate tasks across parallel delegate workflows.",
+  description:
+    "Use when you have 2+ independent codebase tasks that can run in parallel. Fans out required delegate tasks across parallel delegate workflows.",
   skill: delegateParallelSkill(),
   inputShape: delegateParallelInputShape,
   outputShape: delegateParallelOutputShape,
@@ -252,12 +253,12 @@ function hashString(value: string): string {
 function delegateParallelSkill(): string {
   return `---
 name: trst-delegate-parallel
-description: Use as a parent-agent fan-out tool for required TrailStep delegate tasks that can run in parallel.
+description: Use when you have 2+ independent codebase tasks that can run in parallel, such as exploring multiple areas, implementing multiple files, or splitting explore plus implement plus review. Prefer this over running single explore, implement, or review delegates sequentially.
 x-trailstep-user-facing: false
 ---
 # TrailStep delegateParallel workflow
 
-Use this workflow when a parent agent already has a set of concrete, independent delegate tasks. It fans out directly to the existing delegate, delegateExplore, delegateReview, and delegateImplement workflows based on each task mode. It does not add a planning agent and does not merge results beyond returning the parallel branch outputs.
+Use this workflow when a parent agent already has a set of concrete, independent delegate tasks and wants to run them in parallel instead of sequentially. Reach for this when you need to investigate multiple areas, change multiple files, or split explore plus implement plus review work across delegates. It fans out directly to the existing delegate, delegateExplore, delegateReview, and delegateImplement workflows based on each task mode. It does not add a planning agent and does not merge results beyond returning the parallel branch outputs.
 
 Each task must provide a stable \`id\`, \`mode\`, and \`task\` text. Shared \`context\`, \`cwd\`, \`maxTurns\`, \`summarize\`, and \`worktree\` values are applied as defaults; task-level values override them. Managed worktrees under \`worktree.enabled=true\` default per task to \`.trailstep/worktrees/<runName>/<taskId>\` and \`trailstep/delegate/<runName>/<taskId>\` to avoid collisions.`;
 }

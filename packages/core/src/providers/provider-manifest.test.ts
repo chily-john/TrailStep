@@ -94,4 +94,108 @@ describe("provider manifest validation", () => {
       });
     }
   });
+
+  describe("working followUp", () => {
+    const baseManifest = (working: Record<string, unknown>): Record<string, unknown> => ({
+      schemaVersion: 1,
+      id: "claude",
+      displayName: "Claude",
+      working,
+      interactive: { supported: false },
+      model: { supported: false },
+      thinking: { supported: false },
+    });
+
+    const workingWith = (followUp: unknown): Record<string, unknown> => ({
+      supported: true,
+      command: "claude",
+      args: ["--prompt-file", "{{promptFile}}"],
+      prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
+      output: { style: "stdout-json-envelope", parsing: { resultField: "result" } },
+      ...(followUp === undefined ? {} : { followUp }),
+    });
+
+    const parseWithFollowUp = (
+      followUp: unknown,
+      diagnostics: string[],
+    ): ReturnType<typeof parseTrailStepProviderManifest> =>
+      parseTrailStepProviderManifest(
+        "trailstepProvider.manifest",
+        baseManifest(workingWith(followUp)),
+        diagnostics,
+      );
+
+    it("keeps working manifests without followUp backward compatible", () => {
+      const diagnostics: string[] = [];
+
+      const manifest = parseWithFollowUp(undefined, diagnostics);
+
+      expect(diagnostics).toEqual([]);
+      expect(manifest?.working).not.toHaveProperty("followUp");
+    });
+
+    it("parses followUp supported false with reason", () => {
+      const diagnostics: string[] = [];
+
+      const manifest = parseWithFollowUp(
+        { supported: false, reason: "Provider has no resume flag." },
+        diagnostics,
+      );
+
+      expect(diagnostics).toEqual([]);
+      expect(manifest?.working.followUp).toEqual({
+        supported: false,
+        reason: "Provider has no resume flag.",
+      });
+    });
+
+    it("parses followUp supported true with sessionIdFlag and resumeArgs", () => {
+      const diagnostics: string[] = [];
+
+      const manifest = parseWithFollowUp(
+        {
+          supported: true,
+          sessionIdFlag: "--resume",
+          resumeArgs: ["{{sessionId}}", "@{{promptFile}}"],
+        },
+        diagnostics,
+      );
+
+      expect(diagnostics).toEqual([]);
+      expect(manifest?.working.followUp).toEqual({
+        supported: true,
+        sessionIdFlag: "--resume",
+        resumeArgs: ["{{sessionId}}", "@{{promptFile}}"],
+      });
+    });
+
+    it("reports diagnostics for malformed followUp shapes", () => {
+      const nonArrayResumeArgsDiagnostics: string[] = [];
+      expect(
+        parseWithFollowUp(
+          { supported: true, resumeArgs: "--resume" },
+          nonArrayResumeArgsDiagnostics,
+        ),
+      ).toBeUndefined();
+      expect(nonArrayResumeArgsDiagnostics).toEqual([
+        "trailstepProvider.manifest.working.followUp.resumeArgs must be an array of strings when present.",
+      ]);
+
+      const emptySessionIdFlagDiagnostics: string[] = [];
+      expect(
+        parseWithFollowUp({ supported: true, sessionIdFlag: "" }, emptySessionIdFlagDiagnostics),
+      ).toBeUndefined();
+      expect(emptySessionIdFlagDiagnostics).toEqual([
+        "trailstepProvider.manifest.working.followUp.sessionIdFlag must be a non-empty string when present.",
+      ]);
+
+      const missingSupportedDiagnostics: string[] = [];
+      expect(
+        parseWithFollowUp({ sessionIdFlag: "--resume" }, missingSupportedDiagnostics),
+      ).toBeUndefined();
+      expect(missingSupportedDiagnostics).toEqual([
+        "trailstepProvider.manifest.working.followUp must be an object with a boolean supported field.",
+      ]);
+    });
+  });
 });

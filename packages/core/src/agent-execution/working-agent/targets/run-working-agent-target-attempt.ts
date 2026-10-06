@@ -44,6 +44,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       runner: options.runner,
       target: options.target,
       files: options.files,
+      renderedPrompt: options.renderedPrompt,
       signal: options.signal,
     });
   }

@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { runAgentStep } from "../../agent-execution/adapter-agent/run-adapter-agent-step/run-adapter-agent-step.js";
 import {
@@ -173,6 +174,8 @@ export async function runSubPrompt<
               promptFile: artifactPaths.promptFile,
               outputFile: artifactPaths.outputFile,
               usageFile: artifactPaths.usageFile,
+              workFile: join(artifactPaths.subPromptDir, "work.txt"),
+              repairPromptFile: join(artifactPaths.subPromptDir, "repair-prompt.md"),
             },
           })
         : await runAgentStep({

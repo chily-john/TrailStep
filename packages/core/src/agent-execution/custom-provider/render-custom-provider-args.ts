@@ -1,7 +1,7 @@
 import type { WorkflowAgentThinking } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 
-type PlaceholderName = "prompt" | "promptFile" | "outputFile" | "model" | "thinking";
+type PlaceholderName = "prompt" | "promptFile" | "outputFile" | "model" | "thinking" | "sessionId";
 type ConditionalName = "model" | "thinking";
 
 type PlaceholderValues = Readonly<Partial<Record<PlaceholderName, string>>>;
@@ -12,6 +12,7 @@ const PLACEHOLDER_NAMES = new Set<PlaceholderName>([
   "outputFile",
   "model",
   "thinking",
+  "sessionId",
 ]);
 const CONDITIONAL_NAMES = new Set<ConditionalName>(["model", "thinking"]);
 const TEMPLATE_TOKEN_PATTERN = /^{{([#/]?)([A-Za-z][A-Za-z0-9]*)}}$/;
@@ -24,6 +25,7 @@ export function renderCustomProviderArgs(options: {
     readonly outputFile?: string;
     readonly model?: string;
     readonly thinking?: WorkflowAgentThinking;
+    readonly sessionId?: string;
   };
   readonly errorCode: string;
   readonly commandDescription: string;
@@ -36,6 +38,7 @@ export function renderCustomProviderArgs(options: {
       ? {}
       : { model: optionalNonEmptyString(options.values.model) }),
     ...(options.values.thinking === undefined ? {} : { thinking: options.values.thinking }),
+    ...(options.values.sessionId === undefined ? {} : { sessionId: options.values.sessionId }),
   };
 
   return renderRange({

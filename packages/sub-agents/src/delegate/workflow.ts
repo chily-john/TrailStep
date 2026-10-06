@@ -60,9 +60,9 @@ export const delegate = defineDelegateWorkflow({
   description: "Runs delegated focused work while preserving run-local continuity.",
   skillName: "trst-delegate",
   skillDescription:
-    "Use as a flexible sub-agent for focused TrailStep delegate work with run-local continuity.",
+    "Use when you need to delegate a single bounded task and want to choose mode, turn budget, and context shape explicitly. General-purpose delegate for focused work.",
   skillFocus:
-    "Use for general delegated work when the parent agent wants to choose the task, mode, turn budget, and context shape explicitly.",
+    "Use for general delegated work when the parent agent wants to choose the task, mode, turn budget, and context shape explicitly. Prefer the specialized explore, implement, review, or debugger variants when they fit. If you have 2+ independent tasks, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "general",
   defaultMaxTurns: 10,
 });
@@ -72,9 +72,9 @@ export const delegateExplore = defineDelegateWorkflow({
   description: "Runs read-oriented delegated exploration while preserving run-local continuity.",
   skillName: "trst-delegate-explore",
   skillDescription:
-    "Use as a sub-agent for bounded read-oriented investigation and findings summaries.",
+    "Use when you need to investigate the codebase, understand how code works, find where something lives, or trace a flow. Read-only exploration that summarizes findings without editing files.",
   skillFocus:
-    "Explore mode is read-oriented: inspect code, commands, docs, and artifacts; summarize findings and avoid edits unless the task explicitly asks for them.",
+    "Explore mode is read-oriented: when you need to investigate the codebase, inspect code, commands, docs, and artifacts; summarize findings and avoid edits unless the task explicitly asks for them. If you have 2+ independent exploration questions, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "explore",
   defaultMaxTurns: 6,
   summarize: true,
@@ -84,9 +84,10 @@ export const delegateSimpleExplore = defineDelegateWorkflow({
   id: "delegateSimpleExplore",
   description: "Runs narrow, low-cost read-only exploration while preserving run-local continuity.",
   skillName: "trst-delegate-simple-explore",
-  skillDescription: "Use as a sub-agent for quick, bounded read-only lookups and summaries.",
+  skillDescription:
+    "Use when you need a quick low-cost answer to a narrow repo question like where is X, what calls Y, or what does this file do. Read-only single-area lookup.",
   skillFocus:
-    "Simple explore is read-only and narrow: answer focused repo questions, inspect one area, summarize concise findings, and avoid edits.",
+    "Simple explore is read-only and narrow: when you need a quick answer to a focused repo question, inspect one area, summarize concise findings, and avoid edits. If you have 2+ independent lookup questions, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "explore",
   defaultMaxTurns: 4,
   summarize: true,
@@ -99,9 +100,9 @@ export const delegateArchitectPlanner = defineDelegateWorkflow({
   description: "Scouts the codebase to identify the few files or seams likely needing edits.",
   skillName: "trst-delegate-architect-planner",
   skillDescription:
-    "Use as a read-only scout that maps a bug or feature request to likely edit targets.",
+    "Use when you have a bug report or feature request and need to map it to the 3-4 files or seams most likely to need edits before implementing. Read-only scouting, no code changes.",
   skillFocus:
-    "Architect planner is read-only: grep/read the repo, identify the 3-4 files or seams most likely to need edits, explain why, and do not write code.",
+    "Architect planner is read-only: when you need to plan before changing files, grep/read the repo, identify the 3-4 files or seams most likely to need edits, explain why, and do not write code.",
   defaultMode: "explore",
   defaultMaxTurns: 6,
   summarize: true,
@@ -114,9 +115,9 @@ export const delegateReview = defineDelegateWorkflow({
   description: "Runs delegated review work while preserving run-local continuity.",
   skillName: "trst-delegate-review",
   skillDescription:
-    "Use as a sub-agent for focused code, plan, or change review without unnecessary edits.",
+    "Use when you need to review existing code, a plan, or a diff for concrete issues and risks. Inspects without editing unless a fix is explicitly requested.",
   skillFocus:
-    "Review mode should inspect existing work, identify concrete issues and risks, and avoid edits unless the parent task explicitly requests a fix.",
+    "Review mode: when you need a focused review of existing work, inspect it, identify concrete issues and risks, and avoid edits unless the parent task explicitly requests a fix. If you have 2+ independent reviews, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "review",
   defaultMaxTurns: 6,
   summarize: false,
@@ -126,9 +127,10 @@ export const delegateImplement = defineDelegateWorkflow({
   id: "delegateImplement",
   description: "Runs delegated implementation work while preserving run-local continuity.",
   skillName: "trst-delegate-implement",
-  skillDescription: "Use as a sub-agent for bounded implementation tasks that may edit files.",
+  skillDescription:
+    "Use when you need to change files to implement a bounded fix or feature. Makes edits, runs focused checks when practical, and reports changed files.",
   skillFocus:
-    "Implement mode may edit files. Make the smallest safe change, run focused checks when practical, and always report changedFiles/artifacts that were actually produced.",
+    "Implement mode may edit files: when you need to change files, make the smallest safe change, run focused checks when practical, and always report changedFiles/artifacts that were actually produced. If you have 2+ independent file changes, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "implement",
   defaultMaxTurns: 12,
   summarize: false,
@@ -139,9 +141,10 @@ export const delegateQuickImplementor = defineDelegateWorkflow({
   id: "delegateQuickImplementor",
   description: "Runs strict localized implementation work for mechanical changes.",
   skillName: "trst-delegate-quick-implementor",
-  skillDescription: "Use as a sub-agent for strict, localized boilerplate implementation tasks.",
+  skillDescription:
+    "Use when instructions are already concrete and you need strict localized boilerplate edits with no architecture decisions. Mechanical typist that edits files.",
   skillFocus:
-    "Quick implementor is the typist: follow concrete instructions, make localized edits only, avoid broad architecture decisions, run focused checks when practical, and report changedFiles.",
+    "Quick implementor is the typist: when the plan is already concrete and you need to change files, follow instructions, make localized edits only, avoid broad architecture decisions, run focused checks when practical, and report changedFiles. If you have 2+ independent mechanical edits, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "implement",
   defaultMaxTurns: 8,
   summarize: false,
@@ -154,9 +157,9 @@ export const delegateSmartImplementor = defineDelegateWorkflow({
   description: "Runs complex implementation, algorithmic work, or cross-file refactors.",
   skillName: "trst-delegate-smart-implementor",
   skillDescription:
-    "Use as a sub-agent for complex logic, cross-file refactoring, or algorithmic design.",
+    "Use when you need complex cross-file refactoring, algorithmic work, or interconnected system changes. Heavy-lifter that edits files and keeps scope bounded.",
   skillFocus:
-    "Smart implementor is the heavy-lifter: handle complex interconnected changes, refactors, algorithms, and non-trivial systems; keep scope bounded and report changedFiles.",
+    "Smart implementor is the heavy-lifter: when you need complex logic, cross-file refactors, algorithms, or non-trivial systems, handle the interconnected changes, keep scope bounded, and report changedFiles. If you have 2+ independent complex changes, use trst-delegate-parallel instead of calling this sequentially.",
   defaultMode: "implement",
   defaultMaxTurns: 14,
   summarize: false,
@@ -169,9 +172,9 @@ export const delegateRelentlessDebugger = defineDelegateWorkflow({
   description: "Diagnoses and fixes validation, lint, test, or runtime failures.",
   skillName: "trst-delegate-relentless-debugger",
   skillDescription:
-    "Use as a sub-agent for repairing linter failures, test failures, stack traces, and diagnostics.",
+    "Use when lint, typecheck, tests, or runtime are failing and you need to diagnose stack traces or diagnostics and fix them iteratively. Preserves intent while editing files.",
   skillFocus:
-    "Relentless debugger is the janitor: consume diagnostics, preserve the intended change, fix failures iteratively, and avoid redesign unless required by the failure evidence.",
+    "Relentless debugger is the fixer: when validation, lint, tests, or runtime fail and you need to change files to fix them, consume diagnostics, preserve the intended change, fix failures iteratively, and avoid redesign unless required by the failure evidence.",
   defaultMode: "implement",
   defaultMaxTurns: 12,
   summarize: false,
@@ -183,9 +186,10 @@ export const delegateSchemaFormatter = defineDelegateWorkflow({
   id: "delegateSchemaFormatter",
   description: "Produces exact structured output for schema-bound handoffs.",
   skillName: "trst-delegate-schema-formatter",
-  skillDescription: "Use as a sub-agent for exact JSON/XML/schema-constrained formatting tasks.",
+  skillDescription:
+    "Use when you need exact JSON, XML, or schema-constrained output for a handoff. Formatting-only, prioritizes exact structure over prose.",
   skillFocus:
-    "Schema formatter is the translator: prioritize exact requested structure, avoid extra prose, and do not perform broad implementation work unless explicitly requested.",
+    "Schema formatter is the translator: when you need exact structured output, prioritize the requested JSON/XML/schema structure, avoid extra prose, and do not perform broad implementation work unless explicitly requested.",
   defaultMode: "general",
   defaultMaxTurns: 4,
   summarize: false,

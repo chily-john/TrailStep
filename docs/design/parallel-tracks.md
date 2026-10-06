@@ -82,13 +82,13 @@ Workflow invocation options should support branch naming, while follow-up contin
 ```ts
 return ImplementStoryWorkflow(
   { storyId: story.id },
-  { branch: `story-${story.id}` },
+  { branchId: `story-${story.id}` },
 ).post((output) => ReviewStoryWorkflow({ storyId: story.id, implementation: output }));
 ```
 
 Recommended initial option names:
 
-- `branch?: string`: requested stable branch id/name. TrailStep may suffix or reject collisions according to deterministic replay rules.
+- `branchId?: string`: requested stable branch id/name. TrailStep may suffix or reject collisions according to deterministic replay rules.
 - Future-compatible room for worktree or cwd options, but cwd can continue to be specified at workflow/step input level where existing workflows already support it.
 
 Use `.post((output) => nextContinuation)` to extend a pre-existing workflow with custom follow-up steps/workflows after it completes successfully.
@@ -99,7 +99,7 @@ Any step or workflow invocation continuation should be able to return an array o
 
 ```ts
 return readyStories.map((story) =>
-  ImplementStoryWorkflow({ ...input, storyId: story.id }, { branch: `story-${story.id}` }),
+  ImplementStoryWorkflow({ ...input, storyId: story.id }, { branchId: `story-${story.id}` }),
 );
 ```
 

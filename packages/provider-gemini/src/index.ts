@@ -16,6 +16,21 @@ export const trailstepProvider = {
         "{{model}}",
         "{{/model}}",
       ],
+      followUp: {
+        supported: true,
+        resumeArgs: [
+          "-p",
+          "@{{promptFile}}",
+          "--output-format",
+          "json",
+          "{{#model}}",
+          "-m",
+          "{{model}}",
+          "{{/model}}",
+          "--resume",
+          "{{sessionId}}",
+        ],
+      },
       prompt: { kind: "prompt-file", reference: "at-prefixed-argument" },
       output: {
         style: "stdout-json-envelope",

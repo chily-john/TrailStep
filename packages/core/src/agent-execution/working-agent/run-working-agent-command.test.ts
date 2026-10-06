@@ -782,6 +782,9 @@ describe("runWorkingAgentCommand", () => {
       target: { provider: "claude", model: "sonnet", thinking: "high" },
       runner: async (request) => {
         requests.push(request);
+        if (requests.length === 1) {
+          return { exitCode: 0, stdout: "Claude did the work." };
+        }
         return {
           exitCode: 0,
           stdout: JSON.stringify({ result: JSON.stringify({ answer: "claude ok" }) }),
@@ -790,8 +793,12 @@ describe("runWorkingAgentCommand", () => {
     });
 
     expect(result.output).toEqual({ answer: "claude ok" });
+    // Two-phase follow-up: work phase + format phase in one pinned session.
+    expect(requests).toHaveLength(2);
+    const phase1Args = requests[0]?.args ?? [];
+    const sessionId = phase1Args[phase1Args.length - 1];
     expect(requests[0]).toMatchObject({ command: "claude", cwd, stdio: "pipe", model: "sonnet" });
-    expect(requests[0]?.args).toEqual([
+    expect(phase1Args).toEqual([
       "-p",
       "--output-format",
       "json",
@@ -800,7 +807,22 @@ describe("runWorkingAgentCommand", () => {
       "--effort",
       "high",
       `@${requests[0]?.promptFile}`,
+      "--session-id",
+      sessionId,
     ]);
+    expect(requests[1]?.args).toEqual([
+      "-p",
+      "--output-format",
+      "json",
+      "--model",
+      "sonnet",
+      "--effort",
+      "high",
+      "--resume",
+      sessionId,
+      `@${requests[1]?.promptFile}`,
+    ]);
+    expect(requests[1]?.promptFile).toContain("repair-prompt.md");
   });
 
   it("runs the official Gemini provider package manifest through config parsing and stdout-envelope dispatch", async () => {
@@ -813,6 +835,9 @@ describe("runWorkingAgentCommand", () => {
       target: { provider: "gemini", model: "gemini-2.5-pro" },
       runner: async (request) => {
         requests.push(request);
+        if (requests.length === 1) {
+          return { exitCode: 0, stdout: "Gemini did the work." };
+        }
         return {
           exitCode: 0,
           stdout: JSON.stringify({ response: JSON.stringify({ answer: "gemini ok" }) }),
@@ -821,6 +846,7 @@ describe("runWorkingAgentCommand", () => {
     });
 
     expect(result.output).toEqual({ answer: "gemini ok" });
+    expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({
       command: "gemini",
       cwd,
@@ -834,6 +860,23 @@ describe("runWorkingAgentCommand", () => {
       "json",
       "-m",
       "gemini-2.5-pro",
+    ]);
+    // No sessionIdFlag: Phase 1 keeps the legacy argv; the format follow-up
+    // pins the session through resumeArgs.
+    const phase2Args = requests[1]?.args ?? [];
+    const resumeSessionId = phase2Args[phase2Args.length - 1];
+    expect(resumeSessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(phase2Args).toEqual([
+      "-p",
+      `@${requests[1]?.promptFile}`,
+      "--output-format",
+      "json",
+      "-m",
+      "gemini-2.5-pro",
+      "--resume",
+      resumeSessionId,
     ]);
   });
 
@@ -850,12 +893,17 @@ describe("runWorkingAgentCommand", () => {
       target: { provider: "codex", model: "gpt-5", thinking: "xhigh" },
       runner: async (request) => {
         requests.push(request);
+        if (requests.length === 1) {
+          await writeFile(request.outputFile, "codex work report", "utf8");
+          return { exitCode: 0 };
+        }
         await writeFile(request.outputFile, JSON.stringify({ answer: "codex ok" }), "utf8");
         return { exitCode: 0 };
       },
     });
 
     expect(result.output).toEqual({ answer: "codex ok" });
+    expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({ command: "codex", cwd, stdio: "inherit", model: "gpt-5" });
     expect(requests[0]?.args).toEqual([
       "exec",
@@ -868,6 +916,25 @@ describe("runWorkingAgentCommand", () => {
       `@${requests[0]?.promptFile}`,
     ]);
     expect(requests[0]?.args).not.toContain("--output-file");
+    // Phase 1 -o writes the tmp work file; only Phase 2 owns output.json.
+    expect(requests[0]?.outputFile).toContain("work.txt");
+    expect(requests[1]?.outputFile).toContain("output.json");
+    const resumeSessionId = requests[1]?.args?.[2];
+    expect(resumeSessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(requests[1]?.args).toEqual([
+      "exec",
+      "resume",
+      resumeSessionId,
+      "-o",
+      requests[1]?.outputFile,
+      "-m",
+      "gpt-5",
+      "-c",
+      "model_reasoning_effort=xhigh",
+      `@${requests[1]?.promptFile}`,
+    ]);
   });
 
   it("runs the official Pi provider package manifest with -p, JSON mode, and model/thinking overrides", async () => {
@@ -880,6 +947,9 @@ describe("runWorkingAgentCommand", () => {
       target: { provider: "pi", model: "google/gemini-2.5-pro", thinking: "max" },
       runner: async (request) => {
         requests.push(request);
+        if (requests.length === 1) {
+          return { exitCode: 0, stdout: "Pi did the work." };
+        }
         return {
           exitCode: 0,
           stdout: [
@@ -898,13 +968,16 @@ describe("runWorkingAgentCommand", () => {
     });
 
     expect(result.output).toEqual({ answer: "pi ok" });
+    expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({
       command: "pi",
       cwd,
       stdio: "pipe",
       model: "google/gemini-2.5-pro",
     });
-    expect(requests[0]?.args).toEqual([
+    const phase1Args = requests[0]?.args ?? [];
+    const sessionId = phase1Args[phase1Args.length - 1];
+    expect(phase1Args).toEqual([
       "-p",
       "--mode",
       "json",
@@ -913,6 +986,20 @@ describe("runWorkingAgentCommand", () => {
       "--thinking",
       "max",
       `@${requests[0]?.promptFile}`,
+      "--session-id",
+      sessionId,
+    ]);
+    expect(requests[1]?.args).toEqual([
+      "-p",
+      "--mode",
+      "json",
+      "--model",
+      "google/gemini-2.5-pro",
+      "--thinking",
+      "max",
+      "--session",
+      sessionId,
+      `@${requests[1]?.promptFile}`,
     ]);
   });
 });
@@ -1170,3 +1257,195 @@ async function runOfficialProviderWorkflow(options: {
 
   return result;
 }
+
+describe("two-phase follow-up working providers", () => {
+  it("invokes the runner once per phase per target and keeps work and final output separate", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-two-phase-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-two-phase-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "two-phase dispatch" },
+      runName: "working-agent-two-phase-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        providers: {
+          "two-phase-agent": {
+            source: { type: "local-manifest", path: "./two-phase-agent.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "two-phase-agent",
+              displayName: "Two Phase Agent",
+              working: {
+                supported: true,
+                command: "two-phase-agent",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+                followUp: {
+                  supported: true,
+                  sessionIdFlag: "--session",
+                  resumeArgs: [
+                    "--resume",
+                    "{{sessionId}}",
+                    "--prompt-file",
+                    "{{promptFile}}",
+                    "--output-file",
+                    "{{outputFile}}",
+                  ],
+                },
+              },
+              interactive: { supported: false, reason: "No interactive mode" },
+              model: { supported: false },
+              thinking: { supported: false },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "two-phase-agent" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        if (requests.length === 1) {
+          await writeFile(request.outputFile, "work report for two-phase", "utf8");
+          return { exitCode: 0 };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "two-phase result" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({ answer: "two-phase result" });
+    // Two runner invocations for one target: work phase + format phase.
+    expect(requests).toHaveLength(2);
+
+    // tmp-vs-final: Phase 1 reports into work.txt, Phase 2 owns output.json.
+    expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "work.txt"));
+    expect(requests[1]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
+
+    // Session pinning across both phases of the same target.
+    const phase1Args = requests[0]?.args ?? [];
+    const sessionId = phase1Args[phase1Args.length - 1];
+    expect(requests[0]?.args).toEqual([
+      "--prompt-file",
+      requests[0]?.promptFile,
+      "--output-file",
+      requests[0]?.outputFile,
+      "--session",
+      sessionId,
+    ]);
+    expect(requests[1]?.args).toEqual([
+      "--resume",
+      sessionId,
+      "--prompt-file",
+      requests[1]?.promptFile,
+      "--output-file",
+      requests[1]?.outputFile,
+    ]);
+    expect(requests[1]?.promptFile).toContain("repair-prompt.md");
+
+    // Phase 1 runs against the work-only prompt, not the front-loaded one.
+    const workPrompt = await readFile(requests[0]?.promptFile ?? "", "utf8");
+    expect(workPrompt).toContain("Do the task described below.");
+    expect(workPrompt).not.toContain("output schema");
+    const repairPrompt = await readFile(requests[1]?.promptFile ?? "", "utf8");
+    expect(repairPrompt).toContain("# TrailStep format follow-up");
+    const workReport = await readFile(requests[0]?.outputFile ?? "", "utf8");
+    expect(workReport).toBe("work report for two-phase");
+  });
+
+  it("keeps one runner invocation per target and the front-loaded prompt when followUp is absent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-legacy-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-legacy-single-phase-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "legacy dispatch" },
+      runName: "working-agent-legacy-single-phase-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        providers: {
+          "legacy-agent": {
+            source: { type: "local-manifest", path: "./legacy-agent.trailstep-provider.json" },
+            manifest: {
+              schemaVersion: 1,
+              id: "legacy-agent",
+              displayName: "Legacy Agent",
+              working: {
+                supported: true,
+                command: "legacy-agent",
+                args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+                prompt: { kind: "prompt-file" },
+                output: { style: "provider-output-file" },
+              },
+              interactive: { supported: false, reason: "No interactive mode" },
+              model: { supported: false },
+              thinking: { supported: false },
+            },
+          },
+        },
+        agents: { medium: [{ provider: "legacy-agent" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        await writeFile(request.outputFile, JSON.stringify({ answer: "legacy result" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    expect(result.output).toEqual({ answer: "legacy result" });
+    // Single spawn as before: no format follow-up, no session flags.
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.args).toEqual([
+      "--prompt-file",
+      requests[0]?.promptFile,
+      "--output-file",
+      requests[0]?.outputFile,
+    ]);
+    expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
+    const prompt = await readFile(requests[0]?.promptFile ?? "", "utf8");
+    expect(prompt).toContain("output schema");
+    expect(prompt).not.toContain("Do the task described below.");
+  });
+});

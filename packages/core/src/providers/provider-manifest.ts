@@ -70,6 +70,14 @@ export interface TrailStepProviderWorkingManifest {
   readonly args?: readonly string[];
   readonly prompt?: TrailStepProviderPromptManifest;
   readonly output?: TrailStepProviderOutputManifest;
+  readonly followUp?: TrailStepProviderFollowUpManifest;
+}
+
+export interface TrailStepProviderFollowUpManifest {
+  readonly supported: boolean;
+  readonly reason?: string;
+  readonly sessionIdFlag?: string;
+  readonly resumeArgs?: readonly string[];
 }
 
 export interface TrailStepProviderInteractiveManifest {
@@ -334,12 +342,64 @@ function parseWorking(
   const args = parseOptionalStringArray(`${path}.args`, value.args, diagnostics);
   const prompt = parsePrompt(`${path}.prompt`, value.prompt, diagnostics);
   const output = parseOutput(`${path}.output`, value.output, diagnostics);
+  const followUp = parseFollowUp(`${path}.followUp`, value.followUp, diagnostics);
 
-  if (command === undefined || prompt === undefined || output === undefined) {
+  if (command === undefined || prompt === undefined || output === undefined || followUp === null) {
     return undefined;
   }
 
-  return { supported: true, command, ...(args === undefined ? {} : { args }), prompt, output };
+  return {
+    supported: true,
+    command,
+    ...(args === undefined ? {} : { args }),
+    prompt,
+    output,
+    ...(followUp === undefined ? {} : { followUp }),
+  };
+}
+
+function parseFollowUp(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderFollowUpManifest | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value) || typeof value.supported !== "boolean") {
+    diagnostics.push(`${path} must be an object with a boolean supported field.`);
+    return null;
+  }
+  if (!value.supported) {
+    return {
+      supported: false,
+      ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
+    };
+  }
+  const sessionIdFlag = parseOptionalNonEmptyString(
+    `${path}.sessionIdFlag`,
+    value.sessionIdFlag,
+    diagnostics,
+  );
+  if (sessionIdFlag === null) {
+    return null;
+  }
+  let resumeArgs: readonly string[] | undefined;
+  if (value.resumeArgs !== undefined) {
+    if (
+      !Array.isArray(value.resumeArgs) ||
+      value.resumeArgs.some((item) => typeof item !== "string")
+    ) {
+      diagnostics.push(`${path}.resumeArgs must be an array of strings when present.`);
+      return null;
+    }
+    resumeArgs = value.resumeArgs;
+  }
+  return {
+    supported: true,
+    ...(sessionIdFlag === undefined ? {} : { sessionIdFlag }),
+    ...(resumeArgs === undefined ? {} : { resumeArgs }),
+  };
 }
 
 function parseLegacyInteractive(

@@ -123,7 +123,7 @@ Direct workflow source refs may point at `.ts`, `.mts`, `.js`, or `.mjs` files, 
 
 ## Add workflow packages
 
-Package-backed `trailstep add` installs a versioned npm package spec or explicit GitHub package spec, discovers workflows, and stores metadata for safe remove/update decisions.
+Package-backed `trailstep add` installs an npm package spec (a bare name like `@trailstep/create-flows` defaults to `@latest`) or explicit GitHub package spec, discovers workflows, and stores metadata for safe remove/update decisions.
 
 ```bash
 # Preview without installing, registering, or writing skills.

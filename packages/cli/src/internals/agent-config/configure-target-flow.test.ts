@@ -1,6 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrailStepCliPrompts } from "../command.types.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
+
+const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+
+beforeEach(() => {
+  // Discovery plumbing tests assert raw provider commands via an injected
+  // runner. Pin the platform so Windows CLI-shim resolution does not rewrite
+  // commands based on the host machine's PATH.
+  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+});
+
+afterEach(() => {
+  if (originalPlatformDescriptor !== undefined) {
+    Object.defineProperty(process, "platform", originalPlatformDescriptor);
+  }
+});
 
 const WORKING_ARGS_PROMPT =
   "Working/print-mode args JSON array (blank for TrailStep defaults; placeholders: {{promptFile}}, {{outputFile}}, {{#model}}...{{/model}}, {{#thinking}}...{{/thinking}})";

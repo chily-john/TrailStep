@@ -6,6 +6,7 @@ import type {
   TrailStepAgentTarget,
   TrailStepConfig,
 } from "../../agent-targeting/targeting.types.js";
+import { resolveCliCommandForSpawn } from "../../cli-provider-runtime/process/resolve-cli-command.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
@@ -384,8 +385,13 @@ const spawnInteractiveProcess: InteractiveProcessRunner = async ({
   env,
   signal,
 }) => {
+  // Match launch-interactive-agent-target: npm .cmd shims cannot spawn by bare
+  // name with shell:false on Windows; resolve to the Node entrypoint (no-op
+  // elsewhere). Injected test runners bypass this function entirely.
+  const executable = await resolveCliCommandForSpawn({ command, args, env });
+
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(executable.command, executable.args, {
       cwd,
       env,
       signal,

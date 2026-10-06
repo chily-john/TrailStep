@@ -3,6 +3,7 @@ import type {
   TrailStepConfig,
 } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
+import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
 import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
@@ -45,9 +46,15 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
 
   let result: WorkingAgentProcessResult;
   try {
-    result = await (options.runner ?? spawnWorkingAgentProcess)({
+    // Custom binaries may also be npm .cmd shims on Windows; resolve to the
+    // Node entrypoint (no-op on other platforms) so shell:false keeps working.
+    const executable = await resolveCliCommandForSpawn({
       command: agentConfig.binary,
       args,
+    });
+    result = await (options.runner ?? spawnWorkingAgentProcess)({
+      command: executable.command,
+      args: executable.args,
       cwd: options.cwd,
       shell: false,
       stdio: "inherit",

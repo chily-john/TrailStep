@@ -1331,6 +1331,24 @@ async function prepareAddSource(
     return { status: "ready", source, cwd: context.cwd };
   }
 
+  if (packageRef.sourceType === "npm" && !packageRef.versionExplicit) {
+    // Bare names (e.g. `@trailstep/create-flows`) are ambiguous: they may name
+    // an already-installed bundle or a package to install. Prefer the installed
+    // bundle when it resolves at the scope's install root so re-adding stays
+    // install-free; otherwise fall through and install `@latest`.
+    const installRoot = workflowPackageInstallRootForScope(scope, context);
+    try {
+      const installedNames = await listBundleWorkflowNames(packageRef.packageName, {
+        cwd: installRoot,
+      });
+      if (installedNames.length > 0) {
+        return { status: "ready", source: packageRef.packageName, cwd: installRoot };
+      }
+    } catch {
+      // Not resolvable locally; continue to the install path below.
+    }
+  }
+
   const availablePackage = await ensureNpmWorkflowPackageAvailable({
     packageRef,
     scope,

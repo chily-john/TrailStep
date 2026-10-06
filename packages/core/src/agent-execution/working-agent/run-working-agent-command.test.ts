@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   Document,
   done,
@@ -25,6 +25,22 @@ import { readWorkingAgentOutput } from "./output/read-working-agent-output.js";
 import { buildProviderWorkingPrompt } from "./prompts/build-provider-working-prompt.js";
 import { buildWorkingAgentPrompt } from "./prompts/build-working-agent-prompt.js";
 import { runWorkingAgentCommand } from "./run-working-agent-command.js";
+
+const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+
+beforeEach(() => {
+  // Working-agent dispatch tests assert raw provider commands via injected
+  // runners. Pin the platform so Windows CLI-shim resolution does not rewrite
+  // commands based on the host machine's PATH (covered separately in
+  // resolve-cli-command and run-manifest-working-provider tests).
+  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+});
+
+afterEach(() => {
+  if (originalPlatformDescriptor !== undefined) {
+    Object.defineProperty(process, "platform", originalPlatformDescriptor);
+  }
+});
 
 describe("runWorkingAgentCommand", () => {
   it("writes repeated working-agent outputs to distinct ordered step directories", async () => {

@@ -9,6 +9,8 @@ export interface ParsedNpmPackageRef {
   readonly packageName: string;
   readonly requestedSpec: string;
   readonly requestedRange: string;
+  /** False when the range defaulted from a bare name (e.g. `@scope/name` → `@latest`). */
+  readonly versionExplicit: boolean;
 }
 
 export interface ParsedGitHubPackageRef {
@@ -91,30 +93,54 @@ function parseScopedNpmPackageRef(source: string): ParsedNpmPackageRef | undefin
   const match = /^(?<packageName>@[^/@\\\s]+\/[^/@\\\s]+)@(?<requestedRange>.+)$/u.exec(source);
   const packageName = match?.groups?.packageName;
   const requestedRange = match?.groups?.requestedRange;
-  if (packageName === undefined || requestedRange === undefined) {
-    return undefined;
+  if (packageName !== undefined && requestedRange !== undefined) {
+    return {
+      sourceType: "npm",
+      packageName,
+      requestedSpec: source,
+      requestedRange,
+      versionExplicit: true,
+    };
   }
-  return {
-    sourceType: "npm",
-    packageName,
-    requestedSpec: source,
-    requestedRange,
-  };
+  // Bare scoped spec (e.g. `@trailstep/create-flows`) defaults to `latest`
+  // so `trailstep add` enters the package-install path instead of falling
+  // through to bundle lookup in the project directory.
+  if (/^@[^/@\\\s]+\/[^/@\\\s]+$/u.test(source)) {
+    return {
+      sourceType: "npm",
+      packageName: source,
+      requestedSpec: `${source}@latest`,
+      requestedRange: "latest",
+      versionExplicit: false,
+    };
+  }
+  return undefined;
 }
 
 function parseUnscopedNpmPackageRef(source: string): ParsedNpmPackageRef | undefined {
   const match = /^(?<packageName>[^/@\\\s][^/@\\\s]*)@(?<requestedRange>.+)$/u.exec(source);
   const packageName = match?.groups?.packageName;
   const requestedRange = match?.groups?.requestedRange;
-  if (packageName === undefined || requestedRange === undefined) {
-    return undefined;
+  if (packageName !== undefined && requestedRange !== undefined) {
+    return {
+      sourceType: "npm",
+      packageName,
+      requestedSpec: source,
+      requestedRange,
+      versionExplicit: true,
+    };
   }
-  return {
-    sourceType: "npm",
-    packageName,
-    requestedSpec: source,
-    requestedRange,
-  };
+  // Bare unscoped spec (e.g. `my-workflows`) defaults to `latest`.
+  if (/^[^/@\\\s][^/@\\\s]*$/u.test(source)) {
+    return {
+      sourceType: "npm",
+      packageName: source,
+      requestedSpec: `${source}@latest`,
+      requestedRange: "latest",
+      versionExplicit: false,
+    };
+  }
+  return undefined;
 }
 
 function isLocalOrBundleRef(source: string): boolean {

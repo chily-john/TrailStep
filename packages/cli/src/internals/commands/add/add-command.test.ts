@@ -4017,12 +4017,12 @@ describe("addCommand", () => {
     await mkdir(cwd, { recursive: true });
     await writeJson(join(cwd, "package.json"), { type: "module" });
 
-    const command = resolveCommand(["add", "@acme/workflows"]);
+    const command = resolveCommand(["add", "@acme/workflows#review"]);
     await expect(
       command.run(
         command.parseArgs([
           "add",
-          "@acme/workflows",
+          "@acme/workflows#review",
           "--scope",
           "project",
           "--namespace",
@@ -4038,6 +4038,63 @@ describe("addCommand", () => {
         },
       ),
     ).rejects.toThrow(/Bundle package not found: @acme\/workflows/);
+  });
+
+  it("installs @latest when a bare package spec is not already installed", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(cwd, { recursive: true });
+    await writeJson(join(cwd, "package.json"), { type: "module" });
+    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
+    const installRequests: Array<{ command: string; args: readonly string[] }> = [];
+
+    const command = resolveCommand(["add", "@acme/workflows"]);
+    const exitCode = await command.run(
+      command.parseArgs([
+        "add",
+        "@acme/workflows",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--name",
+        "review",
+        "--workflow",
+        "review",
+      ]) as never,
+      {
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+        packageCommandRunner: async (request) => {
+          installRequests.push({ command: request.command, args: request.args });
+          await mkdir(packageDir, { recursive: true });
+          await writeJson(join(packageDir, "package.json"), {
+            name: "@acme/workflows",
+            version: "1.0.0",
+            type: "module",
+            exports: { "./package.json": "./package.json" },
+            trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
+          });
+          await writeFile(
+            join(packageDir, "index.mjs"),
+            "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };\n",
+            "utf8",
+          );
+          return { exitCode: 0 };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(installRequests).toEqual([
+      { command: "npm", args: expect.arrayContaining(["@acme/workflows@latest"]) },
+    ]);
+    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toMatchObject({
+      workflows: { acme: { review: "@acme/workflows#review" } },
+    });
   });
 
   it("throws before prompting when a bundle manifest declares zero workflows", async ({ task }) => {

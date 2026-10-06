@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-
 import type {
   TrailStepAgentTarget,
   TrailStepConfig,
@@ -9,6 +8,7 @@ import {
   extractEnvelopeOutput,
   extractEnvelopeText,
 } from "../../../../cli-provider-runtime/envelopes/envelope.js";
+import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
 import type {
   WorkflowAgentRole,
   WorkflowAgentThinking,
@@ -80,9 +80,13 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
 
   let result: WorkingAgentProcessResult;
   try {
+    // npm-installed provider CLIs (e.g. pi) are .cmd shims on Windows and cannot
+    // be spawned by bare name with shell:false; resolve to the Node entrypoint
+    // (no-op on other platforms) so argv is never reinterpreted by a shell.
+    const executable = await resolveCliCommandForSpawn({ command: working.command, args });
     result = await (options.runner ?? spawnWorkingAgentProcess)({
-      command: working.command,
-      args,
+      command: executable.command,
+      args: executable.args,
       cwd: options.cwd,
       shell: false,
       stdio: captureStdout ? "pipe" : "inherit",

@@ -1,3 +1,5 @@
+import { resolveCliCommandForSpawn } from "@trailstep/core";
+
 import type { PackageCommandResult, PackageCommandRunner } from "../command.types.js";
 import { defaultPackageCommandRunner } from "../package-manager/package-manager.js";
 
@@ -22,8 +24,11 @@ export async function discoverPiModelOverrides({
 }: DiscoverPiModelOverridesOptions): Promise<readonly string[]> {
   let result: PackageCommandResult;
   try {
+    // `pi` is an npm .cmd shim on Windows and cannot be spawned by bare name
+    // with shell:false; resolve to the Node entrypoint (no-op elsewhere).
+    const executable = await resolveCliCommandForSpawn({ command, args });
     result = await withTimeout(
-      packageCommandRunner({ command, args, cwd }),
+      packageCommandRunner({ command: executable.command, args: executable.args, cwd }),
       timeoutMs,
       `Timed out after ${timeoutMs}ms.`,
     );

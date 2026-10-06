@@ -132,6 +132,12 @@ export type {
   ProviderWorkingRunner,
 } from "./cli-provider-runtime/catalog/provider-adapter.types.js";
 export type {
+  CliCommandSpawnRequest,
+  ResolveCliCommandForSpawnOptions,
+  ResolvedCliCommandSpawnRequest,
+} from "./cli-provider-runtime/process/resolve-cli-command.js";
+export { resolveCliCommandForSpawn } from "./cli-provider-runtime/process/resolve-cli-command.js";
+export type {
   AgentAdapter,
   AgentAdapterObject,
   AgentAdapterRequest,

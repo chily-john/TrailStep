@@ -442,7 +442,7 @@ export async function runRootContinuationArrayScheduler(
             });
             await mkdir(stepArtifacts.stepDir, { recursive: true });
           }
-          await options.emit(decorateBranchEvent(event, options.runId, branch));
+          await options.emit(decorateBranchEvent(event, options.runId, branch, splitOccurred));
         },
         maxSteps: options.maxSteps,
         initialSource:
@@ -906,8 +906,18 @@ function resolveSchedulerWorkerCount(
   return { ok: true, workers };
 }
 
-function decorateBranchEvent(event: Event, trackId: string, branch: BranchState): Event {
-  if (event.type !== "step.started" && event.type !== "step.completed") {
+function decorateBranchEvent(
+  event: Event,
+  trackId: string,
+  branch: BranchState,
+  decorateWaits: boolean,
+): Event {
+  const isStepEvent = event.type === "step.started" || event.type === "step.completed";
+  const isWaitEvent =
+    event.type === "wait.started" ||
+    event.type === "wait.satisfied" ||
+    event.type === "wait.failed";
+  if ((!isStepEvent && !isWaitEvent) || (isWaitEvent && !decorateWaits)) {
     return event;
   }
 

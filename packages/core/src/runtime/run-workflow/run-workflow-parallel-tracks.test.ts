@@ -2034,6 +2034,122 @@ describe("runWorkflow parallel tracks", () => {
     );
   });
 
+  it("decorates wait events on split tracks with branch identity", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-events-"));
+    const waitEvents: Event[] = [];
+
+    const waitingStep = step({ id: "branch-wait-events-step" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve branch wait events?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const siblingStep = step({ id: "branch-wait-events-sibling" }).do(() =>
+      done({ value: "sibling" }),
+    );
+    const WaitingWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "branch-wait-events-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return waitingStep({});
+      },
+    });
+    const SiblingWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "branch-wait-events-sibling-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return siblingStep({});
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "branch-wait-events-parent-workflow",
+      start() {
+        return [
+          WaitingWorkflow({}, { branchId: "branch-wait-events-human" }),
+          SiblingWorkflow({}, { branchId: "branch-wait-events-sibling-human" }),
+        ];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "branch-wait-events",
+      cwd,
+      eventSink(event) {
+        if (
+          event.type === "wait.started" ||
+          event.type === "wait.satisfied" ||
+          event.type === "wait.failed"
+        ) {
+          waitEvents.push(event);
+        }
+      },
+      scheduler: { workers: 1 },
+    });
+
+    expect(result.status).toBe("waiting");
+    if (result.status !== "waiting") {
+      throw new Error("expected waiting result");
+    }
+    expect(waitEvents).toHaveLength(1);
+    expect(waitEvents[0]).toMatchObject({
+      type: "wait.started",
+      stepId: "branch-wait-events-step",
+      payload: {
+        waitId: "approval",
+        trackId: result.runId,
+        branchId: expect.any(String),
+        requestedBranchId: "branch-wait-events-human",
+        stepIndex: expect.any(Number),
+        stepArtifactId: expect.stringContaining("branch-wait-events-step"),
+        stepArtifactPath: expect.stringContaining("steps/"),
+      },
+    });
+    expect(waitEvents[0]?.payload.stepIndex).toBeGreaterThanOrEqual(1);
+  });
+
+  it("keeps wait events undecorated for non-parallel runs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-single-wait-events-"));
+    const waitEvents: Event[] = [];
+
+    const waitingStep = step({ id: "single-wait-events-step" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve single wait events?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "single-wait-events-workflow",
+      start() {
+        return waitingStep({});
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "single-wait-events",
+      cwd,
+      eventSink(event) {
+        if (event.type === "wait.started") {
+          waitEvents.push(event);
+        }
+      },
+    });
+
+    expect(result.status).toBe("waiting");
+    expect(waitEvents).toHaveLength(1);
+    expect(waitEvents[0]?.payload.waitId).toBe("approval");
+    expect(waitEvents[0]?.payload.branchId).toBeUndefined();
+    expect(waitEvents[0]?.payload.trackId).toBeUndefined();
+    expect(waitEvents[0]?.payload.stepIndex).toBeUndefined();
+  });
+
   it("rejects continue from a waiting parallel track with a clear unsupported error", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-continue-"));
 

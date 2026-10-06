@@ -49,7 +49,18 @@ export async function readEventsForRun(runDir: string): Promise<readonly Event[]
 }
 
 export function findPendingWaitById(events: readonly Event[], waitId: string): Event | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
+  const pending = findPendingWaitsById(events, waitId);
+  return pending[pending.length - 1];
+}
+
+/**
+ * Every unresolved wait.started event with the given waitId, in event order.
+ * Same-id waits on different parallel branches are distinct waits, so callers
+ * that address a wait must disambiguate by branch instead of picking one.
+ */
+export function findPendingWaitsById(events: readonly Event[], waitId: string): Event[] {
+  const pending: Event[] = [];
+  for (let index = 0; index < events.length; index += 1) {
     const event = events[index];
     if (event?.type !== "wait.started" || event.payload.waitId !== waitId) {
       continue;
@@ -66,11 +77,18 @@ export function findPendingWaitById(events: readonly Event[], waitId: string): E
           )
       : false;
     if (!resolvedLater) {
-      return event;
+      pending.push(event);
     }
   }
 
-  return undefined;
+  return pending;
+}
+
+/** Branch identity of a wait event; events without a branch belong to the implicit root branch. */
+export function waitEventBranchId(event: Event): string {
+  return typeof event.payload.branchId === "string" && event.payload.branchId.length > 0
+    ? event.payload.branchId
+    : "root";
 }
 
 export function findLatestPendingWait(events: readonly Event[]): Event | undefined {
@@ -162,13 +180,17 @@ async function hasArchivedRunManifest(runsRoot: string, runId: string): Promise<
 }
 
 function waitEventKey(event: Event): string | undefined {
+  // Branch identity is part of the wait identity so that same-id waits on
+  // different parallel branches never resolve each other. Events from
+  // non-parallel runs carry no branchId and belong to the implicit root branch.
+  const branchId = waitEventBranchId(event);
   const artifactPaths = event.payload.artifactPaths;
   if (isPlainObject(artifactPaths) && typeof artifactPaths.answerFile === "string") {
-    return artifactPaths.answerFile;
+    return `${branchId}:${artifactPaths.answerFile}`;
   }
 
   const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
-  return event.stepId && waitId ? `${event.stepId}:${waitId}` : undefined;
+  return event.stepId && waitId ? `${branchId}:${event.stepId}:${waitId}` : undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

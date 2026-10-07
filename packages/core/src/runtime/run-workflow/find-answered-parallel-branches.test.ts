@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { findAnsweredParallelBranches } from "./run-workflow.js";
 
 describe("findAnsweredParallelBranches (gap 4 routing)", () => {
@@ -81,11 +81,11 @@ describe("findAnsweredParallelBranches (gap 4 routing)", () => {
       JSON.stringify({ status: "done" }),
       "utf8",
     );
-    const before = (await import("node:fs/promises")).readdir(runDir).catch(() => []);
+    const _before = (await import("node:fs/promises")).readdir(runDir).catch(() => []);
     const answered = await findAnsweredParallelBranches(runDir);
     expect(answered).toEqual([]);
     // No new directories created; only tracks/branches existed
-    const after = await (await import("node:fs/promises")).readdir(runDir);
+    const _after = await (await import("node:fs/promises")).readdir(runDir);
     const dirs = (await (await import("node:fs/promises")).readdir(runDir, { withFileTypes: true }))
       .filter((e: unknown) => (e as { isDirectory(): boolean }).isDirectory())
       .map((e: unknown) => (e as { name: string }).name);

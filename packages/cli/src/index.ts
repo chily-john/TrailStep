@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
 import {
   type CliCommandContext,
@@ -14,9 +18,6 @@ import { CliConfigError } from "./internals/config/config.js";
 import type { TrailStepDeprecationEntry } from "./internals/deprecation-scan/deprecation-scanner.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
 import { WorkflowResolutionError } from "./internals/workflow-resolution/workflow-resolution-error.js";
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import type {
   SkillsCliProcessRunner,
@@ -190,9 +191,9 @@ async function findCliPackageRoot(startDirectory: string): Promise<string> {
   let current = startDirectory;
   while (true) {
     try {
-      const packageJson = JSON.parse(
-        await readFile(join(current, "package.json"), "utf8"),
-      ) as { readonly name?: string };
+      const packageJson = JSON.parse(await readFile(join(current, "package.json"), "utf8")) as {
+        readonly name?: string;
+      };
       if (packageJson.name === "@trailstep/cli") {
         return current;
       }

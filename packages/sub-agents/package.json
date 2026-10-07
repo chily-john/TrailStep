@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/sub-agents",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Reusable TrailStep sub-agent workflows for delegated focused work.",
   "license": "Apache-2.0",
   "type": "module",
@@ -233,6 +233,6 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@trailstep/authoring": "^0.2.0"
+    "@trailstep/authoring": "^0.2.1"
   }
 }

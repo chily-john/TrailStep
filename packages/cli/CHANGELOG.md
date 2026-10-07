@@ -1,5 +1,12 @@
 # @trailstep/cli
 
+## 0.4.2
+
+### Patch Changes
+
+- f385f00: Add `--version` flag to the `trailstep` CLI. Prints the CLI package version and exits 0.
+- cfc9af6: Fix silent exit when CLI binary is invoked through symlinks or hard links (e.g., workspace-linked global install). The `import.meta.url` vs `process.argv[1]` path comparison failed for linked paths, so `main()` was never called. Compare filenames (`index.js`) instead of full paths.
+
 ## 0.4.1
 
 ### Patch Changes

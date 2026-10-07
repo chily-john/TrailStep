@@ -192,7 +192,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     let startNode: ContinuationResult | undefined;
     let waitResume: ReplayToWaitingStepResult | undefined;
     let isWaitContinueTrackResume = false;
-    let branchResumes: Record<string, import("../continuation/run-continuation/run-continuation.js").ResumeWaitOptions> = {};
+    let branchResumes: Record<
+      string,
+      import("../continuation/run-continuation/run-continuation.js").ResumeWaitOptions
+    > = {};
     let isTrackRetry = false;
 
     if (isResume) {
@@ -448,7 +451,9 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
                     initialExecutedSteps: previousEvents.filter(
                       (event) => event.type === "step.started",
                     ).length,
-                    track: { mode: "wait-answered" } as import("./run-workflow.types.js").RunWorkflowTrackRetryOptions,
+                    track: {
+                      mode: "wait-answered",
+                    } as import("./run-workflow.types.js").RunWorkflowTrackRetryOptions,
                   },
                   waitResumeBranches: branchResumes,
                 }
@@ -622,7 +627,9 @@ export async function findAnsweredParallelBranches(runDir: string): Promise<stri
       if (typeof branchId !== "string") continue;
       let branchState: { readonly status?: unknown; readonly wait?: unknown } | undefined;
       try {
-        branchState = JSON.parse(await readFile(join(runDir, "branches", `${branchId}.json`), "utf8")) as {
+        branchState = JSON.parse(
+          await readFile(join(runDir, "branches", `${branchId}.json`), "utf8"),
+        ) as {
           readonly status?: unknown;
           readonly wait?: unknown;
         };
@@ -630,7 +637,11 @@ export async function findAnsweredParallelBranches(runDir: string): Promise<stri
         continue;
       }
       if (branchState?.status !== "waiting") continue;
-      if (branchState.wait === undefined || typeof branchState.wait !== "object" || branchState.wait === null) {
+      if (
+        branchState.wait === undefined ||
+        typeof branchState.wait !== "object" ||
+        branchState.wait === null
+      ) {
         continue;
       }
       const wait = branchState.wait as {

@@ -1164,7 +1164,8 @@ function selectPersistedBranchesForRetry(
               branch.status === "waiting" &&
               branch.wait !== undefined &&
               typeof branch.wait === "object" &&
-              typeof (branch.wait as { readonly artifactPaths?: { readonly answerFile?: unknown } }).artifactPaths?.answerFile === "string",
+              typeof (branch.wait as { readonly artifactPaths?: { readonly answerFile?: unknown } })
+                .artifactPaths?.answerFile === "string",
           )
           .map((branch) => branch.branchId),
       ),

@@ -22,7 +22,7 @@ describe("findAnsweredParallelBranches (gap 4 routing)", () => {
     await writeFile(
       join(runDir, "track.json"),
       JSON.stringify({ splitOccurred: true, branches: ["b1", "b2", "b3", "b4", "b5"] }),
-      "utf8"
+      "utf8",
     );
 
     // b1, b2, b3 answered (answer artifacts present) — answer in reverse branch order
@@ -33,9 +33,13 @@ describe("findAnsweredParallelBranches (gap 4 routing)", () => {
           status: "waiting",
           wait: { waitId: "approval", artifactPaths: { answerFile: `answers/${id}.json` } },
         }),
-        "utf8"
+        "utf8",
       );
-      await writeFile(join(runDir, "answers", `${id}.json`), JSON.stringify({ approved: true }), "utf8");
+      await writeFile(
+        join(runDir, "answers", `${id}.json`),
+        JSON.stringify({ approved: true }),
+        "utf8",
+      );
     }
 
     // b4 unanswered: waiting but no answer artifact
@@ -45,14 +49,14 @@ describe("findAnsweredParallelBranches (gap 4 routing)", () => {
         status: "waiting",
         wait: { waitId: "approval", artifactPaths: { answerFile: "answers/b4.json" } },
       }),
-      "utf8"
+      "utf8",
     );
 
     // b5 completed sibling — should NOT appear in answered and should not create dirs
     await writeFile(
       join(runDir, "branches", "b5.json"),
       JSON.stringify({ status: "done" }),
-      "utf8"
+      "utf8",
     );
 
     const answered = await findAnsweredParallelBranches(runDir);
@@ -70,12 +74,12 @@ describe("findAnsweredParallelBranches (gap 4 routing)", () => {
     await writeFile(
       join(runDir, "track.json"),
       JSON.stringify({ splitOccurred: true, branches: ["done1"] }),
-      "utf8"
+      "utf8",
     );
     await writeFile(
       join(runDir, "branches", "done1.json"),
       JSON.stringify({ status: "done" }),
-      "utf8"
+      "utf8",
     );
     const before = (await import("node:fs/promises")).readdir(runDir).catch(() => []);
     const answered = await findAnsweredParallelBranches(runDir);

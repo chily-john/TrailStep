@@ -170,10 +170,14 @@ function normalizePath(path: string): string {
 }
 
 const invokedScriptPath = process?.argv[1];
+const metaPathNormalized = normalizePath(import.meta.url);
+const metaBasename = metaPathNormalized.split("/").pop() ?? "";
+const scriptBasename = normalizePath(invokedScriptPath || "").split("/").pop() ?? "";
 
 if (
   invokedScriptPath &&
-  normalizePath(import.meta.url).endsWith(normalizePath(invokedScriptPath))
+  metaBasename === scriptBasename &&
+  metaBasename === "index.js"
 ) {
   void main().then((exitCode) => {
     if (process) {

@@ -21,6 +21,7 @@ import {
   type RunContinuationResult,
   runContinuation,
   type WaitingWait,
+  type ResumeWaitOptions,
 } from "../continuation/run-continuation/run-continuation.js";
 import { createQueuedRunState } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
@@ -53,6 +54,7 @@ interface RunRootContinuationArraySchedulerOptions {
     readonly initialExecutedSteps: number;
     readonly track?: RunWorkflowTrackRetryOptions;
   };
+  readonly waitResumeBranches?: Readonly<Record<string, ResumeWaitOptions>>;
 }
 
 type BranchStatus = "queued" | "running" | "done" | "failed" | "waiting" | "cancelled" | "split";
@@ -460,6 +462,9 @@ export async function runRootContinuationArrayScheduler(
         workingAgentProcessRunner: options.workingAgentProcessRunner,
         providerWorkingRunner: options.providerWorkingRunner,
         processRunner: options.processRunner,
+        ...(options.waitResumeBranches?.[branch.branchId] === undefined
+          ? {}
+          : { resumeWait: options.waitResumeBranches[branch.branchId] }),
       }),
     );
 
@@ -1045,10 +1050,12 @@ async function createPersistedTrackRetryPlan(input: {
 
     branch.status = "queued";
     branch.failure = undefined;
-    branch.wait = undefined;
     branch.terminalKind = undefined;
     branch.message = undefined;
     branch.updatedAt = new Date().toISOString();
+    if ((input.track as { mode?: unknown })?.mode !== "wait-answered") {
+      branch.wait = undefined;
+    }
     const rootParallelBranchIndex =
       retryRootParallelNode === undefined
         ? undefined
@@ -1143,6 +1150,23 @@ function selectPersistedBranchesForRetry(
       status: "success",
       branchIds: new Set(
         branches.filter((branch) => branch.status === "failed").map((branch) => branch.branchId),
+      ),
+    };
+  }
+
+  if (track.mode === "wait-answered") {
+    return {
+      status: "success",
+      branchIds: new Set(
+        branches
+          .filter(
+            (branch) =>
+              branch.status === "waiting" &&
+              branch.wait !== undefined &&
+              typeof branch.wait === "object" &&
+              typeof (branch.wait as { readonly artifactPaths?: { readonly answerFile?: unknown } }).artifactPaths?.answerFile === "string",
+          )
+          .map((branch) => branch.branchId),
       ),
     };
   }

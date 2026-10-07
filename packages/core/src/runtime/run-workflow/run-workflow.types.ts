@@ -150,7 +150,8 @@ interface RunWorkflowBaseOptions<TInput extends PlainObject, TOutput extends Pla
 
 export type RunWorkflowTrackRetryOptions =
   | { readonly mode: "failed-only" }
-  | { readonly mode: "branch"; readonly branchId: string };
+  | { readonly mode: "branch"; readonly branchId: string }
+  | { readonly mode: "wait-answered" };
 
 export type RunWorkflowRetryOptions = {
   readonly runDir: string;

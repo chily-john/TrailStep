@@ -8,6 +8,7 @@ import type {
   Event,
   RunWorkflowOptions,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
+import { readBranchRunState } from "../../artifacts/run-storage.js";
 import { resolveStepOutputSchema } from "../../continuation/resolve-step-output-schema/resolve-step-output-schema.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
 import { replayCompletedSteps } from "../replay-completed-steps/replay-completed-steps.js";
@@ -23,6 +24,7 @@ export interface ReplayToWaitingStepResult {
   readonly phaseValue: PlainObject;
   readonly waitOutputs: Readonly<Record<string, PlainObject>>;
   readonly seenWaitIds: readonly string[];
+  readonly branchId?: string;
   readonly wait: {
     readonly waitId: string;
     readonly kind: "input" | "check";
@@ -39,6 +41,18 @@ export async function replayToWaitingStep<
   readonly workflow: RunWorkflowOptions<TInput, TOutput>["workflow"];
   readonly events: readonly Event[];
   readonly runDir: string;
+  /**
+   * Optional parallel-track scope: branch id to resume within. When given,
+   * the pending wait must belong to this branch and the branch's persisted
+   * run state is read from `runDir/branches/<branchId>.state.json`.
+   */
+  readonly branchId?: string;
+  /**
+   * Optional parallel-track scope: explicit step artifact index for the
+   * waiting step; overrides the index derived from the wait's artifact paths
+   * or step.started history.
+   */
+  readonly stepIndex?: number;
 }): Promise<ReplayToWaitingStepResult | { readonly status: "failure"; readonly failure: Failure }> {
   const startedEvent = options.events.find((event) => event.type === "workflow.started");
   if (!startedEvent) {
@@ -71,7 +85,22 @@ export async function replayToWaitingStep<
     };
   }
 
-  const pendingWait = findLatestPendingWait(options.events);
+  const scopeBranchId = options.branchId;
+  if (scopeBranchId !== undefined) {
+    try {
+      await readBranchRunState(options.runDir, scopeBranchId);
+    } catch (error) {
+      return {
+        status: "failure",
+        failure: resumeFailure(
+          "continue_target_not_found",
+          `Branch ${scopeBranchId} run state is missing or unreadable: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      };
+    }
+  }
+
+  const pendingWait = findLatestPendingWait(options.events, scopeBranchId);
   if (!pendingWait?.stepId) {
     return {
       status: "failure",
@@ -99,7 +128,9 @@ export async function replayToWaitingStep<
   }
 
   const stepIndex =
-    readStepIndex(pendingWait) ?? stepStartedOrdinalBefore(options.events, pendingWait);
+    options.stepIndex ??
+    readStepIndex(pendingWait) ??
+    stepStartedOrdinalBefore(options.events, pendingWait);
   if (stepIndex === undefined) {
     return {
       status: "failure",
@@ -121,9 +152,13 @@ export async function replayToWaitingStep<
     };
   }
 
+  const replaySourceEvents = options.events.slice(0, targetStepStartedIndex);
   const replay = await replayCompletedSteps({
     workflow: options.workflow,
-    events: options.events.slice(0, targetStepStartedIndex),
+    events:
+      scopeBranchId === undefined
+        ? replaySourceEvents
+        : branchScopedReplayEvents(replaySourceEvents, scopeBranchId),
     input,
     targetStepId: pendingWait.stepId,
     runDir: options.runDir,
@@ -141,6 +176,7 @@ export async function replayToWaitingStep<
         events: options.events,
         targetStepStartedIndex,
         pendingWait,
+        branchId: scopeBranchId,
       }),
   );
   if (prefix.status === "failure") {
@@ -163,6 +199,7 @@ export async function replayToWaitingStep<
     phaseValue: prefix.phaseValue,
     waitOutputs: prefix.waitOutputs,
     seenWaitIds: prefix.seenWaitIds,
+    ...(scopeBranchId === undefined ? {} : { branchId: scopeBranchId }),
     wait: wait.wait,
   };
 }
@@ -234,10 +271,14 @@ async function readResumedWaitDetails(
   };
 }
 
-function findLatestPendingWait(events: readonly Event[]): Event | undefined {
+function findLatestPendingWait(events: readonly Event[], branchId?: string): Event | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type !== "wait.started") {
+      continue;
+    }
+
+    if (branchId !== undefined && event.payload.branchId !== branchId) {
       continue;
     }
 
@@ -266,6 +307,7 @@ async function replayWaitingStepPrefix(options: {
   readonly events: readonly Event[];
   readonly targetStepStartedIndex: number;
   readonly pendingWait: Event;
+  readonly branchId?: string;
 }): Promise<
   | {
       readonly status: "success";
@@ -283,16 +325,22 @@ async function replayWaitingStepPrefix(options: {
       : undefined;
   const pendingWaitIndex = options.events.indexOf(options.pendingWait);
   const inStepEvents = options.events.slice(options.targetStepStartedIndex + 1, pendingWaitIndex);
+  const belongsToScopedBranch = (event: Event): boolean =>
+    options.branchId === undefined ||
+    event.payload.branchId === undefined ||
+    event.payload.branchId === options.branchId;
   const promptOutputs = inStepEvents.filter(
     (event) =>
       event.type === "step.completed" &&
       event.stepId === options.node.config.id &&
+      belongsToScopedBranch(event) &&
       isPlainObject(event.payload.output),
   );
   const satisfiedWaits = inStepEvents.filter(
     (event) =>
       event.type === "wait.satisfied" &&
       event.stepId === options.node.config.id &&
+      belongsToScopedBranch(event) &&
       isPlainObject(event.payload.output) &&
       typeof event.payload.waitId === "string",
   );
@@ -516,6 +564,33 @@ function readWaitArtifactPaths(
   }
 
   return { requestFile, answerFile };
+}
+
+/**
+ * Build the event view `replayCompletedSteps` uses for a branch-scoped
+ * resume. Other branches' step/wait terminal events are dropped so they can
+ * never pair into this branch's replay walk (parallel branches may reuse the
+ * same step ids), while their `step.started` events are kept with synthetic
+ * step ids so the global `step.started` ordinal — and therefore each replayed
+ * step's true step artifact index — is unchanged. Events without a branchId
+ * (run-level or pre-split events) pass through untouched.
+ */
+function branchScopedReplayEvents(events: readonly Event[], branchId: string): readonly Event[] {
+  let foreignOrdinal = 0;
+  const scoped: Event[] = [];
+  for (const event of events) {
+    const eventBranchId =
+      typeof event.payload.branchId === "string" ? event.payload.branchId : undefined;
+    if (eventBranchId === undefined || eventBranchId === branchId) {
+      scoped.push(event);
+      continue;
+    }
+    if (event.type === "step.started") {
+      foreignOrdinal += 1;
+      scoped.push({ ...event, stepId: `__foreign_branch_${foreignOrdinal}__` } as Event);
+    }
+  }
+  return scoped;
 }
 
 function waitEventKey(event: Event): string | undefined {

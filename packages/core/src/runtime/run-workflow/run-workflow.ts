@@ -191,6 +191,8 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     let workflowInput: TInput;
     let startNode: ContinuationResult | undefined;
     let waitResume: ReplayToWaitingStepResult | undefined;
+    let isWaitContinueTrackResume = false;
+    let branchResumes: Record<string, import("../continuation/run-continuation/run-continuation.js").ResumeWaitOptions> = {};
     let isTrackRetry = false;
 
     if (isResume) {
@@ -230,44 +232,111 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }),
       );
     } else if (isWaitContinue) {
-      if (await hasSupportedRootParallelTrackRetryMetadata(runDir)) {
-        return failResumeValidation({
-          code: "continue_parallel_track_unsupported",
-          message:
-            "Continuing a waiting parallel track is not yet supported; retry the run or restart the workflow instead.",
-        });
-      }
+      const hasParallelTrack = await hasSupportedRootParallelTrackRetryMetadata(runDir);
+      if (hasParallelTrack) {
+        const answeredBranches = await findAnsweredParallelBranches(runDir);
+        if (answeredBranches.length === 0) {
+          return failResumeValidation({
+            code: "continue_parallel_track_unsupported",
+            message:
+              "Continuing a waiting parallel track is not yet supported; retry the run or restart the workflow instead.",
+          });
+        }
 
-      const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
-        replayToWaitingStep({
-          workflow: options.workflow,
-          events: previousEvents,
-          runDir,
-        }),
-      );
-      if (replay.status === "failure") {
-        return failResumeValidation(replay.failure);
-      }
-      await runContext.state.hydratePersisted();
+        const persistedInput = readWorkflowStartedInput(previousEvents);
+        if (persistedInput === undefined) {
+          return failResumeValidation({
+            code: "continue_target_not_found",
+            message: "Continue target workflow started payload missing input.",
+          });
+        }
+        await runContext.state.hydratePersisted();
+        await runContext.globalState.hydratePersisted();
+        workflowInput = inputSchema
+          ? (inputSchema.assert(persistedInput, "workflow input") as TInput)
+          : (persistedInput as TInput);
+        startNode = options.workflow.start(workflowInput);
+        isWaitContinueTrackResume = true;
+        waitResume = undefined;
 
-      workflowInput = inputSchema
-        ? (inputSchema.assert(replay.input, "workflow input") as TInput)
-        : (replay.input as TInput);
-      startNode = replay.node;
-      waitResume = replay;
-      await emit(
-        createEvent({
-          runId,
-          workflowId: options.workflow.id,
-          type: "workflow.resumed",
-          payload: {
-            resumeKind: "wait",
-            resumedFromRunDir: runDir,
-            resumedStepId: replay.resumedStepId,
-            sourceWaitEventId: replay.sourceWaitEventId,
-          },
-        }),
-      );
+        branchResumes = {};
+        for (const branchId of answeredBranches) {
+          const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+            replayToWaitingStep({
+              workflow: options.workflow,
+              events: previousEvents,
+              runDir,
+              branchId,
+            }),
+          );
+          if (replay.status === "success") {
+            branchResumes[branchId] = {
+              stepId: replay.resumedStepId,
+              stepIndex: replay.stepIndex,
+              phaseIndex: replay.phaseIndex,
+              phaseValue: replay.phaseValue,
+              waitOutputs: replay.waitOutputs,
+              seenWaitIds: replay.seenWaitIds,
+              wait: replay.wait,
+            } as import("../continuation/run-continuation/run-continuation.js").ResumeWaitOptions;
+          }
+        }
+
+        const firstReplay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+          replayToWaitingStep({
+            workflow: options.workflow,
+            events: previousEvents,
+            runDir,
+            branchId: answeredBranches[0],
+          }),
+        );
+        if (firstReplay.status === "success") {
+          await emit(
+            createEvent({
+              runId,
+              workflowId: options.workflow.id,
+              type: "workflow.resumed",
+              payload: {
+                resumeKind: "wait",
+                resumedFromRunDir: runDir,
+                resumedStepId: firstReplay.resumedStepId,
+                sourceWaitEventId: firstReplay.sourceWaitEventId,
+              },
+            }),
+          );
+        }
+      } else {
+        const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+          replayToWaitingStep({
+            workflow: options.workflow,
+            events: previousEvents,
+            runDir,
+          }),
+        );
+        if (replay.status === "failure") {
+          return failResumeValidation(replay.failure);
+        }
+        await runContext.state.hydratePersisted();
+
+        workflowInput = inputSchema
+          ? (inputSchema.assert(replay.input, "workflow input") as TInput)
+          : (replay.input as TInput);
+        startNode = replay.node;
+        waitResume = replay;
+        await emit(
+          createEvent({
+            runId,
+            workflowId: options.workflow.id,
+            type: "workflow.resumed",
+            payload: {
+              resumeKind: "wait",
+              resumedFromRunDir: runDir,
+              resumedStepId: replay.resumedStepId,
+              sourceWaitEventId: replay.sourceWaitEventId,
+            },
+          }),
+        );
+      }
     } else if (isRetry) {
       if (await hasSupportedRootParallelTrackRetryMetadata(runDir)) {
         const persistedInput = readWorkflowStartedInput(previousEvents);
@@ -343,7 +412,8 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
 
     const rootNode = startNode ?? options.workflow.start(workflowInput);
     const rootNodes = Array.isArray(rootNode) ? rootNode : [rootNode];
-    const shouldUseRootArrayScheduler = (!isResume && !isRetry && !isWaitContinue) || isTrackRetry;
+    const shouldUseRootArrayScheduler =
+      (!isResume && !isRetry && !isWaitContinue) || isTrackRetry || isWaitContinueTrackResume;
     const continuationResult = shouldUseRootArrayScheduler
       ? await runRootContinuationArrayScheduler({
           nodes: rootNodes,
@@ -372,7 +442,17 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
                   track: options.retry?.track,
                 },
               }
-            : {}),
+            : isWaitContinueTrackResume
+              ? {
+                  retry: {
+                    initialExecutedSteps: previousEvents.filter(
+                      (event) => event.type === "step.started",
+                    ).length,
+                    track: { mode: "wait-answered" } as import("./run-workflow.types.js").RunWorkflowTrackRetryOptions,
+                  },
+                  waitResumeBranches: branchResumes,
+                }
+              : {}),
         })
       : await runContinuation({
           node: rootNode,
@@ -525,6 +605,49 @@ async function hasSupportedRootParallelTrackRetryMetadata(runDir: string): Promi
       return false;
     }
     throw error;
+  }
+}
+
+export async function findAnsweredParallelBranches(runDir: string): Promise<string[]> {
+  try {
+    const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8")) as {
+      readonly splitOccurred?: unknown;
+      readonly branches?: unknown;
+    };
+    if (track.splitOccurred !== true || !Array.isArray(track.branches)) {
+      return [];
+    }
+    const answered: string[] = [];
+    for (const branchId of track.branches as unknown[]) {
+      if (typeof branchId !== "string") continue;
+      let branchState: { readonly status?: unknown; readonly wait?: unknown } | undefined;
+      try {
+        branchState = JSON.parse(await readFile(join(runDir, "branches", `${branchId}.json`), "utf8")) as {
+          readonly status?: unknown;
+          readonly wait?: unknown;
+        };
+      } catch {
+        continue;
+      }
+      if (branchState?.status !== "waiting") continue;
+      if (branchState.wait === undefined || typeof branchState.wait !== "object" || branchState.wait === null) {
+        continue;
+      }
+      const wait = branchState.wait as {
+        readonly artifactPaths?: { readonly answerFile?: unknown };
+      };
+      const answerFile = wait.artifactPaths?.answerFile;
+      if (typeof answerFile !== "string") continue;
+      try {
+        await readFile(join(runDir, answerFile), "utf8");
+        answered.push(branchId);
+      } catch {
+        // no recorded answer artifact
+      }
+    }
+    return answered;
+  } catch {
+    return [];
   }
 }
 

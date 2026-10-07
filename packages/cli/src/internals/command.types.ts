@@ -34,7 +34,7 @@ export const usageText = [
   "  trailstep continue --session-file <path>",
   "  trailstep continue --json-file <path>",
   "  trailstep continue --json '<json>'",
-  "  trailstep answer <runNameOrRunDir> <waitId> [--json '<json>' | --json-file <path>] [--continue]",
+  "  trailstep answer <runNameOrRunDir> <waitId> [--json '<json>' | --json-file <path>] [--branch <branchId>] [--continue]",
   "  trailstep cancel <runNameOrRunDir> [--reason '<text>']",
   "  trailstep cancel [--reason '<text>']",
   "  trailstep doctor",

@@ -14,6 +14,10 @@ import { CliConfigError } from "./internals/config/config.js";
 import type { TrailStepDeprecationEntry } from "./internals/deprecation-scan/deprecation-scanner.js";
 import { parseWorkflowId } from "./internals/workflow-reference/workflow-reference.js";
 import { WorkflowResolutionError } from "./internals/workflow-resolution/workflow-resolution-error.js";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type {
   SkillsCliProcessRunner,
   SkillsCliResolver,
@@ -94,6 +98,12 @@ export async function main(options: TrailStepMainOptions = {}): Promise<number> 
   };
 
   try {
+    if (argv.length === 1 && argv[0] === "--version") {
+      const version = await resolveCliVersion();
+      io.writeLine(version);
+      return 0;
+    }
+
     const command = resolveCommand(argv);
     const args = command.parseArgs(argv);
     return await command.run(args, context);
@@ -163,6 +173,38 @@ function createTerminalPrompts(): TrailStepCliPrompts {
       return answer;
     },
   };
+}
+
+async function resolveCliVersion(): Promise<string> {
+  const packageRoot = await findCliPackageRoot(dirname(fileURLToPath(import.meta.url)));
+  const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+    readonly version?: unknown;
+  };
+  if (typeof packageJson.version !== "string" || packageJson.version.trim().length === 0) {
+    throw new Error("Could not resolve @trailstep/cli package version.");
+  }
+  return packageJson.version;
+}
+
+async function findCliPackageRoot(startDirectory: string): Promise<string> {
+  let current = startDirectory;
+  while (true) {
+    try {
+      const packageJson = JSON.parse(
+        await readFile(join(current, "package.json"), "utf8"),
+      ) as { readonly name?: string };
+      if (packageJson.name === "@trailstep/cli") {
+        return current;
+      }
+    } catch {
+      // Not a package root; continue walking up.
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error("Could not resolve @trailstep/cli package root.");
+    }
+    current = parent;
+  }
 }
 
 function normalizePath(path: string): string {

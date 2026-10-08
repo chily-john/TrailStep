@@ -155,6 +155,8 @@ export async function dispatchAgentStep(options: {
     : await runAgentStep({
         step: agentStep,
         input: config.input,
+        runDir: options.runDir,
+        stepIndex: options.stepIndex,
         onToolCall: async (toolCall) => {
           await options.emit(
             createEvent({

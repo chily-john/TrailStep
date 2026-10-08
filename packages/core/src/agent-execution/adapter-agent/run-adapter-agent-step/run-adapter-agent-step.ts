@@ -7,6 +7,8 @@ import type {
 } from "../../../contracts/agents/agent-adapter.types.js";
 import type { AgentModelTarget } from "../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
+import { readWorkingAgentOutput } from "../../working-agent/output/read-working-agent-output.js";
+import { resolveStepAgentFiles } from "../../working-agent/artifacts/resolve-step-agent-files.js";
 import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.js";
 
 const PROVIDER_NEUTRAL_ADAPTER_KEY = "custom";
@@ -25,6 +27,8 @@ export interface RunAgentStepOptions<
   readonly step: AgentStepRequestConfig<TInput, TOutput>;
   readonly input: TInput;
   readonly onToolCall?: (event: AgentToolCallEvent) => void | Promise<void>;
+  readonly runDir?: string;
+  readonly stepIndex?: number;
 }
 
 export async function runAgentStep<
@@ -59,9 +63,30 @@ export async function runAgentStep<
   });
 
   if (submittedOutput === undefined) {
+    // Multi-round prompting fallback: adapter session may have finished
+    // and written output.json without calling submit_output. Read it defensively.
+    try {
+      if (options.runDir !== undefined && options.stepIndex !== undefined) {
+        const files = resolveStepAgentFiles({
+          runDir: options.runDir,
+          stepId: options.step.id,
+          stepIndex: options.stepIndex,
+        });
+        submittedOutput = (await readWorkingAgentOutput({
+          stepId: options.step.id,
+          outputFile: files.outputFile,
+          step: options.step,
+        })) as PlainObject;
+      }
+    } catch {
+      // File missing, corrupt, or invalid — fall through to agent_output_missing.
+    }
+  }
+
+  if (submittedOutput === undefined) {
     throw new TrailStepFailureError({
       code: "agent_output_missing",
-      message: `Agent step ${options.step.id} did not call submit_output.`,
+      message: `Agent step ${options.step.id} did not call submit_output and no valid output.json was found.`,
     });
   }
 

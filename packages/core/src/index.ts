@@ -260,3 +260,8 @@ export type {
   TimeoutPolicyInput,
 } from "./runtime/timeout/timeout-policy.js";
 export { resolveTimeoutPolicy, validateTimeoutPolicy } from "./runtime/timeout/timeout-policy.js";
+
+export { serializeOrdered } from "./json/ordered-serialize.js";
+export { validateStructural } from "./json/validate-structural.js";
+export { TRST_KEY_ORDER } from "./json/constants.js";
+export { load, layeredDirs } from "./load-order.js";

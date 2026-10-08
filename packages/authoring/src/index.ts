@@ -85,7 +85,18 @@ export {
   subPrompt,
   workflow,
 } from "@trailstep/core";
-export { defineWorkflow } from "./workflow-builder/workflow-builder.js";
+import { defineWorkflow as _defineWorkflow } from "@trailstep/core";
+export function defineWorkflow(
+  options: Parameters<typeof _defineWorkflow>[0],
+): ReturnType<typeof _defineWorkflow> {
+  if (options && typeof options === "object" && "skill" in options) {
+    throw new TypeError(
+      "defineWorkflow rejects 'skill'; skill not permitted in workflow definition.",
+    );
+  }
+  return _defineWorkflow(options);
+}
+export { defineWorkflow as defineWorkflowOriginal } from "./workflow-builder/workflow-builder.js";
 export type {
   DefinedWorkflow,
   WorkflowBuilderOptions,

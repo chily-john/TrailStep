@@ -24,7 +24,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
     "@changesets/cli": "^3.0.1",
-    "@trailstep/create-flows": "workspace:*",
+    "@trailstep/create-flows": "^0.3.4",
     "@trailstep/sub-agents": "workspace:*",
     "tsup": "^8.5.0",
     "turbo": "^2.10.10",

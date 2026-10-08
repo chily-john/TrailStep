@@ -21,8 +21,8 @@ importers:
         specifier: ^3.0.1
         version: 3.0.1
       '@trailstep/create-flows':
-        specifier: workspace:*
-        version: link:packages/create-flows
+        specifier: ^0.3.4
+        version: 0.3.4(@trailstep/authoring@0.2.1(@trailstep/core@0.3.0))
       '@trailstep/sub-agents':
         specifier: workspace:*
         version: link:packages/sub-agents
@@ -766,6 +766,19 @@ packages:
     peerDependencies:
       svelte: ^5.0.0
       vite: ^6.0.0
+
+  '@trailstep/authoring@0.2.1':
+    resolution: {integrity: sha512-64j2ESJaCBxkxYHe91l8waTGOEmNx7L/ZYn9DWOiEsxMzcw3FsMV84sQHCYF+5leBV3z+aJCKkE+c/CFVNCrtg==}
+    peerDependencies:
+      '@trailstep/core': ^0.3.0
+
+  '@trailstep/core@0.3.0':
+    resolution: {integrity: sha512-N0TRPzo503Da5M6BMS6oonxcl4IiShecP0/l+9JjT9Nj+puuW3iNU5BvBthf6uUv2Ov4OFU1NhODs8zpo+02FQ==}
+
+  '@trailstep/create-flows@0.3.4':
+    resolution: {integrity: sha512-+8KdQpDtulwO5yMEzt8hkkoCZ3sNv5M5Hvw2LAWu1xvMRAx+XvfB3+AtLFOMBUWE4mLJaUq5S9GYZoFdsQ2mNA==}
+    peerDependencies:
+      '@trailstep/authoring': ^0.2.1
 
   '@turbo/darwin-64@2.10.10':
     resolution: {integrity: sha512-gFDD+wRP5hWxBRghGyEbjpbLOY7aIU/wvsnKdMM7odQcp/wHMrnI83p0FyxxMRZnFH9ZD+S59MvcpOC5b+nrCA==}
@@ -1748,6 +1761,19 @@ snapshots:
       vitefu: 1.1.3(vite@6.4.3(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0))
     transitivePeerDependencies:
       - supports-color
+
+  '@trailstep/authoring@0.2.1(@trailstep/core@0.3.0)':
+    dependencies:
+      '@trailstep/core': 0.3.0
+
+  '@trailstep/core@0.3.0':
+    dependencies:
+      ajv: 8.20.0
+      semver: 7.8.5
+
+  '@trailstep/create-flows@0.3.4(@trailstep/authoring@0.2.1(@trailstep/core@0.3.0))':
+    dependencies:
+      '@trailstep/authoring': 0.2.1(@trailstep/core@0.3.0)
 
   '@turbo/darwin-64@2.10.10':
     optional: true

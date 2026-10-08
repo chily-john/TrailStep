@@ -8,5 +8,6 @@ overrides:
   nanoid: 3.3.18
   postcss: 8.5.23
 minimumReleaseAgeExclude:
-  - '@trailstep/create-flows@0.2.0 || 0.3.0'
-  - '@trailstep/authoring@0.1.2'
+  - '@trailstep/create-flows@0.2.0 || 0.3.0 || 0.3.4'
+  - '@trailstep/authoring@0.1.2 || 0.2.1'
+  - '@trailstep/core@0.3.0'

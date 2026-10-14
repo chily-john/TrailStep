@@ -15,4 +15,5 @@ export interface AgentStepRequestConfig<
   readonly prompt: AgentPrompt<TInput>;
   readonly requirements: WorkflowAgentRole;
   readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
+  readonly timeout?: number;
 }

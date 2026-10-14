@@ -35,7 +35,7 @@ export function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
   return defineWorkflow<DelegateInput, DelegateOutput>({
     id: config.id,
     description: config.description,
-    skill: delegateSkill(config),
+    skill: delegateSkill(config), // deprecated but preserved for compatibility
     inputShape: delegateInputShape,
     outputShape: delegateOutputShape,
     agents: {

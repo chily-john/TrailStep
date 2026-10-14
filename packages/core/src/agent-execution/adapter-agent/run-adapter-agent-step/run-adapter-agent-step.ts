@@ -13,6 +13,23 @@ import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.
 
 const PROVIDER_NEUTRAL_ADAPTER_KEY = "custom";
 const PROVIDER_NEUTRAL_MODEL = "configured-agent";
+const DEFAULT_ADAPTER_TIMEOUT_MS = 120_000;
+
+function buildOutputPrompt(outputSchema: Schema<PlainObject>): string {
+  const jsonSchema = outputSchema.jsonSchema;
+  const properties = (jsonSchema.properties as Record<string, unknown>) ?? {};
+  const required = (jsonSchema.required as string[]) ?? [];
+  const fields = Object.entries(properties)
+    .map(([key, def]) => {
+      const type = (def as Record<string, unknown>).type ?? "unknown";
+      const desc = (def as Record<string, unknown>).description ?? "";
+      const req = required.includes(key) ? " (required)" : "";
+      return `  - ${key}: ${type}${req}${desc ? ` — ${desc}` : ""}`;
+    })
+    .join("\n");
+
+  return `\n\nNow produce the final structured output as a JSON object matching this schema:\n${fields}\n\nCall the submit_output tool with the result.`;
+}
 
 export interface AgentToolCallEvent {
   readonly name: string;
@@ -52,15 +69,39 @@ export async function runAgentStep<
   ];
 
   const prompt = renderAgentPrompt(options.step.prompt, options.input);
+  const outputPrompt = buildOutputPrompt(options.step.output as Schema<PlainObject>);
+  const adapterTimeoutMs = options.step.timeout ?? DEFAULT_ADAPTER_TIMEOUT_MS;
 
-  await adapter({
-    messages: [{ role: "user", content: prompt }],
-    tools,
-    requirements: options.step.requirements,
-    model,
-    step: options.step,
-    input: options.input,
-  });
+  // Round 1: Work prompt
+  await runAdapterWithTimeout(
+    adapter,
+    {
+      messages: [{ role: "user", content: prompt }],
+      tools,
+      requirements: options.step.requirements,
+      model,
+      step: options.step,
+      input: options.input,
+    },
+    adapterTimeoutMs,
+  );
+
+  // Round 2: Output prompt (reprompt same session for structured output)
+  await runAdapterWithTimeout(
+    adapter,
+    {
+      messages: [
+        { role: "user", content: prompt },
+        { role: "user", content: outputPrompt },
+      ],
+      tools,
+      requirements: options.step.requirements,
+      model,
+      step: options.step,
+      input: options.input,
+    },
+    adapterTimeoutMs,
+  );
 
   if (submittedOutput === undefined) {
     // Multi-round prompting fallback: adapter session may have finished
@@ -91,6 +132,22 @@ export async function runAgentStep<
   }
 
   return submittedOutput;
+}
+
+async function runAdapterWithTimeout<
+  TInput extends PlainObject,
+  TOutput extends PlainObject = PlainObject,
+>(
+  adapter: AgentAdapter<TInput, TOutput>,
+  request: Parameters<AgentAdapter<TInput, TOutput>>[0],
+  timeoutMs: number,
+): Promise<void> {
+  return Promise.race([
+    adapter(request),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("adapter_timeout")), timeoutMs),
+    ),
+  ]);
 }
 
 export function renderAgentPrompt<TInput extends PlainObject>(

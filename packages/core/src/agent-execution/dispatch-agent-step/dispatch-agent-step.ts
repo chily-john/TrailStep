@@ -65,6 +65,7 @@ export async function dispatchAgentStep(options: {
     prompt: renderedPrompt,
     requirements: resolvedRole.role,
     adapter: config.adapter,
+    timeout: config.timeout,
   };
 
   if (!options.trailstepConfig && config.adapter === undefined) {

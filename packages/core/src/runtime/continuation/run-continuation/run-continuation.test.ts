@@ -29,6 +29,11 @@ describe("runContinuation", () => {
       >(({ input }) => `Answer ${input.question}.`, {
         output,
         adapter: async ({ messages, tools }) => {
+          // Round 1: work prompt - just acknowledge
+          // Round 2: output prompt - submit output
+          if (messages.length === 1) {
+            return; // Work round, no output yet
+          }
           expect(messages[0]?.content).toBe("Answer phase refactor?.");
           await tools[0]?.call({ answer: "yes" });
         },
@@ -63,6 +68,7 @@ describe("runContinuation", () => {
     ]);
     expect(events.map((event) => event.type)).toEqual([
       "step.started",
+      "agent.toolCall",
       "agent.toolCall",
       "step.completed",
     ]);
@@ -180,8 +186,13 @@ describe("runContinuation", () => {
       >(({ input }) => `Handle ${input.task}.`, {
         output,
         adapter: async ({ messages, tools }) => {
-          trace.push("prompt");
-          expect(messages[0]?.content).toBe("Handle ordered display.");
+          // Round 1: work prompt
+          // Round 2: output prompt
+          if (messages.length === 1) {
+            trace.push("prompt");
+            expect(messages[0]?.content).toBe("Handle ordered display.");
+            return;
+          }
           await tools[0]?.call({ summary: "Delegate summarized", changedFiles: ["a.ts"] });
         },
       })
@@ -237,6 +248,7 @@ describe("runContinuation", () => {
       "step.started",
       "step.display",
       "step.display",
+      "agent.toolCall",
       "agent.toolCall",
       "step.completed",
       "step.display",

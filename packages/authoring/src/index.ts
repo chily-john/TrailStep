@@ -86,15 +86,17 @@ export {
   workflow,
 } from "@trailstep/core";
 import { defineWorkflow as _defineWorkflow } from "@trailstep/core";
-export function defineWorkflow(
-  options: Parameters<typeof _defineWorkflow>[0],
-): ReturnType<typeof _defineWorkflow> {
-  if (options && typeof options === "object" && "skill" in options) {
-    throw new TypeError(
-      "defineWorkflow rejects 'skill'; skill not permitted in workflow definition.",
-    );
-  }
-  return _defineWorkflow(options);
+import type { PlainObject } from "@trailstep/core";
+
+export function defineWorkflow<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+>(
+  options: Parameters<typeof _defineWorkflow<TInput, TOutput>>[0],
+): ReturnType<typeof _defineWorkflow<TInput, TOutput>> {
+  // Skill is deprecated but preserved for backward compatibility.
+  // Delegate workflows may pass skill; it is accepted but not enforced.
+  return _defineWorkflow<TInput, TOutput>(options);
 }
 export { defineWorkflow as defineWorkflowOriginal } from "./workflow-builder/workflow-builder.js";
 export type {

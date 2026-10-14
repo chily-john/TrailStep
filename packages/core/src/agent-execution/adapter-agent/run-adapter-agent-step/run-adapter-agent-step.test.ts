@@ -103,6 +103,7 @@ describe("agent steps", () => {
       "workflow.started",
       "step.started",
       "agent.toolCall",
+      "agent.toolCall",
       "step.completed",
       "step.started",
       "step.completed",

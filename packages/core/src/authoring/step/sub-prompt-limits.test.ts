@@ -43,6 +43,11 @@ function workflowWithTwoSubPrompts(options?: {
   const dispatchCount = options?.dispatchCount ?? { value: 0 };
   const adapter: AgentAdapter<{ path: string }, { answer: string }> = async (request) => {
     dispatchCount.value += 1;
+    // Round 1: work prompt
+    // Round 2: output prompt
+    if (request.messages.length === 1) {
+      return;
+    }
     await request.tools
       .find((tool) => tool.name === "submit_output")
       ?.call({ answer: `chosen-${request.input.path}` });
@@ -147,6 +152,11 @@ describe("subPrompt limits", () => {
       request,
     ) => {
       subPromptDispatchCount += 1;
+      // Round 1: work prompt
+      // Round 2: output prompt
+      if (request.messages.length === 1) {
+        return;
+      }
       await request.tools
         .find((tool) => tool.name === "submit_output")
         ?.call({ answer: `chosen-${request.input.path}` });

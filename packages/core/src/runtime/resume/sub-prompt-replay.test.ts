@@ -36,6 +36,11 @@ describe("subPrompt resume replay", () => {
 
     const adapter: AgentAdapter<{ topic: string }, { answer: string }> = async (request) => {
       adapterInvocations += 1;
+      // Round 1: work prompt
+      // Round 2: output prompt
+      if (request.messages.length === 1) {
+        return;
+      }
       await request.tools
         .find((tool) => tool.name === "submit_output")
         ?.call({
@@ -57,7 +62,7 @@ describe("subPrompt resume replay", () => {
     });
 
     expect(failed.status).toBe("failure");
-    expect(adapterInvocations).toBe(1);
+    expect(adapterInvocations).toBe(2);
     expect(failed.events.filter((event) => event.type === "subPrompt.completed")).toHaveLength(1);
 
     const completed = failed.events.find((event) => event.type === "subPrompt.completed");
@@ -79,7 +84,7 @@ describe("subPrompt resume replay", () => {
     }
 
     expect(resumed.output).toEqual({ final: "chosen-alpha" });
-    expect(adapterInvocations).toBe(1);
+    expect(adapterInvocations).toBe(2);
     expect(resumed.events.filter((event) => event.type === "subPrompt.started")).toHaveLength(1);
     expect(resumed.events.filter((event) => event.type === "subPrompt.completed")).toHaveLength(1);
   });
@@ -92,6 +97,11 @@ describe("subPrompt resume replay", () => {
 
     const adapter: AgentAdapter<{ topic: string }, { answer: string }> = async (request) => {
       adapterInvocations += 1;
+      // Round 1: work prompt
+      // Round 2: output prompt
+      if (request.messages.length === 1) {
+        return;
+      }
       await request.tools
         .find((tool) => tool.name === "submit_output")
         ?.call({

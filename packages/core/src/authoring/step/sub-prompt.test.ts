@@ -32,12 +32,17 @@ describe("subPrompt", () => {
 
     const adapter: AgentAdapter<{ topic: string }, { answer: string }> = async (request) => {
       expect(request.input).toEqual({ topic: "alpha" });
-      expect(request.messages).toEqual([{ role: "user", content: "Choose alpha" }]);
       expect(request.requirements).toEqual({ size: "small", name: "helper" });
       expect(request.model).toEqual({ adapterKey: "custom", model: "helper" });
       expect(request.step.output).toBe(resultShape);
       const submitOutput = request.tools.find((tool) => tool.name === "submit_output");
       expect(submitOutput).toBeDefined();
+      // Round 1: work prompt (messages.length === 1)
+      // Round 2: output prompt (messages.length === 2)
+      if (request.messages.length === 1) {
+        expect(request.messages[0]).toEqual({ role: "user", content: "Choose alpha" });
+        return;
+      }
       await submitOutput?.call({ answer: "chosen-alpha" });
     };
 
@@ -78,6 +83,7 @@ describe("subPrompt", () => {
       "workflow.started",
       "step.started",
       "subPrompt.started",
+      "agent.toolCall",
       "agent.toolCall",
       "subPrompt.completed",
       "step.completed",

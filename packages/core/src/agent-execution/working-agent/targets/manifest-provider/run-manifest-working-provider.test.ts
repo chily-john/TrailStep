@@ -125,6 +125,7 @@ describe("runManifestWorkingProvider Windows shim resolution", () => {
         repairPromptFile: join(stepDir, "repair-prompt.md"),
       },
       renderedPrompt: "Review this.",
+      timeoutMs: 30_000,
       runner: async (request) => {
         requests.push(request);
         await writeFile(outputFile, JSON.stringify({ answer: "looks good" }), "utf8");
@@ -230,6 +231,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
       target: { provider: "worker" },
       files,
       renderedPrompt: "Do the review.",
+      timeoutMs: 30_000,
       runner: async (request): Promise<WorkingAgentProcessResult> => {
         requests.push(request);
         if (requests.length === 1) {
@@ -302,6 +304,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
       target: { provider: "worker" },
       files,
       renderedPrompt: "Do the review.",
+      timeoutMs: 30_000,
       runner: async (request): Promise<WorkingAgentProcessResult> => {
         requests.push(request);
         if (requests.length === 1) {
@@ -348,6 +351,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
       target: { provider: "worker" },
       files,
       renderedPrompt: "Do the review.",
+      timeoutMs: 30_000,
       runner: async (request): Promise<WorkingAgentProcessResult> => {
         requests.push(request);
         if (requests.length === 1) {
@@ -406,6 +410,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
         target: { provider: "worker" },
         files,
         renderedPrompt: "Do the review.",
+        timeoutMs: 30_000,
         runner: async (request): Promise<WorkingAgentProcessResult> => {
           requests.push(request);
           if (requests.length === 1) {
@@ -459,6 +464,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
         target: { provider: "worker" },
         files,
         renderedPrompt: "Do the review.",
+        timeoutMs: 30_000,
         runner: async (request): Promise<WorkingAgentProcessResult> => {
           requests.push(request);
           return { exitCode: 0 };
@@ -489,6 +495,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
       target: { provider: "worker" },
       files,
       renderedPrompt: "Do the review.",
+      timeoutMs: 30_000,
       runner: async (request): Promise<WorkingAgentProcessResult> => {
         requests.push(request);
         return {
@@ -520,6 +527,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
       target: { provider: "worker" },
       files,
       renderedPrompt: "Do the review.",
+      timeoutMs: 30_000,
       runner: async (request): Promise<WorkingAgentProcessResult> => {
         requests.push(request);
         await writeFile(request.outputFile, JSON.stringify({ answer: "legacy-false" }), "utf8");

@@ -40,6 +40,12 @@ describe("subPrompt concurrency", () => {
 
     const adapter: AgentAdapter<{ path: string }, { answer: string }> = (request) => {
       return new Promise<void>((resolve, reject) => {
+        // Round 1: work prompt - return immediately
+        // Round 2: output prompt - wait for resolve()
+        if (request.messages.length === 1) {
+          resolve();
+          return;
+        }
         pendingRequests.push({
           path: request.input.path,
           async resolve() {

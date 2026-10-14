@@ -90,7 +90,7 @@ describe("subPrompt limits", () => {
     });
 
     expect(result.status).toBe("failure");
-    expect(dispatchCount.value).toBe(1);
+    expect(dispatchCount.value).toBe(2);
     if (result.status !== "failure") {
       throw new Error("Expected run to fail after exceeding maxSubPrompts.");
     }
@@ -132,7 +132,7 @@ describe("subPrompt limits", () => {
     });
 
     expect(result.status).toBe("failure");
-    expect(dispatchCount.value).toBe(1);
+    expect(dispatchCount.value).toBe(2);
     if (result.status !== "failure") {
       throw new Error("Expected run to fail after exceeding configured maxSubPrompts.");
     }
@@ -198,7 +198,7 @@ describe("subPrompt limits", () => {
     });
 
     expect(result.status).toBe("failure");
-    expect(subPromptDispatchCount).toBe(1);
+    expect(subPromptDispatchCount).toBe(2);
     if (result.status !== "failure") {
       throw new Error("Expected prompted step to fail after exceeding maxSubPrompts.");
     }

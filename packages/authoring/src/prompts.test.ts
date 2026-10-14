@@ -17,8 +17,20 @@ describe("authoring agent step prompt rendering", () => {
     });
     const adapter: AgentAdapterObject<{ value: string }, { value: string }> = {
       async runAgentStep(request) {
+        // Round 1: work prompt (messages.length === 1)
+        // Round 2: output prompt (messages.length === 2)
+        if (request.messages.length === 1) {
+          expect(request.messages).toEqual([
+            { role: "user", content: "# Transform\n\nReturn the value with a suffix." },
+          ]);
+          return;
+        }
         expect(request.messages).toEqual([
           { role: "user", content: "# Transform\n\nReturn the value with a suffix." },
+          {
+            role: "user",
+            content: expect.stringContaining("Now produce the final structured output"),
+          },
         ]);
         await request.tools[0]?.call({ value: `${request.input.value}-done` });
       },
@@ -72,8 +84,20 @@ describe("authoring agent step prompt rendering", () => {
     });
     const adapter: AgentAdapterObject<{ topic: string }, { response: string }> = {
       async runAgentStep(request) {
+        // Round 1: work prompt (messages.length === 1)
+        // Round 2: output prompt (messages.length === 2)
+        if (request.messages.length === 1) {
+          expect(request.messages).toEqual([
+            { role: "user", content: "Explain live input for TrailStep." },
+          ]);
+          return;
+        }
         expect(request.messages).toEqual([
           { role: "user", content: "Explain live input for TrailStep." },
+          {
+            role: "user",
+            content: expect.stringContaining("Now produce the final structured output"),
+          },
         ]);
         await request.tools[0]?.call({ response: `prompted:${request.input.topic}` });
       },

@@ -8,6 +8,7 @@ graphify-out/
 .trailstep/*
 !.trailstep/.gitignore
 !.trailstep/config.json
+.trailstep/skills/
 .step[k]it/
 .claude/
 .pi/*

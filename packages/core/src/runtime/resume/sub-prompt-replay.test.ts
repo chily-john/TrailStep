@@ -123,7 +123,7 @@ describe("subPrompt resume replay", () => {
     });
 
     expect(failed.status).toBe("failure");
-    expect(adapterInvocations).toBe(1);
+    expect(adapterInvocations).toBe(2);
 
     promptVersion = "second";
     shouldFailSecondStep = false;
@@ -134,8 +134,8 @@ describe("subPrompt resume replay", () => {
       throw new Error(resumed.failure.message);
     }
 
-    expect(adapterInvocations).toBe(2);
-    expect(resumed.output).toEqual({ final: "Choose alpha second:2" });
+    expect(adapterInvocations).toBe(4);
+    expect(resumed.output).toEqual({ final: "Choose alpha second:4" });
     expect(resumed.events.filter((event) => event.type === "subPrompt.started")).toHaveLength(2);
     expect(resumed.events.filter((event) => event.type === "subPrompt.completed")).toHaveLength(2);
   });

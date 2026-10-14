@@ -42,6 +42,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly files: WorkingAgentFiles;
   readonly renderedPrompt: string;
   readonly signal?: AbortSignal;
+  readonly timeoutMs: number;
 }): Promise<TOutput> {
   const registration = options.config.providers?.[options.target.provider];
   const manifest = registration?.manifest;
@@ -73,6 +74,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       extractOutputHook: registration?.manifest.hooks?.extractOutput,
       thinking,
       model,
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -103,18 +105,34 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     // be spawned by bare name with shell:false; resolve to the Node entrypoint
     // (no-op on other platforms) so argv is never reinterpreted by a shell.
     const executable = await resolveCliCommandForSpawn({ command: working.command, args });
-    result = await (options.runner ?? spawnWorkingAgentProcess)({
-      command: executable.command,
-      args: executable.args,
-      cwd: options.cwd,
-      shell: false,
-      stdio: captureStdout ? "pipe" : "inherit",
-      promptFile: options.files.promptFile,
-      outputFile: options.files.outputFile,
-      ...(model === undefined ? {} : { model }),
-      signal: options.signal,
-    });
+    result = await Promise.race([
+      (options.runner ?? spawnWorkingAgentProcess)({
+        command: executable.command,
+        args: executable.args,
+        cwd: options.cwd,
+        shell: false,
+        stdio: captureStdout ? "pipe" : "inherit",
+        promptFile: options.files.promptFile,
+        outputFile: options.files.outputFile,
+        ...(model === undefined ? {} : { model }),
+        signal: options.signal,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("working_agent_timeout")), options.timeoutMs),
+      ),
+    ]);
   } catch (error) {
+    if (error instanceof Error && error.message === "working_agent_timeout") {
+      throw new TrailStepFailureError({
+        code: "agent_provider_timeout",
+        message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,
+        details: {
+          target: options.target.provider,
+          ...(model === undefined ? {} : { model }),
+          timeoutMs: options.timeoutMs,
+        },
+      });
+    }
     throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
@@ -175,6 +193,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     readonly files: WorkingAgentFiles;
     readonly renderedPrompt: string;
     readonly signal?: AbortSignal;
+    readonly timeoutMs: number;
   };
   readonly manifest: TrailStepProviderManifest;
   readonly working: TrailStepProviderWorkingManifest;
@@ -182,6 +201,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   readonly extractOutputHook?: unknown;
   readonly thinking?: WorkflowAgentThinking;
   readonly model?: string;
+  readonly timeoutMs: number;
 }): Promise<TOutput> {
   const { options, working, followUp } = context;
   const { files, step, target } = options;
@@ -243,6 +263,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     stdio: captureStdout ? "pipe" : "inherit",
     runner: options.runner,
     signal: options.signal,
+    timeoutMs: context.timeoutMs,
   });
 
   if (phase1Result.exitCode !== 0) {
@@ -311,6 +332,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
       stdio: captureStdout ? "pipe" : "inherit",
       runner: options.runner,
       signal: options.signal,
+      timeoutMs: context.timeoutMs,
     });
 
     if (phase2Result.exitCode !== 0) {
@@ -377,6 +399,7 @@ async function spawnManifestPhase(options: {
   readonly stdio: "pipe" | "inherit";
   readonly runner?: WorkingAgentProcessRunner;
   readonly signal?: AbortSignal;
+  readonly timeoutMs: number;
 }): Promise<WorkingAgentProcessResult> {
   // npm-installed provider CLIs (e.g. pi) are .cmd shims on Windows and cannot
   // be spawned by bare name with shell:false; resolve to the Node entrypoint
@@ -386,18 +409,35 @@ async function spawnManifestPhase(options: {
     args: options.args,
   });
   try {
-    return await (options.runner ?? spawnWorkingAgentProcess)({
-      command: executable.command,
-      args: executable.args,
-      cwd: options.cwd,
-      shell: false,
-      stdio: options.stdio,
-      promptFile: options.promptFile,
-      outputFile: options.outputFile,
-      ...(options.model === undefined ? {} : { model: options.model }),
-      signal: options.signal,
-    });
+    return await Promise.race([
+      (options.runner ?? spawnWorkingAgentProcess)({
+        command: executable.command,
+        args: executable.args,
+        cwd: options.cwd,
+        shell: false,
+        stdio: options.stdio,
+        promptFile: options.promptFile,
+        outputFile: options.outputFile,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        signal: options.signal,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("working_agent_timeout")), options.timeoutMs),
+      ),
+    ]);
   } catch (error) {
+    if (error instanceof Error && error.message === "working_agent_timeout") {
+      throw new TrailStepFailureError({
+        code: "agent_provider_timeout",
+        message: `Working agent step ${options.stepId} target '${options.provider}' timed out after ${options.timeoutMs}ms in ${options.phase} phase.`,
+        details: {
+          phase: options.phase,
+          target: options.provider,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          timeoutMs: options.timeoutMs,
+        },
+      });
+    }
     throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: `Working agent step ${options.stepId} could not start target '${options.provider}'.`,

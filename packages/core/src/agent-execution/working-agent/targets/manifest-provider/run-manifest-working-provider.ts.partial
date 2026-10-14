@@ -1,0 +1,64 @@
+async function spawnManifestPhase(options: {
+  readonly phase: "work" | "format";
+  readonly stepId: string;
+  readonly provider: string;
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly model?: string;
+  readonly promptFile: string;
+  readonly outputFile: string;
+  readonly stdio: "pipe" | "inherit";
+  readonly runner?: WorkingAgentProcessRunner;
+  readonly signal?: AbortSignal;
+  readonly timeoutMs: number;
+}): Promise<WorkingAgentProcessResult> {
+  // npm-installed provider CLIs (e.g. pi) are .cmd shims on Windows and cannot
+  // be spawned by bare name with shell:false; resolve to the Node entrypoint
+  // (no-op on other platforms) so argv is never reinterpreted by a shell.
+  const executable = await resolveCliCommandForSpawn({
+    command: options.command,
+    args: options.args,
+  });
+  try {
+    return await Promise.race([
+      (options.runner ?? spawnWorkingAgentProcess)({
+        command: executable.command,
+        args: executable.args,
+        cwd: options.cwd,
+        shell: false,
+        stdio: options.stdio,
+        promptFile: options.promptFile,
+        outputFile: options.outputFile,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        signal: options.signal,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("working_agent_timeout")), options.timeoutMs),
+      ),
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message === "working_agent_timeout") {
+      throw new TrailStepFailureError({
+        code: "agent_provider_timeout",
+        message: `Working agent step ${options.stepId} target '${options.provider}' timed out after ${options.timeoutMs}ms in ${options.phase} phase.`,
+        details: {
+          phase: options.phase,
+          target: options.provider,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          timeoutMs: options.timeoutMs,
+        },
+      });
+    }
+    throw new TrailStepFailureError({
+      code: "agent_provider_spawn_error",
+      message: `Working agent step ${options.stepId} could not start target '${options.provider}'.`,
+      details: {
+        phase: options.phase,
+        target: options.provider,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
+}

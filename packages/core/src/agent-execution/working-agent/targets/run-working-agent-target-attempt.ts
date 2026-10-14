@@ -28,6 +28,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
+  readonly timeoutMs: number;
 }): Promise<TOutput> {
   await rm(options.files.outputFile, { force: true });
   await rm(options.files.usageFile, { force: true });
@@ -46,6 +47,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       files: options.files,
       renderedPrompt: options.renderedPrompt,
       signal: options.signal,
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -58,5 +60,6 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
     target: options.target,
     files: options.files,
     signal: options.signal,
+    timeoutMs: options.timeoutMs,
   });
 }

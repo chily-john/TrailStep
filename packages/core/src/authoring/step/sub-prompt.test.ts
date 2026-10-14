@@ -84,7 +84,6 @@ describe("subPrompt", () => {
       "step.started",
       "subPrompt.started",
       "agent.toolCall",
-      "agent.toolCall",
       "subPrompt.completed",
       "step.completed",
       "workflow.completed",

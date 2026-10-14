@@ -68,11 +68,17 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   );
 
   const failures: WorkingAgentAttemptFailure[] = [];
+  const timeoutMs = options.step.timeout ?? 120_000;
 
   for (const target of targets) {
     await options.onTargetAttempt?.(target);
     try {
-      return await runWorkingAgentTargetAttempt({ ...options, target, files });
+      return await runWorkingAgentTargetAttempt({
+        ...options,
+        target,
+        files,
+        timeoutMs,
+      });
     } catch (error) {
       failures.push(summarizeWorkingAgentAttemptFailure(target, error));
     }

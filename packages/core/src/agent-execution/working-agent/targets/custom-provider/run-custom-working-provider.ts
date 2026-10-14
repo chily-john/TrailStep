@@ -25,6 +25,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
+  readonly timeoutMs: number;
 }): Promise<TOutput> {
   const agentConfig = options.config.customProviders[options.target.provider];
   if (!agentConfig) {
@@ -52,18 +53,34 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       command: agentConfig.binary,
       args,
     });
-    result = await (options.runner ?? spawnWorkingAgentProcess)({
-      command: executable.command,
-      args: executable.args,
-      cwd: options.cwd,
-      shell: false,
-      stdio: "inherit",
-      promptFile: options.files.promptFile,
-      outputFile: options.files.outputFile,
-      ...(options.target.model === undefined ? {} : { model: options.target.model }),
-      signal: options.signal,
-    });
+    result = await Promise.race([
+      (options.runner ?? spawnWorkingAgentProcess)({
+        command: executable.command,
+        args: executable.args,
+        cwd: options.cwd,
+        shell: false,
+        stdio: "inherit",
+        promptFile: options.files.promptFile,
+        outputFile: options.files.outputFile,
+        ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        signal: options.signal,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("working_agent_timeout")), options.timeoutMs),
+      ),
+    ]);
   } catch (error) {
+    if (error instanceof Error && error.message === "working_agent_timeout") {
+      throw new TrailStepFailureError({
+        code: "agent_provider_timeout",
+        message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,
+        details: {
+          target: options.target.provider,
+          ...(options.target.model === undefined ? {} : { model: options.target.model }),
+          timeoutMs: options.timeoutMs,
+        },
+      });
+    }
     throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,

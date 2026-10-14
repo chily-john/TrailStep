@@ -69,7 +69,6 @@ describe("runContinuation", () => {
     expect(events.map((event) => event.type)).toEqual([
       "step.started",
       "agent.toolCall",
-      "agent.toolCall",
       "step.completed",
     ]);
     expect(events[0]).toMatchObject({ payload: { kind: "agent" } });
@@ -248,7 +247,6 @@ describe("runContinuation", () => {
       "step.started",
       "step.display",
       "step.display",
-      "agent.toolCall",
       "agent.toolCall",
       "step.completed",
       "step.display",

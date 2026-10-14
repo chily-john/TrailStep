@@ -376,7 +376,7 @@ describe("continue command", () => {
       env: {},
       io: { writeLine: () => undefined, writeError: () => undefined },
     });
-    await expect(readFile(join(cwd, "prompt-count.txt"), "utf8")).resolves.toBe("1");
+    await expect(readFile(join(cwd, "prompt-count.txt"), "utf8")).resolves.toBe("2");
 
     await expect(
       main({
@@ -387,7 +387,7 @@ describe("continue command", () => {
       }),
     ).resolves.toBe(0);
 
-    await expect(readFile(join(cwd, "prompt-count.txt"), "utf8")).resolves.toBe("1");
+    await expect(readFile(join(cwd, "prompt-count.txt"), "utf8")).resolves.toBe("2");
     const events = await readFile(
       join(cwd, ".trailstep", "runs", "wait-run", "events.jsonl"),
       "utf8",

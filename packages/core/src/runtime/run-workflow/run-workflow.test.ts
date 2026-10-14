@@ -336,7 +336,12 @@ describe("runWorkflow runtime front-door", () => {
         return step({ id: "draft" })
           .prompt<{ task: string }, { draft: string }>(({ input }) => `Draft ${input.task}.`, {
             output: { draft: "string" },
-            adapter: async ({ tools }) => {
+            adapter: async ({ messages, tools }) => {
+              // Round 1: work prompt
+              // Round 2: output prompt
+              if (messages.length === 1) {
+                return;
+              }
               await tools[0]?.call({ draft: "v1" });
             },
           })

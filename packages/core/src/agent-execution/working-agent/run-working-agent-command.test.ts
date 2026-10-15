@@ -287,6 +287,18 @@ describe("runWorkingAgentCommand", () => {
                 args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
                 prompt: { kind: "prompt-file" },
                 output: { style: "provider-output-file" },
+                followUp: {
+                  supported: true,
+                  resumeArgs: [
+                    "--resume",
+                    "{{sessionId}}",
+                    "--prompt-file",
+                    "{{promptFile}}",
+                    "--output-file",
+                    "{{outputFile}}",
+                  ],
+                  sessionIdFlag: "--session-id",
+                },
               },
               interactive: { supported: false },
               model: { supported: false },
@@ -365,6 +377,18 @@ describe("runWorkingAgentCommand", () => {
                 ],
                 prompt: { kind: "prompt-file" },
                 output: { style: "provider-output-file" },
+                followUp: {
+                  supported: true,
+                  resumeArgs: [
+                    "--resume",
+                    "{{sessionId}}",
+                    "--prompt-file",
+                    "{{promptFile}}",
+                    "--output-file",
+                    "{{outputFile}}",
+                  ],
+                  sessionIdFlag: "--session-id",
+                },
               },
               interactive: { supported: false, reason: "No interactive mode" },
               model: { supported: true },
@@ -387,7 +411,7 @@ describe("runWorkingAgentCommand", () => {
     }
 
     expect(result.output).toEqual({ answer: "from manifest" });
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({
       command: "echo-agent",
       cwd,
@@ -404,9 +428,11 @@ describe("runWorkingAgentCommand", () => {
       "tiny",
       "--thinking",
       "high",
+      "--session-id",
+      expect.any(String),
     ]);
     expect(requests[0]?.promptFile).toContain(join("steps", "0001-review", "prompt.md"));
-    expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "output.json"));
+    expect(requests[0]?.outputFile).toContain(join("steps", "0001-review", "work.txt"));
   });
 
   it("runs stdout-envelope manifest providers without dropping parsed invocation fields", async () => {

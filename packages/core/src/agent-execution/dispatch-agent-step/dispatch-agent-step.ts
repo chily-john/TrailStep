@@ -152,6 +152,8 @@ export async function dispatchAgentStep(options: {
         },
         stepIndex: options.stepIndex,
         signal: options.signal,
+        emit: options.emit,
+        runId: options.runId,
       })
     : await runAgentStep({
         step: agentStep,

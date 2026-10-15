@@ -1,5 +1,4 @@
 import { rm } from "node:fs/promises";
-
 import type {
   TrailStepAgentTarget,
   TrailStepConfig,
@@ -8,7 +7,10 @@ import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.
 import type { ProviderWorkingRunner } from "../../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
-import type { WorkingAgentProcessRunner } from "../../../runtime/run-workflow/run-workflow.types.js";
+import type {
+  Event,
+  WorkingAgentProcessRunner,
+} from "../../../runtime/run-workflow/run-workflow.types.js";
 import type { WorkingAgentFiles } from "../artifacts/resolve-step-agent-files.js";
 import { runCustomWorkingProvider } from "./custom-provider/run-custom-working-provider.js";
 import { runManifestWorkingProvider } from "./manifest-provider/run-manifest-working-provider.js";
@@ -29,6 +31,8 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   readonly timeoutMs: number;
+  readonly emit: (event: Event) => Promise<void>;
+  readonly runId: string;
 }): Promise<TOutput> {
   await rm(options.files.outputFile, { force: true });
   await rm(options.files.usageFile, { force: true });
@@ -48,6 +52,9 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       renderedPrompt: options.renderedPrompt,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
+      emit: options.emit,
+      runId: options.runId,
+      workflowId: options.workflowId,
     });
   }
 
@@ -61,5 +68,8 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
     files: options.files,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
+    emit: options.emit,
+    runId: options.runId,
+    workflowId: options.workflowId,
   });
 }

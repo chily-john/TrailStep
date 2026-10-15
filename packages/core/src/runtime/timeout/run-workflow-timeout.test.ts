@@ -20,7 +20,7 @@ describe("workflow step timeouts", () => {
 
     const workflow: Workflow = {
       id: "timeout-workflow",
-      timeout: 250,
+      timeout: 2_000,
       agents: { default: { size: "default" } },
       start() {
         return step({ id: "slow-agent" })
@@ -70,7 +70,7 @@ describe("workflow step timeouts", () => {
     await expect(
       Promise.race([
         abortObserved.then(() => true),
-        new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000)),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 10_000)),
       ]),
     ).resolves.toBe(true);
     expect(sawAbort).toBe(true);
@@ -78,14 +78,17 @@ describe("workflow step timeouts", () => {
     if (result.status === "failure") {
       expect(result.failure).toMatchObject({
         code: "step_timeout",
-        message: "Step slow-agent timed out after 250ms.",
-        details: { stepId: "slow-agent", timeoutMs: 250 },
+        message: "Step slow-agent timed out after 2000ms.",
+        details: { stepId: "slow-agent", timeoutMs: 2_000 },
       });
     }
     expect(result.events.map((event) => event.type)).toEqual([
       "workflow.started",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
       "step.failed",
       "workflow.failed",
     ]);

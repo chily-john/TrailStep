@@ -289,16 +289,20 @@ describe("runWorkflow retry", () => {
       "workflow.started",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "step.failed",
       "workflow.failed",
     ]);
-    expect(failed.events[4]).toMatchObject({
+    expect(failed.events[8]).toMatchObject({
       type: "step.failed",
       stepId: "review",
       payload: { failure: { code: "review_rejected", message: "review rejected" } },
     });
-    expect(failed.events[5]).toMatchObject({ type: "workflow.failed" });
+    expect(failed.events[9]).toMatchObject({ type: "workflow.failed" });
 
     shouldFail = false;
     const retried = await runWorkflow({
@@ -323,22 +327,30 @@ describe("runWorkflow retry", () => {
       "workflow.started",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "workflow.completed",
     ]);
-    expect(retried.events[6]).toMatchObject({
+    expect(retried.events[10]).toMatchObject({
       type: "workflow.retryStarted",
       payload: {
         retryKind: "manual",
         retriedStepId: "review",
-        sourceFailureEventId: failed.events[4]?.id,
-        sourceFailureReplayPosition: 4,
+        sourceFailureEventId: failed.events[8]?.id,
+        sourceFailureReplayPosition: 8,
       },
     });
   });
@@ -413,6 +425,10 @@ describe("runWorkflow retry", () => {
       "workflow.started",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "step.failed",
       "workflow.failed",
@@ -431,12 +447,20 @@ describe("runWorkflow retry", () => {
       "workflow.started",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "step.started",
       "step.failed",
@@ -1249,11 +1273,18 @@ describe("runWorkflow retry", () => {
       "workflow.started",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",
       "step.started",
       "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
       "step.completed",
       "workflow.completed",
     ]);

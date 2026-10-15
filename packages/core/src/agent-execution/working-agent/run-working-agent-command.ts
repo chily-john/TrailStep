@@ -10,7 +10,11 @@ import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/p
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import type { WorkingAgentProcessRunner } from "../../runtime/run-workflow/run-workflow.types.js";
+import { createEvent } from "../../runtime/events/create-run-event.js";
+import type {
+  Event,
+  WorkingAgentProcessRunner,
+} from "../../runtime/run-workflow/run-workflow.types.js";
 import {
   resolveStepAgentFiles,
   type WorkingAgentFiles,
@@ -40,6 +44,8 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly stepIndex: number;
   readonly files?: WorkingAgentFiles;
   readonly signal?: AbortSignal;
+  readonly emit: (event: Event) => Promise<void>;
+  readonly runId: string;
 }): Promise<TOutput> {
   const targets = resolveAgentTargets({
     config: options.config,
@@ -72,6 +78,20 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
 
   for (const target of targets) {
     await options.onTargetAttempt?.(target);
+    // Emit agent.targetSelected event
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.step.id,
+        type: "agent.targetSelected",
+        payload: {
+          provider: target.provider,
+          model: target.model,
+          thinking: target.thinking,
+        },
+      }),
+    );
     try {
       return await runWorkingAgentTargetAttempt({
         ...options,

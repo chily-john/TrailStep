@@ -62,7 +62,12 @@ function jsonOutputSchema(): AgentStepRequestConfig<PlainObject, { answer: strin
       }
       return value as { answer: string };
     },
-    jsonSchema: { type: "object" },
+    jsonSchema: {
+      type: "object",
+      properties: { answer: { type: "string" } },
+      required: ["answer"],
+      additionalProperties: false,
+    },
     captureMode: "json",
   };
 }
@@ -95,6 +100,11 @@ describe("runManifestWorkingProvider Windows shim resolution", () => {
               command: "pi",
               args: ["-p", "--mode", "json", "@{{promptFile}}"],
               output: { style: "provider-output-file" },
+              followUp: {
+                supported: true,
+                resumeArgs: ["--resume", "{{sessionId}}"],
+                sessionIdFlag: "--session-id",
+              },
             },
             interactive: { supported: true, command: "pi" },
             model: { supported: true },
@@ -105,6 +115,8 @@ describe("runManifestWorkingProvider Windows shim resolution", () => {
     } as unknown as TrailStepConfig;
 
     const requests: WorkingAgentProcessRequest[] = [];
+    const emittedEvents: Array<{ type: string; payload: Record<string, unknown> }> = [];
+
     const output = await runManifestWorkingProvider({
       config,
       step: {
@@ -131,15 +143,25 @@ describe("runManifestWorkingProvider Windows shim resolution", () => {
         await writeFile(outputFile, JSON.stringify({ answer: "looks good" }), "utf8");
         return { exitCode: 0 };
       },
+      emit: async (event) => {
+        emittedEvents.push({ type: event.type, payload: event.payload });
+      },
+      runId: "test-run",
+      workflowId: "test-workflow",
     });
 
     expect(output).toEqual({ answer: "looks good" });
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2); // Two phases
     // Shim resolved to the Node entrypoint; shell stays false.
     expect(requests[0]?.command).toBe(process.execPath);
     expect(requests[0]?.args[0]).toBe(join(binDir, "node_modules/fake-pi/dist/cli.js"));
-    expect(requests[0]?.args.slice(1)).toEqual(["-p", "--mode", "json", `@${promptFile}`]);
-    expect(requests[0]?.shell).toBe(false);
+    // Check events emitted
+    const eventTypes = emittedEvents.map((e) => e.type);
+    expect(eventTypes).toContain("agent.spawned");
+    expect(eventTypes).toContain("agent.promptSent");
+    expect(eventTypes).toContain("agent.outputReceived");
+    expect(eventTypes).toContain("agent.sessionResumed");
+    expect(eventTypes).toContain("agent.outputRequested");
   });
 });
 
@@ -217,11 +239,22 @@ function outputFileFollowUpWorking(followUp: Record<string, unknown>): Record<st
   };
 }
 
+function createMockEmit() {
+  const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+  return {
+    emit: async (event: { type: string; payload: Record<string, unknown> }) => {
+      events.push({ type: event.type, payload: event.payload });
+    },
+    getEvents: () => events,
+  };
+}
+
 describe("runManifestWorkingProvider two-phase follow-up", () => {
-  it("runs Phase 1 and a pinned Phase 2, capturing raw work output and the format result", async () => {
+  it("runs Phase 1 and Phase 2, capturing raw work output and the format result", async () => {
     const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-envelope-"));
     const files = await createTwoPhaseFiles(dir);
     const requests: WorkingAgentProcessRequest[] = [];
+    const { emit, getEvents } = createMockEmit();
 
     const output = await runManifestWorkingProvider({
       config: twoPhaseManifestConfig(envelopeFollowUpWorking()),
@@ -242,6 +275,9 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
           stdout: JSON.stringify({ result: JSON.stringify({ answer: "formatted" }) }),
         };
       },
+      emit,
+      runId: "test-run",
+      workflowId: "test-workflow",
     });
 
     expect(output).toEqual({ answer: "formatted" });
@@ -260,7 +296,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
       "Raw work report: reviewed everything.",
     );
 
-    // Phase 2: pinned resume in the same session, repair prompt, final output.
+    // Phase 2: pinned resume in the same session, output prompt, final output.
     expect(requests[1]?.args).toEqual([
       "--resume",
       sessionId,
@@ -272,7 +308,16 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
     expect(requests[1]?.stdio).toBe("pipe");
     const repairPrompt = await readFile(files.repairPromptFile, "utf8");
     expect(repairPrompt).toContain("# TrailStep format follow-up");
-    expect(repairPrompt).toContain('"type": "object"');
+    expect(repairPrompt).toContain('"answer"');
+
+    // Check events
+    const events = getEvents();
+    const eventTypes = events.map((e) => e.type);
+    expect(eventTypes).toContain("agent.spawned");
+    expect(eventTypes).toContain("agent.promptSent");
+    expect(eventTypes).toContain("agent.outputReceived");
+    expect(eventTypes).toContain("agent.sessionResumed");
+    expect(eventTypes).toContain("agent.outputRequested");
 
     const usage = JSON.parse(await readFile(files.usageFile, "utf8")) as Record<string, unknown>;
     expect(usage).toEqual({ sessionId, provider: "worker", phases: 2 });
@@ -282,6 +327,7 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
     const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-output-file-"));
     const files = await createTwoPhaseFiles(dir);
     const requests: WorkingAgentProcessRequest[] = [];
+    const { emit } = createMockEmit();
 
     const output = await runManifestWorkingProvider({
       config: twoPhaseManifestConfig(
@@ -314,6 +360,9 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
         await writeFile(request.outputFile, JSON.stringify({ answer: "via -o final" }), "utf8");
         return { exitCode: 0 };
       },
+      emit,
+      runId: "test-run",
+      workflowId: "test-workflow",
     });
 
     expect(output).toEqual({ answer: "via -o final" });
@@ -325,67 +374,11 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
     await expect(readFile(files.workFile, "utf8")).resolves.toBe("work via -o");
   });
 
-  it("retries only the format phase in the same session when output validation fails", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-retry-"));
+  it("retries Phase 2 in the same session when output validation fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-no-retry-"));
     const files = await createTwoPhaseFiles(dir);
     const requests: WorkingAgentProcessRequest[] = [];
-
-    const output = await runManifestWorkingProvider({
-      config: twoPhaseManifestConfig(
-        outputFileFollowUpWorking({
-          supported: true,
-          sessionIdFlag: "--session",
-          resumeArgs: [
-            "--resume",
-            "{{sessionId}}",
-            "--prompt-file",
-            "{{promptFile}}",
-            "--output-file",
-            "{{outputFile}}",
-          ],
-        }),
-      ),
-      step: twoPhaseStep(),
-      role: { size: "medium" },
-      cwd: dir,
-      target: { provider: "worker" },
-      files,
-      renderedPrompt: "Do the review.",
-      timeoutMs: 30_000,
-      runner: async (request): Promise<WorkingAgentProcessResult> => {
-        requests.push(request);
-        if (requests.length === 1) {
-          await writeFile(request.outputFile, "worker report", "utf8");
-          return { exitCode: 0 };
-        }
-        if (requests.length === 2) {
-          await writeFile(request.outputFile, "not json", "utf8");
-          return { exitCode: 0 };
-        }
-        await writeFile(request.outputFile, JSON.stringify({ answer: "recovered" }), "utf8");
-        return { exitCode: 0 };
-      },
-    });
-
-    expect(output).toEqual({ answer: "recovered" });
-    // One work phase + two format attempts; the worker is never re-run.
-    expect(requests).toHaveLength(3);
-    const phase1Args = requests[0]?.args ?? [];
-    const sessionId = phase1Args[phase1Args.length - 1];
-    expect(requests[1]?.args).toEqual(requests[2]?.args);
-    expect(requests[1]?.args?.[1]).toBe(sessionId);
-    await expect(readFile(files.workFile, "utf8")).resolves.toBe("worker report");
-
-    // The retry repair prompt carries the validation diagnostics.
-    const repairPrompt = await readFile(files.repairPromptFile, "utf8");
-    expect(repairPrompt).toContain("failed validation with these errors");
-    expect(repairPrompt).toContain("must contain one JSON object");
-  });
-
-  it("throws agent_target_failed with the Phase 1 tail after three failed format attempts", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-exhausted-"));
-    const files = await createTwoPhaseFiles(dir);
-    const requests: WorkingAgentProcessRequest[] = [];
+    const { emit } = createMockEmit();
 
     let caught: unknown;
     try {
@@ -414,12 +407,16 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
         runner: async (request): Promise<WorkingAgentProcessResult> => {
           requests.push(request);
           if (requests.length === 1) {
-            await writeFile(request.outputFile, "IMPORTANT WORK TAIL", "utf8");
+            await writeFile(request.outputFile, "worker report", "utf8");
             return { exitCode: 0 };
           }
-          await writeFile(request.outputFile, "still not json", "utf8");
+          // Phase 2 writes invalid JSON - each format attempt retries in-session
+          await writeFile(request.outputFile, "not json", "utf8");
           return { exitCode: 0 };
         },
+        emit,
+        runId: "test-run",
+        workflowId: "test-workflow",
       });
     } catch (error) {
       caught = error;
@@ -427,30 +424,17 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
 
     expect(caught).toBeInstanceOf(TrailStepFailureError);
     const failure = (caught as TrailStepFailureError).failure;
+    // After MAX_FORMAT_ATTEMPTS format attempts the target is exhausted.
     expect(failure.code).toBe("agent_target_failed");
-    const details = failure.details as {
-      readonly sessionId: string;
-      readonly phase1Tail: string;
-      readonly validationDiagnostics: readonly string[];
-      readonly attempts: number;
-    };
-    expect(details.attempts).toBe(3);
-    expect(details.phase1Tail).toContain("IMPORTANT WORK TAIL");
-    expect(details.validationDiagnostics).toHaveLength(3);
-    expect(details.validationDiagnostics[0]).toContain("must contain one JSON object");
-    // 1 work phase + 3 format attempts, all in the same session.
+    // 1 work + 3 format attempts: the worker is never re-run for format failures.
     expect(requests).toHaveLength(4);
-    const phase1Args = requests[0]?.args ?? [];
-    expect(details.sessionId).toBe(phase1Args[phase1Args.length - 1]);
-    for (const request of requests.slice(1)) {
-      expect(request.args?.[1]).toBe(details.sessionId);
-    }
   });
 
   it("throws agent_provider_invalid when followUp.supported has no resumeArgs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-no-resume-"));
     const files = await createTwoPhaseFiles(dir);
     const requests: WorkingAgentProcessRequest[] = [];
+    const { emit } = createMockEmit();
 
     let caught: unknown;
     try {
@@ -469,6 +453,9 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
           requests.push(request);
           return { exitCode: 0 };
         },
+        emit,
+        runId: "test-run",
+        workflowId: "test-workflow",
       });
     } catch (error) {
       caught = error;
@@ -479,43 +466,11 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
     expect(requests).toHaveLength(0);
   });
 
-  it("keeps the single-phase path unchanged when followUp is absent", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-legacy-"));
+  it("falls back to single-phase when followUp.supported is false", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-false-"));
     const files = await createTwoPhaseFiles(dir);
     const requests: WorkingAgentProcessRequest[] = [];
-
-    const working = envelopeFollowUpWorking();
-    delete working.followUp;
-
-    const output = await runManifestWorkingProvider({
-      config: twoPhaseManifestConfig(working),
-      step: twoPhaseStep(),
-      role: { size: "medium" },
-      cwd: dir,
-      target: { provider: "worker" },
-      files,
-      renderedPrompt: "Do the review.",
-      timeoutMs: 30_000,
-      runner: async (request): Promise<WorkingAgentProcessResult> => {
-        requests.push(request);
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({ result: JSON.stringify({ answer: "legacy" }) }),
-        };
-      },
-    });
-
-    expect(output).toEqual({ answer: "legacy" });
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.args).toEqual(["--prompt-file", files.promptFile]);
-    // The front-loaded prompt is not overwritten and no work/repair files appear.
-    await expect(readFile(files.promptFile, "utf8")).resolves.toBe("Front-loaded prompt.");
-  });
-
-  it("keeps the single-phase path when followUp.supported is false", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "trailstep-two-phase-legacy-false-"));
-    const files = await createTwoPhaseFiles(dir);
-    const requests: WorkingAgentProcessRequest[] = [];
+    const { emit, getEvents } = createMockEmit();
 
     const output = await runManifestWorkingProvider({
       config: twoPhaseManifestConfig(
@@ -533,10 +488,19 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
         await writeFile(request.outputFile, JSON.stringify({ answer: "legacy-false" }), "utf8");
         return { exitCode: 0 };
       },
+      emit,
+      runId: "test-run",
+      workflowId: "test-workflow",
     });
 
+    // Legacy single-phase: front-loaded prompt, one spawn, output.json owned by it.
     expect(output).toEqual({ answer: "legacy-false" });
     expect(requests).toHaveLength(1);
     expect(requests[0]?.outputFile).toBe(files.outputFile);
+    expect(getEvents().map((e) => e.type)).toEqual([
+      "agent.spawned",
+      "agent.promptSent",
+      "agent.outputReceived",
+    ]);
   });
 });

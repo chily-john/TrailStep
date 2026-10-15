@@ -129,6 +129,18 @@
       {
         "ref": "debugger"
       }
+    ],
+    "delegateAgent": [
+      {
+        "provider": "pi",
+        "model": "openrouter/meta/muse-spark-1.3",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
+        "model": "openrouter/xiaomi/mimo-v2.6-pro",
+        "thinking": "medium"
+      }
     ]
   },
   "workflows": {
@@ -293,10 +305,11 @@
         "displayName": "Pi",
         "working": {
           "supported": true,
-          "command": "node",
+          "command": "pi",
           "args": [
-            "C:/Users/cjohnson_xtivia/AppData/Roaming/npm-global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
             "-p",
+            "--mode",
+            "json",
             "{{#model}}",
             "--model",
             "{{model}}",
@@ -305,20 +318,40 @@
             "--thinking",
             "{{thinking}}",
             "{{/thinking}}",
-            "@{{promptFile}}",
-            "--mode",
-            "json"
+            "@{{promptFile}}"
           ],
           "prompt": {
-            "kind": "prompt-file"
+            "kind": "prompt-file",
+            "reference": "at-prefixed-argument"
           },
           "output": {
-            "style": "provider-output-file"
+            "style": "stdout-jsonl-transcript",
+            "parsing": { "resultField": "message" }
+          },
+          "followUp": {
+            "supported": true,
+            "sessionIdFlag": "--session-id",
+            "resumeArgs": [
+              "-p",
+              "--mode",
+              "json",
+              "{{#model}}",
+              "--model",
+              "{{model}}",
+              "{{/model}}",
+              "{{#thinking}}",
+              "--thinking",
+              "{{thinking}}",
+              "{{/thinking}}",
+              "--session",
+              "{{sessionId}}",
+              "@{{promptFile}}"
+            ]
           }
         },
         "interactive": {
           "supported": true,
-          "command": "node"
+          "command": "pi"
         },
         "model": {
           "supported": true

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import type {
   TrailStepAgentTarget,
   TrailStepConfig,
@@ -22,7 +22,9 @@ import type {
   TrailStepProviderOutputManifest,
   TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
+import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type {
+  Event,
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
 } from "../../../../runtime/run-workflow/run-workflow.types.js";
@@ -43,6 +45,9 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly renderedPrompt: string;
   readonly signal?: AbortSignal;
   readonly timeoutMs: number;
+  readonly emit: (event: Event) => Promise<void>;
+  readonly runId: string;
+  readonly workflowId: string;
 }): Promise<TOutput> {
   const registration = options.config.providers?.[options.target.provider];
   const manifest = registration?.manifest;
@@ -99,50 +104,46 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   });
   const captureStdout = working.output?.style !== "provider-output-file";
 
-  let result: WorkingAgentProcessResult;
-  try {
-    // npm-installed provider CLIs (e.g. pi) are .cmd shims on Windows and cannot
-    // be spawned by bare name with shell:false; resolve to the Node entrypoint
-    // (no-op on other platforms) so argv is never reinterpreted by a shell.
-    const executable = await resolveCliCommandForSpawn({ command: working.command, args });
-    result = await Promise.race([
-      (options.runner ?? spawnWorkingAgentProcess)({
-        command: executable.command,
-        args: executable.args,
-        cwd: options.cwd,
-        shell: false,
-        stdio: captureStdout ? "pipe" : "inherit",
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: options.step.id,
+      type: "agent.spawned",
+      payload: {
+        provider: options.target.provider,
+        model,
+        phase: "work",
         promptFile: options.files.promptFile,
         outputFile: options.files.outputFile,
-        ...(model === undefined ? {} : { model }),
-        signal: options.signal,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("working_agent_timeout")), options.timeoutMs),
-      ),
-    ]);
-  } catch (error) {
-    if (error instanceof Error && error.message === "working_agent_timeout") {
-      throw new TrailStepFailureError({
-        code: "agent_provider_timeout",
-        message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,
-        details: {
-          target: options.target.provider,
-          ...(model === undefined ? {} : { model }),
-          timeoutMs: options.timeoutMs,
-        },
-      });
-    }
-    throw new TrailStepFailureError({
-      code: "agent_provider_spawn_error",
-      message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
-      details: {
-        target: options.target.provider,
-        ...(model === undefined ? {} : { model }),
-        cause: error instanceof Error ? error.message : String(error),
       },
-    });
-  }
+    }),
+  );
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: options.step.id,
+      type: "agent.promptSent",
+      payload: { phase: "work", promptFile: options.files.promptFile },
+    }),
+  );
+
+  const result = await spawnManifestPhase({
+    phase: "work",
+    stepId: options.step.id,
+    provider: options.target.provider,
+    command: working.command,
+    args,
+    cwd: options.cwd,
+    model,
+    promptFile: options.files.promptFile,
+    outputFile: options.files.outputFile,
+    stdio: captureStdout ? "pipe" : "inherit",
+    runner: options.runner,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
 
   if (result.exitCode !== 0) {
     throw new TrailStepFailureError({
@@ -166,6 +167,21 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     output: working.output,
     extractOutputHook: registration?.manifest.hooks?.extractOutput,
   });
+
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: options.step.id,
+      type: "agent.outputReceived",
+      payload: {
+        phase: "work",
+        outputFile: options.files.outputFile,
+        outputSize: await outputFileSize(options.files.outputFile),
+        valid: true,
+      },
+    }),
+  );
 
   return readWorkingAgentOutput({
     stepId: options.step.id,
@@ -194,6 +210,9 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     readonly renderedPrompt: string;
     readonly signal?: AbortSignal;
     readonly timeoutMs: number;
+    readonly emit: (event: Event) => Promise<void>;
+    readonly runId: string;
+    readonly workflowId: string;
   };
   readonly manifest: TrailStepProviderManifest;
   readonly working: TrailStepProviderWorkingManifest;
@@ -207,6 +226,15 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   const { files, step, target } = options;
   const sessionId = randomUUID();
   const captureStdout = working.output?.style !== "provider-output-file";
+
+  // One step timeout governs both phases. Track a deadline and hand each
+  // spawn only its remaining share so retries can never overrun the step.
+  // Phase 1 is additionally capped to leave a reserve for formatting, other-
+  // wise a slow work phase could starve Phase 2 down to a zero budget.
+  const stepDeadline = Date.now() + options.timeoutMs;
+  const remainingMs = (): number => stepDeadline - Date.now();
+  const formatReserveMs = Math.min(30_000, Math.max(10_000, Math.floor(options.timeoutMs / 5)));
+  const phase1BudgetMs = Math.max(1_000, options.timeoutMs - formatReserveMs);
 
   // Fail fast on manifest misconfiguration before running the worker: a
   // supported follow-up without resume args cannot ever complete Phase 2.
@@ -250,6 +278,32 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     phase1Args.push(followUp.sessionIdFlag, sessionId);
   }
 
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: step.id,
+      type: "agent.spawned",
+      payload: {
+        provider: target.provider,
+        model: context.model,
+        phase: "work",
+        sessionId,
+        promptFile: files.promptFile,
+        outputFile: files.workFile,
+      },
+    }),
+  );
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: step.id,
+      type: "agent.promptSent",
+      payload: { phase: "work", promptFile: files.promptFile, sessionId },
+    }),
+  );
+
   const phase1Result = await spawnManifestPhase({
     phase: "work",
     stepId: step.id,
@@ -263,7 +317,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     stdio: captureStdout ? "pipe" : "inherit",
     runner: options.runner,
     signal: options.signal,
-    timeoutMs: context.timeoutMs,
+    timeoutMs: phase1BudgetMs,
   });
 
   if (phase1Result.exitCode !== 0) {
@@ -291,6 +345,21 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     provider: target.provider,
     model: context.model,
   });
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: step.id,
+      type: "agent.outputReceived",
+      payload: {
+        phase: "work",
+        sessionId,
+        outputFile: files.workFile,
+        outputSize: await outputFileSize(files.workFile),
+        valid: true,
+      },
+    }),
+  );
 
   // Phase 2: pinned same-session format follow-up.
   const phase2Args = renderCustomProviderArgs({
@@ -309,7 +378,41 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   const validationDiagnostics: string[] = [];
   let formatFailureMessage = "";
 
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: step.id,
+      type: "agent.outputRequested",
+      payload: { phase: "format", sessionId },
+    }),
+  );
+  await options.emit(
+    createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: step.id,
+      type: "agent.sessionResumed",
+      payload: { sessionId, phase: "format" },
+    }),
+  );
+
   for (let attempt = 1; attempt <= MAX_FORMAT_ATTEMPTS; attempt += 1) {
+    const attemptBudgetMs = remainingMs();
+    if (attemptBudgetMs <= 0) {
+      throw new TrailStepFailureError({
+        code: "agent_provider_timeout",
+        message: `Working agent step ${step.id} target '${target.provider}' timed out after ${options.timeoutMs}ms before format attempt ${attempt}.`,
+        details: {
+          phase: "format",
+          attempt,
+          sessionId,
+          target: target.provider,
+          ...(context.model === undefined ? {} : { model: context.model }),
+          timeoutMs: options.timeoutMs,
+        },
+      });
+    }
     await writeFile(
       files.repairPromptFile,
       buildFormatPrompt({
@@ -317,6 +420,32 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
         ...(attempt === 1 ? {} : { validationErrors: [formatFailureMessage] }),
       }),
       "utf8",
+    );
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: step.id,
+        type: "agent.spawned",
+        payload: {
+          provider: target.provider,
+          model: context.model,
+          phase: "format",
+          attempt,
+          sessionId,
+          promptFile: files.repairPromptFile,
+          outputFile: files.outputFile,
+        },
+      }),
+    );
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: step.id,
+        type: "agent.promptSent",
+        payload: { phase: "format", attempt, promptFile: files.repairPromptFile, sessionId },
+      }),
     );
 
     const phase2Result = await spawnManifestPhase({
@@ -332,7 +461,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
       stdio: captureStdout ? "pipe" : "inherit",
       runner: options.runner,
       signal: options.signal,
-      timeoutMs: context.timeoutMs,
+      timeoutMs: attemptBudgetMs,
     });
 
     if (phase2Result.exitCode !== 0) {
@@ -361,7 +490,28 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
         output: working.output,
         extractOutputHook: context.extractOutputHook,
       });
-      return await readWorkingAgentOutput({ stepId: step.id, outputFile: files.outputFile, step });
+      const formatted = await readWorkingAgentOutput({
+        stepId: step.id,
+        outputFile: files.outputFile,
+        step,
+      });
+      await options.emit(
+        createEvent({
+          runId: options.runId,
+          workflowId: options.workflowId,
+          stepId: step.id,
+          type: "agent.outputReceived",
+          payload: {
+            phase: "format",
+            attempt,
+            sessionId,
+            outputFile: files.outputFile,
+            outputSize: await outputFileSize(files.outputFile),
+            valid: true,
+          },
+        }),
+      );
+      return formatted;
     } catch (error) {
       // Output validation/parse failure: retry Phase 2 in the SAME session.
       // The worker (Phase 1) is never re-run for format failures.
@@ -408,6 +558,20 @@ async function spawnManifestPhase(options: {
     command: options.command,
     args: options.args,
   });
+  // Link caller cancellation and the per-phase timeout into one signal so a
+  // timed-out phase actually terminates the child process tree (the spawn
+  // primitive kills on abort) instead of leaking it. The race rejection below
+  // still covers runners that ignore the signal entirely. The timer is always
+  // cleared on settle so idle timeouts cannot fire into later phases.
+  const controller = new AbortController();
+  let timedOut = false;
+  const onCallerAbort = (): void => controller.abort();
+  if (options.signal?.aborted === true) {
+    controller.abort();
+  } else {
+    options.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       (options.runner ?? spawnWorkingAgentProcess)({
@@ -419,14 +583,18 @@ async function spawnManifestPhase(options: {
         promptFile: options.promptFile,
         outputFile: options.outputFile,
         ...(options.model === undefined ? {} : { model: options.model }),
-        signal: options.signal,
+        signal: controller.signal,
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("working_agent_timeout")), options.timeoutMs),
-      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          reject(new Error("working_agent_timeout"));
+        }, options.timeoutMs);
+      }),
     ]);
   } catch (error) {
-    if (error instanceof Error && error.message === "working_agent_timeout") {
+    if (timedOut || (error instanceof Error && error.message === "working_agent_timeout")) {
       throw new TrailStepFailureError({
         code: "agent_provider_timeout",
         message: `Working agent step ${options.stepId} target '${options.provider}' timed out after ${options.timeoutMs}ms in ${options.phase} phase.`,
@@ -438,6 +606,11 @@ async function spawnManifestPhase(options: {
         },
       });
     }
+    if (controller.signal.aborted) {
+      // Caller (workflow timeout/cancellation) aborted the phase: preserve
+      // cancellation semantics instead of masking it as a spawn error.
+      throw error;
+    }
     throw new TrailStepFailureError({
       code: "agent_provider_spawn_error",
       message: `Working agent step ${options.stepId} could not start target '${options.provider}'.`,
@@ -448,6 +621,20 @@ async function spawnManifestPhase(options: {
         cause: error instanceof Error ? error.message : String(error),
       },
     });
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+    options.signal?.removeEventListener("abort", onCallerAbort);
+  }
+}
+
+/** Best-effort byte size for observability; never masks the main result. */
+async function outputFileSize(path: string): Promise<number> {
+  try {
+    return (await stat(path)).size;
+  } catch {
+    return 0;
   }
 }
 

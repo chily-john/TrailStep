@@ -177,6 +177,8 @@ export async function runSubPrompt<
               workFile: join(artifactPaths.subPromptDir, "work.txt"),
               repairPromptFile: join(artifactPaths.subPromptDir, "repair-prompt.md"),
             },
+            emit: context.emit,
+            runId: context.id,
           })
         : await runAgentStep({
             step: agentStep,

@@ -4,125 +4,125 @@
     "grillingAgent": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.4-mini",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "featureWriter": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.4-mini",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "planner": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.5",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "reviewer": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.5",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "storyExplorer": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.3-codex-spark",
-        "thinking": "low"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "testWriter": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.4",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "storyImplementer": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.4",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "storyDoctor": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.5",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "validator": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.3-codex-spark",
-        "thinking": "low"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "storyReviewer": [
       {
         "provider": "pi",
-        "model": "openai-codex/gpt-5.5",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "generalist": [
       {
         "provider": "pi",
-        "model": "openrouter/meta/muse-spark-1.3",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       },
       {
         "provider": "pi",
-        "model": "openrouter/xiaomi/mimo-v2.6-pro",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "explorer": [
       {
         "provider": "pi",
-        "model": "openrouter/deepseek/deepseek-v4-flash-0731",
-        "thinking": "low"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "quick-implementor": [
       {
         "provider": "pi",
-        "model": "openrouter/z-ai/glm-5.3-flash",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "smart-implementor": [
       {
         "provider": "pi",
-        "model": "openrouter/xiaomi/mimo-v2.6-pro",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "debugger": [
       {
         "provider": "pi",
-        "model": "openrouter/xiaomi/mimo-v2.6-pro",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "expert": [
       {
         "provider": "pi",
-        "model": "openrouter/xiaomi/mimo-v2.6-pro",
-        "thinking": "high"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "formatter": [
       {
         "provider": "pi",
-        "model": "openrouter/z-ai/glm-5.3-flash",
-        "thinking": "low"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ],
     "fixer": [
@@ -133,13 +133,13 @@
     "delegateAgent": [
       {
         "provider": "pi",
-        "model": "openrouter/meta/muse-spark-1.3",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       },
       {
         "provider": "pi",
-        "model": "openrouter/xiaomi/mimo-v2.6-pro",
-        "thinking": "medium"
+        "model": "thinkingmachines/inkling-small:free",
+        "thinking": "max"
       }
     ]
   },
@@ -326,7 +326,9 @@
           },
           "output": {
             "style": "stdout-jsonl-transcript",
-            "parsing": { "resultField": "message" }
+            "parsing": {
+              "resultField": "message"
+            }
           },
           "followUp": {
             "supported": true,

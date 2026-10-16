@@ -48,7 +48,6 @@ export {
   subPrompt,
   workflow,
 } from "./authoring/authoring.js";
-export { deferEngineInit } from "./defer-engine-init.js";
 export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
   AbsoluteDoneNode,
@@ -162,6 +161,7 @@ export type {
   ShapeObject,
   ShapePrimitive,
 } from "./contracts/shapes/shape.types.js";
+export { deferEngineInit } from "./defer-engine-init.js";
 export type { FindDeprecationsAsOfQuery } from "./deprecations/deprecation-manifest.js";
 export {
   deprecationManifest,
@@ -173,6 +173,10 @@ export type {
   DeprecationStatus,
   DeprecationTargetPackage,
 } from "./deprecations/deprecations.types.js";
+export { TRST_KEY_ORDER } from "./json/constants.js";
+export { serializeOrdered } from "./json/ordered-serialize.js";
+export { validateStructural } from "./json/validate-structural.js";
+export { layeredDirs, load } from "./load-order.js";
 export {
   parseTrailStepProviderManifest,
   type TrailStepProviderEnvironmentManifest,
@@ -261,8 +265,3 @@ export type {
   TimeoutPolicyInput,
 } from "./runtime/timeout/timeout-policy.js";
 export { resolveTimeoutPolicy, validateTimeoutPolicy } from "./runtime/timeout/timeout-policy.js";
-
-export { serializeOrdered } from "./json/ordered-serialize.js";
-export { validateStructural } from "./json/validate-structural.js";
-export { TRST_KEY_ORDER } from "./json/constants.js";
-export { load, layeredDirs } from "./load-order.js";

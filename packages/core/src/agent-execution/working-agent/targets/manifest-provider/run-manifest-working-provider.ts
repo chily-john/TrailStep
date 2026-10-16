@@ -406,7 +406,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
 
   for (let attempt = 1; attempt <= MAX_FORMAT_ATTEMPTS; attempt += 1) {
     const attemptBudgetMs = remainingMs();
-    if (attemptBudgetMs <= 0) {
+    if (attemptBudgetMs === undefined || attemptBudgetMs <= 0) {
       throw new TrailStepFailureError({
         code: "agent_provider_timeout",
         message: `Working agent step ${step.id} target '${target.provider}' timed out after ${options.timeoutMs}ms before format attempt ${attempt}.`,

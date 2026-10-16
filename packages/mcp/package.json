@@ -20,7 +20,8 @@
     "access": "public"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0"
+    "@types/node": "^26.2.0",
+    "add-mcp": "^2.4.1"
   },
   "peerDependencies": {
     "@trailstep/core": "*"

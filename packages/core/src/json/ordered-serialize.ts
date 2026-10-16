@@ -4,7 +4,7 @@ export function serializeOrdered(obj: Record<string, unknown>): string {
   const ordered: Record<string, unknown> = {};
   // Explicit key array first: known fields in fixed order
   for (const k of TRST_KEY_ORDER) {
-    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+    if (Object.hasOwn(obj, k)) {
       ordered[k] = obj[k];
     }
   }

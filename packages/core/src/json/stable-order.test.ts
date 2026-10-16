@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { serializeOrdered } from "./ordered-serialize.js";
+import { describe, expect, it } from "vitest";
 import { load } from "../load-order.js";
+import { serializeOrdered } from "./ordered-serialize.js";
 
 describe("stable order and load order (red)", () => {
   it("serializes with explicit key array, not insertion order", () => {

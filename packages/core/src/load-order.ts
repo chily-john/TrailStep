@@ -1,6 +1,5 @@
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 function homeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || "~";

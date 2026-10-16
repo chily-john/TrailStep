@@ -12,7 +12,9 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "test": "cd ../.. && vitest run packages/mcp/test/",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src"
   },
   "publishConfig": {
     "access": "public"

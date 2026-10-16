@@ -1,0 +1,97 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Verification: `trailstep mcp --project <dir>` runs the MCP server in the CLI
+// process itself (foreground stdio), stays alive across requests, completes the
+// MCP handshake, and surfaces tool errors as MCP error results.
+
+const cliEntry = pathToFileURL(join(import.meta.dirname, "..", "..", "..", "index.ts")).href;
+const tmpRoot = join("node_modules", ".tmp-trailstep-mcp-tests");
+
+// The CLI bin auto-run guard fires only for the built index.js entry, so the
+// test drives main() through a tiny wrapper module (run via tsx) that mimics
+// `trailstep mcp --project <dir>`.
+async function writeMcpEntry(projectDir: string): Promise<string> {
+  await mkdir(tmpRoot, { recursive: true });
+  const entryPath = join(
+    tmpRoot,
+    `mcp-entry-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
+  );
+  await writeFile(
+    entryPath,
+    `import { main } from ${JSON.stringify(cliEntry)};\n` +
+      `process.exitCode = await main({ argv: ["mcp", "--project", ${JSON.stringify(projectDir)}] });\n`,
+  );
+  return entryPath;
+}
+
+async function spawnMcpClient(projectDir: string): Promise<Client> {
+  const entryPath = await writeMcpEntry(projectDir);
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["--import", "tsx", entryPath],
+  });
+  const client = new Client({ name: "trailstep-mcp-test", version: "0.0.0" });
+  await client.connect(transport);
+  return client;
+}
+
+afterAll(async () => {
+  await rm(tmpRoot, { recursive: true, force: true });
+});
+
+describe("mcp command (foreground stdio server)", () => {
+  it("completes handshake, stays alive, and serves tools", async () => {
+    const projectDir = join(tmpRoot, "handshake");
+    await mkdir(projectDir, { recursive: true });
+
+    // Handshake (initialize) must succeed via the real MCP client.
+    const client = await spawnMcpClient(projectDir);
+    try {
+      // Server stays alive across sequential round-trips (no quick exit).
+      const tools = await client.listTools();
+      const toolNames = tools.tools.map((tool) => tool.name);
+      await sleep(200);
+      const toolsStillAlive = await client.listTools();
+      expect(toolNames).toEqual(toolsStillAlive.tools.map((tool) => tool.name));
+      for (const expected of ["trst_run_workflow"]) {
+        expect(toolNames).toContain(expected);
+      }
+
+      // Tool dispatch works end-to-end and returns structured results.
+      const call = await client.callTool({
+        name: "trst_run_workflow",
+        arguments: { workflow: "demo" },
+      });
+      expect(call.isError).not.toBe(true);
+      const payload = JSON.parse(
+        (call.content as readonly { type: string; text: string }[])[0]?.text ?? "{}",
+      ) as { runId?: unknown; status?: unknown; workflow?: unknown };
+      expect(typeof payload.runId).toBe("string");
+      expect(payload.status).toBe("started");
+      expect(payload.workflow).toBe("demo");
+    } finally {
+      await client.close();
+    }
+  }, 30_000);
+
+  it("surfaces unknown-tool failures as MCP error results, not silent hangs", async () => {
+    const projectDir = join(tmpRoot, "tool-error");
+    await mkdir(projectDir, { recursive: true });
+
+    const client = await spawnMcpClient(projectDir);
+    try {
+      const call = await client.callTool({ name: "no_such_tool", arguments: {} });
+      expect(call.isError).toBe(true);
+      const text = (call.content as readonly { type: string; text: string }[])[0]?.text ?? "";
+      expect(text).toContain("Unknown tool");
+    } finally {
+      await client.close();
+    }
+  }, 30_000);
+});

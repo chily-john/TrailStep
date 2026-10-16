@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 function homeDir(): string {
-  return process.env.HOME || process.env.USERPROFILE || "~";
+  return homedir();
 }
 
 function workspaceRoot(): string {
@@ -18,8 +19,14 @@ function workspaceRoot(): string {
   return process.cwd();
 }
 
-export function layeredDirs(): string[] {
-  const root = workspaceRoot();
+/**
+ * Layered MCP config dirs in first-wins order: local > project > global.
+ * `projectDir` anchors the local and project layers to an explicit project
+ * root instead of the cwd-derived workspace root; the global layer always
+ * resolves under the real home directory (`os.homedir()`).
+ */
+export function layeredDirs(options?: { projectDir?: string }): string[] {
+  const root = options?.projectDir ? path.resolve(options.projectDir) : workspaceRoot();
   return [
     path.resolve(root, ".trailstep/mcp/"),
     path.resolve(root, "project/.trailstep/mcp/"),
@@ -27,8 +34,8 @@ export function layeredDirs(): string[] {
   ];
 }
 
-export function load(options?: { dir?: string; ids?: string[] }): unknown[] {
-  const dirs = options?.dir ? [options.dir] : layeredDirs();
+export function load(options?: { dir?: string; ids?: string[]; projectDir?: string }): unknown[] {
+  const dirs = options?.dir ? [options.dir] : layeredDirs({ projectDir: options?.projectDir });
   const seenIds = new Set<string>();
   const items: unknown[] = [];
 

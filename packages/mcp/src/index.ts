@@ -1,89 +1,86 @@
-import fs from "node:fs";
+/**
+ * TrailStep MCP server entry (foreground stdio server).
+ *
+ * Parses `--project <dir>` to an absolute path, connects the low-level server
+ * over stdio, and stays alive for the transport lifetime. No detached spawn,
+ * no startup timeout, no stdin string matching — the SDK transport owns the
+ * JSON-RPC handshake.
+ */
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { serveStdio, tools } from "./server.js";
 
 export { runWorkflow } from "./run_workflow.js";
+export type { CreateServerOptions, McpToolDefinition } from "./server.js";
+export { createServer, serveStdio } from "./server.js";
+// Answer / resume adapters over the real CLI wait-answer and continue seams
+// (see ./tools/). Answers are persisted into the run's real wait answer files;
+// there is no run_context.json side-channel.
+export {
+  type TrstAnswerOptions,
+  type TrstAnswerResult,
+  trstAnswer as trst_answer,
+} from "./tools/trst_answer.js";
+export {
+  type TrstResumeOptions,
+  type TrstResumeResult,
+  trstResume as trst_resume,
+} from "./tools/trst_resume.js";
+export {
+  type TrstWatchOptions,
+  type TrstWatchParams,
+  type TrstWatchResult,
+  trst_watch,
+} from "./tools/trst_watch.js";
+export { tools };
 
-// Minimal server entry: when executed directly as subprocess stay alive briefly
-// for process-tree confirmation; exit cleanly on parent close / signal.
-const argv1 = process.argv[1] ? process.argv[1].replace(/\\/g, "/") : "";
-if (argv1 && (argv1.endsWith("mcp/src/index.ts") || argv1.endsWith("mcp/dist/index.js"))) {
-  const handle = () => process.exit(0);
-  process.on("SIGTERM", handle);
-  process.on("SIGINT", handle);
-  const interval = setInterval(() => {}, 1000);
-  setTimeout(() => {
-    clearInterval(interval);
-    process.exit(0);
-  }, 5000);
+interface EntryArgs {
+  readonly project?: string;
+}
 
-  // Minimal MCP handshake response: respond to basic initialize request on stdin
-  process.stdin.resume();
-  process.stdin.on("data", (chunk: Buffer) => {
-    try {
-      const text = chunk.toString("utf8");
-      if (text.includes("initialize")) {
-        const response = `${JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            protocolVersion: "2024-11-05",
-            serverInfo: { name: "trailstep-mcp", version: "0.1.0" },
-            capabilities: {},
-          },
-        })}\n`;
-        process.stdout.write(response);
-      }
-    } catch {
-      // Ignore malformed input — do not hang / crash silently
+function parseArgs(argv: readonly string[]): EntryArgs {
+  let project: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--project" && i + 1 < argv.length) {
+      project = argv[i + 1];
+      i++;
     }
+  }
+  return { project };
+}
+
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return path.resolve(entry) === path.resolve(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  // Resolve --project to an absolute path; default to the current directory.
+  const projectDir = path.resolve(args.project ?? ".");
+
+  const server = await serveStdio({ projectDir });
+
+  // Stay alive while the stdio transport is open; exit cleanly on signals.
+  const shutdown = (): void => {
+    void server.close().then(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+if (isMainModule()) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`trailstep-mcp failed to start: ${message}\n`);
+    process.exit(1);
   });
 }
 
-function resumeHandler(_runId?: string) {
-  return { resumed: true, sameHandler: true };
-}
-
-export function trst_watch(runId?: string) {
-  const id = runId || "default";
-  const dir = path.resolve(".trailstep/mcp/.cursor");
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-  } catch {}
-  const file = path.join(dir, `${id}.json`);
-  let cursor = 0;
-  if (fs.existsSync(file)) {
-    try {
-      const p = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (typeof p.cursor === "number") cursor = p.cursor;
-    } catch {}
-  } else {
-    fs.writeFileSync(file, JSON.stringify({ runId: id, cursor: 1 }), "utf8");
-    cursor = 1;
-  }
-  return {
-    header: `watch:${id}`,
-    lines: ["watch event"],
-    cursor,
-    state: "started",
-    timeoutMs: 25000,
-  };
-}
-
-export function trst_answer(runId?: string, answer?: string) {
-  const id = runId || "default";
-  const dir = path.resolve(".trailstep/mcp");
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-  } catch {}
-  const file = path.join(dir, "run_context.json");
-  const existing = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
-  // Open: if submitted without matching question/context, behavior not specified; do not invent fallback.
-  if (!existing[id]?.question) {
-    return { persisted: false, recommendation: undefined };
-  }
-  existing[id] = { ...existing[id], answer, recommendation: answer };
-  fs.writeFileSync(file, JSON.stringify(existing), "utf8");
-  return { persisted: true, recommendation: answer !== undefined ? answer : undefined };
-}
-
-export const trst_resume = resumeHandler;
+// Re-exported tool registry surface (names) for consumers importing the package.
+export const toolNames: readonly string[] = tools.map((tool) => tool.name);

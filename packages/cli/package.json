@@ -41,7 +41,9 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@trailstep/core": "workspace:*",
+    "@trailstep/mcp": "workspace:*",
     "semver": "^7.8.5",
     "skills": "^1.5.22",
     "tsx": "^4.23.12"

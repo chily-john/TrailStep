@@ -19,6 +19,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@trailstep/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "add-mcp": "^2.4.1"

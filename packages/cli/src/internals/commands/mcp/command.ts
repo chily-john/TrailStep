@@ -1,5 +1,6 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createServer } from "@trailstep/mcp";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 
 interface McpCommandArgs {
@@ -29,35 +30,42 @@ export const mcpCommand: CliCommand<McpCommandArgs> = {
     // Lazy-load assumption: no full engine init at subcommand startup.
     // Workflow-runtime setup deferred until first run_workflow / first resource
     // (boundary undefined — only deferred trigger added in core).
-    // Resolve --project to absolute
-    const projectDir = args.project ? path.resolve(args.project) : path.resolve(".");
 
-    // Launch MCP server as subprocess (absolute script path so cwd=projectDir works)
-    const serverScript = path.resolve("packages/mcp/dist/index.js");
-    const child = spawn("node", [serverScript], {
-      cwd: projectDir,
-      stdio: "inherit",
-      detached: true,
-    });
-    child.unref();
+    // Resolve --project to an absolute directory; the server operates there so
+    // project-scoped MCP state (.trailstep/mcp) resolves correctly.
+    const projectDir = path.resolve(args.project ?? ".");
+    process.chdir(projectDir);
 
-    // Subprocess exit / error handlers so crash surfaces via MCP error (not silent hang)
-    child.on("error", (err) => {
-      // Surface error via stderr / exit rather than silent hang
-      process.stderr.write(`mcp subprocess error: ${err.message}\n`);
-    });
-    child.on("exit", (code) => {
-      // Clean exit observation; do not hang CLI
-    });
+    // Foreground MCP server: the CLI process itself IS the server. The server
+    // comes from the @trailstep/mcp package entry (imported by package
+    // specifier — never a CWD-relative dist path), and is attached to the CLI
+    // process stdio via StdioServerTransport. No detached spawn, no fake
+    // {runId,status} quick-return, no startup timeout.
+    const server = createServer({ projectDir });
+    server.onerror = (error) => {
+      process.stderr.write(`trailstep mcp server error: ${error.message}\n`);
+    };
 
-    // Quick-return run_workflow interface: bounded-time (<1 s) return with
-    // exactly {runId,status}; does NOT await workflow completion (no hang).
-    const result = { runId: `mcp-${Date.now()}`, status: "started" };
-    process.stdout.write(JSON.stringify(result) + "\n");
+    const transport = new StdioServerTransport();
+    try {
+      await server.connect(transport);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`trailstep mcp failed to start: ${message}\n`);
+      return 1;
+    }
 
-    // Clean exit of CLI; do not wait for subprocess to finish.
-    // Subprocess error/exit handlers already registered above;
-    // unexpected crash surfaces via stderr / MCP error (not silent hang).
+    // Stay foreground: never return while connected. Resolve when the client
+    // disconnects — either the server's close hook fires (clean transport
+    // close) or stdin ends (client closed its end of the pipe).
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        server.onclose = () => resolve();
+      }),
+      new Promise<void>((resolve) => {
+        process.stdin.once("end", () => resolve());
+      }),
+    ]);
     return 0;
   },
 };

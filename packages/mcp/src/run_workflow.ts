@@ -1,19 +1,13 @@
 /**
- * Quick-return run_workflow interface.
- * Does NOT await workflow completion; returns bounded-time with {runId,status}.
- * Lazy-load assumption: deferred engine-init hook exists in core (deferEngineInit);
- * boundary undefined — not wired into this minimal quick-return layer.
+ * Legacy module path for the `run_workflow` tool.
+ * Re-exports the real thin adapter from `./tools/run_workflow.js` so existing
+ * imports keep working; the fake `Date.now` run id is gone — run ids come from
+ * the real generate-run-name scheme.
  */
-export interface RunWorkflowResult {
-  readonly runId: string;
-  readonly status: string;
-}
-
-export function runWorkflow(_options?: unknown): RunWorkflowResult {
-  // Deferred/quick return: no blocking await on workflow end.
-  // Lazy-load: full engine init deferred until first required call (boundary undefined).
-  return {
-    runId: `mcp-run-${Date.now()}`,
-    status: "started",
-  };
-}
+export {
+  type RunWorkflowResult,
+  type RunWorkflowToolOptions,
+  type RunWorkflowToolResult,
+  runWorkflow,
+  runWorkflowTool,
+} from "./tools/index.js";

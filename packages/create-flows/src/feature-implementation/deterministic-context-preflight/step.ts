@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 
 import type { Document } from "@trailstep/authoring";
@@ -89,15 +89,12 @@ export async function buildDeterministicContextPreflightBrief({
     ]),
     ...(packageHints.length === 0 ? DEFAULT_VALIDATION_COMMANDS : []),
   ]);
-  const graphifyHint = cwd ? await graphifyAvailable(cwd) : false;
   const relevantFileText = relevantFiles.length > 0 ? relevantFiles.join(", ") : "none detected";
   const packageText = packageHints.length > 0 ? packageHints.join(", ") : "none detected";
   const symbolText = symbols.length > 0 ? symbols.join(", ") : "none detected";
   const contextHints = uniqueBounded(extractContextHints(implementationContext ?? ""), 4);
   const contextText = contextHints.length > 0 ? ` Context hints: ${contextHints.join("; ")}.` : "";
-  const graphText = graphifyHint
-    ? "graphify appears available; use graphify query before broad grep for structural questions."
-    : "graphify availability was not detected; use focused rg hints if more context is needed.";
+  const graphText = "Use focused rg hints for structural questions.";
 
   return {
     blocked: false,
@@ -115,14 +112,7 @@ export async function buildDeterministicContextPreflightBrief({
     recommendedValidationCommands: focusedValidationHints,
     packageHints,
     symbols,
-    searchHints: uniqueBounded([
-      ...(graphifyHint
-        ? [
-            `graphify query ${shellQuote(`Where is ${symbols[0] ?? currentStory.path} implemented or tested?`)}`,
-          ]
-        : []),
-      ...searchHints,
-    ]),
+    searchHints: uniqueBounded([...searchHints]),
     focusedValidationHints,
   };
 }
@@ -250,15 +240,6 @@ async function readPackageName(packageJsonPath: string): Promise<string | undefi
     return typeof parsed.name === "string" ? parsed.name : undefined;
   } catch {
     return undefined;
-  }
-}
-
-async function graphifyAvailable(cwd: string): Promise<boolean> {
-  try {
-    await access(join(cwd, "graphify-out", "graph.json"));
-    return true;
-  } catch {
-    return false;
   }
 }
 

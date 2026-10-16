@@ -2,7 +2,6 @@ node_modules/
 dist/
 coverage/
 .turbo/
-graphify-out/
 
 # Local agent/runtime artifacts
 .trailstep/*
@@ -12,8 +11,6 @@ graphify-out/
 .step[k]it/
 .claude/
 .pi/*
-!.pi/rules/
-!.pi/rules/**
 .workflower/
 agent/skills/
 skills-lock

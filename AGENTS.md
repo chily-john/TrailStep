@@ -2,10 +2,10 @@
 
 TrailStep is a durable, typed, observable workflow harness for coding agents. It is a TypeScript-first pnpm monorepo and a clean-slate project separate from Workflower. Workflows are authored in TypeScript, discovered from packages, run through a continuation runtime, and observed through persisted local run artifacts.
 
-This root context file contains a map of the codebase. Path-scoped context files under `.pi/rules/` hold institutional knowledge — invariants, gotchas, and conventions that can't be derived by reading the code. A generated knowledge graph at `graphify-out/` (when present) covers structural questions instead — where something lives, what calls what, cross-file relationships.
+This root context file contains a map of the codebase. For structural questions — where something lives, what calls what, cross-file relationships — an optional OpenViking index is described in `docs/openviking-setup.md`; otherwise use focused search (`rg`, `ls`) and read source files.
 
-- For "where is X" / "what depends on Y" / architecture questions: if `graphify-out/graph.json` exists, run `graphify query "<question>"` before grepping raw files (see `CLAUDE.md`). If it doesn't exist (fresh clone, CI), fall back to normal search.
-- For "why is it built this way" / conventions / known pitfalls: use injected `.pi/rules` context as the first source. Trust injected rules as current during normal implementation; if they do not answer where or how to proceed, inspect `.pi/rules` directly.
+- For "where is X" / "what depends on Y" / architecture questions: use focused `rg` hints for structural search.
+- For "why is it built this way" / conventions / known pitfalls: living source and tests are authoritative; check `docs/`, ADRs, and nearby README sections.
 - Read source files to verify local style, existing APIs, or implementation details in both cases.
 
 ## Project Structure

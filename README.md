@@ -281,6 +281,7 @@ Workspace packages not yet part of the initial public publish set:
 - [Scopes and config](docs/scopes-and-config.md)
 - [CLI reference](docs/cli-reference.md)
 - [Architecture](docs/architecture.md)
+- [OpenViking setup (optional codebase index + pi memory)](docs/openviking-setup.md)
 - [Reusable create flows](packages/create-flows/README.md)
 
 ## Contributing

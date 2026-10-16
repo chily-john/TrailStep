@@ -13,7 +13,6 @@
       "!.trailstep",
       "!.claude",
       "!agent/skills",
-      "!graphify-out",
       "!pnpm-lock.yaml"
     ]
   },

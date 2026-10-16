@@ -36,9 +36,10 @@ export const mcpCommand: CliCommand<McpCommandArgs> = {
     const serverScript = path.resolve("packages/mcp/dist/index.js");
     const child = spawn("node", [serverScript], {
       cwd: projectDir,
-      stdio: ["pipe", "pipe", "pipe"],
-      detached: false,
+      stdio: "inherit",
+      detached: true,
     });
+    child.unref();
 
     // Subprocess exit / error handlers so crash surfaces via MCP error (not silent hang)
     child.on("error", (err) => {
@@ -47,12 +48,6 @@ export const mcpCommand: CliCommand<McpCommandArgs> = {
     });
     child.on("exit", (code) => {
       // Clean exit observation; do not hang CLI
-    });
-    child.stderr?.on("data", (data) => {
-      process.stderr.write(data);
-    });
-    child.stdout?.on("data", (data) => {
-      process.stdout.write(data);
     });
 
     // Quick-return run_workflow interface: bounded-time (<1 s) return with

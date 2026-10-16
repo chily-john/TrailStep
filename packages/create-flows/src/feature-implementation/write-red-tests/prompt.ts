@@ -52,6 +52,7 @@ export function writeRedTestsPrompt({ input }: { readonly input: WriteRedTestsIn
         "Run the focused red test when feasible and report only the command plus concise failing evidence in `redEvidence`.",
         "Do not include unrelated stories, green implementation work, or review scoring.",
         "If a safe red test cannot be written, set `blocked: true` and explain why.",
+        "NOTE: If you experience a timeout (e.g., 96000ms) during this step, explicitly state in your response whether the timeout occurred during test writing, file inspection, or provider interaction, so the source can be located. The timeout is likely a provider-level agent timeout, not a create-flows step issue, unless evidence shows otherwise.",
       ].join("\n"),
     ),
   );

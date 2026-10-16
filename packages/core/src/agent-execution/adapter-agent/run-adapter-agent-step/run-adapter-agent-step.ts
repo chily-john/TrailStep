@@ -13,7 +13,7 @@ import { readWorkingAgentOutput } from "../../working-agent/output/read-working-
 
 const PROVIDER_NEUTRAL_ADAPTER_KEY = "custom";
 const PROVIDER_NEUTRAL_MODEL = "configured-agent";
-const DEFAULT_ADAPTER_TIMEOUT_MS = 120_000;
+const DEFAULT_ADAPTER_TIMEOUT_MS: number | undefined = undefined;
 
 function buildOutputPrompt(outputSchema: Schema<PlainObject>): string {
   const jsonSchema = outputSchema.jsonSchema;
@@ -140,8 +140,11 @@ async function runAdapterWithTimeout<
 >(
   adapter: AgentAdapter<TInput, TOutput>,
   request: Parameters<AgentAdapter<TInput, TOutput>>[0],
-  timeoutMs: number,
+  timeoutMs?: number,
 ): Promise<void> {
+  if (timeoutMs === undefined) {
+    return adapter(request);
+  }
   return Promise.race([
     adapter(request),
     new Promise<never>((_, reject) =>

@@ -26,13 +26,17 @@ export const mcpCommand: CliCommand<McpCommandArgs> = {
     return parseFlags(argv);
   },
   async run(args: McpCommandArgs, _context: CliCommandContext): Promise<number> {
+    // Lazy-load assumption: no full engine init at subcommand startup.
+    // Workflow-runtime setup deferred until first run_workflow / first resource
+    // (boundary undefined — only deferred trigger added in core).
     // Resolve --project to absolute
     const projectDir = args.project ? path.resolve(args.project) : path.resolve(".");
 
-    // Launch MCP server as subprocess; quick-return interface kept
-    const child = spawn("node", ["packages/mcp/dist/index.js"], {
+    // Launch MCP server as subprocess (absolute script path so cwd=projectDir works)
+    const serverScript = path.resolve("packages/mcp/dist/index.js");
+    const child = spawn("node", [serverScript], {
       cwd: projectDir,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       detached: false,
     });
 
@@ -51,12 +55,14 @@ export const mcpCommand: CliCommand<McpCommandArgs> = {
       process.stdout.write(data);
     });
 
-    // Quick-return run_workflow interface: return {runId,status} without blocking on workflow end.
-    // Delegate to the MCP server layer; bounded-time (<1 s) return only.
+    // Quick-return run_workflow interface: bounded-time (<1 s) return with
+    // exactly {runId,status}; does NOT await workflow completion (no hang).
     const result = { runId: `mcp-${Date.now()}`, status: "started" };
     process.stdout.write(JSON.stringify(result) + "\n");
 
-    // Clean exit of CLI; do not wait for subprocess to finish
+    // Clean exit of CLI; do not wait for subprocess to finish.
+    // Subprocess error/exit handlers already registered above;
+    // unexpected crash surfaces via stderr / MCP error (not silent hang).
     return 0;
   },
 };

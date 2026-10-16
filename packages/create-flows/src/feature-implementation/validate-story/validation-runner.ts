@@ -4,7 +4,7 @@ import type { ValidateStoryInput, ValidateStoryOutput, ValidationCommandResult }
 
 const execFileAsync = promisify(execFile);
 const MAX_COMMANDS = 5;
-const COMMAND_TIMEOUT_MS = 120_000;
+const COMMAND_TIMEOUT_MS: number | undefined = undefined;
 const OUTPUT_LIMIT = 4_000;
 const MAX_BUFFER = 256 * 1024;
 
@@ -84,7 +84,7 @@ async function runValidationCommand(
     const executable = executableForPlatform(parsed.argv[0] ?? "");
     const { stdout, stderr } = await execFileAsync(executable, parsed.argv.slice(1), {
       cwd,
-      timeout: COMMAND_TIMEOUT_MS,
+      ...(COMMAND_TIMEOUT_MS === undefined ? {} : { timeout: COMMAND_TIMEOUT_MS }),
       maxBuffer: MAX_BUFFER,
       shell: requiresWindowsCommandShell(executable),
       windowsHide: true,
@@ -306,7 +306,9 @@ function formatExecutionError(error: unknown): string {
     readonly killed?: boolean;
   };
   const prefix = maybeError.killed
-    ? `timed out after ${COMMAND_TIMEOUT_MS}ms`
+    ? COMMAND_TIMEOUT_MS === undefined
+      ? "timed out"
+      : `timed out after ${COMMAND_TIMEOUT_MS}ms`
     : `exit ${maybeError.code ?? maybeError.signal ?? "unknown"}`;
   const output = formatCommandOutput(maybeError.stdout ?? "", maybeError.stderr ?? "");
   return truncate(

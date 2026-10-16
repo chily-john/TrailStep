@@ -79,6 +79,7 @@ export function implementGreenPrompt({ input }: { readonly input: ImplementGreen
         "When this prompt includes a previous validation failure, treat that failure as the primary task: fix the root cause and rerun the failing command when feasible before returning.",
         "Do not claim the story is complete if focused validation is still red; either keep fixing it or set `blocked: true` with a concrete reason.",
         "If implementation is unsafe or ambiguous, set `blocked: true` and explain why.",
+        "NOTE: If you experience a timeout (e.g., 96000ms) during this step, explicitly state in your response whether the timeout occurred during code generation, test execution, or file reading, so the source can be located. Do not assume it is in the create-flows steps themselves unless your evidence shows that.",
       ].join("\n"),
     ),
   );

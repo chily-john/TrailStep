@@ -14,4 +14,27 @@ if (
     clearInterval(interval);
     process.exit(0);
   }, 5000);
+
+  // Minimal MCP handshake response: respond to basic initialize request on stdin
+  process.stdin.resume();
+  process.stdin.on("data", (chunk: Buffer) => {
+    try {
+      const text = chunk.toString("utf8");
+      if (text.includes("initialize")) {
+        const response =
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            result: {
+              protocolVersion: "2024-11-05",
+              serverInfo: { name: "trailstep-mcp", version: "0.1.0" },
+              capabilities: {},
+            },
+          }) + "\n";
+        process.stdout.write(response);
+      }
+    } catch {
+      // Ignore malformed input — do not hang / crash silently
+    }
+  });
 }

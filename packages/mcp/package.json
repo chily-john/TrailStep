@@ -1,0 +1,26 @@
+{
+  "name": "@trailstep/mcp",
+  "version": "0.1.0",
+  "description": "TrailStep MCP server package.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/chily-john/trailstep.git"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0"
+  },
+  "peerDependencies": {
+    "@trailstep/core": "*"
+  }
+}

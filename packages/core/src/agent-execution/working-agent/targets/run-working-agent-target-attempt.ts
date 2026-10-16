@@ -30,7 +30,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
-  readonly timeoutMs: number;
+  readonly timeoutMs?: number;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
 }): Promise<TOutput> {

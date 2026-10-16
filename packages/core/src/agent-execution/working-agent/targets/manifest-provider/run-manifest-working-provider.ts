@@ -44,7 +44,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly files: WorkingAgentFiles;
   readonly renderedPrompt: string;
   readonly signal?: AbortSignal;
-  readonly timeoutMs: number;
+  readonly timeoutMs?: number;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
@@ -209,7 +209,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     readonly files: WorkingAgentFiles;
     readonly renderedPrompt: string;
     readonly signal?: AbortSignal;
-    readonly timeoutMs: number;
+    readonly timeoutMs?: number;
     readonly emit: (event: Event) => Promise<void>;
     readonly runId: string;
     readonly workflowId: string;
@@ -220,7 +220,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   readonly extractOutputHook?: unknown;
   readonly thinking?: WorkflowAgentThinking;
   readonly model?: string;
-  readonly timeoutMs: number;
+  readonly timeoutMs?: number;
 }): Promise<TOutput> {
   const { options, working, followUp } = context;
   const { files, step, target } = options;
@@ -231,10 +231,17 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   // spawn only its remaining share so retries can never overrun the step.
   // Phase 1 is additionally capped to leave a reserve for formatting, other-
   // wise a slow work phase could starve Phase 2 down to a zero budget.
-  const stepDeadline = Date.now() + options.timeoutMs;
-  const remainingMs = (): number => stepDeadline - Date.now();
-  const formatReserveMs = Math.min(30_000, Math.max(10_000, Math.floor(options.timeoutMs / 5)));
-  const phase1BudgetMs = Math.max(1_000, options.timeoutMs - formatReserveMs);
+  // When no timeout is configured, pass undefined through (no deadline/budget).
+  const timeoutMs = options.timeoutMs;
+  const stepDeadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
+  const remainingMs = (): number | undefined =>
+    stepDeadline === undefined ? undefined : stepDeadline - Date.now();
+  const formatReserveMs =
+    timeoutMs === undefined
+      ? undefined
+      : Math.min(30_000, Math.max(10_000, Math.floor(timeoutMs / 5)));
+  const phase1BudgetMs =
+    timeoutMs === undefined ? undefined : Math.max(1_000, timeoutMs - (formatReserveMs ?? 0));
 
   // Fail fast on manifest misconfiguration before running the worker: a
   // supported follow-up without resume args cannot ever complete Phase 2.
@@ -549,7 +556,7 @@ async function spawnManifestPhase(options: {
   readonly stdio: "pipe" | "inherit";
   readonly runner?: WorkingAgentProcessRunner;
   readonly signal?: AbortSignal;
-  readonly timeoutMs: number;
+  readonly timeoutMs?: number;
 }): Promise<WorkingAgentProcessResult> {
   // npm-installed provider CLIs (e.g. pi) are .cmd shims on Windows and cannot
   // be spawned by bare name with shell:false; resolve to the Node entrypoint
@@ -573,18 +580,22 @@ async function spawnManifestPhase(options: {
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const spawnPromise = (options.runner ?? spawnWorkingAgentProcess)({
+      command: executable.command,
+      args: executable.args,
+      cwd: options.cwd,
+      shell: false,
+      stdio: options.stdio,
+      promptFile: options.promptFile,
+      outputFile: options.outputFile,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      signal: controller.signal,
+    });
+    if (options.timeoutMs === undefined) {
+      return await spawnPromise;
+    }
     return await Promise.race([
-      (options.runner ?? spawnWorkingAgentProcess)({
-        command: executable.command,
-        args: executable.args,
-        cwd: options.cwd,
-        shell: false,
-        stdio: options.stdio,
-        promptFile: options.promptFile,
-        outputFile: options.outputFile,
-        ...(options.model === undefined ? {} : { model: options.model }),
-        signal: controller.signal,
-      }),
+      spawnPromise,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           timedOut = true;

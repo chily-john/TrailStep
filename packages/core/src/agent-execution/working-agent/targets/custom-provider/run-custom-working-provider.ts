@@ -28,7 +28,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   readonly target: TrailStepAgentTarget;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
-  readonly timeoutMs: number;
+  readonly timeoutMs?: number;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
@@ -104,26 +104,31 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       command: agentConfig.binary,
       args,
     });
-    result = await Promise.race([
-      (options.runner ?? spawnWorkingAgentProcess)({
-        command: executable.command,
-        args: executable.args,
-        cwd: options.cwd,
-        shell: false,
-        stdio: "inherit",
-        promptFile: options.files.promptFile,
-        outputFile: options.files.outputFile,
-        ...(options.target.model === undefined ? {} : { model: options.target.model }),
-        signal: controller.signal,
-      }),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          timedOut = true;
-          controller.abort();
-          reject(new Error("working_agent_timeout"));
-        }, options.timeoutMs);
-      }),
-    ]);
+    const spawnPromise = (options.runner ?? spawnWorkingAgentProcess)({
+      command: executable.command,
+      args: executable.args,
+      cwd: options.cwd,
+      shell: false,
+      stdio: "inherit",
+      promptFile: options.files.promptFile,
+      outputFile: options.files.outputFile,
+      ...(options.target.model === undefined ? {} : { model: options.target.model }),
+      signal: controller.signal,
+    });
+    if (options.timeoutMs === undefined) {
+      result = await spawnPromise;
+    } else {
+      result = await Promise.race([
+        spawnPromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+            reject(new Error("working_agent_timeout"));
+          }, options.timeoutMs);
+        }),
+      ]);
+    }
   } catch (error) {
     if (timedOut || (error instanceof Error && error.message === "working_agent_timeout")) {
       throw new TrailStepFailureError({

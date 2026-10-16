@@ -185,6 +185,16 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
 
+  packages/mcp:
+    dependencies:
+      '@trailstep/core':
+        specifier: '*'
+        version: 0.3.0
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+
   packages/provider-claude:
     devDependencies:
       '@biomejs/biome':

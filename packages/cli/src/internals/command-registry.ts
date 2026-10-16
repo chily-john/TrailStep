@@ -19,6 +19,7 @@ import { storageCommand } from "./commands/storage/storage-command.js";
 import { updateCommand } from "./commands/update/update-command.js";
 import { watchCommand } from "./commands/watch/watch-command.js";
 import { workflowsCommand } from "./commands/workflows/workflows-command.js";
+import { mcpCommand } from "./commands/mcp/command.js";
 
 /**
  * Resolves the CLI command implementation for a given argv.
@@ -52,6 +53,10 @@ export function resolveCommand(argv: readonly string[]): CliCommand<unknown> {
 
   if (argv[0] === "providers") {
     return providersCommand;
+  }
+
+  if (argv[0] === "mcp") {
+    return mcpCommand;
   }
 
   if (argv[0] === "workflows") {

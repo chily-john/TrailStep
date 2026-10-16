@@ -48,6 +48,7 @@ export {
   subPrompt,
   workflow,
 } from "./authoring/authoring.js";
+export { deferEngineInit } from "./defer-engine-init.js";
 export type { NotifyApi, NotifyArtifact } from "./authoring/notify/notify.js";
 export type {
   AbsoluteDoneNode,

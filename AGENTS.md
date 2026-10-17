@@ -2,11 +2,11 @@
 
 TrailStep is a durable, typed, observable workflow harness for coding agents. It is a TypeScript-first pnpm monorepo and a clean-slate project separate from Workflower. Workflows are authored in TypeScript, discovered from packages, run through a continuation runtime, and observed through persisted local run artifacts.
 
-This root context file contains a map of the codebase. For structural questions — where something lives, what calls what, cross-file relationships — an optional OpenViking index is described in `docs/openviking-setup.md`; otherwise use focused search (`rg`, `ls`) and read source files.
+This root context file contains a map of the codebase. The OpenViking index (see `docs/openviking-setup.md`, `viking://resources/trailstep/`) is the primary way to explore it — prefer `openviking_search` / `openviking_find` for discovery and `openviking_read` / `openviking_tree` / `openviking_grep` / `openviking_glob` for traversal. Do not fall back to `rg` / `ls` / direct file reads unless the OpenViking tools are unavailable.
 
-- For "where is X" / "what depends on Y" / architecture questions: use focused `rg` hints for structural search.
-- For "why is it built this way" / conventions / known pitfalls: living source and tests are authoritative; check `docs/`, ADRs, and nearby README sections.
-- Read source files to verify local style, existing APIs, or implementation details in both cases.
+- For "where is X" / "what depends on Y" / architecture questions: use OpenViking `search` / `find` first, then `tree` / `grep` / `glob` to map structure.
+- For "why is it built this way" / conventions / known pitfalls: living source and tests are authoritative; check `docs/`, ADRs, and nearby README sections via OpenViking `read`.
+- Use OpenViking `read` / `tree` to verify local style, existing APIs, or implementation details in both cases.
 
 ## Project Structure
 

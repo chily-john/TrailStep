@@ -49,10 +49,24 @@ Prereqs: Python 3.10+, Node.js 22.19+, the `pi` agent.
    Health check: `curl http://localhost:1933/health` and
    `curl http://localhost:1933/ready`. Studio: `http://127.0.0.1:1933/studio`.
    Default bind is localhost-only with no auth — fine for single-machine use.
-5. Install the `pi` extension (unified installer, idempotent):
+5. Install the `pi` extension. On macOS/Linux, use the unified installer
+   (idempotent):
    ```bash
    curl -fsSL https://openviking.ai/install | bash
    ```
+   On Windows (the installer only supports macOS/Linux), install manually:
+   ```bash
+   git clone --depth 1 https://github.com/volcengine/OpenViking.git ~/.cache/ov-src
+   cd ~/.cache/ov-src
+   node examples/memory-plugin-shared/sync.mjs
+   mkdir -p ~/.pi/agent/extensions/openviking
+   cp -R examples/pi-coding-agent-extension/. ~/.pi/agent/extensions/openviking/
+   npm ci --prefix ~/.pi/agent/extensions/openviking --omit=dev --ignore-scripts
+   ```
+   Then ensure `~/.openviking/ovcli.conf` points at your server
+   (`"url": "http://localhost:1933"`; no key needed for local dev mode),
+   or run the wizard:
+   `node ~/.pi/agent/extensions/openviking/scripts/setup.mjs`.
    This drops the extension in `~/.pi/agent/extensions/openviking` (auto-loaded
    on next `pi` start — do not also `pi install` it) and configures
    `~/.openviking/ovcli.conf`. The script needs network access and writes to

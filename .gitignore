@@ -21,3 +21,6 @@ mock-local-test/
 .env.*
 !.env.example
 .DS_Store
+
+# OpenViking local workspace (rebuildable index data, see docs/openviking-setup.md)
+data/

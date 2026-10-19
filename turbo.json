@@ -13,6 +13,10 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
+    "@trailstep/mcp#test": {
+      "dependsOn": ["^build", "@trailstep/cli#build"],
+      "outputs": ["coverage/**"]
+    },
     "lint": {
       "outputs": []
     }

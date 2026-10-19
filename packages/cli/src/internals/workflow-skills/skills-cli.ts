@@ -71,7 +71,7 @@ async function spawnSkillsCliProcess(
   args: readonly string[],
 ): Promise<SkillsCliRunResult> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false, stdio: "ignore" });
+    const child = spawn(command, args, { shell: false, stdio: "ignore", windowsHide: true });
     child.on("error", reject);
     child.on("close", (code) => resolve({ exitCode: code ?? 1 }));
   });

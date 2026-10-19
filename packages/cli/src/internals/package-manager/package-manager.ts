@@ -130,7 +130,11 @@ export function createPackageInstallRunner({
 
 export const defaultPackageCommandRunner: PackageCommandRunner = async ({ command, args, cwd }) => {
   const processCommand = packageCommandProcessForPlatform(command, args);
-  const child = spawn(processCommand.command, processCommand.args, { cwd, shell: false });
+  const child = spawn(processCommand.command, processCommand.args, {
+    cwd,
+    shell: false,
+    windowsHide: true,
+  });
   let stdout = "";
   let stderr = "";
 

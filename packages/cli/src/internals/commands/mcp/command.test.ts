@@ -42,7 +42,10 @@ async function spawnMcpClient(projectDir: string): Promise<Client> {
 }
 
 afterAll(async () => {
-  await rm(tmpRoot, { recursive: true, force: true });
+  // Windows holds the spawned stdio server handles briefly after client.close();
+  // delay + retry so cleanup does not EBUSY on rmdir.
+  await sleep(250);
+  await rm(tmpRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
 describe("mcp command (foreground stdio server)", () => {

@@ -5,7 +5,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createServer, INSTRUCTIONS_RESOURCE_URI, PROJECT_RESOURCE_URI } from "../src/server.js";
+import {
+  createServer,
+  INSTRUCTIONS_FALLBACK,
+  INSTRUCTIONS_RESOURCE_URI,
+  PROJECT_RESOURCE_URI,
+} from "../src/server.js";
 
 // Contract test for the MCP server surface: tool registry wiring, CallTool
 // dispatch to the real tool implementations, and the project/instructions
@@ -161,15 +166,26 @@ describe("MCP server contract", () => {
     expect(uris).toEqual([PROJECT_RESOURCE_URI, INSTRUCTIONS_RESOURCE_URI].sort());
   });
 
-  it("repo .trailstep/mcp/instructions.md carries generic + static snippet with no broken embeds", () => {
+  it("fallback instructions carry generic + static snippet with no broken embeds", () => {
+    // The repo .trailstep/mcp/instructions.md is git-ignored local state, so assert
+    // the committed fallback instead. When the local file exists (e.g. after
+    // `trailstep add`), it must carry the same snippets.
+    expect(INSTRUCTIONS_FALLBACK).toContain("Embedded generic snippet");
+    expect(INSTRUCTIONS_FALLBACK).toContain("Embedded static snippet");
+    expect(INSTRUCTIONS_FALLBACK).toContain('"watch": "trst_watch"');
+    expect(INSTRUCTIONS_FALLBACK).toContain('"answer": "trst_answer"');
+    expect(INSTRUCTIONS_FALLBACK).toContain('"resume": "trst_resume"');
+    expect(INSTRUCTIONS_FALLBACK).not.toContain("embed failed");
+
     const instructionsPath = path.resolve(".trailstep/mcp/instructions.md");
-    expect(fs.existsSync(instructionsPath)).toBe(true);
-    const content = fs.readFileSync(instructionsPath, "utf8");
-    expect(content).toContain("Embedded generic snippet");
-    expect(content).toContain("Embedded static snippet");
-    expect(content).toContain('"watch": "trst_watch"');
-    expect(content).toContain('"answer": "trst_answer"');
-    expect(content).toContain('"resume": "trst_resume"');
-    expect(content).not.toContain("embed failed");
+    if (fs.existsSync(instructionsPath)) {
+      const content = fs.readFileSync(instructionsPath, "utf8");
+      expect(content).toContain("Embedded generic snippet");
+      expect(content).toContain("Embedded static snippet");
+      expect(content).toContain('"watch": "trst_watch"');
+      expect(content).toContain('"answer": "trst_answer"');
+      expect(content).toContain('"resume": "trst_resume"');
+      expect(content).not.toContain("embed failed");
+    }
   });
 });

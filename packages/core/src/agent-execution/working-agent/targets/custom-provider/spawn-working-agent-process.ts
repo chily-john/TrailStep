@@ -16,6 +16,7 @@ export const spawnWorkingAgentProcess: WorkingAgentProcessRunner = async ({
       shell: false,
       stdio: stdio === "pipe" ? ["ignore", "pipe", "inherit"] : "inherit",
       detached: process.platform !== "win32",
+      windowsHide: true,
     });
 
     if (child.stdout !== null) {

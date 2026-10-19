@@ -199,13 +199,13 @@ importers:
       '@trailstep/core':
         specifier: workspace:*
         version: link:../core
+      add-mcp:
+        specifier: ^2.4.1
+        version: 2.4.1
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
-      add-mcp:
-        specifier: ^2.4.1
-        version: 2.4.1
 
   packages/provider-claude:
     devDependencies:

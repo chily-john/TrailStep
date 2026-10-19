@@ -298,6 +298,34 @@ describe("addCommand", () => {
     });
   });
 
+  it("locks the printed manual MCP registration command to the resolved add scope", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const lines: string[] = [];
+    const command = resolveCommand(["add", "./workflows/review.mjs", "--scope", "local"]);
+    const exitCode = await command.run(
+      command.parseArgs(["add", "./workflows/review.mjs", "--scope", "local"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => lines.push(line) },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const manualCommand = lines.find((line) => line.startsWith("npx add-mcp"));
+    expect(manualCommand).toBeDefined();
+    expect(manualCommand?.endsWith("--gitignore")).toBe(true);
+    expect(manualCommand).not.toContain("--global");
+  });
+
   it("supports an explicit --name override without deriving from workflow.id", async ({ task }) => {
     const cwd = join(
       "node_modules",

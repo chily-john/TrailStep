@@ -124,6 +124,7 @@ export const initCommand: CliCommand<InitCommandArgs> = {
     await offerMcpRegistration({
       projectDir: context.cwd,
       io: context.io,
+      scope,
       ...(context.prompts === undefined ? {} : { prompts: context.prompts }),
       ...(context.env === undefined ? {} : { env: context.env }),
     });

@@ -825,6 +825,66 @@ describe("initCommand", () => {
     expect(skillsCalls).toHaveLength(0);
   });
 
+  it("locks the printed manual MCP registration command to the resolved init scope", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-init-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    const command = resolveCommand(["init", "--scope", "local", "--no-install-skill"]);
+    const lines: string[] = [];
+
+    const exitCode = await command.run(
+      command.parseArgs(["init", "--scope", "local", "--no-install-skill"]) as never,
+      {
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => lines.push(line) },
+        prompts: {
+          async text(prompt) {
+            if (prompt === "Model") {
+              return "sonnet";
+            }
+            throw new Error(`Unexpected text prompt: ${prompt}`);
+          },
+          async select(prompt) {
+            if (prompt === "Provider") {
+              return "claude";
+            }
+            if (prompt === "Model override") {
+              return "Type manually";
+            }
+            if (prompt === "Reasoning/thinking override") {
+              return "Use provider default";
+            }
+            throw new Error(`Unexpected select prompt: ${prompt}`);
+          },
+          async confirm(prompt) {
+            if (prompt === "Configure another agent?") {
+              return false;
+            }
+            if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return false;
+            }
+            throw new Error(`Unexpected confirm prompt: ${prompt}`);
+          },
+        },
+        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
+        skillsCliProcessRunner: async () => ({ exitCode: 0 }),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const manualCommand = lines.find((line) => line.startsWith("npx add-mcp"));
+    expect(manualCommand).toBeDefined();
+    expect(manualCommand?.endsWith("--gitignore")).toBe(true);
+    expect(manualCommand).not.toContain("--global");
+  });
+
   it("rejects conflicting --install-skill and --no-install-skill flags", () => {
     const command = resolveCommand(["init", "--install-skill", "--no-install-skill"]);
 

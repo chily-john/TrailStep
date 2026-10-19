@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/cli",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Command-line discovery and execution for TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
@@ -49,7 +49,7 @@
     "tsx": "^4.23.12"
   },
   "peerDependencies": {
-    "@trailstep/core": "^0.3.0"
+    "@trailstep/core": "^0.4.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

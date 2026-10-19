@@ -1,5 +1,12 @@
 # @trailstep/create-flows
 
+## 0.3.5
+
+### Patch Changes
+
+- 2dd0469: Remove the graphify availability hint from deterministic context preflight. Structural search hints now use focused `rg` suggestions only.
+- @trailstep/authoring@0.2.2
+
 ## 0.3.4
 
 ### Patch Changes

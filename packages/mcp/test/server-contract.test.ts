@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { INSTRUCTIONS_RESOURCE_URI, PROJECT_RESOURCE_URI, createServer } from "../src/server.js";
+import { createServer, INSTRUCTIONS_RESOURCE_URI, PROJECT_RESOURCE_URI } from "../src/server.js";
 
 // Contract test for the MCP server surface: tool registry wiring, CallTool
 // dispatch to the real tool implementations, and the project/instructions

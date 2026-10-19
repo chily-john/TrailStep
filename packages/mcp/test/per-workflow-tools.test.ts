@@ -1,12 +1,11 @@
-import { afterAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-
-import { createServer } from "../src/server.js";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { generateMcpToolJson } from "../../cli/src/internals/mcp-tools/mcp-tool-generation.js";
+import { createServer } from "../src/server.js";
 
 // Per-workflow MCP tools + list-mode config fallback contract:
 // - generated `.trailstep/mcp/trst_<id>.json` files surface as `trst_<id>`

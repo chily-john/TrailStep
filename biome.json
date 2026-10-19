@@ -11,7 +11,9 @@
       "!.pi",
       "!.workflower",
       "!.trailstep",
+      "!**/.trailstep",
       "!.claude",
+      "!data",
       "!agent/skills",
       "!pnpm-lock.yaml"
     ]

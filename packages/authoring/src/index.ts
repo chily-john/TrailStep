@@ -85,8 +85,9 @@ export {
   subPrompt,
   workflow,
 } from "@trailstep/core";
-import { defineWorkflow as _defineWorkflow } from "@trailstep/core";
+
 import type { PlainObject } from "@trailstep/core";
+import { defineWorkflow as _defineWorkflow } from "@trailstep/core";
 
 export function defineWorkflow<
   TInput extends PlainObject = PlainObject,

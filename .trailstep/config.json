@@ -4,124 +4,124 @@
     "grillingAgent": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "featureWriter": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "planner": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "reviewer": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "storyExplorer": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "testWriter": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "storyImplementer": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "storyDoctor": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "validator": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "storyReviewer": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "generalist": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       },
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "explorer": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "quick-implementor": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "smart-implementor": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "debugger": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "expert": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "formatter": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
@@ -133,13 +133,18 @@
     "delegateAgent": [
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       },
       {
         "provider": "pi",
-        "model": "thinkingmachines/inkling-small:free",
+        "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
+      }
+    ],
+    "default": [
+      {
+        "provider": "pi"
       }
     ]
   },
@@ -320,16 +325,6 @@
             "{{/thinking}}",
             "@{{promptFile}}"
           ],
-          "prompt": {
-            "kind": "prompt-file",
-            "reference": "at-prefixed-argument"
-          },
-          "output": {
-            "style": "stdout-jsonl-transcript",
-            "parsing": {
-              "resultField": "message"
-            }
-          },
           "followUp": {
             "supported": true,
             "sessionIdFlag": "--session-id",
@@ -349,6 +344,16 @@
               "{{sessionId}}",
               "@{{promptFile}}"
             ]
+          },
+          "prompt": {
+            "kind": "prompt-file",
+            "reference": "at-prefixed-argument"
+          },
+          "output": {
+            "style": "stdout-jsonl-transcript",
+            "parsing": {
+              "resultField": "message"
+            }
           }
         },
         "interactive": {
@@ -375,6 +380,13 @@
           }
         }
       }
+    }
+  },
+  "storage": {
+    "lifecycle": {
+      "enabled": true,
+      "compressAfter": "7d",
+      "deleteAfter": "30d"
     }
   }
 }

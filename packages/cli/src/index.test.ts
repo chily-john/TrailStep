@@ -1638,7 +1638,12 @@ async function latestTrailStepTwo(request: { readonly args: readonly string[] })
       { version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } },
     ],
     "@trailstep/cli": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "^2.0.0" } }],
+    "@trailstep/mcp": [{ version: "2.0.0", peerDependencies: { "@trailstep/core": "*" } }],
+    "@trailstep/provider-claude": [{ version: "2.0.0" }],
+    "@trailstep/provider-codex": [{ version: "2.0.0" }],
+    "@trailstep/provider-gemini": [{ version: "2.0.0" }],
+    "@trailstep/provider-pi": [{ version: "2.0.0" }],
   };
   const packageName = String(request.args[1]).replace(/@\*$/u, "");
-  return { exitCode: 0, stdout: JSON.stringify(metadata[packageName]) };
+  return { exitCode: 0, stdout: JSON.stringify(metadata[packageName] ?? [{ version: "2.0.0" }]) };
 }

@@ -2,6 +2,6 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, "data/**"],
+    exclude: [...configDefaults.exclude, "data/**", ".trailstep/**", "**/.trailstep/**"],
   },
 });

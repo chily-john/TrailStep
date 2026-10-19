@@ -39,6 +39,16 @@
             "provider": "pi",
             "model": "openrouter/xiaomi/mimo-v2.6-pro",
             "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/xiaomi/mimo-v2.6-flash",
+            "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/google/gemini-2.5-flash",
+            "thinking": "medium"
           }
         ],
         "explorer": [
@@ -60,6 +70,16 @@
             "provider": "pi",
             "model": "openrouter/xiaomi/mimo-v2.6-pro",
             "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/xiaomi/mimo-v2.6-flash",
+            "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/google/gemini-2.5-flash",
+            "thinking": "medium"
           }
         ],
         "debugger": [
@@ -67,6 +87,16 @@
             "provider": "pi",
             "model": "openrouter/xiaomi/mimo-v2.6-pro",
             "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/xiaomi/mimo-v2.6-flash",
+            "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/google/gemini-2.5-flash",
+            "thinking": "medium"
           }
         ],
         "reviewer": [
@@ -81,6 +111,16 @@
             "provider": "pi",
             "model": "openrouter/xiaomi/mimo-v2.6-pro",
             "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/xiaomi/mimo-v2.6-flash",
+            "thinking": "high"
+          },
+          {
+            "provider": "pi",
+            "model": "openrouter/google/gemini-2.5-flash",
+            "thinking": "medium"
           }
         ],
         "formatter": [

@@ -48,11 +48,19 @@ describe("public package positioning", () => {
           { provider: "pi", model: "openrouter/meta/muse-spark-1.3" },
           { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
         ],
-        planner: [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        planner: [
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-flash" },
+          { provider: "pi", model: "openrouter/google/gemini-2.5-flash" },
+        ],
         explorer: [
           { provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731", thinking: "low" },
         ],
-        "smart-implementor": [{ provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" }],
+        "smart-implementor": [
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
+          { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-flash" },
+          { provider: "pi", model: "openrouter/google/gemini-2.5-flash" },
+        ],
         fixer: [{ ref: "debugger" }],
       },
       workflows: {

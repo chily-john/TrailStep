@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -49,17 +49,26 @@ export interface OfferMcpRegistrationOptions {
   readonly prompts?: TrailStepCliPrompts;
   /** Headless mode (e.g. `trailstep add --yes`): print the manual command instead of prompting. */
   readonly assumeYes?: boolean;
+  /** Where to register the MCP server entry: project (default), local (project file gitignored), or global (user-level). */
+  readonly scope?: McpRegistrationScope;
+  /** Absolute path of the project's .gitignore file for local-scope registration. Defaults to `<projectDir>/.gitignore`. */
+  readonly gitignorePath?: string;
+  /** The entry add-mcp appends to .gitignore for local scope. Defaults to `.mcp.json`. */
+  readonly gitignoreEntry?: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly nodeBinaryPath?: string;
   readonly cliEntryPath?: string;
   readonly addMcpEntryPath?: string;
 }
 
+export type McpRegistrationScope = "project" | "local" | "global";
+
 export interface McpRegistrationOutcome {
   readonly status: "registered" | "declined" | "manual" | "failed";
   readonly manualCommand: string;
   readonly serverCommand: McpServerLaunchSpec;
   readonly agentTargets: readonly string[];
+  readonly scope: McpRegistrationScope;
 }
 
 /**
@@ -95,13 +104,16 @@ export function buildAddMcpSpawnRequest(options: {
   readonly addMcpEntryPath: string;
   readonly nodeBinaryPath?: string;
   readonly agentTargets?: readonly string[];
+  readonly scope?: McpRegistrationScope;
 }): McpRegistrationSpawnRequest {
+  const scope = options.scope ?? "project";
   const args = [
     options.addMcpEntryPath,
     options.serverCommand.command,
     ...options.serverCommand.args.map((arg) => `--args=${arg}`),
     `--name=${TRAILSTEP_MCP_SERVER_NAME}`,
     ...(options.agentTargets ?? []).flatMap((agent) => ["-a", agent]),
+    ...scopeArgvForScope(scope),
   ];
   return {
     command: options.nodeBinaryPath ?? process.execPath,
@@ -114,6 +126,7 @@ export function buildAddMcpSpawnRequest(options: {
 export function formatAddMcpManualCommand(options: {
   readonly serverCommand: McpServerLaunchSpec;
   readonly agentTargets?: readonly string[];
+  readonly scope?: McpRegistrationScope;
 }): string {
   const parts = ["npx", "add-mcp", quoteForShell(options.serverCommand.command)];
   for (const arg of options.serverCommand.args) {
@@ -123,7 +136,21 @@ export function formatAddMcpManualCommand(options: {
   for (const agent of options.agentTargets ?? []) {
     parts.push("-a", quoteForShell(agent));
   }
+  for (const flag of scopeArgvForScope(options.scope ?? "project")) {
+    parts.push(flag);
+  }
   return parts.join(" ");
+}
+
+function scopeArgvForScope(scope: McpRegistrationScope): readonly string[] {
+  switch (scope) {
+    case "local":
+      return ["--gitignore"];
+    case "global":
+      return ["--global"];
+    default:
+      return [];
+  }
 }
 
 const AGENT_PROJECT_MARKERS: ReadonlyArray<{
@@ -196,15 +223,26 @@ export async function offerMcpRegistration(
     projectDir: options.projectDir,
     ...(options.env === undefined ? {} : { env: options.env }),
   });
-  const manualCommand = formatAddMcpManualCommand({ serverCommand, agentTargets });
 
   if (options.assumeYes === true || options.prompts === undefined) {
+    const headlessScope = options.scope ?? "project";
+    const manualCommand = formatAddMcpManualCommand({
+      serverCommand,
+      agentTargets,
+      scope: headlessScope,
+    });
     options.io.writeLine(
       "Register the TrailStep MCP server manually by running this command in a terminal:",
     );
     options.io.writeLine(manualCommand);
-    return { status: "manual", manualCommand, serverCommand, agentTargets };
+    return { status: "manual", manualCommand, serverCommand, agentTargets, scope: headlessScope };
   }
+
+  const manualCommand = formatAddMcpManualCommand({
+    serverCommand,
+    agentTargets,
+    ...(options.scope === undefined ? {} : { scope: options.scope }),
+  });
 
   const promptLabel =
     agentTargets.length > 0
@@ -215,7 +253,51 @@ export async function offerMcpRegistration(
     options.io.writeLine("Skipped TrailStep MCP server registration.");
     options.io.writeLine("You can register it later by running this command in a terminal:");
     options.io.writeLine(manualCommand);
-    return { status: "declined", manualCommand, serverCommand, agentTargets };
+    return {
+      status: "declined",
+      manualCommand,
+      serverCommand,
+      agentTargets,
+      scope: options.scope ?? "project",
+    };
+  }
+
+  const scope = options.scope ?? (await promptRegistrationScope(options.prompts));
+  if (scope === "local") {
+    const gitignorePath = absoluteProjectDir(
+      options.gitignorePath ?? join(options.projectDir, ".gitignore"),
+    );
+    const preview = await gitignoreAppendPreview(
+      gitignorePath,
+      options.gitignoreEntry ?? DEFAULT_GITIGNORE_ENTRY,
+    );
+    options.io.writeLine(`Local registration appends the --gitignore entry to ${gitignorePath}:`);
+    options.io.writeLine(`  ${preview}`);
+    const localConfirmed = await promptConfirmDefaultYes(
+      "Proceed with local (gitignored) registration?",
+      options.prompts,
+    );
+    if (!localConfirmed) {
+      const scopedManualCommand = formatAddMcpManualCommand({
+        serverCommand,
+        agentTargets,
+        scope,
+      });
+      options.io.writeLine("Skipped TrailStep MCP server registration.");
+      options.io.writeLine("You can register it later by running this command in a terminal:");
+      options.io.writeLine(scopedManualCommand);
+      return {
+        status: "declined",
+        manualCommand: scopedManualCommand,
+        serverCommand,
+        agentTargets,
+        scope,
+      };
+    }
+  } else if (scope === "global") {
+    options.io.writeLine(
+      "Global registration writes a user-level config; it still serves only this project because the command pins --project <absolute path>.",
+    );
   }
 
   const addMcpEntryPath = options.addMcpEntryPath ?? defaultAddMcpEntryPath();
@@ -224,7 +306,7 @@ export async function offerMcpRegistration(
       "add-mcp could not be located for automatic registration. Register the TrailStep MCP server manually by running this command in a terminal:",
     );
     options.io.writeLine(manualCommand);
-    return { status: "manual", manualCommand, serverCommand, agentTargets };
+    return { status: "manual", manualCommand, serverCommand, agentTargets, scope };
   }
 
   const request = buildAddMcpSpawnRequest({
@@ -232,6 +314,7 @@ export async function offerMcpRegistration(
     projectDir: options.projectDir,
     addMcpEntryPath,
     agentTargets,
+    scope,
     ...(options.nodeBinaryPath === undefined ? {} : { nodeBinaryPath: options.nodeBinaryPath }),
   });
 
@@ -245,7 +328,7 @@ export async function offerMcpRegistration(
       manualCommand,
       reason: describeSpawnFailure(error),
     });
-    return { status: "failed", manualCommand, serverCommand, agentTargets };
+    return { status: "failed", manualCommand, serverCommand, agentTargets, scope };
   }
 
   if (result.exitCode !== 0 || ttyInitFailed(result)) {
@@ -258,13 +341,13 @@ export async function offerMcpRegistration(
         result.stderr ?? result.stdout ?? "",
       ),
     });
-    return { status: "failed", manualCommand, serverCommand, agentTargets };
+    return { status: "failed", manualCommand, serverCommand, agentTargets, scope };
   }
 
   options.io.writeLine(
     `add-mcp registered the TrailStep MCP server (${TRAILSTEP_MCP_SERVER_NAME}) with your coding agent.`,
   );
-  return { status: "registered", manualCommand, serverCommand, agentTargets };
+  return { status: "registered", manualCommand, serverCommand, agentTargets, scope };
 }
 
 function writeManualFallbackInstructions(
@@ -319,6 +402,55 @@ async function promptConfirmDefaultYes(
     (await promptSelect(label, ["yes", "no"] as const, prompts, "A yes/no answer is required.")) ===
     "yes"
   );
+}
+
+const SCOPE_CHOICES = [
+  "Project (committed)",
+  "Local (gitignored, stays on this machine)",
+  "Global (user-level config)",
+] as const;
+
+/**
+ * Asks where the MCP registration should live once the user accepted the
+ * registration offer. The choice maps onto add-mcp argv flags: local appends
+ * `--gitignore`, global appends `--global`, and project appends nothing.
+ */
+async function promptRegistrationScope(
+  prompts: TrailStepCliPrompts,
+): Promise<McpRegistrationScope> {
+  const selected = await promptSelect(
+    "Where should the TrailStep MCP server registration live?",
+    SCOPE_CHOICES,
+    prompts,
+    "A registration scope answer is required.",
+  );
+  return scopeFromChoice(selected);
+}
+
+function scopeFromChoice(choice: string): McpRegistrationScope {
+  if (choice.startsWith("Local")) {
+    return "local";
+  }
+  if (choice.startsWith("Global")) {
+    return "global";
+  }
+  return "project";
+}
+
+const DEFAULT_GITIGNORE_ENTRY = ".mcp.json";
+
+/**
+ * Shows the entry that add-mcp's `--gitignore` flag appends to the project's
+ * .gitignore, noting when the entry is already listed.
+ */
+async function gitignoreAppendPreview(gitignorePath: string, entry: string): Promise<string> {
+  try {
+    const content = await readFile(gitignorePath, "utf8");
+    const alreadyListed = content.split(/\r?\n/).some((line) => line.trim() === entry);
+    return alreadyListed ? `${entry} (already listed)` : entry;
+  } catch {
+    return entry;
+  }
 }
 
 function absoluteProjectDir(projectDir: string): string {

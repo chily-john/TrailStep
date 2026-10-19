@@ -28,7 +28,8 @@ function registryRunner(metadata: Record<string, unknown>, requests: PackageComm
   return async (request: PackageCommandRequest) => {
     requests.push(request);
     const packageName = String(request.args[1]).replace(/@\*$/u, "");
-    return { exitCode: 0, stdout: JSON.stringify(metadata[packageName]) };
+    const entry = metadata[packageName] ?? [{ version: "1.0.0" }];
+    return { exitCode: 0, stdout: JSON.stringify(entry) };
   };
 }
 
@@ -193,5 +194,83 @@ describe("resolveTrailStepSelfUpdateTargets", () => {
         }),
       }),
     ).rejects.toThrow(UpdateTargetResolutionError);
+  });
+
+  it("includes mcp and provider targets when present in package.json", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        dependencies: {
+          "@trailstep/core": "^0.0.1",
+          "@trailstep/mcp": "^0.0.1",
+          "@trailstep/provider-pi": "^0.0.1",
+          "@trailstep/provider-claude": "^0.0.1",
+        },
+      }),
+      "utf8",
+    );
+
+    const plan = await resolveTrailStepSelfUpdateTargets({
+      cwd,
+      packageCommandRunner: registryRunner({
+        "@trailstep/core": [{ version: "1.0.0" }],
+        "@trailstep/mcp": [{ version: "1.0.0", peerDependencies: { "@trailstep/core": "*" } }],
+        "@trailstep/provider-pi": [{ version: "1.0.0" }],
+        "@trailstep/provider-claude": [{ version: "1.0.0" }],
+      }),
+    });
+
+    expect(plan.targets.map((target) => [target.packageName, target.targetVersion])).toEqual([
+      ["@trailstep/core", "1.0.0"],
+      ["@trailstep/mcp", "1.0.0"],
+      ["@trailstep/provider-claude", "1.0.0"],
+      ["@trailstep/provider-pi", "1.0.0"],
+    ]);
+  });
+
+  it("ignores absent mcp and provider packages", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
+    await writeRootPackageJson(cwd);
+
+    const plan = await resolveTrailStepSelfUpdateTargets({
+      cwd,
+      packageCommandRunner: registryRunner({
+        "@trailstep/core": [{ version: "1.0.0" }],
+        "@trailstep/authoring": [
+          { version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+        ],
+        "@trailstep/cli": [{ version: "1.0.0", peerDependencies: { "@trailstep/core": "^1.0.0" } }],
+      }),
+    });
+
+    expect(plan.targets.map((target) => target.packageName)).toEqual([
+      "@trailstep/core",
+      "@trailstep/authoring",
+      "@trailstep/cli",
+    ]);
+  });
+
+  it("blocks when an installed mcp version cannot satisfy the target core", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-update-target-tests", task.id);
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(cwd, "package.json"),
+      JSON.stringify({ dependencies: { "@trailstep/core": "^0.0.1", "@trailstep/mcp": "^0.0.1" } }),
+      "utf8",
+    );
+
+    await expect(
+      resolveTrailStepSelfUpdateTargets({
+        cwd,
+        packageCommandRunner: registryRunner({
+          "@trailstep/core": [{ version: "2.0.0" }],
+          "@trailstep/mcp": [
+            { version: "1.9.0", peerDependencies: { "@trailstep/core": "^1.0.0" } },
+          ],
+        }),
+      }),
+    ).rejects.toThrow(/No @trailstep\/mcp version/);
   });
 });

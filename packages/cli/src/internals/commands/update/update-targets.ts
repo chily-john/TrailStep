@@ -13,6 +13,11 @@ const trailstepPackageNames = [
   "@trailstep/core",
   "@trailstep/authoring",
   "@trailstep/cli",
+  "@trailstep/mcp",
+  "@trailstep/provider-claude",
+  "@trailstep/provider-codex",
+  "@trailstep/provider-gemini",
+  "@trailstep/provider-pi",
 ] as const;
 
 export type TrailStepPackageName = (typeof trailstepPackageNames)[number];
@@ -53,10 +58,40 @@ export async function resolveTrailStepSelfUpdateTargets({
     return { targets: [], currentPackageNames: [] };
   }
 
-  const [coreMetadata, authoringMetadata, cliMetadata] = await Promise.all([
+  const [
+    coreMetadata,
+    authoringMetadata,
+    cliMetadata,
+    mcpMetadata,
+    providerClaudeMetadata,
+    providerCodexMetadata,
+    providerGeminiMetadata,
+    providerPiMetadata,
+  ] = await Promise.all([
     fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/core", packageCommandRunner }),
     fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/authoring", packageCommandRunner }),
     fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/cli", packageCommandRunner }),
+    fetchNpmPackageMetadata({ cwd, packageName: "@trailstep/mcp", packageCommandRunner }),
+    fetchNpmPackageMetadata({
+      cwd,
+      packageName: "@trailstep/provider-claude",
+      packageCommandRunner,
+    }),
+    fetchNpmPackageMetadata({
+      cwd,
+      packageName: "@trailstep/provider-codex",
+      packageCommandRunner,
+    }),
+    fetchNpmPackageMetadata({
+      cwd,
+      packageName: "@trailstep/provider-gemini",
+      packageCommandRunner,
+    }),
+    fetchNpmPackageMetadata({
+      cwd,
+      packageName: "@trailstep/provider-pi",
+      packageCommandRunner,
+    }),
   ]);
 
   const targetCore = selectLatestStable(coreMetadata.versions);
@@ -64,28 +99,83 @@ export async function resolveTrailStepSelfUpdateTargets({
     throw new UpdateTargetResolutionError("No published @trailstep/core versions were found.");
   }
 
-  const targetAuthoring = selectLatestPeerCompatibleVersion(authoringMetadata, targetCore);
-  if (!targetAuthoring) {
-    throw new UpdateTargetResolutionError(
-      `No @trailstep/authoring version has a @trailstep/core peer dependency compatible with ${targetCore}.`,
-    );
-  }
-
-  const targetCli = selectLatestPeerCompatibleVersion(cliMetadata, targetCore);
-  if (!targetCli) {
-    throw new UpdateTargetResolutionError(
-      `No @trailstep/cli version has a @trailstep/core peer dependency compatible with ${targetCore}.`,
-    );
-  }
+  const targetAuthoring = resolveOptionalPeerTarget(
+    "@trailstep/authoring",
+    current,
+    authoringMetadata,
+    targetCore,
+  );
+  const targetCli = resolveOptionalPeerTarget("@trailstep/cli", current, cliMetadata, targetCore);
 
   return {
     targets: [
       createTarget("@trailstep/core", current, targetCore),
       createTarget("@trailstep/authoring", current, targetAuthoring),
       createTarget("@trailstep/cli", current, targetCli),
+      createOptionalTarget("@trailstep/mcp", current, mcpMetadata, targetCore),
+      createOptionalTarget(
+        "@trailstep/provider-claude",
+        current,
+        providerClaudeMetadata,
+        targetCore,
+      ),
+      createOptionalTarget("@trailstep/provider-codex", current, providerCodexMetadata, targetCore),
+      createOptionalTarget(
+        "@trailstep/provider-gemini",
+        current,
+        providerGeminiMetadata,
+        targetCore,
+      ),
+      createOptionalTarget("@trailstep/provider-pi", current, providerPiMetadata, targetCore),
     ].filter((target) => target.currentRange !== ""),
     currentPackageNames: [...current.keys()],
   };
+}
+
+function createOptionalTarget(
+  packageName: TrailStepPackageName,
+  current: Map<TrailStepPackageName, { range: string; section: DependencySection }>,
+  metadata: NpmPackageMetadata,
+  coreVersion: string,
+): UpdateTarget {
+  if (!current.has(packageName)) {
+    return { packageName, currentRange: "", targetVersion: "", dependencySection: "dependencies" };
+  }
+  const targetVersion = selectLatestCompatibleOrStable(metadata, coreVersion);
+  if (!targetVersion) {
+    throw new UpdateTargetResolutionError(
+      `No ${packageName} version has a @trailstep/core peer dependency compatible with ${coreVersion}.`,
+    );
+  }
+  return createTarget(packageName, current, targetVersion);
+}
+
+function selectLatestCompatibleOrStable(metadata: NpmPackageMetadata, coreVersion: string) {
+  const hasAnyCorePeer = Object.values(metadata.peerDependenciesByVersion).some(
+    (peers) => peers["@trailstep/core"] !== undefined,
+  );
+  if (!hasAnyCorePeer) {
+    return selectLatestStable(metadata.versions);
+  }
+  return selectLatestPeerCompatibleVersion(metadata, coreVersion);
+}
+
+function resolveOptionalPeerTarget(
+  packageName: TrailStepPackageName,
+  current: Map<TrailStepPackageName, { range: string; section: DependencySection }>,
+  metadata: NpmPackageMetadata,
+  coreVersion: string,
+): string {
+  if (!current.has(packageName)) {
+    return "";
+  }
+  const target = selectLatestPeerCompatibleVersion(metadata, coreVersion);
+  if (!target) {
+    throw new UpdateTargetResolutionError(
+      `No ${packageName} version has a @trailstep/core peer dependency compatible with ${coreVersion}.`,
+    );
+  }
+  return target;
 }
 
 function createTarget(

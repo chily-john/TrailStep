@@ -62,7 +62,7 @@ export const usageText = [
   "  Package-backed add installs into the selected scope root, discovers workflows, and stores package metadata with registrations.",
   "  trailstep remove deletes the registration, then uninstalls only orphaned TrailStep-owned package installs; user-owned, stale, missing, or still-referenced installs are preserved.",
   "  trailstep update updates the globally installed TrailStep CLI binary only and refreshes tracked packaged skill installs when possible; it does not mutate project authoring/runtime dependencies.",
-  "  trailstep update --project plans TrailStep project package updates for @trailstep/core, @trailstep/authoring, and @trailstep/cli in package.json.",
+  "  trailstep update --project plans TrailStep project package updates for @trailstep/core, @trailstep/authoring, @trailstep/cli, @trailstep/mcp, and @trailstep/provider-* in package.json.",
   "  trailstep update --workflows plans npm-backed workflow package updates from registered metadata across project and global install roots.",
   "  trailstep update --workflow <name> updates one registered workflow package target; local-file refs are skipped because they have no package version.",
   "  trailstep update --all combines global CLI, project TrailStep package, and workflow package updates per install root.",

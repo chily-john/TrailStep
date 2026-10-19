@@ -21,11 +21,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "@trailstep/core": "workspace:*"
+    "@trailstep/core": "workspace:*",
+    "add-mcp": "^2.4.1"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "add-mcp": "^2.4.1"
+    "@types/node": "^26.2.0"
   },
   "peerDependencies": {
     "@trailstep/core": "*"

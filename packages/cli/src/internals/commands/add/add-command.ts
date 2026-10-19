@@ -305,6 +305,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       projectDir: context.cwd,
       io: context.io,
       assumeYes: args.yes,
+      scope,
       ...(context.prompts === undefined ? {} : { prompts: context.prompts }),
       ...(context.env === undefined ? {} : { env: context.env }),
     });

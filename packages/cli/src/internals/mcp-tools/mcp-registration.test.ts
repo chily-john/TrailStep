@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -8,6 +9,7 @@ import type { TrailStepCliIo, TrailStepCliPrompts } from "../command.types.js";
 import {
   buildAddMcpSpawnRequest,
   buildTrailStepMcpServerCommand,
+  defaultAddMcpEntryPath,
   formatAddMcpManualCommand,
   type McpRegistrationSpawnRequest,
   type McpRegistrationSpawnResult,
@@ -382,6 +384,7 @@ describe("offerMcpRegistration prompt flow", () => {
     expect(outcome.scope).toBe("global");
     expect(capture.requests).toHaveLength(1);
     expect(capture.requests[0]?.args).toContain("--global");
+    expect(outcome.manualCommand.endsWith("--global")).toBe(true);
     expect(capture.requests[0]?.args).toContain("--name=trailstep-global");
     expect(capture.requests[0]?.args).not.toContain("--args=--project");
     expect(
@@ -450,5 +453,102 @@ describe("offerMcpRegistration prompt flow", () => {
     expect(lines.some((line) => line.includes("already listed"))).toBe(true);
     const gitignoreContent = await readFile(gitignorePath, "utf8");
     expect(gitignoreContent).toBe("node_modules\n.mcp.json\n");
+  });
+});
+
+describe("offerMcpRegistration manual fallback re-render", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    projectDir = await mkdtemp(join(tmpdir(), "trst-mcp-registration-"));
+  });
+
+  afterEach(async () => {
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("re-renders the manual command with the resolved scope flags when add-mcp cannot be resolved", async () => {
+    const capture = captureRunner();
+    const { lines, io } = recordingIo();
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      runner: capture.runner,
+      prompts: promptsAnswering(["Global (user-level config)"], [true]),
+      resolveAddMcpEntry: () => undefined,
+      nodeBinaryPath: NODE_BINARY,
+    });
+
+    expect(outcome.status).toBe("manual");
+    expect(outcome.scope).toBe("global");
+    expect(capture.requests).toHaveLength(0);
+    expect(outcome.manualCommand.endsWith("--global")).toBe(true);
+    expect(outcome.manualCommand).not.toContain("--gitignore");
+    expect(lines).toContain(outcome.manualCommand);
+  });
+
+  it("re-renders the manual command with the resolved scope flags when the spawn throws", async () => {
+    const { lines, io } = recordingIo();
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      runner: async () => {
+        throw new Error("spawn blew up");
+      },
+      prompts: promptsAnswering(["Local (gitignored, stays on this machine)"], [true, true]),
+      addMcpEntryPath: ADD_MCP_ENTRY,
+      nodeBinaryPath: NODE_BINARY,
+    });
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.scope).toBe("local");
+    expect(outcome.manualCommand.endsWith("--gitignore")).toBe(true);
+    expect(lines).toContain(outcome.manualCommand);
+  });
+
+  it("re-renders the manual command with the resolved scope flags on ERR_TTY_INIT_FAILED", async () => {
+    const capture = captureRunner();
+    capture.respond({ exitCode: 1, stderr: "Error [ERR_TTY_INIT_FAILED]" });
+    const { lines, io } = recordingIo();
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      runner: capture.runner,
+      prompts: promptsAnswering(["Local (gitignored, stays on this machine)"], [true, true]),
+      addMcpEntryPath: ADD_MCP_ENTRY,
+      nodeBinaryPath: NODE_BINARY,
+    });
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.scope).toBe("local");
+    expect(capture.requests).toHaveLength(1);
+    expect(outcome.manualCommand.endsWith("--gitignore")).toBe(true);
+    expect(lines).toContain(outcome.manualCommand);
+  });
+});
+
+describe("defaultAddMcpEntryPath resolution", () => {
+  it("resolves the add-mcp bin entry through the @trailstep/mcp dependency chain", () => {
+    const entry = defaultAddMcpEntryPath();
+    expect(entry).toBeDefined();
+    expect(entry?.replaceAll("\\", "/")).toContain("add-mcp");
+  });
+
+  it("keeps add-mcp as a production dependency of @trailstep/mcp so published installs can resolve it", async () => {
+    const mcpPackageJsonPath = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "..",
+      "..",
+      "mcp",
+      "package.json",
+    );
+    const parsed = JSON.parse(await readFile(mcpPackageJsonPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(parsed.dependencies?.["add-mcp"]).toBeDefined();
+    expect(parsed.devDependencies?.["add-mcp"]).toBeUndefined();
   });
 });

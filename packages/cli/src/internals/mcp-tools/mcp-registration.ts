@@ -69,6 +69,8 @@ export interface OfferMcpRegistrationOptions {
   readonly gitignoreEntry?: string;
   /** Pass `null` to treat add-mcp as unresolvable and force the manual-command fallback. */
   readonly addMcpEntryPath?: string | null;
+  /** Injectable add-mcp resolution seam so tests can simulate an unresolvable install. */
+  readonly resolveAddMcpEntry?: () => string | undefined;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly nodeBinaryPath?: string;
   readonly cliEntryPath?: string;
@@ -317,8 +319,9 @@ export async function offerMcpRegistration(
     );
   }
 
+  const resolveAddMcpEntry = options.resolveAddMcpEntry ?? defaultAddMcpEntryPath;
   const addMcpEntryPath =
-    options.addMcpEntryPath === undefined ? defaultAddMcpEntryPath() : options.addMcpEntryPath;
+    options.addMcpEntryPath === undefined ? resolveAddMcpEntry() : options.addMcpEntryPath;
   if (addMcpEntryPath === undefined || addMcpEntryPath === null) {
     options.io.writeLine(
       "add-mcp could not be located for automatic registration. Register the TrailStep MCP server manually by running this command in a terminal:",
@@ -487,6 +490,15 @@ function defaultCliEntryPath(): string | undefined {
  * Resolves add-mcp's Node entry script to an absolute path so it can be
  * spawned through an argv array without a shell (bare `npx add-mcp` wrappers
  * fail headless with ERR_TTY_INIT_FAILED).
+ *
+ * Packaging: `add-mcp` is a production dependency of `@trailstep/mcp` (not of
+ * `@trailstep/cli` directly). The trade-off is that every `@trailstep/mcp`
+ * install pulls in `add-mcp` even if the consumer never runs `trailstep
+ * init`/`add`; in exchange, published installs of `@trailstep/cli` can always
+ * resolve the add-mcp bin entry without a network `npx` fetch. Resolution
+ * walks cli -> `@trailstep/mcp` package root -> `add-mcp`, using the package.json
+ * entry (not the module entry) so it works even when `@trailstep/mcp`'s dist
+ * has not been built.
  */
 export function defaultAddMcpEntryPath(): string | undefined {
   const requireFromCli = createRequire(import.meta.url);
@@ -494,20 +506,12 @@ export function defaultAddMcpEntryPath(): string | undefined {
   if (direct !== undefined) {
     return packageBinEntry(direct);
   }
-  const mcpEntry = tryResolvePackage("@trailstep/mcp", requireFromCli);
-  if (mcpEntry === undefined) {
+  const mcpPackageJson = tryResolvePackageJson("@trailstep/mcp", requireFromCli);
+  if (mcpPackageJson === undefined) {
     return undefined;
   }
-  const viaMcp = tryResolvePackageJson("add-mcp", createRequire(mcpEntry));
+  const viaMcp = tryResolvePackageJson("add-mcp", createRequire(mcpPackageJson));
   return viaMcp === undefined ? undefined : packageBinEntry(viaMcp);
-}
-
-function tryResolvePackage(packageName: string, requireFrom: NodeJS.Require): string | undefined {
-  try {
-    return requireFrom.resolve(packageName);
-  } catch {
-    return undefined;
-  }
 }
 
 function tryResolvePackageJson(

@@ -1,4 +1,11 @@
 export {
+  DEFAULT_PER_WORKFLOW_TOOLS,
+  type LoadPerWorkflowToolsOptions,
+  loadPerWorkflowTools,
+  type PerWorkflowToolDefinition,
+  resolvePerWorkflowToolsEnabled,
+} from "./per_workflow.js";
+export {
   type RunWorkflowResult,
   type RunWorkflowToolOptions,
   type RunWorkflowToolResult,
@@ -10,6 +17,12 @@ export {
   type TrstAnswerResult,
   trstAnswer,
 } from "./trst_answer.js";
+export {
+  type TrstListOptions,
+  type TrstListResult,
+  type TrstListWorkflowEntry,
+  trstList,
+} from "./trst_list.js";
 export {
   type ContinueRunner,
   type ContinueRunnerOptions,

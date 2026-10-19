@@ -10,6 +10,11 @@ import {
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { loadTrailStepProjectConfig } from "../../config/config.js";
+import { offerMcpRegistration } from "../../mcp-tools/mcp-registration.js";
+import {
+  generateMcpToolJson,
+  mcpToolInputFromWorkflow,
+} from "../../mcp-tools/mcp-tool-generation.js";
 import { OFFICIAL_PROVIDER_IDS } from "../../official-provider-specs.js";
 import {
   promptMultiSelect,
@@ -96,6 +101,35 @@ interface ResolvedAddCommandArgs {
 interface AddRegistration {
   readonly registryTarget: AddRegistryTarget;
   readonly name: string;
+}
+
+/**
+ * Regenerates `.trailstep/mcp/trst_<id>.json` for one successful `add`
+ * registration. The registration itself already succeeded; generation problems
+ * are reported as warnings and never fail the add.
+ */
+async function generateMcpToolJsonForRegistration(
+  namespace: string,
+  registration: AddRegistration,
+  projectDir: string,
+  context: CliCommandContext,
+): Promise<void> {
+  const workflowRef = `${namespace}/${registration.name}`;
+  const workflow = registration.registryTarget.workflow;
+  if (workflow === undefined) {
+    context.io.writeError(
+      `Warning: skipped MCP tool JSON for ${workflowRef}: workflow definition could not be loaded.`,
+    );
+    return;
+  }
+  try {
+    await generateMcpToolJson(mcpToolInputFromWorkflow(workflow, workflowRef), { projectDir });
+    context.io.writeLine(`Generated MCP tool JSON for ${workflowRef}.`);
+  } catch (error) {
+    context.io.writeError(
+      `Warning: could not generate MCP tool JSON for ${workflowRef}: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 }
 
 const SCOPE_PROMPT_LABEL =
@@ -224,6 +258,10 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
+    for (const registration of successfulRegistrations) {
+      await generateMcpToolJsonForRegistration(namespace, registration, context.cwd, context);
+    }
+
     if (successfulRegistrations.length > 0) {
       await applyRecommendedConfigForPreparedSource(preparedSource, scope, context);
     }
@@ -262,6 +300,14 @@ export const addCommand: CliCommand<AddCommandArgs> = {
         `Summary: registered ${successfulRegistrations.length}, skipped conflicts ${skippedConflicts}, skill warnings ${skillWarnings}.`,
       );
     }
+
+    await offerMcpRegistration({
+      projectDir: context.cwd,
+      io: context.io,
+      assumeYes: args.yes,
+      ...(context.prompts === undefined ? {} : { prompts: context.prompts }),
+      ...(context.env === undefined ? {} : { env: context.env }),
+    });
 
     return 0;
   },

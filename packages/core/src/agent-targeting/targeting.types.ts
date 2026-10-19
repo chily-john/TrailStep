@@ -74,6 +74,16 @@ export interface TrailStepStorageConfig {
   readonly lifecycle?: TrailStepStorageLifecycleConfig;
 }
 
+export interface TrailStepMcpConfig {
+  /**
+   * When true (the default), the TrailStep MCP server exposes one tool per
+   * generated per-workflow MCP tool JSON. When false, the server exposes a
+   * single `trst_list` discovery tool instead.
+   */
+  readonly perWorkflowTools?: boolean;
+  readonly [key: string]: unknown;
+}
+
 export interface TrailStepConfig {
   readonly version: 1;
   readonly customProviders: Readonly<Record<string, TrailStepCustomProviderConfig>>;
@@ -81,6 +91,7 @@ export interface TrailStepConfig {
   readonly agents: TrailStepAgentMappings;
   readonly settings?: TrailStepSettings;
   readonly storage?: TrailStepStorageConfig;
+  readonly mcp?: TrailStepMcpConfig;
   readonly workflows?: Readonly<Record<string, TrailStepWorkflowConfig>>;
 }
 

@@ -23,19 +23,28 @@ function workspaceRoot(): string {
  * Layered MCP config dirs in first-wins order: local > project > global.
  * `projectDir` anchors the local and project layers to an explicit project
  * root instead of the cwd-derived workspace root; the global layer always
- * resolves under the real home directory (`os.homedir()`).
+ * resolves under the real home directory (`os.homedir()`), or under an
+ * explicit `homeDir` override when provided (test isolation).
  */
-export function layeredDirs(options?: { projectDir?: string }): string[] {
+export function layeredDirs(options?: { projectDir?: string; homeDir?: string }): string[] {
   const root = options?.projectDir ? path.resolve(options.projectDir) : workspaceRoot();
+  const globalRoot = options?.homeDir ? path.resolve(options.homeDir) : homeDir();
   return [
     path.resolve(root, ".trailstep/mcp/"),
     path.resolve(root, "project/.trailstep/mcp/"),
-    path.resolve(homeDir(), ".trailstep/mcp/"),
+    path.resolve(globalRoot, ".trailstep/mcp/"),
   ];
 }
 
-export function load(options?: { dir?: string; ids?: string[]; projectDir?: string }): unknown[] {
-  const dirs = options?.dir ? [options.dir] : layeredDirs({ projectDir: options?.projectDir });
+export function load(options?: {
+  dir?: string;
+  ids?: string[];
+  projectDir?: string;
+  homeDir?: string;
+}): unknown[] {
+  const dirs = options?.dir
+    ? [options.dir]
+    : layeredDirs({ projectDir: options?.projectDir, homeDir: options?.homeDir });
   const seenIds = new Set<string>();
   const items: unknown[] = [];
 

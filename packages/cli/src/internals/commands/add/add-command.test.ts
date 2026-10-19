@@ -38,6 +38,17 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+/**
+ * Strips the MCP registration offer output (whose manual command embeds
+ * machine-specific absolute paths) from exact-output assertions.
+ */
+function filterMcpOfferLines(lines: readonly string[]): string[] {
+  return lines.filter(
+    (line) =>
+      !line.startsWith("Register the TrailStep MCP server") && !line.startsWith("npx add-mcp"),
+  );
+}
+
 describe("addCommand", () => {
   it("accepts project and user skill flags when parsing add arguments", () => {
     const command = resolveCommand([
@@ -225,7 +236,7 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            selectPrompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) selectPrompts.push(prompt);
             if (prompt.startsWith("Where should this workflow be registered?")) {
               expect(choices).toEqual(["local", "project", "global"]);
               return "project";
@@ -236,6 +247,9 @@ describe("addCommand", () => {
             }
             if (prompt === "Add to user skills?") {
               expect(choices).toEqual(["yes", "no"]);
+              return "no";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
@@ -868,7 +882,7 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            prompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt.startsWith("Where should this workflow be registered?")) {
               expect(choices).toEqual(["local", "project", "global"]);
               return "project";
@@ -881,9 +895,15 @@ describe("addCommand", () => {
               expect(choices).toEqual(["yes", "no"]);
               return "no";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected prompt: ${prompt}`);
           },
           text: async (prompt) => {
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected prompt: ${prompt}`);
           },
         },
@@ -939,7 +959,7 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            prompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Add to project skills?") {
               expect(choices).toEqual(["yes", "no"]);
               return "yes";
@@ -948,9 +968,15 @@ describe("addCommand", () => {
               expect(choices).toEqual(["yes", "no"]);
               return "no";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected prompt: ${prompt}`);
           },
           text: async (prompt) => {
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected prompt: ${prompt}`);
           },
         },
@@ -1011,7 +1037,7 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            prompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (medium) — Review code") {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
               return "Use named agent";
@@ -1024,6 +1050,9 @@ describe("addCommand", () => {
               return "no";
             }
             if (prompt === "Add to user skills?") {
+              return "no";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
@@ -1103,7 +1132,7 @@ describe("addCommand", () => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               return "no";
             }
-            prompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (medium) — Review code") {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
               return "Use named agent";
@@ -1111,6 +1140,9 @@ describe("addCommand", () => {
             if (prompt === "Named agent for workflow role reviewer") {
               expect(choices).toContain("reviewerAgent");
               return "reviewerAgent";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -1197,13 +1229,16 @@ describe("addCommand", () => {
               ]);
               return "Skip this workflow";
             }
-            prompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (medium) — Review code") {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
               return "Use named agent";
             }
             if (prompt === "Named agent for workflow role reviewer") {
               return "reviewerAgent";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -1278,13 +1313,16 @@ describe("addCommand", () => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               return "no";
             }
-            prompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (small) — Review code") {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
               return "Use named agent";
             }
             if (prompt === "Named agent for workflow role reviewer") {
               return "reviewerAgent";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -1354,6 +1392,9 @@ describe("addCommand", () => {
         prompts: {
           select: async (prompt) => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
@@ -1435,7 +1476,10 @@ describe("addCommand", () => {
       },
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
-    expect(lines).toEqual(["Registered acme/review -> ./workflows/review.mjs in project config."]);
+    expect(filterMcpOfferLines(lines)).toEqual([
+      "Registered acme/review -> ./workflows/review.mjs in project config.",
+      "Generated MCP tool JSON for acme/review.",
+    ]);
     expect(errors).toEqual([]);
   });
 
@@ -1503,8 +1547,9 @@ describe("addCommand", () => {
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { dailyNote: "./workflows#dailyNote" } },
     });
-    expect(lines).toEqual([
+    expect(filterMcpOfferLines(lines)).toEqual([
       "Registered acme/dailyNote -> ./workflows#dailyNote in project config.",
+      "Generated MCP tool JSON for acme/dailyNote.",
     ]);
   });
 
@@ -1543,6 +1588,9 @@ describe("addCommand", () => {
           select: async (prompt, choices) => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               expect(choices).toEqual(["yes", "no"]);
+              return "no";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
@@ -1628,7 +1676,10 @@ describe("addCommand", () => {
         reviewer: [{ provider: "reviewer" }],
       },
     });
-    expect(lines).toEqual(["Registered acme/review -> ./workflows/review.mjs in local config."]);
+    expect(filterMcpOfferLines(lines)).toEqual([
+      "Registered acme/review -> ./workflows/review.mjs in local config.",
+      "Generated MCP tool JSON for acme/review.",
+    ]);
   });
 
   it("preserves existing workflow config objects while adding string registrations", async ({
@@ -1982,6 +2033,9 @@ describe("addCommand", () => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               return "no";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           multiSelect: async (prompt, choices) => {
@@ -2054,6 +2108,9 @@ describe("addCommand", () => {
               expect(choices).toEqual(["yes", "no"]);
               return "no";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           multiSelect: async (prompt, choices) => {
@@ -2120,6 +2177,9 @@ describe("addCommand", () => {
               expect(choices).toEqual(["yes", "no"]);
               return "no";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           multiSelect: async (prompt, choices) => {
@@ -2178,6 +2238,9 @@ describe("addCommand", () => {
         prompts: {
           select: async (prompt) => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
@@ -2626,6 +2689,9 @@ describe("addCommand", () => {
             expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
             return "Reuse installed package";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         text: async (prompt) => {
@@ -3071,6 +3137,9 @@ describe("addCommand", () => {
               ]);
               return "Replace existing registration";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           multiSelect: async (prompt, choices) => {
@@ -3175,6 +3244,9 @@ describe("addCommand", () => {
               ]);
               return "Cancel add";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           multiSelect: async (prompt, choices) => {
@@ -3274,6 +3346,9 @@ describe("addCommand", () => {
                 "Cancel add",
               ]);
               return "Skip this workflow";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -3390,6 +3465,9 @@ describe("addCommand", () => {
             ) {
               expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
               return "Reuse installed package";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -3583,7 +3661,7 @@ describe("addCommand", () => {
         io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            selectPrompts.push(prompt);
+            if (!prompt.startsWith("Register the TrailStep MCP server")) selectPrompts.push(prompt);
             if (
               prompt ===
               "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
@@ -3592,6 +3670,9 @@ describe("addCommand", () => {
               return "Reuse installed package";
             }
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
+              return "no";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
@@ -3675,6 +3756,9 @@ describe("addCommand", () => {
             if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
               return "no";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           text: async (prompt) => {
@@ -3748,6 +3832,9 @@ describe("addCommand", () => {
               "Package @acme/workflows is already installed in project scope. What should TrailStep do?"
             ) {
               return "Cancel";
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
             }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
@@ -4128,6 +4215,9 @@ describe("addCommand", () => {
           io: { writeLine: () => undefined, writeError: () => undefined },
           prompts: {
             select: async (prompt) => {
+              if (prompt.startsWith("Register the TrailStep MCP server")) {
+                return "no";
+              }
               throw new Error(`Unexpected select prompt: ${prompt}`);
             },
             multiSelect: async () => {
@@ -4177,6 +4267,9 @@ describe("addCommand", () => {
           io: { writeLine: () => undefined, writeError: () => undefined },
           prompts: {
             select: async (prompt) => {
+              if (prompt.startsWith("Register the TrailStep MCP server")) {
+                return "no";
+              }
               throw new Error(`Unexpected select prompt: ${prompt}`);
             },
             multiSelect: async () => {

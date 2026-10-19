@@ -7,6 +7,7 @@ import { continueCommand } from "./commands/continue/continue-command.js";
 import { doctorCommand } from "./commands/doctor/doctor-command.js";
 import { initCommand } from "./commands/init/init-command.js";
 import { inputTemplateCommand } from "./commands/input-template/input-template-command.js";
+import { mcpCommand } from "./commands/mcp/command.js";
 import { openCommand } from "./commands/open/open-command.js";
 import { outputCommand } from "./commands/output/output-command.js";
 import { providersCommand } from "./commands/providers/providers-command.js";
@@ -19,7 +20,6 @@ import { storageCommand } from "./commands/storage/storage-command.js";
 import { updateCommand } from "./commands/update/update-command.js";
 import { watchCommand } from "./commands/watch/watch-command.js";
 import { workflowsCommand } from "./commands/workflows/workflows-command.js";
-import { mcpCommand } from "./commands/mcp/command.js";
 
 /**
  * Resolves the CLI command implementation for a given argv.

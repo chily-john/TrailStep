@@ -6,6 +6,7 @@ import type { TrailStepConfig } from "../targeting.types.js";
 import { expandAgentRefs } from "./expand-agent-refs.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import { parseCustomProviders } from "./parse-custom-providers.js";
+import { parseMcpConfig } from "./parse-mcp-config.js";
 import { parseSettings } from "./parse-settings.js";
 import { parseStorageConfig } from "./parse-storage-config.js";
 import { isRecord, throwValidationFailure } from "./parse-utils.js";
@@ -51,6 +52,7 @@ export function parseTrailStepConfig(value: unknown): ParsedTrailStepConfig {
   const agents = parseAgentMappings("agents", value.agents, diagnostics);
   const settings = parseSettings("settings", value.settings, diagnostics);
   const storage = parseStorageConfig(value.storage, diagnostics);
+  const mcp = parseMcpConfig("mcp", value.mcp, diagnostics);
   const workflows = parseWorkflows(value.workflows, diagnostics);
 
   if (diagnostics.length > 0) {
@@ -68,6 +70,7 @@ export function parseTrailStepConfig(value: unknown): ParsedTrailStepConfig {
     agents: expanded.agents,
     ...(settings === undefined ? {} : { settings }),
     ...(storage === undefined ? {} : { storage }),
+    ...(mcp === undefined ? {} : { mcp }),
     ...(expanded.workflows === undefined ? {} : { workflows: expanded.workflows }),
   } as ParsedTrailStepConfig;
 

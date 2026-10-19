@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
 import type { CliCommand, CliCommandContext, TrailStepCliPrompts } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { offerMcpRegistration } from "../../mcp-tools/mcp-registration.js";
 import {
   createPackageAddCommand,
   defaultPackageCommandRunner,
@@ -119,6 +120,13 @@ export const initCommand: CliCommand<InitCommandArgs> = {
         context.io.writeLine("Installed TrailStep usage and authoring skills.");
       }
     }
+
+    await offerMcpRegistration({
+      projectDir: context.cwd,
+      io: context.io,
+      ...(context.prompts === undefined ? {} : { prompts: context.prompts }),
+      ...(context.env === undefined ? {} : { env: context.env }),
+    });
 
     return 0;
   },

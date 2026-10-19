@@ -8,6 +8,7 @@ import {
 } from "../../deprecation-scan/deprecation-scanner.js";
 import { resolveInstalledTrailStepVersions } from "../../deprecation-scan/resolve-installed-trailstep-versions.js";
 import { resolveDeprecationScanTargets } from "../../deprecation-scan/scan-targets.js";
+import { refreshRegisteredWorkflowMcpTools } from "../../mcp-tools/registered-mcp-refresh.js";
 import { NpmRegistryError } from "../../package-manager/npm-registry.js";
 import {
   type PackageJsonDependencyUpdate,
@@ -182,6 +183,9 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
         !hasWorkflowSkillInstalls &&
         !hasRecommendedConfigAdditions
       ) {
+        if (workflowPlan !== undefined) {
+          await refreshRegisteredWorkflowMcpToolsAndReport(context);
+        }
         context.io.writeLine(noChangesMessage(args, globalCliPlan, selfPlan, workflowPlan));
         return 0;
       }
@@ -354,6 +358,11 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
           );
         }
       }
+      if (workflowPlan !== undefined) {
+        // Per-workflow MCP tool JSON is regenerated on every `update` covering
+        // workflows, rewritten unconditionally (hash compare is logging-only).
+        await refreshRegisteredWorkflowMcpToolsAndReport(context);
+      }
       context.io.writeLine("Update complete.");
       return 0;
     } catch (error) {
@@ -365,6 +374,26 @@ export const updateCommand: CliCommand<UpdateCommandArgs> = {
     }
   },
 };
+
+/** Rewrites per-workflow MCP tool JSON for every registered workflow. */
+async function refreshRegisteredWorkflowMcpToolsAndReport(
+  context: CliCommandContext,
+): Promise<void> {
+  const result = await refreshRegisteredWorkflowMcpTools({
+    cwd: context.cwd,
+    ...(context.homeDir === undefined ? {} : { homeDir: context.homeDir }),
+  });
+  for (const failure of result.failures) {
+    context.io.writeError(
+      `Warning: could not refresh MCP tool JSON for ${failure.registeredRef}: ${failure.message}`,
+    );
+  }
+  if (result.generated.length > 0) {
+    context.io.writeLine(
+      `Refreshed MCP tool JSON for ${result.generated.length} registered workflow(s).`,
+    );
+  }
+}
 
 interface CollectPreflightFindingsOptions {
   readonly args: UpdateCommandArgs;

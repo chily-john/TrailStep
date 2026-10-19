@@ -133,6 +133,9 @@ describe("initCommand", () => {
           if (prompt === "Reasoning/thinking override") {
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -143,6 +146,9 @@ describe("initCommand", () => {
             prompt === "Install the TrailStep usage and authoring skills?" ||
             prompt === "Configure recommended run artifact lifecycle storage?"
           ) {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -214,6 +220,9 @@ describe("initCommand", () => {
             expect(choices[0]).toBe("Use provider default");
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -224,6 +233,9 @@ describe("initCommand", () => {
             prompt === "Install the TrailStep usage and authoring skills?" ||
             prompt === "Configure recommended run artifact lifecycle storage?"
           ) {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -271,6 +283,9 @@ describe("initCommand", () => {
             expect(choices).not.toContain("max");
             return "xhigh";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -281,6 +296,9 @@ describe("initCommand", () => {
             prompt === "Install the TrailStep usage and authoring skills?" ||
             prompt === "Configure recommended run artifact lifecycle storage?"
           ) {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -342,6 +360,9 @@ describe("initCommand", () => {
             expect(choices).toEqual(["Use provider default", "low", "high"]);
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async multiSelect(prompt, choices) {
@@ -368,6 +389,9 @@ describe("initCommand", () => {
             prompt === "Install the TrailStep usage and authoring skills?" ||
             prompt === "Configure recommended run artifact lifecycle storage?"
           ) {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -454,6 +478,9 @@ describe("initCommand", () => {
             ]);
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -464,6 +491,9 @@ describe("initCommand", () => {
             prompt === "Install the TrailStep usage and authoring skills?" ||
             prompt === "Configure recommended run artifact lifecycle storage?"
           ) {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -533,6 +563,9 @@ describe("initCommand", () => {
             expect(choices[0]).toBe("Use provider default");
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -552,6 +585,9 @@ describe("initCommand", () => {
             prompt === "Install the TrailStep usage and authoring skills?" ||
             prompt === "Configure recommended run artifact lifecycle storage?"
           ) {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -608,6 +644,9 @@ describe("initCommand", () => {
           if (prompt === "Reasoning/thinking override") {
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -620,6 +659,9 @@ describe("initCommand", () => {
           }
           if (prompt === "Install the TrailStep usage and authoring skills?") {
             return true;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
         },
@@ -683,6 +725,9 @@ describe("initCommand", () => {
           if (prompt === "Reasoning/thinking override") {
             return "Use provider default";
           }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
+            return "no";
+          }
           throw new Error(`Unexpected select prompt: ${prompt}`);
         },
         async confirm(prompt) {
@@ -691,6 +736,9 @@ describe("initCommand", () => {
             return false;
           }
           if (prompt === "Configure recommended run artifact lifecycle storage?") {
+            return false;
+          }
+          if (prompt.startsWith("Register the TrailStep MCP server")) {
             return false;
           }
           throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -745,6 +793,9 @@ describe("initCommand", () => {
             if (prompt === "Reasoning/thinking override") {
               return "Use provider default";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           async confirm(prompt) {
@@ -753,6 +804,9 @@ describe("initCommand", () => {
               return false;
             }
             if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return false;
             }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -845,6 +899,9 @@ describe("initCommand", () => {
               ]);
               return "Use provider default";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           async confirm(prompt) {
@@ -852,6 +909,9 @@ describe("initCommand", () => {
               return false;
             }
             if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return false;
             }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -931,6 +991,9 @@ describe("initCommand", () => {
             if (prompt === "Reasoning/thinking override") {
               return "Use provider default";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           async confirm(prompt) {
@@ -938,6 +1001,9 @@ describe("initCommand", () => {
               return false;
             }
             if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return false;
             }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);
@@ -993,6 +1059,9 @@ describe("initCommand", () => {
             if (prompt === "Reasoning/thinking override") {
               return "Use provider default";
             }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
+              return "no";
+            }
             throw new Error(`Unexpected select prompt: ${prompt}`);
           },
           async confirm(prompt) {
@@ -1000,6 +1069,9 @@ describe("initCommand", () => {
               return false;
             }
             if (prompt === "Configure recommended run artifact lifecycle storage?") {
+              return false;
+            }
+            if (prompt.startsWith("Register the TrailStep MCP server")) {
               return false;
             }
             throw new Error(`Unexpected confirm prompt: ${prompt}`);

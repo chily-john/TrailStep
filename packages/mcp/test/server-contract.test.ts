@@ -26,7 +26,9 @@ function createTmpProject(): string {
 }
 
 async function connectedClient(projectDir: string): Promise<Client> {
-  const server = createServer({ projectDir });
+  // Empty tmp home dir keeps the global config/tool JSON layer isolated from
+  // the developer's real ~/.trailstep tree.
+  const server = createServer({ projectDir, homeDir: createTmpProject() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "mcp-contract-test", version: "0.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);

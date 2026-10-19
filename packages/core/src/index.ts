@@ -13,6 +13,7 @@ export type {
   TrailStepCustomProviderConfig,
   TrailStepCustomProviderModelOverrideSupport,
   TrailStepCustomProviderThinkingOverrideSupport,
+  TrailStepMcpConfig,
   TrailStepSettings,
   TrailStepWorkflowConfig,
 } from "./agent-targeting/targeting.types.js";

@@ -301,6 +301,28 @@ describe("parseTrailStepConfig", () => {
     expect(parsed.workflows?.review?.settings).toEqual({});
   });
 
+  it("parses the mcp section and keeps the perWorkflowTools flag", () => {
+    const parsed = parseTrailStepConfig({
+      version: 1,
+      customProviders: {},
+      agents: {},
+      mcp: { perWorkflowTools: false },
+    });
+
+    expect(parsed.mcp?.perWorkflowTools).toBe(false);
+  });
+
+  it("reports diagnostics for a non-boolean mcp.perWorkflowTools", () => {
+    expect(() =>
+      parseTrailStepConfig({
+        version: 1,
+        customProviders: {},
+        agents: {},
+        mcp: { perWorkflowTools: "yes" },
+      }),
+    ).toThrow(TrailStepFailureError);
+  });
+
   it("parses storage lifecycle retention durations and workflow overrides", () => {
     const parsed = parseTrailStepConfig({
       version: 1,

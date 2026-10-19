@@ -228,55 +228,13 @@ if (invokedScriptPath && metaBasename === scriptBasename && metaBasename === "in
   });
 }
 
-// Minimal production helpers for Story 001 (JSON contract + load order)
-import { serializeOrdered, validateStructural } from "@trailstep/core";
-import crypto from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
-
-function hashContent(content: string): string {
-  return crypto.createHash("sha256").update(content, "utf-8").digest("hex");
-}
-
-export function addWorkflow(
-  id: string,
-  workflowRef: string,
-  description: string,
-  inputSchema: unknown,
-  sourceContent: string,
-): string {
-  const dir = ".trailstep/mcp/";
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const filePath = join(dir, `trst_${id}.json`);
-  const obj = {
-    schemaVersion: "1.0.0",
-    name: `trst_${id}`,
-    workflowRef,
-    description,
-    inputSchema,
-    source: { scope: "local", hash: hashContent(sourceContent) },
-    generatedBy: "trailstep",
-  };
-  writeFileSync(filePath, serializeOrdered(obj as Record<string, unknown>));
-  return filePath;
-}
-
-export function updateWorkflow(
-  id: string,
-  workflowRef: string,
-  description: string,
-  inputSchema: unknown,
-  sourceContent: string,
-): string {
-  const filePath = join(".trailstep/mcp/", `trst_${id}.json`);
-  const obj = {
-    schemaVersion: "1.0.0",
-    name: `trst_${id}`,
-    workflowRef,
-    description,
-    inputSchema,
-    source: { scope: "local", hash: hashContent(sourceContent) },
-    generatedBy: "trailstep",
-  };
-  writeFileSync(filePath, serializeOrdered(obj as Record<string, unknown>));
-  return filePath;
-}
+// Story 001 JSON contract + generation helpers now live in
+// internals/mcp-tools/mcp-tool-generation.ts (generateMcpToolJson), which is
+// wired into the `add` and `update --workflows` command flows.
+export {
+  generateMcpToolJson,
+  McpToolGenerationError,
+  type McpToolWorkflowInput,
+  mcpToolInputFromWorkflow,
+  workflowSourceSnapshot,
+} from "./internals/mcp-tools/mcp-tool-generation.js";

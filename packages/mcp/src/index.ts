@@ -13,6 +13,11 @@ import { serveStdio, tools } from "./server.js";
 export { runWorkflow } from "./run_workflow.js";
 export type { CreateServerOptions, McpToolDefinition } from "./server.js";
 export { createServer, serveStdio } from "./server.js";
+export {
+  loadPerWorkflowTools,
+  type PerWorkflowToolDefinition,
+  resolvePerWorkflowToolsEnabled,
+} from "./tools/per_workflow.js";
 // Answer / resume adapters over the real CLI wait-answer and continue seams
 // (see ./tools/). Answers are persisted into the run's real wait answer files;
 // there is no run_context.json side-channel.
@@ -21,6 +26,12 @@ export {
   type TrstAnswerResult,
   trstAnswer as trst_answer,
 } from "./tools/trst_answer.js";
+export {
+  type TrstListOptions,
+  type TrstListResult,
+  type TrstListWorkflowEntry,
+  trstList as trst_list,
+} from "./tools/trst_list.js";
 export {
   type TrstResumeOptions,
   type TrstResumeResult,

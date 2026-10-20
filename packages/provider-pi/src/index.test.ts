@@ -11,6 +11,13 @@ describe("@trailstep/provider-pi exports", () => {
         displayName: "Pi",
         model: { supported: true },
         thinking: { supported: true, levels: ["low", "medium", "high", "xhigh", "max"] },
+        hygiene: {
+          tools: { flag: "--tools" },
+          skills: { flag: "--skill", disableFlag: "--no-skills" },
+          mcp: { disableFlag: "--no-mcp" },
+          extensions: { disableFlag: "--no-extensions" },
+          contextFiles: { disableFlag: "--no-context-files" },
+        },
         working: {
           supported: true,
           command: "pi",
@@ -26,6 +33,11 @@ describe("@trailstep/provider-pi exports", () => {
             "--thinking",
             "{{thinking}}",
             "{{/thinking}}",
+            "{{tools}}",
+            "{{skills}}",
+            "{{mcpArgs}}",
+            "{{extensionsArgs}}",
+            "{{contextFilesArgs}}",
             "@{{promptFile}}",
           ],
           followUp: {
@@ -43,6 +55,11 @@ describe("@trailstep/provider-pi exports", () => {
               "--thinking",
               "{{thinking}}",
               "{{/thinking}}",
+              "{{tools}}",
+              "{{skills}}",
+              "{{mcpArgs}}",
+              "{{extensionsArgs}}",
+              "{{contextFilesArgs}}",
               "--session",
               "{{sessionId}}",
               "@{{promptFile}}",
@@ -63,5 +80,31 @@ describe("@trailstep/provider-pi exports", () => {
         extractOutput: { supported: true, source: "package" },
       },
     });
+  });
+});
+
+describe("@trailstep/provider-pi hygiene capabilities", () => {
+  it("declares supported execution fields as real single-token argv flags", () => {
+    const hygiene = providerPi.trailstepProvider.manifest.hygiene;
+    expect(Object.keys(hygiene).sort()).toEqual([
+      "contextFiles",
+      "extensions",
+      "mcp",
+      "skills",
+      "tools",
+    ]);
+    const declaredFlags = [
+      hygiene.tools.flag,
+      hygiene.skills.flag,
+      hygiene.skills.disableFlag,
+      hygiene.mcp.disableFlag,
+      hygiene.extensions.disableFlag,
+      hygiene.contextFiles.disableFlag,
+    ];
+    expect(declaredFlags.length).toBeGreaterThan(0);
+    for (const flag of declaredFlags) {
+      expect(flag.length, "hygiene flags must be non-empty").toBeGreaterThan(0);
+      expect(flag, "hygiene flags must be single argv tokens").toMatch(/^\S+$/u);
+    }
   });
 });

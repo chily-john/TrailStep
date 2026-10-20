@@ -68,4 +68,110 @@ describe("renderCustomProviderArgs", () => {
       }),
     ).toThrow(TrailStepFailureError);
   });
+
+  describe("hygiene list placeholders", () => {
+    const argv = [
+      "--prompt-file",
+      "{{promptFile}}",
+      "{{tools}}",
+      "{{skills}}",
+      "{{mcpArgs}}",
+      "{{extensionsArgs}}",
+      "{{contextFilesArgs}}",
+      "--output-file",
+      "{{outputFile}}",
+    ];
+
+    it("expands hygiene vars into multiple argv entries in place", () => {
+      const args = renderCustomProviderArgs({
+        argv,
+        values: {
+          promptFile: "/run/prompt.md",
+          outputFile: "/run/output.json",
+          tools: ["--tools", "Read,Grep"],
+          skills: ["--skill", "alpha", "--skill", "beta"],
+          mcpArgs: ["--no-mcp"],
+          extensionsArgs: ["--no-extensions"],
+          contextFilesArgs: ["--no-context-files"],
+        },
+        errorCode: "agent_provider_invalid",
+        commandDescription: "custom provider command",
+      });
+
+      expect(args).toEqual([
+        "--prompt-file",
+        "/run/prompt.md",
+        "--tools",
+        "Read,Grep",
+        "--skill",
+        "alpha",
+        "--skill",
+        "beta",
+        "--no-mcp",
+        "--no-extensions",
+        "--no-context-files",
+        "--output-file",
+        "/run/output.json",
+      ]);
+    });
+
+    it("renders hygiene vars to nothing when no execution values are supplied", () => {
+      const args = renderCustomProviderArgs({
+        argv,
+        values: { promptFile: "/run/prompt.md", outputFile: "/run/output.json" },
+        errorCode: "agent_provider_invalid",
+        commandDescription: "custom provider command",
+      });
+
+      expect(args).toEqual([
+        "--prompt-file",
+        "/run/prompt.md",
+        "--output-file",
+        "/run/output.json",
+      ]);
+    });
+
+    it("renders hygiene vars to nothing for empty expansions", () => {
+      const args = renderCustomProviderArgs({
+        argv,
+        values: {
+          promptFile: "/run/prompt.md",
+          outputFile: "/run/output.json",
+          skills: [],
+          mcpArgs: [],
+        },
+        errorCode: "agent_provider_invalid",
+        commandDescription: "custom provider command",
+      });
+
+      expect(args).toEqual([
+        "--prompt-file",
+        "/run/prompt.md",
+        "--output-file",
+        "/run/output.json",
+      ]);
+    });
+
+    it("rejects hygiene placeholders inside interpolated arguments", () => {
+      expect(() =>
+        renderCustomProviderArgs({
+          argv: ["--skills={{skills}}"],
+          values: { skills: ["--no-skills"] },
+          errorCode: "agent_provider_invalid",
+          commandDescription: "custom provider command",
+        }),
+      ).toThrow(TrailStepFailureError);
+    });
+
+    it("rejects conditional blocks around hygiene placeholders", () => {
+      expect(() =>
+        renderCustomProviderArgs({
+          argv: ["{{#tools}}", "--tools", "Read", "{{/tools}}"],
+          values: { tools: ["--tools", "Read"] },
+          errorCode: "agent_provider_invalid",
+          commandDescription: "custom provider command",
+        }),
+      ).toThrow(TrailStepFailureError);
+    });
+  });
 });

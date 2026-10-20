@@ -504,3 +504,180 @@ describe("runManifestWorkingProvider two-phase follow-up", () => {
     ]);
   });
 });
+
+function leanManifestConfig(): TrailStepConfig {
+  return {
+    providers: {
+      worker: {
+        source: { type: "local-manifest", path: "worker.trailstep-provider.json" },
+        manifest: {
+          schemaVersion: 1,
+          id: "worker",
+          displayName: "Worker",
+          working: {
+            supported: true,
+            command: "worker",
+            args: [
+              "--prompt-file",
+              "{{promptFile}}",
+              "{{tools}}",
+              "{{skills}}",
+              "{{mcpArgs}}",
+              "{{extensionsArgs}}",
+              "{{contextFilesArgs}}",
+              "--output-file",
+              "{{outputFile}}",
+            ],
+            output: { style: "provider-output-file" },
+            followUp: {
+              supported: true,
+              sessionIdFlag: "--session",
+              resumeArgs: [
+                "--resume",
+                "{{sessionId}}",
+                "--prompt-file",
+                "{{promptFile}}",
+                "{{tools}}",
+                "{{skills}}",
+                "{{mcpArgs}}",
+                "{{extensionsArgs}}",
+                "{{contextFilesArgs}}",
+                "--output-file",
+                "{{outputFile}}",
+              ],
+            },
+          },
+          interactive: { supported: false, reason: "No interactive mode" },
+          model: { supported: false },
+          thinking: { supported: false },
+          hygiene: {
+            tools: { flag: "--tools" },
+            skills: { flag: "--skill", disableFlag: "--no-skills" },
+            mcp: { disableFlag: "--no-mcp" },
+            extensions: { disableFlag: "--no-extensions" },
+            contextFiles: { disableFlag: "--no-context-files" },
+          },
+        },
+      },
+    },
+  } as unknown as TrailStepConfig;
+}
+
+const LEAN_HYGIENE_ARGS = ["--no-skills", "--no-mcp", "--no-extensions", "--no-context-files"];
+
+describe("runManifestWorkingProvider lean execution hygiene", () => {
+  async function runLeanPhase(
+    dir: string,
+    requests: WorkingAgentProcessRequest[],
+    step: AgentStepRequestConfig<PlainObject, { answer: string }>,
+  ): Promise<{ output: { answer: string }; files: WorkingAgentFiles }> {
+    const files = await createTwoPhaseFiles(dir);
+    const { emit } = createMockEmit();
+
+    const output = await runManifestWorkingProvider({
+      config: leanManifestConfig(),
+      step,
+      role: { size: "medium" },
+      cwd: dir,
+      target: { provider: "worker" },
+      files,
+      renderedPrompt: "Do the lean work.",
+      timeoutMs: 30_000,
+      runner: async (request): Promise<WorkingAgentProcessResult> => {
+        requests.push(request);
+        if (requests.length === 1) {
+          await writeFile(request.outputFile, "lean work report", "utf8");
+          return { exitCode: 0 };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "lean" }), "utf8");
+        return { exitCode: 0 };
+      },
+      emit,
+      runId: "test-run",
+      workflowId: "test-workflow",
+    });
+    return { output, files };
+  }
+
+  it("emits lean hygiene args in both phases when an execution block is present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-lean-exec-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const { output, files } = await runLeanPhase(dir, requests, {
+      ...twoPhaseStep(),
+      execution: {},
+    });
+
+    expect(output).toEqual({ answer: "lean" });
+    expect(requests).toHaveLength(2);
+
+    const phase1Args = requests[0]?.args ?? [];
+    const sessionId = phase1Args[phase1Args.length - 1];
+    expect(phase1Args).toEqual([
+      "--prompt-file",
+      files.promptFile,
+      ...LEAN_HYGIENE_ARGS,
+      "--output-file",
+      files.workFile,
+      "--session",
+      sessionId,
+    ]);
+    expect(phase1Args).not.toContain("--tools");
+    expect(phase1Args).not.toContain("--skill");
+
+    expect(requests[1]?.args).toEqual([
+      "--resume",
+      sessionId,
+      "--prompt-file",
+      files.repairPromptFile,
+      ...LEAN_HYGIENE_ARGS,
+      "--output-file",
+      files.outputFile,
+    ]);
+  });
+
+  it("keeps omitted execution byte-for-byte identical to previous args", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-no-exec-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const { files } = await runLeanPhase(dir, requests, twoPhaseStep());
+
+    const phase1Args = requests[0]?.args ?? [];
+    const sessionId = phase1Args[phase1Args.length - 1];
+    expect(phase1Args).toEqual([
+      "--prompt-file",
+      files.promptFile,
+      "--output-file",
+      files.workFile,
+      "--session",
+      sessionId,
+    ]);
+    expect(requests[1]?.args).toEqual([
+      "--resume",
+      sessionId,
+      "--prompt-file",
+      files.repairPromptFile,
+      "--output-file",
+      files.outputFile,
+    ]);
+  });
+
+  it("fails fast with agent_execution_invalid before spawning when execution is malformed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-bad-exec-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    let caught: unknown;
+    try {
+      await runLeanPhase(dir, requests, {
+        ...twoPhaseStep(),
+        execution: { mcp: "yes" },
+      } as unknown as AgentStepRequestConfig<PlainObject, { answer: string }>);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(TrailStepFailureError);
+    expect((caught as TrailStepFailureError).failure.code).toBe("agent_execution_invalid");
+    expect(requests).toHaveLength(0);
+  });
+});

@@ -4,6 +4,7 @@ import {
   parseOptionalStringRecord,
   throwValidationFailure,
 } from "../agent-targeting/parse-trailstep-config/parse-utils.js";
+import type { ResolvedAgentExecutionConfig } from "../contracts/agents/agent-execution.types.js";
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
 
 export interface TrailStepProviderRegistration {
@@ -40,6 +41,13 @@ export interface TrailStepProviderManifest {
   readonly model: TrailStepProviderModelManifest;
   readonly thinking: TrailStepProviderThinkingManifest;
   readonly env?: TrailStepProviderEnvironmentManifest;
+  /**
+   * Optional capability mapping describing which CLI flags this provider
+   * uses to render a step's lean execution context ({{tools}}, {{skills}},
+   * {{mcpArgs}}, {{extensionsArgs}}, {{contextFilesArgs}} argv templates).
+   * Unknown keys are ignored for forward/back-compat.
+   */
+  readonly hygiene?: TrailStepProviderHygieneManifest;
   readonly hooks?: Record<string, unknown>;
 }
 
@@ -114,6 +122,167 @@ export interface TrailStepProviderThinkingManifest {
   readonly reason?: string;
   readonly flag?: string;
   readonly levels?: readonly WorkflowAgentThinking[];
+}
+
+/**
+ * One hygiene capability entry: how a provider CLI expresses the restriction
+ * for one execution dimension.
+ *
+ * Two spellings are accepted so manifests written from either card stay
+ * valid — unknown keys are ignored for back-compat:
+ * - Provider-package style: `{ supported, flag, reason }` (`supported: false`
+ *   requires `reason` and renders nothing).
+ * - Disable-flag style: `{ disableFlag }` (equivalent to `{ flag }`).
+ *
+ * `flag`/`disableFlag` is the restriction flag: for `tools` it is a value
+ * flag (`--tools <list>`), for every other dimension it is a suppression
+ * flag (`--no-skills`). Multi-word flags split into multiple argv entries
+ * (`-c mcp_servers={}` -> `-c`, `mcp_servers={}`). `enableFlag` is an
+ * optional per-item flag (e.g. pi `--skill <path>`) used when execution
+ * requests specific values instead of the restriction.
+ */
+export interface TrailStepProviderHygieneCapability {
+  /** `false` means the CLI cannot express this restriction; `reason` required. */
+  readonly supported?: boolean;
+  /** Restriction flag (see interface docs). */
+  readonly flag?: string;
+  /** Disable-flag spelling of {@link flag}. */
+  readonly disableFlag?: string;
+  /** Optional per-item enable flag for non-restricted requests. */
+  readonly enableFlag?: string;
+  /** Why no flag exists; required when `supported` is false. Never rendered. */
+  readonly reason?: string;
+}
+
+/**
+ * Optional capability mapping describing which CLI flags this provider
+ * uses to render a step's lean execution context ({{tools}}, {{skills}},
+ * {{mcpArgs}}, {{extensionsArgs}}, {{contextFilesArgs}} argv templates).
+ * Unknown keys are ignored for forward/back-compat; `contextSuppression`
+ * is an accepted alias of `contextFiles`.
+ */
+export interface TrailStepProviderHygieneManifest {
+  readonly tools?: TrailStepProviderHygieneCapability;
+  readonly skills?: TrailStepProviderHygieneCapability;
+  readonly mcp?: TrailStepProviderHygieneCapability;
+  readonly extensions?: TrailStepProviderHygieneCapability;
+  readonly contextFiles?: TrailStepProviderHygieneCapability;
+  /** Provider-package spelling of `contextFiles`; accepted as an alias. */
+  readonly contextSuppression?: TrailStepProviderHygieneCapability;
+}
+
+export interface ProviderHygieneArgs {
+  readonly tools?: readonly string[];
+  readonly skills?: readonly string[];
+  readonly mcpArgs?: readonly string[];
+  readonly extensionsArgs?: readonly string[];
+  readonly contextFilesArgs?: readonly string[];
+}
+
+/**
+ * Maps a resolved execution block through a provider's hygiene capability
+ * mapping into argv fragments for the `{{tools}}`, `{{skills}}`,
+ * `{{mcpArgs}}`, `{{extensionsArgs}}`, and `{{contextFilesArgs}}` template
+ * variables. Returns no args when either side is absent, which keeps
+ * omitted `execution` (or a hygiene-less manifest) byte-for-byte identical
+ * to previous provider invocations.
+ *
+ * Rules: an explicit tools allowlist renders `flag value`; `'*'` renders
+ * nothing (already the provider default). Skills and extensions render
+ * their suppression flag (`disableFlag ?? flag`) when the list is empty
+ * and per-item `enableFlag`/`flag` entries when non-empty — the enable
+ * spelling is only trusted when the capability also declares a distinct
+ * `disableFlag` (otherwise a lone `flag` is the suppression flag); nothing
+ * is rendered when the capability cannot express the request. `mcp: false`
+ * and any non-`true` contextFiles value render their restriction flag.
+ * Capabilities with `supported: false` render nothing; their `reason`
+ * documents the gap.
+ */
+export function buildProviderHygieneArgs(options: {
+  readonly execution?: ResolvedAgentExecutionConfig;
+  readonly hygiene?: TrailStepProviderHygieneManifest;
+}): ProviderHygieneArgs {
+  const { execution, hygiene } = options;
+  if (execution === undefined || hygiene === undefined) {
+    return {};
+  }
+
+  const args: {
+    tools?: readonly string[];
+    skills?: readonly string[];
+    mcpArgs?: readonly string[];
+    extensionsArgs?: readonly string[];
+    contextFilesArgs?: readonly string[];
+  } = {};
+
+  const toolsFlag = restrictionFlag(hygiene.tools);
+  if (Array.isArray(execution.tools) && toolsFlag !== undefined) {
+    args.tools = [...splitFlag(toolsFlag), execution.tools.join(",")];
+  }
+
+  const skillsArgs = listCapabilityArgs(hygiene.skills, execution.skills);
+  if (skillsArgs !== undefined) {
+    args.skills = skillsArgs;
+  }
+
+  const mcpFlag = restrictionFlag(hygiene.mcp);
+  if (!execution.mcp && mcpFlag !== undefined) {
+    args.mcpArgs = splitFlag(mcpFlag);
+  }
+
+  const extensionsArgs = listCapabilityArgs(hygiene.extensions, execution.extensions);
+  if (extensionsArgs !== undefined) {
+    args.extensionsArgs = extensionsArgs;
+  }
+
+  const contextFilesCapability = hygiene.contextFiles ?? hygiene.contextSuppression;
+  const contextFilesFlag = restrictionFlag(contextFilesCapability);
+  // No provider CLI exposes a project-only flag (pi --no-context-files
+  // disables all discovery), so both 'project-only' and false render the
+  // suppression flag. Conservative: lean delegates stay minimal.
+  if (execution.contextFiles !== true && contextFilesFlag !== undefined) {
+    args.contextFilesArgs = splitFlag(contextFilesFlag);
+  }
+
+  return args;
+}
+
+function restrictionFlag(
+  capability: TrailStepProviderHygieneCapability | undefined,
+): string | undefined {
+  if (capability === undefined || capability.supported === false) {
+    return undefined;
+  }
+  return capability.disableFlag ?? capability.flag;
+}
+
+function listCapabilityArgs(
+  capability: TrailStepProviderHygieneCapability | undefined,
+  items: readonly string[],
+): string[] | undefined {
+  if (capability === undefined || capability.supported === false) {
+    return undefined;
+  }
+
+  if (items.length === 0) {
+    const flag = restrictionFlag(capability);
+    return flag === undefined ? undefined : splitFlag(flag);
+  }
+
+  // A distinct `disableFlag` disambiguates `flag` as the per-item enable
+  // flag (card convention: `{ flag: "--skill", disableFlag: "--no-skills" }`).
+  // A lone `flag` is the suppression flag (provider-package convention) and
+  // cannot express specific items — render nothing rather than suppress them.
+  const enableFlag =
+    capability.enableFlag ?? (capability.disableFlag === undefined ? undefined : capability.flag);
+  if (enableFlag === undefined) {
+    return undefined;
+  }
+  return items.flatMap((item) => [...splitFlag(enableFlag), item]);
+}
+
+function splitFlag(flag: string): string[] {
+  return flag.split(/\s+/u).filter(Boolean);
 }
 
 const THINKING_LEVELS = new Set<WorkflowAgentThinking>(["low", "medium", "high", "xhigh", "max"]);
@@ -297,6 +466,7 @@ function parseManifest(
   const model = parseModel(`${path}.model`, value.model, diagnostics);
   const thinking = parseThinking(`${path}.thinking`, value.thinking, diagnostics);
   const env = parseEnvironment(`${path}.env`, value.env, diagnostics);
+  const hygiene = parseHygiene(`${path}.hygiene`, value.hygiene, diagnostics);
 
   if (
     value.schemaVersion !== 1 ||
@@ -306,7 +476,8 @@ function parseManifest(
     interactive === undefined ||
     model === undefined ||
     thinking === undefined ||
-    env === null
+    env === null ||
+    hygiene === null
   ) {
     return undefined;
   }
@@ -320,6 +491,7 @@ function parseManifest(
     model,
     thinking,
     ...(env === undefined ? {} : { env }),
+    ...(hygiene === undefined ? {} : { hygiene }),
     ...(isRecord(value.hooks) ? { hooks: value.hooks } : {}),
   };
 }
@@ -502,6 +674,120 @@ function parseEnvironment(
   return {
     ...(required === undefined ? {} : { required }),
     ...(optional === undefined ? {} : { optional }),
+  };
+}
+
+function parseHygiene(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderHygieneManifest | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+
+  // Unknown hygiene keys are intentionally ignored so newer provider
+  // packages stay loadable by older TrailStep versions (back-compat).
+  const tools = parseHygieneCapability(`${path}.tools`, value.tools, diagnostics);
+  const skills = parseHygieneCapability(`${path}.skills`, value.skills, diagnostics);
+  const mcp = parseHygieneCapability(`${path}.mcp`, value.mcp, diagnostics);
+  const extensions = parseHygieneCapability(`${path}.extensions`, value.extensions, diagnostics);
+  // `contextSuppression` is the provider-package spelling of `contextFiles`.
+  const contextFiles =
+    value.contextFiles === undefined
+      ? parseHygieneCapability(`${path}.contextSuppression`, value.contextSuppression, diagnostics)
+      : parseHygieneCapability(`${path}.contextFiles`, value.contextFiles, diagnostics);
+
+  if (
+    tools === null ||
+    skills === null ||
+    mcp === null ||
+    extensions === null ||
+    contextFiles === null
+  ) {
+    return null;
+  }
+
+  return {
+    ...(tools === undefined ? {} : { tools }),
+    ...(skills === undefined ? {} : { skills }),
+    ...(mcp === undefined ? {} : { mcp }),
+    ...(extensions === undefined ? {} : { extensions }),
+    ...(contextFiles === undefined ? {} : { contextFiles }),
+  };
+}
+
+function parseHygieneCapability(
+  path: string,
+  value: unknown,
+  diagnostics: string[],
+): TrailStepProviderHygieneCapability | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    diagnostics.push(`${path} must be an object when present.`);
+    return null;
+  }
+
+  const start = diagnostics.length;
+  let supported = true;
+  if (value.supported !== undefined) {
+    if (typeof value.supported !== "boolean") {
+      diagnostics.push(`${path}.supported must be a boolean when present.`);
+    } else {
+      supported = value.supported;
+    }
+  }
+
+  const flag = parseOptionalNonEmptyString(`${path}.flag`, value.flag, diagnostics);
+  const disableFlag = parseOptionalNonEmptyString(
+    `${path}.disableFlag`,
+    value.disableFlag,
+    diagnostics,
+  );
+  const enableFlag = parseOptionalNonEmptyString(
+    `${path}.enableFlag`,
+    value.enableFlag,
+    diagnostics,
+  );
+  const reason = parseOptionalNonEmptyString(`${path}.reason`, value.reason, diagnostics);
+
+  if (
+    diagnostics.length > start ||
+    flag === null ||
+    disableFlag === null ||
+    enableFlag === null ||
+    reason === null
+  ) {
+    return null;
+  }
+
+  let invalid = false;
+  if (!supported) {
+    if (reason === undefined) {
+      diagnostics.push(`${path} must declare reason when supported is false.`);
+      invalid = true;
+    }
+  } else if (flag === undefined && disableFlag === undefined) {
+    diagnostics.push(`${path} must declare flag or disableFlag when present.`);
+    invalid = true;
+  }
+
+  if (invalid) {
+    return null;
+  }
+
+  return {
+    ...(supported ? {} : { supported }),
+    ...(flag === undefined ? {} : { flag }),
+    ...(disableFlag === undefined ? {} : { disableFlag }),
+    ...(enableFlag === undefined ? {} : { enableFlag }),
+    ...(reason === undefined ? {} : { reason }),
   };
 }
 

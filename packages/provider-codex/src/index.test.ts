@@ -15,6 +15,10 @@ describe("@trailstep/provider-codex exports", () => {
           flag: "-c model_reasoning_effort",
           levels: ["low", "medium", "high", "xhigh"],
         },
+        hygiene: {
+          mcp: { disableFlag: "--config=mcp_servers={}" },
+          extensions: { disableFlag: "--disable=plugins" },
+        },
         working: {
           supported: true,
           command: "codex",
@@ -30,6 +34,11 @@ describe("@trailstep/provider-codex exports", () => {
             "-c",
             "model_reasoning_effort={{thinking}}",
             "{{/thinking}}",
+            "{{tools}}",
+            "{{skills}}",
+            "{{mcpArgs}}",
+            "{{extensionsArgs}}",
+            "{{contextFilesArgs}}",
             "@{{promptFile}}",
           ],
           followUp: {
@@ -48,6 +57,11 @@ describe("@trailstep/provider-codex exports", () => {
               "-c",
               "model_reasoning_effort={{thinking}}",
               "{{/thinking}}",
+              "{{tools}}",
+              "{{skills}}",
+              "{{mcpArgs}}",
+              "{{extensionsArgs}}",
+              "{{contextFilesArgs}}",
               "@{{promptFile}}",
             ],
           },
@@ -65,5 +79,18 @@ describe("@trailstep/provider-codex exports", () => {
         repairOutput: { supported: false },
       },
     });
+  });
+});
+
+describe("@trailstep/provider-codex hygiene capabilities", () => {
+  it("declares supported execution fields as real single-token argv flags", () => {
+    const hygiene = providerCodex.trailstepProvider.manifest.hygiene;
+    expect(Object.keys(hygiene).sort()).toEqual(["extensions", "mcp"]);
+    const declaredFlags = [hygiene.mcp.disableFlag, hygiene.extensions.disableFlag];
+    expect(declaredFlags.length).toBeGreaterThan(0);
+    for (const flag of declaredFlags) {
+      expect(flag.length, "hygiene flags must be non-empty").toBeGreaterThan(0);
+      expect(flag, "hygiene flags must be single argv tokens").toMatch(/^\S+$/u);
+    }
   });
 });

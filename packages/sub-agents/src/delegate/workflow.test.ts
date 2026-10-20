@@ -638,3 +638,90 @@ describe("delegate", () => {
     );
   });
 });
+
+const leanTrailstepConfig = {
+  version: 1,
+  customProviders: {},
+  providers: {
+    "lean-worker": {
+      source: { type: "local-manifest", path: "lean-worker.trailstep-provider.json" },
+      manifest: {
+        schemaVersion: 1,
+        id: "lean-worker",
+        displayName: "Lean Worker",
+        hygiene: {
+          tools: { flag: "--tools" },
+          skills: { flag: "--skill", disableFlag: "--no-skills" },
+          mcp: { disableFlag: "--no-mcp" },
+          extensions: { disableFlag: "--no-extensions" },
+          contextFiles: { disableFlag: "--no-context-files" },
+        },
+        working: {
+          supported: true,
+          command: "lean-worker",
+          args: [
+            "--prompt-file",
+            "{{promptFile}}",
+            "{{tools}}",
+            "{{skills}}",
+            "{{mcpArgs}}",
+            "{{extensionsArgs}}",
+            "{{contextFilesArgs}}",
+            "--output-file",
+            "{{outputFile}}",
+          ],
+          prompt: { kind: "prompt-file" },
+          output: { style: "provider-output-file" },
+        },
+        interactive: { supported: false },
+        model: { supported: false },
+        thinking: { supported: false },
+      },
+    },
+  },
+  agents: { medium: [{ provider: "lean-worker" }] },
+} as const;
+
+describe("delegate lean execution context", () => {
+  it("emits lean hygiene args for the delegate turn when the provider declares capabilities", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-delegate-lean-"));
+    const capturedArgs: (readonly string[] | undefined)[] = [];
+
+    const result = await runWorkflow({
+      workflow: delegate,
+      input: { task: "Run a lean delegate turn" },
+      runName: "delegate-lean-run",
+      cwd,
+      trailstepConfig: leanTrailstepConfig,
+      workingAgentProcessRunner: async (request) => {
+        capturedArgs.push(request.args);
+        await writeFile(
+          request.outputFile,
+          JSON.stringify({
+            status: "completed",
+            summary: "Lean delegate turn completed.",
+            memoryPatch: "Lean hygiene args were emitted.",
+          }),
+          "utf8",
+        );
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    const args = capturedArgs[0] ?? [];
+    expect(args).toEqual(
+      expect.arrayContaining(["--no-skills", "--no-mcp", "--no-extensions", "--no-context-files"]),
+    );
+    // Lean defaults: all tools (no --tools allowlist), no named skills.
+    expect(args).not.toContain("--tools");
+    expect(args).not.toContain("--skill");
+    // Hygiene vars collapse in place: prompt file, flags, output file.
+    expect(args.indexOf("--no-skills")).toBe(args.indexOf("--prompt-file") + 2);
+    expect(args.indexOf("--output-file")).toBe(args.indexOf("--no-context-files") + 1);
+  });
+});

@@ -15,6 +15,11 @@ describe("@trailstep/provider-claude exports", () => {
           flag: "--effort",
           levels: ["low", "medium", "high", "xhigh", "max"],
         },
+        hygiene: {
+          tools: { flag: "--tools" },
+          skills: { disableFlag: "--disable-slash-commands" },
+          mcp: { disableFlag: "--strict-mcp-config" },
+        },
         working: {
           supported: true,
           command: "claude",
@@ -30,6 +35,11 @@ describe("@trailstep/provider-claude exports", () => {
             "--effort",
             "{{thinking}}",
             "{{/thinking}}",
+            "{{tools}}",
+            "{{skills}}",
+            "{{mcpArgs}}",
+            "{{extensionsArgs}}",
+            "{{contextFilesArgs}}",
             "@{{promptFile}}",
           ],
           followUp: {
@@ -47,6 +57,11 @@ describe("@trailstep/provider-claude exports", () => {
               "--effort",
               "{{thinking}}",
               "{{/thinking}}",
+              "{{tools}}",
+              "{{skills}}",
+              "{{mcpArgs}}",
+              "{{extensionsArgs}}",
+              "{{contextFilesArgs}}",
               "--resume",
               "{{sessionId}}",
               "@{{promptFile}}",
@@ -70,5 +85,18 @@ describe("@trailstep/provider-claude exports", () => {
         repairOutput: { supported: true, source: "package" },
       },
     });
+  });
+});
+
+describe("@trailstep/provider-claude hygiene capabilities", () => {
+  it("declares supported execution fields as real single-token argv flags", () => {
+    const hygiene = providerClaude.trailstepProvider.manifest.hygiene;
+    expect(Object.keys(hygiene).sort()).toEqual(["mcp", "skills", "tools"]);
+    const declaredFlags = [hygiene.tools.flag, hygiene.skills.disableFlag, hygiene.mcp.disableFlag];
+    expect(declaredFlags.length).toBeGreaterThan(0);
+    for (const flag of declaredFlags) {
+      expect(flag.length, "hygiene flags must be non-empty").toBeGreaterThan(0);
+      expect(flag, "hygiene flags must be single argv tokens").toMatch(/^\S+$/u);
+    }
   });
 });

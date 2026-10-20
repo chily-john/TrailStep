@@ -53,10 +53,30 @@ Register a provider package or local manifest:
 trailstep providers add <path-or-package>
 trailstep providers add @trailstep/provider-pi --scope project
 trailstep providers add ./providers/my-agent.trailstep-provider.json --scope project
+trailstep providers inspect <path-or-package>
 trailstep providers test pi --scope project
 ```
 
 Hook-based provider packages may execute provider package code, so they should be trusted like installed npm dependencies. Use `trailstep providers test` as the safe verification path before using a provider in workflows.
+
+### Declaring hygiene flags
+
+Provider manifests may declare a `hygiene` block mapping execution fields — `tools`, `skills`, `mcp`, `extensions`, `contextFiles` — to the provider CLI's real argv flags (excerpt; other manifest fields unchanged):
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "my-agent",
+  "displayName": "My Agent",
+  "hygiene": {
+    "tools": { "flag": "--allowed-tools" },
+    "skills": { "disableFlag": "--disable-skills" },
+    "mcp": { "disableFlag": "--no-mcp" }
+  }
+}
+```
+
+`flag` is a value flag rendered as `flag value` (an explicit tools allowlist, or one named skill); `disableFlag` renders when the execution block suppresses that capability, and `skills` accepts both so non-empty lists load skills while an empty list disables discovery. Flags are split on whitespace into separate argv entries (`-c key=value` renders as `-c`, `key=value`); prefer the single-token `--flag=value` form for values. Omit any capability the CLI does not support per run — an omitted capability renders nothing (graceful no-op); never declare a guessed flag. Back-compat rule: manifest loaders ignore unknown keys, so `trailstep providers add` and `trailstep providers inspect` succeed even when a manifest carries keys the installed version does not read yet; unknown entries are skipped, never rejected.
 
 ## Common commands
 

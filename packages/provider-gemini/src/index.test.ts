@@ -11,6 +11,9 @@ describe("@trailstep/provider-gemini exports", () => {
         displayName: "Gemini",
         model: { supported: true, flag: "-m" },
         thinking: { supported: false },
+        hygiene: {
+          tools: { flag: "--allowed-tools" },
+        },
         working: {
           supported: true,
           command: "gemini",
@@ -23,6 +26,11 @@ describe("@trailstep/provider-gemini exports", () => {
             "-m",
             "{{model}}",
             "{{/model}}",
+            "{{tools}}",
+            "{{skills}}",
+            "{{mcpArgs}}",
+            "{{extensionsArgs}}",
+            "{{contextFilesArgs}}",
           ],
           followUp: {
             supported: true,
@@ -35,6 +43,11 @@ describe("@trailstep/provider-gemini exports", () => {
               "-m",
               "{{model}}",
               "{{/model}}",
+              "{{tools}}",
+              "{{skills}}",
+              "{{mcpArgs}}",
+              "{{extensionsArgs}}",
+              "{{contextFilesArgs}}",
               "--resume",
               "{{sessionId}}",
             ],
@@ -56,5 +69,18 @@ describe("@trailstep/provider-gemini exports", () => {
         repairOutput: { supported: false },
       },
     });
+  });
+});
+
+describe("@trailstep/provider-gemini hygiene capabilities", () => {
+  it("declares supported execution fields as real single-token argv flags", () => {
+    const hygiene = providerGemini.trailstepProvider.manifest.hygiene;
+    expect(Object.keys(hygiene).sort()).toEqual(["tools"]);
+    const declaredFlags = [hygiene.tools.flag];
+    expect(declaredFlags.length).toBeGreaterThan(0);
+    for (const flag of declaredFlags) {
+      expect(flag.length, "hygiene flags must be non-empty").toBeGreaterThan(0);
+      expect(flag, "hygiene flags must be single argv tokens").toMatch(/^\S+$/u);
+    }
   });
 });

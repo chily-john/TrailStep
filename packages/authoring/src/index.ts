@@ -1,6 +1,7 @@
 export type {
   AbsoluteDoneNode,
   AbsoluteFailNode,
+  AgentExecutionConfig,
   CheckWaitCallback,
   CheckWaitContext,
   CheckWaitHelpers,
@@ -17,6 +18,7 @@ export type {
   PromptOptions,
   PromptPhase,
   PromptTemplateSource,
+  ResolvedAgentExecutionConfig,
   RetryPolicy,
   RetryPolicyInput,
   RunnableContinuationNode,
@@ -62,6 +64,7 @@ export type {
 export {
   absoluteDone,
   absoluteFail,
+  DEFAULT_AGENT_EXECUTION,
   Document,
   document,
   done,
@@ -78,6 +81,7 @@ export {
   parallel,
   promptSections,
   promptTemplate,
+  resolveAgentExecutionConfig,
   section,
   shape,
   state,

@@ -148,6 +148,14 @@ export type {
   AgentTool,
 } from "./contracts/agents/agent-adapter.types.js";
 export type {
+  AgentExecutionConfig,
+  ResolvedAgentExecutionConfig,
+} from "./contracts/agents/agent-execution.types.js";
+export {
+  DEFAULT_AGENT_EXECUTION,
+  resolveAgentExecutionConfig,
+} from "./contracts/agents/agent-execution.types.js";
+export type {
   AgentModelTarget,
   WorkflowAgentRole,
   WorkflowAgentSize,
@@ -179,8 +187,12 @@ export { serializeOrdered } from "./json/ordered-serialize.js";
 export { validateStructural } from "./json/validate-structural.js";
 export { layeredDirs, load } from "./load-order.js";
 export {
+  buildProviderHygieneArgs,
+  type ProviderHygieneArgs,
   parseTrailStepProviderManifest,
   type TrailStepProviderEnvironmentManifest,
+  type TrailStepProviderHygieneCapability,
+  type TrailStepProviderHygieneManifest,
   type TrailStepProviderInteractiveManifest,
   type TrailStepProviderManifest,
   type TrailStepProviderModelDiscoveryManifest,

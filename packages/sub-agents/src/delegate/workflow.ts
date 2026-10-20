@@ -1,4 +1,4 @@
-import { defineWorkflow } from "@trailstep/authoring";
+import { type AgentExecutionConfig, defineWorkflow } from "@trailstep/authoring";
 import {
   type DelegateInput,
   type DelegateMode,
@@ -29,6 +29,27 @@ export type DelegateWorkflowConfig = {
   readonly summarize?: boolean;
   readonly agentSize?: "small" | "medium" | "large";
   readonly agentThinking?: "low" | "medium" | "high";
+  /**
+   * Lean execution context for the delegate's working agent. Defaults to
+   * {@link LEAN_DELEGATE_EXECUTION}: all tools, no skills, no MCP, no
+   * extensions, project-only context. Only rendered for providers whose
+   * manifest declares a hygiene capability mapping; other providers keep
+   * their current behavior.
+   */
+  readonly execution?: AgentExecutionConfig;
+};
+
+/**
+ * Default lean execution context applied to every delegate workflow.
+ * `contextFiles: "project-only"` renders `--no-context-files` on pi
+ * (which disables all discovery) since no CLI offers a project-only flag.
+ */
+export const LEAN_DELEGATE_EXECUTION: AgentExecutionConfig = {
+  tools: "*",
+  skills: [],
+  mcp: false,
+  extensions: [],
+  contextFiles: "project-only",
 };
 
 export function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
@@ -43,6 +64,7 @@ export function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
         size: config.agentSize ?? "medium",
         thinking: config.agentThinking ?? "medium",
         description: config.description,
+        execution: config.execution ?? LEAN_DELEGATE_EXECUTION,
       },
     },
     start(input) {

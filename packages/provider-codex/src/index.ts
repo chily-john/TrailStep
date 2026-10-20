@@ -18,6 +18,11 @@ export const trailstepProvider = {
         "-c",
         "model_reasoning_effort={{thinking}}",
         "{{/thinking}}",
+        "{{tools}}",
+        "{{skills}}",
+        "{{mcpArgs}}",
+        "{{extensionsArgs}}",
+        "{{contextFilesArgs}}",
         "@{{promptFile}}",
       ],
       followUp: {
@@ -36,6 +41,11 @@ export const trailstepProvider = {
           "-c",
           "model_reasoning_effort={{thinking}}",
           "{{/thinking}}",
+          "{{tools}}",
+          "{{skills}}",
+          "{{mcpArgs}}",
+          "{{extensionsArgs}}",
+          "{{contextFilesArgs}}",
           "@{{promptFile}}",
         ],
       },
@@ -52,6 +62,14 @@ export const trailstepProvider = {
       supported: true,
       flag: "-c model_reasoning_effort",
       levels: ["low", "medium", "high", "xhigh"],
+    },
+    // Tools, skills, and contextFiles are intentionally omitted: codex exec
+    // has no per-tool allow/deny flag, no runtime skills flag, and no flag to
+    // skip the AGENTS.md project doc. Flags split on whitespace into argv entries (`-c key=value` renders as two
+    // entries); prefer the single-token `--flag=value` form for values.
+    hygiene: {
+      mcp: { disableFlag: "--config=mcp_servers={}" },
+      extensions: { disableFlag: "--disable=plugins" },
     },
   },
   hooks: {

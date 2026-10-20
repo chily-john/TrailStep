@@ -18,6 +18,11 @@ export const trailstepProvider = {
         "--effort",
         "{{thinking}}",
         "{{/thinking}}",
+        "{{tools}}",
+        "{{skills}}",
+        "{{mcpArgs}}",
+        "{{extensionsArgs}}",
+        "{{contextFilesArgs}}",
         "@{{promptFile}}",
       ],
       followUp: {
@@ -35,6 +40,11 @@ export const trailstepProvider = {
           "--effort",
           "{{thinking}}",
           "{{/thinking}}",
+          "{{tools}}",
+          "{{skills}}",
+          "{{mcpArgs}}",
+          "{{extensionsArgs}}",
+          "{{contextFilesArgs}}",
           "--resume",
           "{{sessionId}}",
           "@{{promptFile}}",
@@ -57,6 +67,15 @@ export const trailstepProvider = {
       supported: true,
       flag: "--effort",
       levels: ["low", "medium", "high", "xhigh", "max"],
+    },
+    // Extensions and contextFiles are intentionally omitted: Claude Code has
+    // no dedicated per-session plugin or CLAUDE.md discovery suppression flag
+    // (--safe-mode / --bare disable far more than context files), and an
+    // omitted capability renders nothing instead of a guessed flag.
+    hygiene: {
+      tools: { flag: "--tools" },
+      skills: { disableFlag: "--disable-slash-commands" },
+      mcp: { disableFlag: "--strict-mcp-config" },
     },
   },
   hooks: {

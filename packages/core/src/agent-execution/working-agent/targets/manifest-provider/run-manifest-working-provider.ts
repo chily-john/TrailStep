@@ -10,17 +10,20 @@ import {
   extractEnvelopeText,
 } from "../../../../cli-provider-runtime/envelopes/envelope.js";
 import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
+import { resolveAgentExecutionConfig } from "../../../../contracts/agents/agent-execution.types.js";
 import type {
   WorkflowAgentRole,
   WorkflowAgentThinking,
 } from "../../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
-import type {
-  TrailStepProviderFollowUpManifest,
-  TrailStepProviderManifest,
-  TrailStepProviderOutputManifest,
-  TrailStepProviderWorkingManifest,
+import {
+  buildProviderHygieneArgs,
+  type ProviderHygieneArgs,
+  type TrailStepProviderFollowUpManifest,
+  type TrailStepProviderManifest,
+  type TrailStepProviderOutputManifest,
+  type TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type {
@@ -69,6 +72,19 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   const thinking = options.target.thinking ?? options.role.thinking;
   const model = optionalNonEmptyString(options.target.model);
 
+  // Lean execution context: step-level wins over the role's block. Omitted
+  // execution (or a hygiene-less manifest) renders no hygiene args at all,
+  // preserving current provider behavior byte-for-byte. Invalid blocks fail
+  // fast before any provider process is spawned.
+  const execution = options.step.execution ?? options.role.execution;
+  const hygieneArgs: ProviderHygieneArgs =
+    execution === undefined
+      ? {}
+      : buildProviderHygieneArgs({
+          execution: resolveAgentExecutionConfig(execution),
+          hygiene: manifest.hygiene,
+        });
+
   const followUp = working.followUp;
   if (followUp?.supported === true) {
     return runTwoPhaseManifestWorking({
@@ -79,6 +95,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       extractOutputHook: registration?.manifest.hooks?.extractOutput,
       thinking,
       model,
+      hygieneArgs,
       timeoutMs: options.timeoutMs,
     });
   }
@@ -98,6 +115,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       outputFile: options.files.outputFile,
       ...(model === undefined ? {} : { model }),
       ...(thinking === undefined ? {} : { thinking }),
+      ...hygieneArgs,
     },
     errorCode: "agent_provider_invalid",
     commandDescription: "Manifest working provider command",
@@ -220,6 +238,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   readonly extractOutputHook?: unknown;
   readonly thinking?: WorkflowAgentThinking;
   readonly model?: string;
+  readonly hygieneArgs: ProviderHygieneArgs;
   readonly timeoutMs?: number;
 }): Promise<TOutput> {
   const { options, working, followUp } = context;
@@ -274,6 +293,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
       sessionId,
       ...(context.model === undefined ? {} : { model: context.model }),
       ...(context.thinking === undefined ? {} : { thinking: context.thinking }),
+      ...context.hygieneArgs,
     },
     errorCode: "agent_provider_invalid",
     commandDescription: "Manifest working provider command",
@@ -377,6 +397,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
       outputFile: files.outputFile,
       ...(context.model === undefined ? {} : { model: context.model }),
       ...(context.thinking === undefined ? {} : { thinking: context.thinking }),
+      ...context.hygieneArgs,
     },
     errorCode: "agent_provider_invalid",
     commandDescription: "Manifest follow-up resume command",

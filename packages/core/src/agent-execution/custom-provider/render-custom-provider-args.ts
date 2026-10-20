@@ -2,9 +2,25 @@ import type { WorkflowAgentThinking } from "../../contracts/agents/agent-role.ty
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 
 type PlaceholderName = "prompt" | "promptFile" | "outputFile" | "model" | "thinking" | "sessionId";
+/**
+ * Hygiene template variables that expand to zero or more argv entries.
+ * They render to nothing when no execution block / capability is present,
+ * which keeps existing manifests byte-for-byte compatible.
+ */
+type ListPlaceholderName = "tools" | "skills" | "mcpArgs" | "extensionsArgs" | "contextFilesArgs";
 type ConditionalName = "model" | "thinking";
 
-type PlaceholderValues = Readonly<Partial<Record<PlaceholderName, string>>>;
+type ScalarValues = Readonly<Partial<Record<PlaceholderName, string>>>;
+type ListValues = Readonly<Partial<Record<ListPlaceholderName, readonly string[]>>>;
+type PlaceholderValues = ScalarValues & ListValues;
+
+type ListPlaceholderValues = Readonly<{
+  readonly tools?: readonly string[];
+  readonly skills?: readonly string[];
+  readonly mcpArgs?: readonly string[];
+  readonly extensionsArgs?: readonly string[];
+  readonly contextFilesArgs?: readonly string[];
+}>;
 
 const PLACEHOLDER_NAMES = new Set<PlaceholderName>([
   "prompt",
@@ -13,6 +29,13 @@ const PLACEHOLDER_NAMES = new Set<PlaceholderName>([
   "model",
   "thinking",
   "sessionId",
+]);
+const LIST_PLACEHOLDER_NAMES = new Set<ListPlaceholderName>([
+  "tools",
+  "skills",
+  "mcpArgs",
+  "extensionsArgs",
+  "contextFilesArgs",
 ]);
 const CONDITIONAL_NAMES = new Set<ConditionalName>(["model", "thinking"]);
 const TEMPLATE_TOKEN_PATTERN = /^{{([#/]?)([A-Za-z][A-Za-z0-9]*)}}$/;
@@ -26,7 +49,7 @@ export function renderCustomProviderArgs(options: {
     readonly model?: string;
     readonly thinking?: WorkflowAgentThinking;
     readonly sessionId?: string;
-  };
+  } & ListPlaceholderValues;
   readonly errorCode: string;
   readonly commandDescription: string;
 }): string[] {
@@ -39,6 +62,15 @@ export function renderCustomProviderArgs(options: {
       : { model: optionalNonEmptyString(options.values.model) }),
     ...(options.values.thinking === undefined ? {} : { thinking: options.values.thinking }),
     ...(options.values.sessionId === undefined ? {} : { sessionId: options.values.sessionId }),
+    ...(options.values.tools === undefined ? {} : { tools: options.values.tools }),
+    ...(options.values.skills === undefined ? {} : { skills: options.values.skills }),
+    ...(options.values.mcpArgs === undefined ? {} : { mcpArgs: options.values.mcpArgs }),
+    ...(options.values.extensionsArgs === undefined
+      ? {}
+      : { extensionsArgs: options.values.extensionsArgs }),
+    ...(options.values.contextFilesArgs === undefined
+      ? {}
+      : { contextFilesArgs: options.values.contextFilesArgs }),
   };
 
   return renderRange({
@@ -60,6 +92,13 @@ function renderRange(options: {
   for (let index = 0; index < options.argv.length; index += 1) {
     const arg = options.argv[index] ?? "";
     const token = parseTemplateToken(arg);
+
+    if (token?.kind === "list") {
+      // Hygiene vars expand in place and vanish when unavailable, so a
+      // manifest renders identically with or without an execution block.
+      rendered.push(...(options.values[token.name] ?? []));
+      continue;
+    }
 
     if (token?.kind === "open") {
       const closeIndex = findConditionalClose({
@@ -116,6 +155,7 @@ function parseTemplateToken(
   arg: string,
 ):
   | { readonly kind: "placeholder"; readonly name: PlaceholderName }
+  | { readonly kind: "list"; readonly name: ListPlaceholderName }
   | { readonly kind: "open"; readonly name: ConditionalName }
   | { readonly kind: "close"; readonly name: ConditionalName }
   | undefined {
@@ -128,6 +168,9 @@ function parseTemplateToken(
   const name = match[2] ?? "";
 
   if (prefix === "") {
+    if (LIST_PLACEHOLDER_NAMES.has(name as ListPlaceholderName)) {
+      return { kind: "list", name: name as ListPlaceholderName };
+    }
     if (PLACEHOLDER_NAMES.has(name as PlaceholderName)) {
       return { kind: "placeholder", name: name as PlaceholderName };
     }
@@ -160,6 +203,14 @@ function renderInterpolatedArg(options: {
         throw templateError({
           code: options.errorCode,
           message: `${options.commandDescription} conditional blocks must be whole argv values.`,
+          details: { arg: options.arg, token: match },
+        });
+      }
+
+      if (LIST_PLACEHOLDER_NAMES.has(name as ListPlaceholderName)) {
+        throw templateError({
+          code: options.errorCode,
+          message: `${options.commandDescription} template token ${match} must be a whole argv value.`,
           details: { arg: options.arg, token: match },
         });
       }

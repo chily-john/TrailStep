@@ -19,6 +19,7 @@
     "version": "changeset version",
     "publish:prepare": "pnpm build && changeset version",
     "check:public-packages": "node scripts/check-public-package-metadata.mjs",
+    "check:lockfile-sync": "node scripts/check-lockfile-sync.mjs",
     "pack:public:dry-run": "node scripts/pack-public-packages.mjs"
   },
   "devDependencies": {

@@ -29,6 +29,8 @@ This root context file contains a map of the codebase. The OpenViking index (see
 - Lint: `pnpm lint`
 - Typecheck: `pnpm typecheck`
 - Test: `pnpm test`
+- Test fast: `pnpm exec turbo run test:fast` (per-package: `pnpm --filter <pkg> test:fast`)
+- Test e2e: `pnpm exec turbo run test:e2e` (only for add/MCP/parallel composition)
 - Build: `pnpm build`
 - Format: `pnpm format`
 - Public package metadata readiness: `pnpm check:public-packages`

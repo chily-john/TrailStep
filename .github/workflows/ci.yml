@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate workspace
+    name: Validate workspace (fast lane)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -35,8 +35,31 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
-        run: pnpm test
+      - name: Fast tests
+        run: pnpm exec turbo run test:fast
 
       - name: Build
         run: pnpm build
+
+  e2e:
+    name: E2E suite
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: E2E tests
+        run: pnpm exec turbo run test:e2e

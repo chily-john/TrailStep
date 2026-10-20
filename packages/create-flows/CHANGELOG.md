@@ -1,5 +1,14 @@
 # @trailstep/create-flows
 
+## 0.3.6
+
+### Patch Changes
+
+- daa90b9: Fix `take-it-away` workflow tests that omitted `cwd` on retry `runWorkflow` calls, which made the story auto-commit step run `git add -A` and commit against the ambient repository instead of the test's temporary repo. The retry tests are now scoped to their temp working directory.
+- Updated dependencies [805dbe9]
+- Updated dependencies [69db9a9]
+  - @trailstep/authoring@0.3.0
+
 ## 0.3.5
 
 ### Patch Changes

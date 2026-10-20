@@ -19,7 +19,8 @@
     "version": "changeset version",
     "publish:prepare": "pnpm build && changeset version",
     "check:public-packages": "node scripts/check-public-package-metadata.mjs",
-    "pack:public:dry-run": "node scripts/pack-public-packages.mjs"
+    "pack:public:dry-run": "node scripts/pack-public-packages.mjs",
+    "sandbox": "node scripts/sandbox.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

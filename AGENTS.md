@@ -36,6 +36,7 @@ This root context file contains a map of the codebase. The OpenViking index (see
 - Public package metadata readiness: `pnpm check:public-packages`
 - Public package tarball readiness: `pnpm run pack:public:dry-run`
 - Local artifact ignore readiness: `node scripts/check-local-artifact-ignore.mjs`
+- Sandbox: `pnpm sandbox [--keep]` (ephemeral full-project repro)
 
 ## Environment
 

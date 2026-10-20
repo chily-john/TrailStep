@@ -265,8 +265,8 @@
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --loader .md=text",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:fast": "vitest run --exclude src/take-it-away/workflow.test.ts",
-    "test:e2e": "vitest run src/take-it-away/workflow.test.ts",
+    "test:fast": "vitest run --exclude src/take-it-away/workflow.test.ts --exclude src/grill-it-away/workflow.test.ts",
+    "test:e2e": "vitest run src/take-it-away/workflow.test.ts src/grill-it-away/workflow.test.ts",
     "lint": "biome check src"
   },
   "dependencies": {

@@ -84,9 +84,16 @@ describe("workflow step timeouts", () => {
     }
     // agent.attemptFailed is emitted by the working-agent catch while the
     // timeout machinery emits step.failed concurrently, so their relative
-    // order is not deterministic; assert its presence separately.
-    const attemptFailures = result.events.filter((event) => event.type === "agent.attemptFailed");
-    expect(attemptFailures).toHaveLength(1);
+    // order is not deterministic; assert its presence separately. The catch
+    // awaits an attempt-log disk write before emitting, so under load the
+    // event can land just after runWorkflow resolves — poll the live events
+    // array briefly before asserting.
+    const attemptFailures = () =>
+      result.events.filter((event) => event.type === "agent.attemptFailed");
+    for (let waitedMs = 0; attemptFailures().length === 0 && waitedMs < 5_000; waitedMs += 25) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(attemptFailures()).toHaveLength(1);
     expect(
       result.events.map((event) => event.type).filter((type) => type !== "agent.attemptFailed"),
     ).toEqual([

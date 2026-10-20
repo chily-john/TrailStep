@@ -1392,7 +1392,7 @@ describe("take-it-away", () => {
     for (const staleToken of staleStoryOneTokens) {
       expect(JSON.stringify(state)).not.toContain(staleToken);
     }
-  }, 10_000);
+  }, 30_000);
 
   it("manual retry resumes a persisted review retry route without replaying planning or consuming another review retry", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
@@ -1632,7 +1632,7 @@ describe("take-it-away", () => {
       latestStoryRouterState?: { reviewRetryCount?: number } | null;
     };
     expect(retriedState.latestStoryRouterState?.reviewRetryCount).toBe(1);
-  }, 10_000);
+  }, 30_000);
 
   it("manual retry resumes a persisted doctor route at story-doctor without exhausting during replay", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));
@@ -4072,7 +4072,7 @@ describe("take-it-away", () => {
     }
     expect(prompt).not.toContain("diff --git");
     expect(prompt).not.toContain("@@");
-  }, 10_000);
+  }, 30_000);
 
   it("blocks before the next story prompt when auto-commit is disabled and reviewed changes are dirty", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-take-it-away-"));

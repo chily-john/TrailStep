@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/mcp",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "TrailStep MCP server package.",
   "license": "Apache-2.0",
   "type": "module",

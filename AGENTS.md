@@ -46,6 +46,8 @@ This root context file contains a map of the codebase. The OpenViking index (see
 ## Gotchas
 
 - Generated output (`dist/`, `.turbo/`, coverage, package `node_modules/`, `.trailstep/runs/`) is not source of truth.
+- Internal `@trailstep/*` cross-links must use `workspace:*` (enforced by `pnpm check:public-packages`); never pin them to `^x.y.z` in `package.json`, or version bumps will desync `pnpm-lock.yaml` and fail CI `pnpm install --frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`.
+- After editing any `package.json`, run `pnpm install` and commit the updated `pnpm-lock.yaml`.
 - New workflows should use the continuation model: `defineWorkflow({ ... start })`, `step(...)`, and `done(...)`; do not expand the older static `steps: []` path.
 - Living source and tests are authoritative when package README text or rules drift.
 - Branch protection cannot be fully enforced from repository files; GitHub settings must be configured separately.

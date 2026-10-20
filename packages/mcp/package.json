@@ -27,6 +27,7 @@
     "add-mcp": "^2.4.1"
   },
   "devDependencies": {
+    "@trailstep/trailtest": "workspace:*",
     "@types/node": "^26.2.0"
   },
   "peerDependencies": {

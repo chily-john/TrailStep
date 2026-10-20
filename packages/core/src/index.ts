@@ -3,6 +3,10 @@ export type {
   LaunchInteractiveAgentTargetResult,
 } from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
 export { launchInteractiveAgentTarget } from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
+export {
+  isTransientSpawnExitCode,
+  isTransientWorkingAgentFailure,
+} from "./agent-execution/working-agent/failures/transient-spawn-failures.js";
 export { parseTrailStepConfig } from "./agent-targeting/parse-trailstep-config/parse-trailstep-config.js";
 export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 export type {
@@ -231,6 +235,17 @@ export type {
   RetryPolicyInput,
 } from "./runtime/retry/retry-policy.js";
 export { resolveRetryPolicy, validateRetryPolicy } from "./runtime/retry/retry-policy.js";
+export type {
+  ResolveSpawnRetryPolicyOptions,
+  SpawnRetryPolicy,
+  SpawnRetryPolicyInput,
+} from "./runtime/retry/spawn-retry-policy.js";
+export {
+  BUILT_IN_SPAWN_RETRY_POLICY,
+  resolveSpawnRetryPolicy,
+  spawnRetryDelayMs,
+  validateSpawnRetryPolicy,
+} from "./runtime/retry/spawn-retry-policy.js";
 export { runWorkflow } from "./runtime/run-workflow/run-workflow.js";
 export type {
   Event,

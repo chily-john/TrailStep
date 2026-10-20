@@ -40,6 +40,7 @@ export interface WorkingAgentProcessRequest {
 export interface WorkingAgentProcessResult {
   readonly exitCode: number;
   readonly stdout?: string;
+  readonly stderr?: string;
 }
 
 export type WorkingAgentProcessRunner = (
@@ -81,6 +82,7 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "agent.outputReceived"
     | "agent.sessionResumed"
     | "agent.targetSelected"
+    | "agent.attemptFailed"
     | "workflow.completed";
   readonly timestamp: string;
   readonly schemaVersion: "v0";

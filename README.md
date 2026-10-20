@@ -271,7 +271,7 @@ Public packages:
 
 Workspace packages not yet part of the initial public publish set:
 
-- [`@trailstep/testkit`](packages/testkit/README.md) — workflow testing utilities while the public surface is finalized.
+- [`@trailstep/trailtest`](packages/trailtest/README.md) — workflow testing utilities (formerly `testkit`) while the public surface is finalized.
 
 ## Learn more
 

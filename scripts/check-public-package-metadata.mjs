@@ -14,7 +14,7 @@ const packageDirectories = [
   "provider-codex",
   "provider-gemini",
   "provider-pi",
-  "testkit",
+  "trailtest",
   "dashboard",
 ];
 const publishablePackageNames = [
@@ -28,7 +28,7 @@ const publishablePackageNames = [
   "@trailstep/provider-gemini",
   "@trailstep/provider-pi",
 ];
-const unpublishedPackageNames = ["@trailstep/testkit", "@trailstep/dashboard"];
+const unpublishedPackageNames = ["@trailstep/trailtest", "@trailstep/dashboard"];
 const expectedRepository = {
   type: "git",
   url: "git+ssh://git@github.com/chily-john/trailstep.git",

@@ -1475,3 +1475,128 @@ describe("two-phase follow-up working providers", () => {
     expect(prompt).not.toContain("Do the task described below.");
   });
 });
+
+describe("runWorkingAgentCommand transient spawn retry", () => {
+  function retryWorkflow(): Workflow<{ task: string }, { answer: string }> {
+    return {
+      id: "working-agent-transient-retry-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({
+          id: "review",
+        })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+  }
+
+  it("retries the same target with backoff before consuming the next target", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-transient-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const result = await runWorkflow({
+      workflow: retryWorkflow(),
+      input: { task: "transient" },
+      runName: "working-agent-transient-retry-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {
+          first: { binary: "first-agent" },
+          second: { binary: "second-agent" },
+        },
+        agents: {
+          medium: [
+            { provider: "first", model: "first-model" },
+            { provider: "second", model: "second-model" },
+          ],
+        },
+        settings: { spawnRetry: { maxAttempts: 2, baseDelayMs: 0, factor: 1, maxDelayMs: 0 } },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        if (request.model === "first-model") {
+          return { exitCode: 3221225794, stderr: "STATUS_DLL_INIT_FAILED" };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "ok" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    // First target retried once (transient), then fallback to second target.
+    expect(requests.map((request) => request.model)).toEqual([
+      "first-model",
+      "first-model",
+      "second-model",
+    ]);
+  });
+
+  it("succeeds after transient spawn retries on the same target", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-transient-same-"));
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    const result = await runWorkflow({
+      workflow: retryWorkflow(),
+      input: { task: "transient-same" },
+      runName: "working-agent-transient-same-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { medium: [{ provider: "worker" }] },
+        settings: { spawnRetry: { maxAttempts: 3, baseDelayMs: 0, factor: 1, maxDelayMs: 0 } },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        requests.push(request);
+        if (requests.length < 3) {
+          return { exitCode: 3221225794, stderr: "STATUS_DLL_INIT_FAILED" };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "ok" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    expect(requests).toHaveLength(3);
+  });
+
+  it("records failed spawn attempts incrementally in attempts.json", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-attempts-"));
+
+    const result = await runWorkflow({
+      workflow: retryWorkflow(),
+      input: { task: "attempts" },
+      runName: "working-agent-attempts-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { medium: [{ provider: "worker" }] },
+        settings: { spawnRetry: { maxAttempts: 2, baseDelayMs: 0, factor: 1, maxDelayMs: 0 } },
+      }),
+      workingAgentProcessRunner: async () => {
+        return { exitCode: 3221225794, stderr: "STATUS_DLL_INIT_FAILED" };
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    const attemptsPath = join(result.runDir, "steps", "0001-review", "attempts.json");
+    const attempts = JSON.parse(await readFile(attemptsPath, "utf8")) as Array<{
+      decision: string;
+      transient: boolean;
+      exitCode: number;
+    }>;
+    expect(attempts.map((attempt) => attempt.decision)).toEqual(["retry", "nextTarget"]);
+    for (const attempt of attempts) {
+      expect(attempt.transient).toBe(true);
+      expect(attempt.exitCode).toBe(3221225794);
+    }
+  });
+});

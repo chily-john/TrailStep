@@ -11,10 +11,14 @@ export const spawnWorkingAgentProcess: WorkingAgentProcessRunner = async ({
 }) => {
   return await new Promise((resolve, reject) => {
     let stdout = "";
+    let stderr = "";
+    const capture = stdio === "pipe";
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      stdio: stdio === "pipe" ? ["ignore", "pipe", "inherit"] : "inherit",
+      // Stderr is always captured for failure artifacts while stdout keeps
+      // the caller's requested behavior (live inherit vs. captured pipe).
+      stdio: capture ? ["ignore", "pipe", "pipe"] : ["ignore", "inherit", "pipe"],
       detached: process.platform !== "win32",
       windowsHide: true,
     });
@@ -26,10 +30,24 @@ export const spawnWorkingAgentProcess: WorkingAgentProcessRunner = async ({
       });
     }
 
+    if (child.stderr !== null) {
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+        // Mirror captured stderr so live console output is preserved while the
+        // stream is also retained for failure artifacts.
+        process.stderr.write(chunk);
+      });
+    }
+
     signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
     child.on("error", reject);
     child.on("close", (code) =>
-      resolve({ exitCode: code ?? 1, ...(stdio === "pipe" ? { stdout } : {}) }),
+      resolve({
+        exitCode: code ?? 1,
+        ...(capture ? { stdout } : {}),
+        stderr,
+      }),
     );
   });
 };

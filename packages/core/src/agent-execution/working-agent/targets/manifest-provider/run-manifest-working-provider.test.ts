@@ -135,6 +135,8 @@ describe("runManifestWorkingProvider Windows shim resolution", () => {
         usageFile: join(stepDir, "usage.json"),
         workFile: join(stepDir, "work.txt"),
         repairPromptFile: join(stepDir, "repair-prompt.md"),
+        attemptsFile: join(stepDir, "attempts.json"),
+        stderrFile: join(stepDir, "stderr.txt"),
       },
       renderedPrompt: "Review this.",
       timeoutMs: 30_000,
@@ -196,6 +198,8 @@ async function createTwoPhaseFiles(dir: string): Promise<WorkingAgentFiles> {
     usageFile: join(stepDir, "usage.json"),
     workFile: join(stepDir, "work.txt"),
     repairPromptFile: join(stepDir, "repair-prompt.md"),
+    attemptsFile: join(stepDir, "attempts.json"),
+    stderrFile: join(stepDir, "stderr.txt"),
   };
 }
 
@@ -679,5 +683,157 @@ describe("runManifestWorkingProvider lean execution hygiene", () => {
     expect(caught).toBeInstanceOf(TrailStepFailureError);
     expect((caught as TrailStepFailureError).failure.code).toBe("agent_execution_invalid");
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe("runManifestWorkingProvider transient format spawn retry", () => {
+  const fastSpawnRetry = { maxAttempts: 3, baseDelayMs: 0, factor: 1, maxDelayMs: 0 };
+
+  it("retries the format phase in the same session on transient exit codes and succeeds", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-format-transient-retry-"));
+    const files = await createTwoPhaseFiles(dir);
+    const requests: WorkingAgentProcessRequest[] = [];
+    const { emit, getEvents } = createMockEmit();
+
+    const output = await runManifestWorkingProvider({
+      config: twoPhaseManifestConfig(envelopeFollowUpWorking()),
+      step: twoPhaseStep(),
+      role: { size: "medium" },
+      cwd: dir,
+      target: { provider: "worker" },
+      files,
+      renderedPrompt: "Do the review.",
+      timeoutMs: 30_000,
+      spawnRetry: fastSpawnRetry,
+      runner: async (request): Promise<WorkingAgentProcessResult> => {
+        requests.push(request);
+        if (requests.length === 1) {
+          return { exitCode: 0, stdout: "Raw work report: reviewed everything." };
+        }
+        if (requests.length === 2) {
+          return { exitCode: 3221225794, stderr: "STATUS_DLL_INIT_FAILED" };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ result: JSON.stringify({ answer: "formatted" }) }),
+        };
+      },
+      emit,
+      runId: "test-run",
+      workflowId: "test-workflow",
+    });
+
+    expect(output).toEqual({ answer: "formatted" });
+    // Work once, then two format spawns in the SAME session.
+    expect(requests).toHaveLength(3);
+    const phase1Args = requests[0]?.args ?? [];
+    const sessionId = phase1Args[phase1Args.length - 1];
+    expect(requests[1]?.args).toContain(sessionId);
+    expect(requests[2]?.args).toContain(sessionId);
+
+    // The transient failure is visible the moment it happens.
+    const failed = getEvents().find((event) => event.type === "agent.attemptFailed");
+    expect(failed?.payload).toMatchObject({
+      phase: "format",
+      exitCode: 3221225794,
+      transient: true,
+      decision: "retryFormat",
+    });
+
+    const attempts = JSON.parse(await readFile(files.attemptsFile, "utf8")) as Array<{
+      decision: string;
+      transient: boolean;
+      exitCode: number;
+    }>;
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      decision: "retryFormat",
+      transient: true,
+      exitCode: 3221225794,
+    });
+
+    await expect(readFile(files.stderrFile, "utf8")).resolves.toContain("STATUS_DLL_INIT_FAILED");
+  });
+
+  it("fails immediately on non-transient format exit codes without retrying", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-format-real-failure-"));
+    const files = await createTwoPhaseFiles(dir);
+    const requests: WorkingAgentProcessRequest[] = [];
+    const { emit } = createMockEmit();
+
+    let caught: unknown;
+    try {
+      await runManifestWorkingProvider({
+        config: twoPhaseManifestConfig(envelopeFollowUpWorking()),
+        step: twoPhaseStep(),
+        role: { size: "medium" },
+        cwd: dir,
+        target: { provider: "worker" },
+        files,
+        renderedPrompt: "Do the review.",
+        timeoutMs: 30_000,
+        spawnRetry: fastSpawnRetry,
+        runner: async (request): Promise<WorkingAgentProcessResult> => {
+          requests.push(request);
+          if (requests.length === 1) {
+            return { exitCode: 0, stdout: "Raw work report." };
+          }
+          return { exitCode: 7, stderr: "real failure" };
+        },
+        emit,
+        runId: "test-run",
+        workflowId: "test-workflow",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(TrailStepFailureError);
+    expect((caught as TrailStepFailureError).failure.code).toBe("agent_provider_failed");
+    // Work + exactly one format spawn: real failures are not retried.
+    expect(requests).toHaveLength(2);
+  });
+
+  it("exhausts transient retries and fails with the recorded attempt trail", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-format-transient-exhausted-"));
+    const files = await createTwoPhaseFiles(dir);
+    const requests: WorkingAgentProcessRequest[] = [];
+    const { emit } = createMockEmit();
+
+    let caught: unknown;
+    try {
+      await runManifestWorkingProvider({
+        config: twoPhaseManifestConfig(envelopeFollowUpWorking()),
+        step: twoPhaseStep(),
+        role: { size: "medium" },
+        cwd: dir,
+        target: { provider: "worker" },
+        files,
+        renderedPrompt: "Do the review.",
+        timeoutMs: 30_000,
+        spawnRetry: { maxAttempts: 2, baseDelayMs: 0, factor: 1, maxDelayMs: 0 },
+        runner: async (request): Promise<WorkingAgentProcessResult> => {
+          requests.push(request);
+          if (requests.length === 1) {
+            return { exitCode: 0, stdout: "Raw work report." };
+          }
+          return { exitCode: 3221225794, stderr: "STATUS_DLL_INIT_FAILED" };
+        },
+        emit,
+        runId: "test-run",
+        workflowId: "test-workflow",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(TrailStepFailureError);
+    expect((caught as TrailStepFailureError).failure.code).toBe("agent_provider_failed");
+    expect(requests).toHaveLength(3); // work + 2 format spawns
+
+    const attempts = JSON.parse(await readFile(files.attemptsFile, "utf8")) as Array<{
+      decision: string;
+    }>;
+    expect(attempts.map((attempt) => attempt.decision)).toEqual(["retryFormat", "fail"]);
   });
 });

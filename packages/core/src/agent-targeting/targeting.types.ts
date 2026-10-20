@@ -1,6 +1,7 @@
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
 import type { TrailStepProviderRegistration } from "../providers/provider-manifest.js";
 import type { RetryPolicyInput } from "../runtime/retry/retry-policy.js";
+import type { SpawnRetryPolicyInput } from "../runtime/retry/spawn-retry-policy.js";
 import type { TimeoutPolicyInput } from "../runtime/timeout/timeout-policy.js";
 
 export type TrailStepCustomProviderModelOverrideSupport =
@@ -47,6 +48,8 @@ export type TrailStepAgentMappings = Readonly<Record<string, readonly TrailStepA
 
 export interface TrailStepSettings {
   readonly retry?: RetryPolicyInput;
+  /** Backoff retry policy for transient working-agent spawn failures. */
+  readonly spawnRetry?: SpawnRetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
   readonly [key: string]: unknown;
 }

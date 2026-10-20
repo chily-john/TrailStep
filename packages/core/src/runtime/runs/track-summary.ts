@@ -8,6 +8,7 @@ export interface TrackSummary {
   readonly runId: string;
   readonly status: string;
   readonly workers?: number;
+  readonly ownerPid?: number;
   readonly failurePolicy?: string;
   readonly rootBranchId?: string;
   readonly terminalBranchId?: string;
@@ -54,6 +55,7 @@ export async function readTrackSummary(options: {
     runId: stringValue(track.runId) ?? options.runId,
     status: stringValue(track.status) ?? "unknown",
     ...(numberValue(track.workers) === undefined ? {} : { workers: numberValue(track.workers) }),
+    ...(numberValue(track.ownerPid) === undefined ? {} : { ownerPid: numberValue(track.ownerPid) }),
     ...(stringValue(track.failurePolicy) === undefined
       ? {}
       : { failurePolicy: stringValue(track.failurePolicy) }),

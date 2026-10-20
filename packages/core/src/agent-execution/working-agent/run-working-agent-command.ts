@@ -11,6 +11,11 @@ import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
+import {
+  resolveSpawnRetryPolicy,
+  sleep,
+  spawnRetryDelayMs,
+} from "../../runtime/retry/spawn-retry-policy.js";
 import type {
   Event,
   WorkingAgentProcessRunner,
@@ -19,6 +24,12 @@ import {
   resolveStepAgentFiles,
   type WorkingAgentFiles,
 } from "./artifacts/resolve-step-agent-files.js";
+import { appendAttemptLog } from "./attempts/attempt-log.js";
+import {
+  exitCodeFromDetails,
+  isTransientWorkingAgentFailure,
+  stderrTailFromDetails,
+} from "./failures/transient-spawn-failures.js";
 import { buildWorkingAgentPrompt } from "./prompts/build-working-agent-prompt.js";
 import { runWorkingAgentTargetAttempt } from "./targets/run-working-agent-target-attempt.js";
 import {
@@ -75,6 +86,10 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
 
   const failures: WorkingAgentAttemptFailure[] = [];
   const timeoutMs = options.step.timeout;
+  const spawnRetry = resolveSpawnRetryPolicy({
+    workflow: options.config.workflows?.[options.workflowId]?.settings?.spawnRetry,
+    global: options.config.settings?.spawnRetry,
+  });
 
   for (const target of targets) {
     await options.onTargetAttempt?.(target);
@@ -92,15 +107,75 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
         },
       }),
     );
-    try {
-      return await runWorkingAgentTargetAttempt({
-        ...options,
-        target,
-        files,
-        timeoutMs,
-      });
-    } catch (error) {
-      failures.push(summarizeWorkingAgentAttemptFailure(target, error));
+    // Transient spawn failures (process-level deaths such as Windows
+    // STATUS_DLL_INIT_FAILED) retry the SAME target with exponential backoff
+    // before the target is consumed, so a spawn-storm burst cannot burn the
+    // whole fallback chain in under a second.
+    for (let spawnTry = 1; ; spawnTry += 1) {
+      try {
+        return await runWorkingAgentTargetAttempt({
+          ...options,
+          target,
+          files,
+          timeoutMs,
+          spawnRetry,
+        });
+      } catch (error) {
+        const transient = isTransientWorkingAgentFailure(error);
+        const canRetry =
+          transient && spawnTry < spawnRetry.maxAttempts && options.signal?.aborted !== true;
+        const failureSummary = summarizeWorkingAgentAttemptFailure(target, error);
+        const details = error instanceof TrailStepFailureError ? error.failure.details : undefined;
+        const exitCode = exitCodeFromDetails(details);
+        const stderrTail = stderrTailFromDetails(details);
+        const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
+        const decision = canRetry ? "retry" : "nextTarget";
+
+        await appendAttemptLog(files.attemptsFile, {
+          timestamp: new Date().toISOString(),
+          provider: target.provider,
+          ...(target.model === undefined ? {} : { model: target.model }),
+          phase: detailString(details, "phase") ?? "work",
+          ...(typeof detailNumber(details, "attempt") === "number"
+            ? { attempt: detailNumber(details, "attempt") }
+            : {}),
+          spawnTry,
+          ...(exitCode >= 0 ? { exitCode } : {}),
+          failureCode: failureSummary.code,
+          message: failureSummary.message,
+          transient,
+          decision,
+          ...(delayMs === undefined ? {} : { delayMs }),
+          ...(stderrTail === undefined ? {} : { stderrTail }),
+        });
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: options.workflowId,
+            stepId: options.step.id,
+            type: "agent.attemptFailed",
+            payload: {
+              provider: target.provider,
+              model: target.model,
+              phase: detailString(details, "phase") ?? "work",
+              spawnTry,
+              ...(exitCode >= 0 ? { exitCode } : {}),
+              failureCode: failureSummary.code,
+              transient,
+              decision,
+              ...(delayMs === undefined ? {} : { delayMs }),
+              ...(stderrTail === undefined ? {} : { stderrTail }),
+              message: failureSummary.message,
+            },
+          }),
+        );
+
+        if (!canRetry) {
+          failures.push(failureSummary);
+          break;
+        }
+        await sleep(delayMs ?? 0);
+      }
     }
   }
 
@@ -113,4 +188,20 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
       attempts: failures,
     },
   });
+}
+
+function detailString(details: unknown, field: string): string | undefined {
+  const value =
+    typeof details === "object" && details !== null
+      ? (details as Record<string, unknown>)[field]
+      : undefined;
+  return typeof value === "string" ? value : undefined;
+}
+
+function detailNumber(details: unknown, field: string): number | undefined {
+  const value =
+    typeof details === "object" && details !== null
+      ? (details as Record<string, unknown>)[field]
+      : undefined;
+  return typeof value === "number" ? value : undefined;
 }

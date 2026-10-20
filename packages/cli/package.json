@@ -37,6 +37,8 @@
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node scripts/vitest-run.mjs",
+    "test:fast": "node scripts/vitest-run.mjs --exclude src/e2e-continuation.test.ts",
+    "test:e2e": "node scripts/vitest-run.mjs src/e2e-continuation.test.ts",
     "lint": "biome check src"
   },
   "dependencies": {

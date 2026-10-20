@@ -312,6 +312,7 @@ describe("agent steps", () => {
       "agent.spawned",
       "agent.promptSent",
       "agent.outputReceived",
+      "agent.attemptFailed",
       "step.progress",
       "agent.targetSelected",
       "agent.spawned",

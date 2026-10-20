@@ -296,7 +296,7 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.2.0)(tsx@4.23.12)(yaml@2.9.0)
 
-  packages/testkit:
+  packages/trailtest:
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.8

@@ -13,7 +13,23 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
+    "test:fast": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
     "@trailstep/mcp#test": {
+      "dependsOn": ["^build", "@trailstep/cli#build"],
+      "outputs": ["coverage/**"]
+    },
+    "@trailstep/mcp#test:fast": {
+      "dependsOn": ["^build", "@trailstep/cli#build"],
+      "outputs": ["coverage/**"]
+    },
+    "@trailstep/mcp#test:e2e": {
       "dependsOn": ["^build", "@trailstep/cli#build"],
       "outputs": ["coverage/**"]
     },

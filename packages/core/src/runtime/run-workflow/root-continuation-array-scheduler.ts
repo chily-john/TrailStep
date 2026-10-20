@@ -69,6 +69,8 @@ interface TrackStateJson {
   readonly rootBranchId: string;
   readonly splitOccurred: boolean;
   readonly branches: readonly string[];
+  /** OS process driving the run; used to detect orphaned "running" tracks. */
+  readonly ownerPid?: number;
   readonly terminalBranchId?: string;
   readonly terminalKind?: TrackTerminalKind;
   readonly terminalOutput?: PlainObject;
@@ -1258,6 +1260,7 @@ async function persistTrack(
     rootBranchId,
     splitOccurred,
     branches: branches.map((branch) => branch.branchId),
+    ownerPid: process.pid,
     ...(terminalBranchId === undefined ? {} : { terminalBranchId }),
     ...(terminalKind === undefined ? {} : { terminalKind }),
     ...(terminalOutput === undefined ? {} : { terminalOutput }),

@@ -26,7 +26,7 @@ const publicPackages = [
   { name: "@trailstep/provider-gemini", directory: "packages/provider-gemini" },
   { name: "@trailstep/provider-pi", directory: "packages/provider-pi" },
 ];
-const unpublishedPackageNames = ["@trailstep/testkit", "@trailstep/dashboard"];
+const unpublishedPackageNames = ["@trailstep/trailtest", "@trailstep/dashboard"];
 const forbiddenPackedPathPatterns = [
   { label: ".trailstep", pattern: /^\.trailstep(?:\/|$)/u },
   { label: ".claude", pattern: /^\.claude(?:\/|$)/u },

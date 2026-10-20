@@ -26,6 +26,8 @@ export interface RunSummary {
   readonly track?: TrackSummary;
   readonly trackWarning?: string;
   readonly warning?: string;
+  /** True when the track still says "running" but its owner process is gone. */
+  readonly stale?: boolean;
 }
 
 export async function listRunSummaries(options: {
@@ -149,7 +151,41 @@ async function summarizeReadableRun(options: {
     status: terminalStatus ?? "active",
     workflowId,
     lastTimestamp: lastEvent?.timestamp,
+    ...orphanedTrackFields(track),
   };
+}
+
+/**
+ * Detects zombie runs: the persisted track still reports "running" but the
+ * OS process that owned the run is no longer alive, so nothing will ever
+ * finish it. Surfaces as `stale` + a warning instead of a silent active run.
+ */
+function orphanedTrackFields(track: TrackSummary | undefined): {
+  readonly stale?: true;
+  readonly warning?: string;
+} {
+  if (
+    track === undefined ||
+    track.status !== "running" ||
+    track.ownerPid === undefined ||
+    isProcessAlive(track.ownerPid)
+  ) {
+    return {};
+  }
+  return {
+    stale: true,
+    warning: `Warning: Run ${track.runId} is orphaned — track still reports running but owner process ${track.ownerPid} is no longer alive.`,
+  };
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but is not signalable by this user.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 function selectTerminalStatus(

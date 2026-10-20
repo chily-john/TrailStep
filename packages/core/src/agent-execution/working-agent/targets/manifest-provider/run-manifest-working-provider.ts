@@ -26,6 +26,12 @@ import {
   type TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
+import {
+  resolveSpawnRetryPolicy,
+  type SpawnRetryPolicy,
+  sleep,
+  spawnRetryDelayMs,
+} from "../../../../runtime/retry/spawn-retry-policy.js";
 import type {
   Event,
   WorkingAgentProcessResult,
@@ -33,6 +39,8 @@ import type {
 } from "../../../../runtime/run-workflow/run-workflow.types.js";
 import { renderCustomProviderArgs } from "../../../custom-provider/render-custom-provider-args.js";
 import type { WorkingAgentFiles } from "../../artifacts/resolve-step-agent-files.js";
+import { appendAttemptLog, appendStderrArtifact } from "../../attempts/attempt-log.js";
+import { isTransientSpawnExitCode } from "../../failures/transient-spawn-failures.js";
 import { readWorkingAgentOutput } from "../../output/read-working-agent-output.js";
 import { buildFormatPrompt, buildWorkPrompt } from "../../prompts/build-two-phase-prompts.js";
 import { spawnWorkingAgentProcess } from "../custom-provider/spawn-working-agent-process.js";
@@ -48,6 +56,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly renderedPrompt: string;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  readonly spawnRetry?: SpawnRetryPolicy;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
@@ -71,6 +80,12 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
 
   const thinking = options.target.thinking ?? options.role.thinking;
   const model = optionalNonEmptyString(options.target.model);
+  const spawnRetry =
+    options.spawnRetry ??
+    resolveSpawnRetryPolicy({
+      workflow: options.config.workflows?.[options.workflowId]?.settings?.spawnRetry,
+      global: options.config.settings?.spawnRetry,
+    });
 
   // Lean execution context: step-level wins over the role's block. Omitted
   // execution (or a hygiene-less manifest) renders no hygiene args at all,
@@ -96,6 +111,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       thinking,
       model,
       hygieneArgs,
+      spawnRetry,
       timeoutMs: options.timeoutMs,
     });
   }
@@ -164,14 +180,22 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   });
 
   if (result.exitCode !== 0) {
+    const stderrTail = tailString(result.stderr);
+    await appendStderrArtifact(
+      options.files.stderrFile,
+      { phase: "work", exitCode: result.exitCode },
+      result.stderr,
+    );
     throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
       details: {
+        phase: "work",
         exitCode: result.exitCode,
         provider: working.command,
         target: options.target.provider,
         ...(model === undefined ? {} : { model }),
+        ...(stderrTail === undefined ? {} : { stderrTail }),
       },
     });
   }
@@ -239,10 +263,12 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   readonly thinking?: WorkflowAgentThinking;
   readonly model?: string;
   readonly hygieneArgs: ProviderHygieneArgs;
+  readonly spawnRetry: SpawnRetryPolicy;
   readonly timeoutMs?: number;
 }): Promise<TOutput> {
   const { options, working, followUp } = context;
   const { files, step, target } = options;
+  const spawnRetry = context.spawnRetry;
   const sessionId = randomUUID();
   const captureStdout = working.output?.style !== "provider-output-file";
 
@@ -348,6 +374,12 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
   });
 
   if (phase1Result.exitCode !== 0) {
+    const stderrTail = tailString(phase1Result.stderr);
+    await appendStderrArtifact(
+      files.stderrFile,
+      { phase: "work", exitCode: phase1Result.exitCode },
+      phase1Result.stderr,
+    );
     throw new TrailStepFailureError({
       code: "agent_provider_failed",
       message: `Working agent step ${step.id} target '${target.provider}' exited with code ${phase1Result.exitCode}.`,
@@ -357,6 +389,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
         provider: working.command,
         target: target.provider,
         ...(context.model === undefined ? {} : { model: context.model }),
+        ...(stderrTail === undefined ? {} : { stderrTail }),
       },
     });
   }
@@ -449,64 +482,25 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
       }),
       "utf8",
     );
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "agent.spawned",
-        payload: {
-          provider: target.provider,
-          model: context.model,
-          phase: "format",
-          attempt,
-          sessionId,
-          promptFile: files.repairPromptFile,
-          outputFile: files.outputFile,
-        },
-      }),
-    );
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: step.id,
-        type: "agent.promptSent",
-        payload: { phase: "format", attempt, promptFile: files.repairPromptFile, sessionId },
-      }),
-    );
-
-    const phase2Result = await spawnManifestPhase({
-      phase: "format",
+    const phase2Result = await spawnFormatWithTransientRetry({
       stepId: step.id,
-      provider: target.provider,
+      target,
       command: working.command ?? "",
       args: phase2Args,
       cwd: options.cwd,
-      model: context.model,
-      promptFile: files.repairPromptFile,
-      outputFile: files.outputFile,
-      stdio: captureStdout ? "pipe" : "inherit",
+      files,
       runner: options.runner,
       signal: options.signal,
       timeoutMs: attemptBudgetMs,
+      attempt,
+      sessionId,
+      model: context.model,
+      captureStdout,
+      spawnRetry,
+      emit: options.emit,
+      runId: options.runId,
+      workflowId: options.workflowId,
     });
-
-    if (phase2Result.exitCode !== 0) {
-      throw new TrailStepFailureError({
-        code: "agent_provider_failed",
-        message: `Working agent step ${step.id} target '${target.provider}' exited with code ${phase2Result.exitCode}.`,
-        details: {
-          phase: "format",
-          attempt,
-          sessionId,
-          exitCode: phase2Result.exitCode,
-          provider: working.command,
-          target: target.provider,
-          ...(context.model === undefined ? {} : { model: context.model }),
-        },
-      });
-    }
 
     try {
       await writeCapturedStdoutOutput({
@@ -563,6 +557,167 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
 
 const MAX_FORMAT_ATTEMPTS = 3;
 const PHASE_1_TAIL_LIMIT = 2000;
+const STDERR_TAIL_LIMIT = 2000;
+
+/**
+ * Spawns the format (Phase 2) resume, retrying transient process-level spawn
+ * failures in the SAME session with exponential backoff before giving up.
+ * Phase 1 work is never re-run here; the retry absorbs transient OS-level
+ * deaths (e.g. Windows `STATUS_DLL_INIT_FAILED`) instead of throwing away a
+ * completed work phase. Non-transient exit codes fail immediately.
+ */
+async function spawnFormatWithTransientRetry(options: {
+  readonly stepId: string;
+  readonly target: TrailStepAgentTarget;
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly files: WorkingAgentFiles;
+  readonly runner?: WorkingAgentProcessRunner;
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+  readonly attempt: number;
+  readonly sessionId: string;
+  readonly model?: string;
+  readonly captureStdout: boolean;
+  readonly spawnRetry: SpawnRetryPolicy;
+  readonly emit: (event: Event) => Promise<void>;
+  readonly runId: string;
+  readonly workflowId: string;
+}): Promise<WorkingAgentProcessResult> {
+  const { spawnRetry } = options;
+  for (let spawnTry = 1; ; spawnTry += 1) {
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "agent.spawned",
+        payload: {
+          provider: options.target.provider,
+          model: options.model,
+          phase: "format",
+          attempt: options.attempt,
+          spawnTry,
+          sessionId: options.sessionId,
+          promptFile: options.files.repairPromptFile,
+          outputFile: options.files.outputFile,
+        },
+      }),
+    );
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "agent.promptSent",
+        payload: {
+          phase: "format",
+          attempt: options.attempt,
+          spawnTry,
+          promptFile: options.files.repairPromptFile,
+          sessionId: options.sessionId,
+        },
+      }),
+    );
+
+    const result = await spawnManifestPhase({
+      phase: "format",
+      stepId: options.stepId,
+      provider: options.target.provider,
+      command: options.command,
+      args: options.args,
+      cwd: options.cwd,
+      model: options.model,
+      promptFile: options.files.repairPromptFile,
+      outputFile: options.files.outputFile,
+      stdio: options.captureStdout ? "pipe" : "inherit",
+      runner: options.runner,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    });
+    if (result.exitCode === 0) {
+      return result;
+    }
+
+    const transient = isTransientSpawnExitCode(result.exitCode);
+    const stderrTail = tailString(result.stderr);
+    await appendStderrArtifact(
+      options.files.stderrFile,
+      { phase: "format", spawnTry, exitCode: result.exitCode },
+      result.stderr,
+    );
+    const canRetry =
+      transient && spawnTry < spawnRetry.maxAttempts && options.signal?.aborted !== true;
+    const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
+    const message = `Working agent step ${options.stepId} target '${options.target.provider}' exited with code ${result.exitCode}.`;
+
+    await appendAttemptLog(options.files.attemptsFile, {
+      timestamp: new Date().toISOString(),
+      provider: options.target.provider,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      phase: "format",
+      attempt: options.attempt,
+      spawnTry,
+      exitCode: result.exitCode,
+      failureCode: "agent_provider_failed",
+      message,
+      transient,
+      decision: canRetry ? "retryFormat" : "fail",
+      ...(delayMs === undefined ? {} : { delayMs }),
+      ...(stderrTail === undefined ? {} : { stderrTail }),
+    });
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.stepId,
+        type: "agent.attemptFailed",
+        payload: {
+          phase: "format",
+          attempt: options.attempt,
+          spawnTry,
+          provider: options.target.provider,
+          model: options.model,
+          sessionId: options.sessionId,
+          exitCode: result.exitCode,
+          transient,
+          decision: canRetry ? "retryFormat" : "fail",
+          ...(delayMs === undefined ? {} : { delayMs }),
+          ...(stderrTail === undefined ? {} : { stderrTail }),
+          message,
+        },
+      }),
+    );
+
+    if (!canRetry) {
+      throw new TrailStepFailureError({
+        code: "agent_provider_failed",
+        message,
+        details: {
+          phase: "format",
+          attempt: options.attempt,
+          sessionId: options.sessionId,
+          exitCode: result.exitCode,
+          provider: options.command,
+          target: options.target.provider,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          transient,
+          spawnTry,
+          ...(stderrTail === undefined ? {} : { stderrTail }),
+        },
+      });
+    }
+    await sleep(delayMs ?? 0);
+  }
+}
+
+function tailString(value: string | undefined, limit = STDERR_TAIL_LIMIT): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value.length > limit ? value.slice(-limit) : value;
+}
 
 async function spawnManifestPhase(options: {
   readonly phase: "work" | "format";

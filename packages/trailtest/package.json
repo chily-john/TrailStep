@@ -1,7 +1,7 @@
 {
-  "name": "@trailstep/testkit",
+  "name": "@trailstep/trailtest",
   "version": "0.1.0",
-  "description": "Testing utilities for TrailStep workflows.",
+  "description": "Testing utilities for TrailStep workflows (trailtest).",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -29,7 +29,8 @@
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "lint": "biome check src"
+    "lint": "biome check src",
+    "test:fast": "vitest run"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

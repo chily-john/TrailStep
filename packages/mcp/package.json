@@ -13,6 +13,8 @@
   "scripts": {
     "build": "tsc",
     "test": "cd ../.. && vitest run packages/mcp/test/",
+    "test:fast": "cd ../.. && vitest run packages/mcp/test/ --exclude **/run-workflow-tool.test.ts",
+    "test:e2e": "cd ../.. && vitest run packages/mcp/test/run-workflow-tool.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src"
   },

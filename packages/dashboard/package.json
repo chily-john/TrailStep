@@ -21,7 +21,8 @@
     "build": "vite build",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "lint": "biome check index.html src svelte.config.js vite.config.ts"
+    "lint": "biome check index.html src svelte.config.js vite.config.ts",
+    "test:fast": "vitest run"
   },
   "dependencies": {
     "@trailstep/core": "workspace:*"

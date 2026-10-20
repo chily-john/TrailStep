@@ -1276,6 +1276,7 @@ describe("runWorkflow retry", () => {
       "agent.targetSelected",
       "agent.spawned",
       "agent.promptSent",
+      "agent.attemptFailed",
       "step.failed",
       "workflow.failed",
       "workflow.retryStarted",

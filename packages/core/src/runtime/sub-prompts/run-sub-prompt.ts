@@ -176,6 +176,8 @@ export async function runSubPrompt<
               usageFile: artifactPaths.usageFile,
               workFile: join(artifactPaths.subPromptDir, "work.txt"),
               repairPromptFile: join(artifactPaths.subPromptDir, "repair-prompt.md"),
+              attemptsFile: join(artifactPaths.subPromptDir, "attempts.json"),
+              stderrFile: join(artifactPaths.subPromptDir, "stderr.txt"),
             },
             emit: context.emit,
             runId: context.id,

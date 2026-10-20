@@ -9,6 +9,8 @@ export interface WorkingAgentFiles {
   readonly usageFile: string;
   readonly workFile: string;
   readonly repairPromptFile: string;
+  readonly attemptsFile: string;
+  readonly stderrFile: string;
 }
 
 export function resolveStepAgentFiles(options: {
@@ -24,5 +26,7 @@ export function resolveStepAgentFiles(options: {
     usageFile: artifactPaths.usageFile,
     workFile: join(artifactPaths.stepDir, "work.txt"),
     repairPromptFile: join(artifactPaths.stepDir, "repair-prompt.md"),
+    attemptsFile: join(artifactPaths.stepDir, "attempts.json"),
+    stderrFile: join(artifactPaths.stepDir, "stderr.txt"),
   };
 }

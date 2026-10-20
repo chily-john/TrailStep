@@ -7,6 +7,7 @@ import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.
 import type { ProviderWorkingRunner } from "../../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
+import type { SpawnRetryPolicy } from "../../../runtime/retry/spawn-retry-policy.js";
 import type {
   Event,
   WorkingAgentProcessRunner,
@@ -31,6 +32,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  readonly spawnRetry: SpawnRetryPolicy;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
 }): Promise<TOutput> {
@@ -52,6 +54,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       renderedPrompt: options.renderedPrompt,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
+      spawnRetry: options.spawnRetry,
       emit: options.emit,
       runId: options.runId,
       workflowId: options.workflowId,

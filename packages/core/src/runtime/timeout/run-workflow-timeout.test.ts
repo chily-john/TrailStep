@@ -82,7 +82,14 @@ describe("workflow step timeouts", () => {
         details: { stepId: "slow-agent", timeoutMs: 2_000 },
       });
     }
-    expect(result.events.map((event) => event.type)).toEqual([
+    // agent.attemptFailed is emitted by the working-agent catch while the
+    // timeout machinery emits step.failed concurrently, so their relative
+    // order is not deterministic; assert its presence separately.
+    const attemptFailures = result.events.filter((event) => event.type === "agent.attemptFailed");
+    expect(attemptFailures).toHaveLength(1);
+    expect(
+      result.events.map((event) => event.type).filter((type) => type !== "agent.attemptFailed"),
+    ).toEqual([
       "workflow.started",
       "step.started",
       "step.progress",

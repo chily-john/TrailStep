@@ -3190,6 +3190,7 @@ describe("take-it-away", () => {
     const retried = await runWorkflow({
       workflow: takeItAway,
       retry: { runDir: failed.runDir, kind: "manual" },
+      cwd,
       trailstepConfig: {
         version: 1,
         customProviders: { worker: { binary: "worker-agent" } },
@@ -4598,6 +4599,7 @@ describe("take-it-away", () => {
     const retried = await runWorkflow({
       workflow: takeItAway,
       retry: { runDir: failed.runDir, kind: "manual" },
+      cwd,
       trailstepConfig,
       workingAgentProcessRunner: async (request) => {
         const splitPhaseResult = await handleNonGreenStoryPhase(request);

@@ -201,6 +201,18 @@ function verifyPublicPackageMetadata() {
       `@trailstep/cli must include ${skillDirectory} in published files`,
     );
   }
+
+  for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
+    for (const [depName, depRange] of Object.entries(rootPackage[depField] ?? {})) {
+      if (depName.startsWith("@trailstep/")) {
+        assert.equal(
+          depRange,
+          "workspace:*",
+          `root ${depField}[${depName}] must be workspace:* so version bumps never desync pnpm-lock.yaml from package.json (run pnpm install after any manifest change)`,
+        );
+      }
+    }
+  }
 }
 
 verifyPublicPackageMetadata();

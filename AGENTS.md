@@ -29,6 +29,8 @@ This root context file contains a map of the codebase. The OpenViking index (see
 - Lint: `pnpm lint`
 - Typecheck: `pnpm typecheck`
 - Test: `pnpm test`
+- Test fast: `pnpm exec turbo run test:fast` (per-package: `pnpm --filter <pkg> test:fast`)
+- Test e2e: `pnpm exec turbo run test:e2e` (only for add/MCP/parallel composition)
 - Build: `pnpm build`
 - Format: `pnpm format`
 - Public package metadata readiness: `pnpm check:public-packages`
@@ -44,6 +46,8 @@ This root context file contains a map of the codebase. The OpenViking index (see
 ## Gotchas
 
 - Generated output (`dist/`, `.turbo/`, coverage, package `node_modules/`, `.trailstep/runs/`) is not source of truth.
+- Internal `@trailstep/*` cross-links must use `workspace:*` (enforced by `pnpm check:public-packages`); never pin them to `^x.y.z` in `package.json`, or version bumps will desync `pnpm-lock.yaml` and fail CI `pnpm install --frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`.
+- After editing any `package.json`, run `pnpm install` and commit the updated `pnpm-lock.yaml` — but only regenerate the lockfile on a CLEAN tree (uncommitted manifest edits get baked into it and fail CI `--frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`). Verify with `node scripts/check-lockfile-sync.mjs` before pushing.
 - New workflows should use the continuation model: `defineWorkflow({ ... start })`, `step(...)`, and `done(...)`; do not expand the older static `steps: []` path.
 - Living source and tests are authoritative when package README text or rules drift.
 - Branch protection cannot be fully enforced from repository files; GitHub settings must be configured separately.

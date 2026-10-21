@@ -3,8 +3,8 @@ import { join } from "node:path";
 import type { Event, PlainObject, RunWorkflowTrackRetryOptions } from "@trailstep/core";
 import { readRunEvents, runWorkflow } from "@trailstep/core";
 
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import { resolveRunsRoot } from "../../runs-root.js";

@@ -1,6 +1,6 @@
 import type { Event } from "@trailstep/core";
 
-import type { TrailStepCliIo } from "../../command.types.js";
+import type { TrailStepCliIo } from "../../command-framework/command.types.js";
 
 export function createTerminalEventLogger(io: TrailStepCliIo): (event: Event) => void {
   return (event) => {

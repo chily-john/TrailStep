@@ -1,8 +1,8 @@
 import { fail, type StepFactory, step } from "@trailstep/authoring";
+import { MAX_IMPLEMENTATION_DOC_REVIEW_ATTEMPTS } from "../../shared/constants.js";
 import { createOrImproveImplementationStrategyStep } from "../create-or-improve-implementation-strategy/step.js";
-import { MAX_IMPLEMENTATION_DOC_REVIEW_ATTEMPTS } from "../shared/constants.js";
-import type { ReviewResult } from "../shared/review-schema.js";
-import { reviewOutput, reviewPasses } from "../shared/review-schema.js";
+import type { ReviewResult } from "../shared/story/review-schema.js";
+import { reviewOutput, reviewPasses } from "../shared/story/review-schema.js";
 import { sliceImplementationStoriesStep } from "../slice-implementation-stories/step.js";
 import {
   type ReviewImplementationStrategyInput,

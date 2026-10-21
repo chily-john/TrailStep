@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { PackageCommandRunner } from "../../command.types.js";
+import type { PackageCommandRunner } from "../../command-framework/command.types.js";
 import { resolveBundleWorkflowScanTargets } from "../../deprecation-scan/scan-targets.js";
 import {
   resolveInstalledPackageManifest,

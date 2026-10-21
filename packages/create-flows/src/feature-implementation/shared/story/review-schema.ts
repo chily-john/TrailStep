@@ -1,6 +1,6 @@
 import { jsonSchema } from "@trailstep/authoring";
 
-import { REVIEW_PASS_THRESHOLD } from "./constants.js";
+import { REVIEW_PASS_THRESHOLD } from "../../../shared/constants.js";
 
 export interface MethodologyRatings extends Record<string, unknown> {
   readonly tdd: number;

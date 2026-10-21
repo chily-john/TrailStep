@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { maxSatisfying, prerelease, satisfies, valid } from "semver";
 
-import type { PackageCommandRunner } from "../../command.types.js";
+import type { PackageCommandRunner } from "../../command-framework/command.types.js";
 import {
   fetchNpmPackageMetadata,
   type NpmPackageMetadata,

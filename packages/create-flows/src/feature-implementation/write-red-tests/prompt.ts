@@ -1,6 +1,6 @@
 import { type Document, jsonSchema, promptSections, section } from "@trailstep/authoring";
 import type { ExploreStoryOutput } from "../explore-story/prompt.js";
-import { storyViewForTestWriter } from "../shared/story-view.js";
+import { storyViewForTestWriter } from "../shared/story/story-view.js";
 
 export interface WriteRedTestsInput extends Record<string, unknown> {
   readonly currentStory: Document;

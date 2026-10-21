@@ -2,7 +2,7 @@ import type {
   PackageCommandRunner,
   TrailStepCliIo,
   TrailStepCliPrompts,
-} from "../command.types.js";
+} from "../command-framework/command.types.js";
 import { addAgentEntryItem, readAgentEntryItems } from "./agent-entry-items-flow.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
 

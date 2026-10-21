@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseTrailStepProviderManifest, type TrailStepProviderManifest } from "@trailstep/core";
-import { CliUsageError } from "../command.types.js";
+import { CliUsageError } from "../command-framework/command.types.js";
 
 export interface LoadedProviderPackageDefinition {
   readonly manifest: TrailStepProviderManifest;

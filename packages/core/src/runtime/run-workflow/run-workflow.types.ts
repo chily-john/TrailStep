@@ -1,29 +1,20 @@
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
+import type { Event } from "../../contracts/events/event.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
+import type { InteractiveProcessRunner } from "../../contracts/process/interactive-process.types.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import type { CancellationMarker } from "../cancellation/cancellation.js";
 
+export type { Event } from "../../contracts/events/event.types.js";
+export type {
+  InteractiveProcessRequest,
+  InteractiveProcessResult,
+  InteractiveProcessRunner,
+} from "../../contracts/process/interactive-process.types.js";
+
 export type TrailStepConfigInput = TrailStepConfig | Readonly<Record<string, unknown>>;
-
-export interface InteractiveProcessRequest {
-  readonly command: string;
-  readonly args: readonly string[];
-  readonly cwd: string;
-  readonly shell: false;
-  readonly stdio: "inherit";
-  readonly env?: Readonly<Record<string, string>>;
-  readonly signal?: AbortSignal;
-}
-
-export interface InteractiveProcessResult {
-  readonly exitCode: number;
-}
-
-export type InteractiveProcessRunner = (
-  request: InteractiveProcessRequest,
-) => InteractiveProcessResult | Promise<InteractiveProcessResult>;
 
 export interface WorkingAgentProcessRequest {
   readonly command: string;
@@ -46,50 +37,6 @@ export interface WorkingAgentProcessResult {
 export type WorkingAgentProcessRunner = (
   request: WorkingAgentProcessRequest,
 ) => WorkingAgentProcessResult | Promise<WorkingAgentProcessResult>;
-
-export interface Event<TPayload extends PlainObject = PlainObject> {
-  readonly id: string;
-  readonly runId: string;
-  readonly workflowId: string;
-  readonly stepId?: string;
-  readonly type:
-    | "workflow.started"
-    | "workflow.resumed"
-    | "workflow.retryStarted"
-    | "workflow.cancelRequested"
-    | "workflow.failed"
-    | "workflow.cancelled"
-    | "step.started"
-    | "step.completed"
-    /** A step attempt failed but another automatic attempt will follow; payload carries the failed `attempt`, the `failure`, and the resolved `maxAttempts` so attempt trails reconstruct durably from the event log. */
-    | "step.attemptFailed"
-    | "step.failed"
-    | "step.cancelled"
-    | "step.display"
-    | "step.progress"
-    | "step.warning"
-    | "step.artifact"
-    | "wait.started"
-    | "wait.satisfied"
-    | "wait.failed"
-    | "subPrompt.started"
-    | "subPrompt.completed"
-    | "subPrompt.failed"
-    | "interactive.sessionStarted"
-    | "interactive.sessionCompleted"
-    | "agent.toolCall"
-    | "agent.spawned"
-    | "agent.promptSent"
-    | "agent.outputRequested"
-    | "agent.outputReceived"
-    | "agent.sessionResumed"
-    | "agent.targetSelected"
-    | "agent.attemptFailed"
-    | "workflow.completed";
-  readonly timestamp: string;
-  readonly schemaVersion: "v0";
-  readonly payload: TPayload;
-}
 
 export interface WaitResultDetails {
   readonly stepId: string;

@@ -4,7 +4,7 @@ import {
   resolveAgentSessionTarget,
 } from "../../agent-sessions/agent-session-target-resolution.js";
 import { openAgentSession } from "../../agent-sessions/open-agent-session.js";
-import { type CliCommand, CliUsageError } from "../../command.types.js";
+import { type CliCommand, CliUsageError } from "../../command-framework/command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { runCommand } from "../run/run-command.js";

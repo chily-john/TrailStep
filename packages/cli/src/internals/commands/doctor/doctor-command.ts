@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { type CliCommand, type CliCommandContext, CliUsageError } from "../../command.types.js";
+import {
+  type CliCommand,
+  type CliCommandContext,
+  CliUsageError,
+} from "../../command-framework/command.types.js";
 import { formatDeprecationFinding } from "../../deprecation-scan/deprecation-formatter.js";
 import {
   type DeprecationFinding,

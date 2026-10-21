@@ -3,7 +3,7 @@ import {
   incrementStoryPhaseAttempt,
   loadStoryPhaseContext,
   STORY_STATE_KEYS,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 import { validateStoryStep } from "../validate-story/step.js";
 import {
   type ImplementGreenInput,

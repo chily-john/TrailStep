@@ -1,4 +1,4 @@
-import type { PackageCommandRunner } from "../command.types.js";
+import type { PackageCommandRunner } from "../command-framework/command.types.js";
 import { defaultPackageCommandRunner } from "./package-manager.js";
 
 export interface NpmPackageMetadata {

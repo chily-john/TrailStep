@@ -8,13 +8,13 @@ import { done, type Event, runWorkflow, step, type Workflow } from "@trailstep/c
 import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
+import { runStoryIsolationPreflight } from "../feature-implementation/story-isolation-preflight/step.js";
+import { storyRouterStep } from "../feature-implementation/story-router/step.js";
 import {
   MAX_STORY_REVIEW_ATTEMPTS,
   MAX_STORY_VALIDATION_ATTEMPTS,
   STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD,
-} from "../feature-implementation/shared/constants.js";
-import { runStoryIsolationPreflight } from "../feature-implementation/story-isolation-preflight/step.js";
-import { storyRouterStep } from "../feature-implementation/story-router/step.js";
+} from "../shared/constants.js";
 import { takeItAway } from "./workflow.js";
 
 const execFileAsync = promisify(execFile);

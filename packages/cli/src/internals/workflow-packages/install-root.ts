@@ -5,7 +5,7 @@ import type {
   WorkflowPackageRegistryMetadata,
   WorkflowRegistryContext,
   WorkflowRegistryScope,
-} from "../workflow-registry/workflow-registry.js";
+} from "../workflow-registry/workflow-registry.types.js";
 
 export function workflowPackageInstallRootForScope(
   scope: WorkflowRegistryScope,

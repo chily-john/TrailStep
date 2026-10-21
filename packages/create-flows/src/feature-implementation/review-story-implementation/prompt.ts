@@ -1,7 +1,7 @@
 import type { Document } from "@trailstep/authoring";
 import { promptSections, section } from "@trailstep/authoring";
-import type { StoryReviewGitContext } from "../shared/story-state.js";
-import { storyViewForReviewer } from "../shared/story-view.js";
+import type { StoryReviewGitContext } from "../shared/story/story-state.js";
+import { storyViewForReviewer } from "../shared/story/story-view.js";
 
 const REVIEW_RUBRIC = [
   "Score 4-5 only when the active story is complete, well-tested, scoped, and integrated with local conventions.",

@@ -1,5 +1,5 @@
 import { type Document, jsonSchema, list, promptSections, section } from "@trailstep/authoring";
-import { storyViewForExplorer } from "../shared/story-view.js";
+import { storyViewForExplorer } from "../shared/story/story-view.js";
 
 export interface ExploreStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;

@@ -4,7 +4,7 @@ import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
 import type {
   ContinuationResult,
-  WorkflowInvocationNode,
+  PostContinuation,
   WorkflowInvocationOptions,
 } from "../step/continuation.types.js";
 
@@ -50,3 +50,24 @@ export type DefinedWorkflow<
   TOutput extends PlainObject = PlainObject,
 > = Workflow<TInput, TOutput> &
   ((input: TInput, options?: WorkflowInvocationOptions) => WorkflowInvocationNode<TInput, TOutput>);
+
+/**
+ * A node that invokes another workflow.
+ *
+ * Declared here (rather than in `authoring/step/continuation.types.ts`)
+ * because it is mutually recursive with `Workflow`: the workflow's `start`
+ * returns a continuation result, and a continuation result can invoke a
+ * workflow. Keeping both declarations in one module keeps the authoring
+ * import graph acyclic.
+ */
+export interface WorkflowInvocationNode<
+  TInput extends PlainObject = PlainObject,
+  TOutput extends PlainObject = PlainObject,
+> {
+  readonly kind: "workflowInvocation";
+  readonly workflow: Workflow<TInput, TOutput>;
+  readonly input: TInput;
+  readonly options?: WorkflowInvocationOptions;
+  post(continuation: PostContinuation<TOutput>): WorkflowInvocationNode<TInput, TOutput>;
+  readonly postContinuation?: PostContinuation<TOutput>;
+}

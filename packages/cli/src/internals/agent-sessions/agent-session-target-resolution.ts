@@ -1,6 +1,6 @@
 import type { TrailStepAgentTarget, TrailStepConfig } from "@trailstep/core";
 
-import { isOfficialProviderId } from "../official-provider-specs.js";
+import { isOfficialProviderId } from "../providers/official-providers.js";
 
 export type AgentSessionResolutionKind =
   | "default-agent"

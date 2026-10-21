@@ -1,7 +1,7 @@
 import type { RunSummary } from "@trailstep/core";
 import { listRunSummaries, selectRecentFailedRunSummaries } from "@trailstep/core";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 
 export const runsCommand: CliCommand<{ readonly json: boolean }> = {

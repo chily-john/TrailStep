@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
 import { TEST_CUSTOM_PROVIDERS } from "../../../test/provider-fixtures.js";
-import { resolveCommand } from "../../command-registry.js";
+import { resolveCommand } from "../../command-framework/command-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 
 const workflowSource = [

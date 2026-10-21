@@ -1,9 +1,9 @@
 import type { Document } from "@trailstep/authoring";
 import { list, promptSections, section } from "@trailstep/authoring";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import implementationStrategyFormatFragment from "../shared/implementation-strategy-format.md?raw";
-import projectArchitectureGuidanceFragment from "../shared/project-architecture-guidance.md?raw";
-import type { ReviewResult } from "../shared/review-schema.js";
+import methodologyFragment from "../prompts/feature-methodology.md?raw";
+import implementationStrategyFormatFragment from "../prompts/implementation-strategy-format.md?raw";
+import projectArchitectureGuidanceFragment from "../prompts/project-architecture-guidance.md?raw";
+import type { ReviewResult } from "../shared/story/review-schema.js";
 
 const fragments = {
   methodology: methodologyFragment.trimEnd(),

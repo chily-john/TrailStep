@@ -3,7 +3,7 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { CliCommandContext } from "../command.types.js";
+import type { CliCommandContext } from "../command-framework/command.types.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,

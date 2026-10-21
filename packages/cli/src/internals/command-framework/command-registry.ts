@@ -1,25 +1,25 @@
+import { addCommand } from "../commands/add/add-command.js";
+import { agentsCommand } from "../commands/agents/agents-command.js";
+import { answerCommand } from "../commands/answer/answer-command.js";
+import { cancelCommand } from "../commands/cancel/cancel-command.js";
+import { continueCommand } from "../commands/continue/continue-command.js";
+import { doctorCommand } from "../commands/doctor/doctor-command.js";
+import { initCommand } from "../commands/init/init-command.js";
+import { inputTemplateCommand } from "../commands/input-template/input-template-command.js";
+import { mcpCommand } from "../commands/mcp/command.js";
+import { openCommand } from "../commands/open/open-command.js";
+import { outputCommand } from "../commands/output/output-command.js";
+import { providersCommand } from "../commands/providers/providers-command.js";
+import { removeCommand } from "../commands/remove/remove-command.js";
+import { retryCommand } from "../commands/retry/retry-command.js";
+import { runOrOpenCommand } from "../commands/run-or-open/run-or-open-command.js";
+import { runsCommand } from "../commands/runs/runs-command.js";
+import { skillCheckCommand } from "../commands/skill-check/skill-check-command.js";
+import { storageCommand } from "../commands/storage/storage-command.js";
+import { updateCommand } from "../commands/update/update-command.js";
+import { watchCommand } from "../commands/watch/watch-command.js";
+import { workflowsCommand } from "../commands/workflows/workflows-command.js";
 import type { CliCommand } from "./command.types.js";
-import { addCommand } from "./commands/add/add-command.js";
-import { agentsCommand } from "./commands/agents/agents-command.js";
-import { answerCommand } from "./commands/answer/answer-command.js";
-import { cancelCommand } from "./commands/cancel/cancel-command.js";
-import { continueCommand } from "./commands/continue/continue-command.js";
-import { doctorCommand } from "./commands/doctor/doctor-command.js";
-import { initCommand } from "./commands/init/init-command.js";
-import { inputTemplateCommand } from "./commands/input-template/input-template-command.js";
-import { mcpCommand } from "./commands/mcp/command.js";
-import { openCommand } from "./commands/open/open-command.js";
-import { outputCommand } from "./commands/output/output-command.js";
-import { providersCommand } from "./commands/providers/providers-command.js";
-import { removeCommand } from "./commands/remove/remove-command.js";
-import { retryCommand } from "./commands/retry/retry-command.js";
-import { runOrOpenCommand } from "./commands/run-or-open/run-or-open-command.js";
-import { runsCommand } from "./commands/runs/runs-command.js";
-import { skillCheckCommand } from "./commands/skill-check/skill-check-command.js";
-import { storageCommand } from "./commands/storage/storage-command.js";
-import { updateCommand } from "./commands/update/update-command.js";
-import { watchCommand } from "./commands/watch/watch-command.js";
-import { workflowsCommand } from "./commands/workflows/workflows-command.js";
 
 /**
  * Resolves the CLI command implementation for a given argv.

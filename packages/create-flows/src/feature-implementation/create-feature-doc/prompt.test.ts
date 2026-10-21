@@ -16,7 +16,7 @@ const sectionContent = (document: string, heading: string): string => {
 describe("createFeatureDocPrompt", () => {
   it("defines scope-preserving feature doc sections for distilling real conversation context", async () => {
     const format = await readFile(
-      new URL("../shared/feature-doc-format.md", import.meta.url),
+      new URL("../prompts/feature-doc-format.md", import.meta.url),
       "utf8",
     );
 

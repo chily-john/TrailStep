@@ -2,15 +2,25 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { CliUsageError } from "../command.types.js";
-import { isDirectWorkflowFileReference } from "../workflow-resolution/workflow-resolution.js";
+import { CliUsageError } from "../command-framework/command.types.js";
+import { isDirectWorkflowFileReference } from "../workflow-reference/direct-file-reference.js";
+import type {
+  WorkflowPackageInstallOwnership,
+  WorkflowPackageRegistryMetadata,
+  WorkflowPackageSourceType,
+  WorkflowRegistryContext,
+  WorkflowRegistryScope,
+  WorkflowSkillInstallTarget,
+} from "./workflow-registry.types.js";
 
-export type WorkflowRegistryScope = "local" | "project" | "global";
-
-export interface WorkflowRegistryContext {
-  readonly cwd: string;
-  readonly homeDir?: string;
-}
+export type {
+  WorkflowPackageInstallOwnership,
+  WorkflowPackageRegistryMetadata,
+  WorkflowPackageSourceType,
+  WorkflowRegistryContext,
+  WorkflowRegistryScope,
+  WorkflowSkillInstallTarget,
+} from "./workflow-registry.types.js";
 
 export function configPathForScope(
   scope: WorkflowRegistryScope,
@@ -93,36 +103,6 @@ export function deleteWorkflowRegistryEntry(
   }
 
   return result;
-}
-
-export type WorkflowPackageSourceType = "npm" | "github";
-export type WorkflowPackageInstallOwnership = "trailstep-installed" | "reused-existing" | "unknown";
-/**
- * Skill distribution target chosen at `trailstep add` time ("project" and/or "user").
- * Persisted per registration so `trailstep update` can honor the original choice for
- * generated skills of untracked workflows. Absent on legacy registrations.
- */
-export type WorkflowSkillInstallTarget = "project" | "user";
-
-export interface WorkflowPackageRegistryMetadata {
-  readonly kind: "package";
-  readonly sourceType: WorkflowPackageSourceType;
-  readonly packageName: string;
-  readonly requestedSpec: string;
-  readonly requestedRange: string;
-  readonly installScope: WorkflowRegistryScope;
-  readonly targetRef: string;
-  readonly workflowName: string;
-  readonly exportName: string;
-  readonly resolvedVersion?: string;
-  readonly githubRef?: string;
-  readonly installOwnership?: WorkflowPackageInstallOwnership;
-  /**
-   * Skill target(s) the user chose at add time. Present whenever a choice was made
-   * (an empty array means the user explicitly chose no skills); absent on legacy
-   * registrations where update falls back to inference.
-   */
-  readonly skillTargets?: readonly WorkflowSkillInstallTarget[];
 }
 
 export interface WorkflowRegistryWriteEntry {

@@ -7,10 +7,10 @@ import {
   step,
 } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
+import type { TakeItAwayWorkflowOptions } from "../../shared/input-schema.js";
 import { createOrImproveImplementationStrategyStep } from "../create-or-improve-implementation-strategy/step.js";
-import type { TakeItAwayWorkflowOptions } from "../shared/input-schema.js";
-import type { ReviewResult } from "../shared/review-schema.js";
-import { STORY_STATE_KEYS } from "../shared/story-state.js";
+import type { ReviewResult } from "../shared/story/review-schema.js";
+import { STORY_STATE_KEYS } from "../shared/story/story-state.js";
 import { storyRouterStep } from "../story-router/step.js";
 
 export interface PlanningCheckpointInput extends Record<string, unknown> {

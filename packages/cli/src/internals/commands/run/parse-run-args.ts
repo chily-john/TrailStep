@@ -1,4 +1,4 @@
-import { CliUsageError } from "../../command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import type { InputOverride, ParsedRunOptions } from "./run-command.types.js";
 
 export function parseRunArgs(rest: readonly string[]): ParsedRunOptions | undefined {

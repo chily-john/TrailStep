@@ -1,4 +1,8 @@
-import { type CliCommand, type CliCommandContext, CliUsageError } from "../../command.types.js";
+import {
+  type CliCommand,
+  type CliCommandContext,
+  CliUsageError,
+} from "../../command-framework/command.types.js";
 import { discoverWorkflows } from "../../discovery/discovery.js";
 import { findPackagesMissingSkills } from "./skill-detection.js";
 

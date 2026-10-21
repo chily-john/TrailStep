@@ -1,7 +1,7 @@
 import type { Event } from "@trailstep/core";
 import { runWorkflow } from "@trailstep/core";
 
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 import { maybeWriteRunUpdateNotice } from "../../update-notices/run-update-notice.js";

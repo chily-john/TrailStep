@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { gt, valid } from "semver";
 
-import type { PackageCommandRunner } from "../../command.types.js";
+import type { PackageCommandRunner } from "../../command-framework/command.types.js";
 import { fetchNpmPackageMetadata } from "../../package-manager/npm-registry.js";
 import { selectLatestStable, UpdateTargetResolutionError } from "./update-targets.js";
 

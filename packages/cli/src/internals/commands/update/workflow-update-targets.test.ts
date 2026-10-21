@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { PackageCommandRunner } from "../../command.types.js";
+import type { PackageCommandRunner } from "../../command-framework/command.types.js";
 import {
   resolveWorkflowPackageUpdateTargets,
   type WorkflowPackageUpdateTarget,

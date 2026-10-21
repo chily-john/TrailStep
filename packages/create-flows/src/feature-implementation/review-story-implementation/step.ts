@@ -1,8 +1,8 @@
 import { state, step } from "@trailstep/authoring";
 import { commitReviewedStoryStep } from "../commit-reviewed-story/step.js";
-import type { ReviewResult } from "../shared/review-schema.js";
-import { reviewOutput, reviewPasses } from "../shared/review-schema.js";
-import { STORY_STATE_KEYS } from "../shared/story-state.js";
+import type { ReviewResult } from "../shared/story/review-schema.js";
+import { reviewOutput, reviewPasses } from "../shared/story/review-schema.js";
+import { STORY_STATE_KEYS } from "../shared/story/story-state.js";
 import { type ReviewStoryImplementationInput, reviewStoryImplementationPrompt } from "./prompt.js";
 
 export const reviewStoryImplementationStep = step({ id: "review-story-implementation" })

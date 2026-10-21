@@ -5,7 +5,7 @@ import {
   MAX_STORY_REVIEW_ATTEMPTS,
   MAX_STORY_VALIDATION_ATTEMPTS,
   STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD,
-} from "./feature-implementation/shared/constants.js";
+} from "./shared/constants.js";
 
 const createFlowsDiscussion = (readme: string) => {
   const marker = "`@trailstep/create-flows` currently publishes";

@@ -6,11 +6,11 @@ import { describe, expect, it } from "vitest";
 describe("story implementation contract", () => {
   it("uses TrailStep naming in workflow guidance and implementation doc markers", async () => {
     const storyContract = await readFile(
-      join(import.meta.dirname, "../shared/story-implementation-contract.md"),
+      join(import.meta.dirname, "../prompts/story-implementation-contract.md"),
       "utf8",
     );
     const implementationDocFormat = await readFile(
-      join(import.meta.dirname, "../shared/implementation-doc-format.md"),
+      join(import.meta.dirname, "../prompts/implementation-doc-format.md"),
       "utf8",
     );
 

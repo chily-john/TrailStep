@@ -1,8 +1,12 @@
 import { join } from "node:path";
 
 import { runAgentSetupWizard } from "../../agent-config/agent-setup-wizard.js";
-import type { CliCommand, CliCommandContext, TrailStepCliPrompts } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type {
+  CliCommand,
+  CliCommandContext,
+  TrailStepCliPrompts,
+} from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { offerMcpRegistration } from "../../mcp-tools/mcp-registration.js";
 import {
   createPackageAddCommand,

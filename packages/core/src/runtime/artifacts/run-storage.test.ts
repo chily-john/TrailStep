@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -169,6 +169,28 @@ describe("run storage", () => {
     await expect(readJsonStateArtifact(target)).resolves.toEqual({
       writer: expect.any(Number),
     });
+    expect((await readdir(dir)).filter((file) => file.includes(".tmp"))).toEqual([]);
+  });
+
+  it("atomicWriteJson succeeds while a reader briefly holds the target open", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-core-atomic-open-"));
+    const target = join(dir, "answer.json");
+    await atomicWriteJson(target, { round: 0 });
+
+    // On Windows a replace-rename fails with EPERM while any other handle has
+    // the target open. The runtime's wait poller and the dashboard both read
+    // the answer file while it is being written, so the write has to survive a
+    // concurrent reader instead of failing the whole command.
+    const handle = await open(target, "r");
+    const write = atomicWriteJson(target, { round: 1 });
+    // The reader releases the file once its read completes.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
+    await handle.close();
+
+    await expect(write).resolves.toBeUndefined();
+    await expect(readJsonStateArtifact(target)).resolves.toEqual({ round: 1 });
     expect((await readdir(dir)).filter((file) => file.includes(".tmp"))).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { resolveCommand } from "../../command-registry.js";
+import { resolveCommand } from "../../command-framework/command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
   return join("node_modules", ".tmp-trailstep-remove-command-tests", `${task.id}-${randomUUID()}`);

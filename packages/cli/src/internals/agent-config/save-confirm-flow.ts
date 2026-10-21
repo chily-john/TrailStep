@@ -1,4 +1,4 @@
-import type { TrailStepCliPrompts } from "../command.types.js";
+import type { TrailStepCliPrompts } from "../command-framework/command.types.js";
 
 export type AgentConfigSaveContext =
   | { readonly kind: "named-agent-create"; readonly name: string }

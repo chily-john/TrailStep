@@ -1,19 +1,19 @@
 import type { Document } from "@trailstep/authoring";
 import { fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
-import { openPullRequestStep } from "../open-pull-request/step.js";
 import {
   defaultTakeItAwayWorkflowOptions,
   type TakeItAwayWorkflowOptions,
-} from "../shared/input-schema.js";
-import { extractStoryTitle, type TakeItAwayOutput } from "../shared/output-schema.js";
+} from "../../shared/input-schema.js";
+import { extractStoryTitle, type TakeItAwayOutput } from "../../shared/output-schema.js";
+import { openPullRequestStep } from "../open-pull-request/step.js";
 import {
   type ActiveStoryStartCommit,
   resetActiveStoryStartCommit,
   resetStoryLocalStateForNextStory,
   STORY_STATE_KEYS,
   type StoryPhaseContexts,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 import { runGit } from "./run-git.js";
 
 export interface CommitReviewedStoryInput extends Record<string, unknown> {

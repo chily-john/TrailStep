@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { PackageCommandRunner } from "../command.types.js";
+import type { PackageCommandRunner } from "../command-framework/command.types.js";
 import {
   createPackageAddCommand,
   defaultPackageCommandRunner,

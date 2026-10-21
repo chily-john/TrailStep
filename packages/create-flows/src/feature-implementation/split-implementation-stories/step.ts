@@ -1,16 +1,16 @@
 import { type Document, document, fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
+import { STORY_BOUNDARY, STORY_CONTEXT_END, STORY_CONTEXT_START } from "../../shared/constants.js";
 import {
   planningCheckpointStep,
   shouldPauseForPlanningCheckpoint,
 } from "../planning-checkpoint/step.js";
-import { STORY_BOUNDARY, STORY_CONTEXT_END, STORY_CONTEXT_START } from "../shared/constants.js";
 import {
   resetStoryLocalState,
   STORY_STATE_KEYS,
   type StoryPhaseContexts,
   type StoryRoutedContextPhase,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 import { storyRouterStep } from "../story-router/step.js";
 import {
   type ParsedStoryContextBlock,

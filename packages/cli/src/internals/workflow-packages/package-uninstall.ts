@@ -2,7 +2,7 @@ import type {
   PackageCommandResult,
   PackageCommandRunner,
   TrailStepCliIo,
-} from "../command.types.js";
+} from "../command-framework/command.types.js";
 import {
   createPackageRemoveCommand,
   defaultPackageCommandRunner,

@@ -4,7 +4,7 @@ import {
   TRAILSTEP_RUNS_ROOT_ENV,
 } from "@trailstep/core";
 
-import type { CliCommandContext } from "./command.types.js";
+import type { CliCommandContext } from "./command-framework/command.types.js";
 
 export { TRAILSTEP_RUNS_ROOT_ENV };
 

@@ -4,13 +4,13 @@ import { promisify } from "node:util";
 import type { Document } from "@trailstep/authoring";
 import { done, state, step } from "@trailstep/authoring";
 import type { ContinuationResult } from "@trailstep/core";
-import { runGit } from "../commit-reviewed-story/run-git.js";
 import {
   defaultTakeItAwayWorkflowOptions,
   type TakeItAwayWorkflowOptions,
-} from "../shared/input-schema.js";
-import type { TakeItAwayOutput, TakeItAwayPullRequestOutput } from "../shared/output-schema.js";
-import { STORY_STATE_KEYS } from "../shared/story-state.js";
+} from "../../shared/input-schema.js";
+import type { TakeItAwayOutput, TakeItAwayPullRequestOutput } from "../../shared/output-schema.js";
+import { runGit } from "../commit-reviewed-story/run-git.js";
+import { STORY_STATE_KEYS } from "../shared/story/story-state.js";
 
 const execFileAsync = promisify(execFile);
 

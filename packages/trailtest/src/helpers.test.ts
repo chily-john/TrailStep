@@ -153,7 +153,14 @@ describe("expectEventSequence", () => {
 });
 
 describe("runWorkflowWithStubs", () => {
-  it("answers agent steps by stepId with canned outputs and no subprocess", async () => {
+  // These tests run a real workflow (sandbox creation, event writes, artifact
+  // output), so they can exceed Vitest's 5s default when the suite runs under
+  // parallel load. Give them room instead of letting them flake.
+  const WORKFLOW_TIMEOUT_MS = 30_000;
+
+  it("answers agent steps by stepId with canned outputs and no subprocess", {
+    timeout: WORKFLOW_TIMEOUT_MS,
+  }, async () => {
     const result = await runWorkflowWithStubs(
       agentWorkflow,
       { task: "hello" },
@@ -175,7 +182,9 @@ describe("runWorkflowWithStubs", () => {
     ]);
   });
 
-  it("fails the workflow when a stub returns a non-zero exit code", async () => {
+  it("fails the workflow when a stub returns a non-zero exit code", {
+    timeout: WORKFLOW_TIMEOUT_MS,
+  }, async () => {
     const result = await runWorkflowWithStubs(
       agentWorkflow,
       { task: "hello" },
@@ -187,13 +196,17 @@ describe("runWorkflowWithStubs", () => {
     expect(result.status).toBe("failure");
   });
 
-  it("fails the workflow when an agent step has no stub", async () => {
+  it("fails the workflow when an agent step has no stub", {
+    timeout: WORKFLOW_TIMEOUT_MS,
+  }, async () => {
     const result = await runWorkflowWithStubs(agentWorkflow, { task: "hello" }, { stubs: {} });
 
     expect(result.status).toBe("failure");
   });
 
-  it("runs wrapper workflows against a stubbed sub-workflow", async () => {
+  it("runs wrapper workflows against a stubbed sub-workflow", {
+    timeout: WORKFLOW_TIMEOUT_MS,
+  }, async () => {
     const sub = stubSubWorkflow<{ ok: boolean }>("inner-workflow", { ok: true });
     const wrapper = defineWorkflow<{ rounds: number }, { ok: boolean }>({
       id: "wrapper-workflow",

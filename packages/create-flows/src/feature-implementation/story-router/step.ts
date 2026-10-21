@@ -1,15 +1,15 @@
 import type { Document } from "@trailstep/authoring";
 import { fail, state, step } from "@trailstep/authoring";
 import type { ContinuationResult, Failure } from "@trailstep/core";
-import { implementGreenStep } from "../implement-green/step.js";
 import {
   MAX_STORY_REVIEW_ATTEMPTS,
   MAX_STORY_VALIDATION_ATTEMPTS,
   STORY_DOCTOR_VALIDATION_FAILURE_THRESHOLD,
-} from "../shared/constants.js";
-import { extractStoryTitle } from "../shared/output-schema.js";
-import type { ReviewResult } from "../shared/review-schema.js";
-import { reviewPasses } from "../shared/review-schema.js";
+} from "../../shared/constants.js";
+import { extractStoryTitle } from "../../shared/output-schema.js";
+import { implementGreenStep } from "../implement-green/step.js";
+import type { ReviewResult } from "../shared/story/review-schema.js";
+import { reviewPasses } from "../shared/story/review-schema.js";
 import {
   type BlockedStoryPhase,
   type BlockedStoryRouteSourceReason,
@@ -19,7 +19,7 @@ import {
   STORY_STATE_KEYS,
   type StoryPhaseContexts,
   type StoryRouterState,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 import { storyDoctorStep } from "../story-doctor/step.js";
 import { storyIsolationPreflightStep } from "../story-isolation-preflight/step.js";
 import type { ValidateStoryOutput } from "../validate-story/prompt.js";

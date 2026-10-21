@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { Workflow } from "@trailstep/core";
 import { tsImport } from "tsx/esm/api";
 
-import { CliUsageError } from "../command.types.js";
+import { CliUsageError } from "../command-framework/command.types.js";
 import { WorkflowResolutionError } from "./workflow-resolution-error.js";
 import { isWorkflow } from "./workflow-validator.js";
 

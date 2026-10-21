@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { gt, valid } from "semver";
 
-import type { CliCommandContext } from "../command.types.js";
+import type { CliCommandContext } from "../command-framework/command.types.js";
 import { resolveGlobalCliUpdateTarget } from "../commands/update/global-cli-update-target.js";
 import { findStaleTrackedPackagedTrailStepSkillInstallations } from "../trailstep-skill/trailstep-skill.js";
 

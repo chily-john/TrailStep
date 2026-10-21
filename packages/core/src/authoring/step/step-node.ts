@@ -32,8 +32,8 @@ import type {
   WaitInput,
   WaitOptions,
   WaitPhase,
-  WorkflowInvocationNode,
 } from "../step/continuation.types.js";
+import type { WorkflowInvocationNode } from "../workflow/workflow.types.js";
 
 /**
  * The only step-authoring primitive. `.prompt(...)` is optional; when present,

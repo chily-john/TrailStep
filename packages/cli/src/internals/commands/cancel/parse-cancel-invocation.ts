@@ -1,4 +1,4 @@
-import { CliUsageError } from "../../command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import type { CancelCommandArgs } from "./cancel-command.types.js";
 
 const CANCEL_USAGE =

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { CliUsageError } from "../../command.types.js";
-import { resolveCommand } from "../../command-registry.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
+import { resolveCommand } from "../../command-framework/command-registry.js";
 import { parseUpdateInvocation } from "./parse-update-invocation.js";
 
 describe("parseUpdateInvocation", () => {

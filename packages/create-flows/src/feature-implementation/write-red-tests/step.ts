@@ -4,7 +4,7 @@ import {
   incrementStoryPhaseAttempt,
   loadStoryPhaseContext,
   STORY_STATE_KEYS,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 import {
   type WriteRedTestsInput,
   type WriteRedTestsOutput,

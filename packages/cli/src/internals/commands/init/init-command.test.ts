@@ -4,8 +4,8 @@ import { dirname, join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { CliUsageError } from "../../command.types.js";
-import { resolveCommand } from "../../command-registry.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
+import { resolveCommand } from "../../command-framework/command-registry.js";
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;

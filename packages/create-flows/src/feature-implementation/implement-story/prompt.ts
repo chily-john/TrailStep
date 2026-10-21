@@ -1,6 +1,6 @@
 import { type Document, jsonSchema, list, promptSections, section } from "@trailstep/authoring";
-import type { ReviewResult } from "../shared/review-schema.js";
-import { storyViewForImplementer } from "../shared/story-view.js";
+import type { ReviewResult } from "../shared/story/review-schema.js";
+import { storyViewForImplementer } from "../shared/story/story-view.js";
 
 export interface ImplementStoryInput extends Record<string, unknown> {
   readonly currentStory: Document;

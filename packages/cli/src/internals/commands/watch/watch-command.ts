@@ -5,8 +5,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Event } from "@trailstep/core";
 
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { createTerminalEventLogger } from "../run/terminal-event-logger.js";
 import { findLatestPendingWait, resolveRunDirectory } from "../wait-run-helpers.js";
 

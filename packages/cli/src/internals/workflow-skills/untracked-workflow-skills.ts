@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { CliCommandContext } from "../command.types.js";
+import type { CliCommandContext } from "../command-framework/command.types.js";
 import type { WorkflowSkillInstallTarget } from "../workflow-registry/workflow-registry.js";
 import {
   type BundleWorkflowSpecifier,

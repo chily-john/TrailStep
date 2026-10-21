@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PackageCommandRequest } from "../command.types.js";
+import type { PackageCommandRequest } from "../command-framework/command.types.js";
 import { fetchNpmPackageMetadata, NpmRegistryError } from "./npm-registry.js";
 
 describe("fetchNpmPackageMetadata", () => {

@@ -1,4 +1,4 @@
-import { type CliCommandContext, CliUsageError } from "../command.types.js";
+import { type CliCommandContext, CliUsageError } from "../command-framework/command.types.js";
 
 export async function promptText(
   label: string,

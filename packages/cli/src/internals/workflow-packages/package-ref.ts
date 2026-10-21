@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 
-import { CliUsageError } from "../command.types.js";
+import { CliUsageError } from "../command-framework/command.types.js";
 
 export type ParsedWorkflowPackageRef = ParsedNpmPackageRef | ParsedGitHubPackageRef;
 

@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main } from "../../../index.js";
-import type { TrailStepCliPrompts } from "../../command.types.js";
+import type { TrailStepCliPrompts } from "../../command-framework/command.types.js";
 import { continueCommand } from "./continue-command.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {

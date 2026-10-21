@@ -7,21 +7,21 @@ import {
   type ConfiguredCustomProvider,
   configureLiteralAgentTarget,
 } from "../../agent-config/configure-target-flow.js";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { loadTrailStepProjectConfig } from "../../config/config.js";
 import { offerMcpRegistration } from "../../mcp-tools/mcp-registration.js";
 import {
   generateMcpToolJson,
   mcpToolInputFromWorkflow,
 } from "../../mcp-tools/mcp-tool-generation.js";
-import { OFFICIAL_PROVIDER_IDS } from "../../official-provider-specs.js";
 import {
   promptMultiSelect,
   promptSelect,
   promptText,
   promptYesNo,
 } from "../../prompts/prompt-helpers.js";
+import { OFFICIAL_PROVIDER_IDS } from "../../providers/official-providers.js";
 import {
   mergeRecommendedConfig,
   type RecommendedConfigPlan,

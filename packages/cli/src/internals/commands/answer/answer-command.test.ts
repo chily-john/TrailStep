@@ -2,7 +2,7 @@ import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promise
 import { dirname, join } from "node:path";
 import type { Event } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
-import type { CliCommandContext, TrailStepCliIo } from "../../command.types.js";
+import type { CliCommandContext, TrailStepCliIo } from "../../command-framework/command.types.js";
 import { answerCommand } from "./answer-command.js";
 
 function waitEvent(options: {

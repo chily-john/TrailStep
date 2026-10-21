@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWriteJson } from "@trailstep/core";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { continueCommand } from "../continue/continue-command.js";
 import {
   findPendingWaitsById,

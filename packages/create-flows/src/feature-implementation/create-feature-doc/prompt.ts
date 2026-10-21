@@ -1,7 +1,7 @@
 import { promptSections, section } from "@trailstep/authoring";
-import featureDocFormatFragment from "../shared/feature-doc-format.md?raw";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import type { TakeItAwayInput } from "../shared/input-schema.js";
+import type { TakeItAwayInput } from "../../shared/input-schema.js";
+import featureDocFormatFragment from "../prompts/feature-doc-format.md?raw";
+import methodologyFragment from "../prompts/feature-methodology.md?raw";
 
 const fragments = {
   methodology: methodologyFragment.trimEnd(),

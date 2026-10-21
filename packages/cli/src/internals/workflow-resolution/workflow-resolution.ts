@@ -6,6 +6,7 @@ import type { Workflow } from "@trailstep/core";
 import { loadTrailStepProjectConfig, loadTrailStepUserWorkflowRegistry } from "../config/config.js";
 import { discoverWorkflows } from "../discovery/discovery.js";
 import { workflowPackageInstallRootForMetadata } from "../workflow-packages/install-root.js";
+import { isDirectWorkflowFileReference } from "../workflow-reference/direct-file-reference.js";
 import {
   parseBundleWorkflowId,
   parseWorkflowId,
@@ -14,14 +15,16 @@ import type {
   BundleWorkflowReference,
   WorkflowReference,
 } from "../workflow-reference/workflow-reference.types.js";
-import {
-  findRegisteredWorkflowEntryInScopes,
-  type WorkflowPackageRegistryMetadata,
-  type WorkflowRegistryScope,
-} from "../workflow-registry/workflow-registry.js";
+import { findRegisteredWorkflowEntryInScopes } from "../workflow-registry/workflow-registry.js";
+import type {
+  WorkflowPackageRegistryMetadata,
+  WorkflowRegistryScope,
+} from "../workflow-registry/workflow-registry.types.js";
 import { hasBundleWorkflowManifest, loadBundleWorkflow } from "./bundle-resolver.js";
 import { loadDirectWorkflowFile } from "./direct-file-resolver.js";
 import { WorkflowResolutionError } from "./workflow-resolution-error.js";
+
+export { isDirectWorkflowFileReference } from "../workflow-reference/direct-file-reference.js";
 
 export interface ResolveWorkflowReferenceOptions {
   readonly cwd: string;
@@ -33,27 +36,6 @@ export interface ResolvedWorkflowReference {
   readonly workflow: Workflow;
   readonly workflowRef: WorkflowReference;
   readonly notFoundMessage?: string;
-}
-
-export function isDirectWorkflowFileReference(rawRef: string): boolean {
-  return isDirectWorkflowFileReferencePrefix(stripExportName(rawRef));
-}
-
-function isDirectWorkflowFileReferencePrefix(pathRef: string): boolean {
-  return (
-    pathRef.startsWith("./") ||
-    pathRef.startsWith("../") ||
-    pathRef.startsWith(".\\") ||
-    pathRef.startsWith("..\\") ||
-    isAbsolute(pathRef) ||
-    /^[A-Za-z]:[\\/]/u.test(pathRef) ||
-    pathRef.startsWith("\\\\")
-  );
-}
-
-function stripExportName(rawRef: string): string {
-  const hashIndex = rawRef.lastIndexOf("#");
-  return hashIndex === -1 ? rawRef : rawRef.slice(0, hashIndex);
 }
 
 function readExportName(rawRef: string): string | undefined {

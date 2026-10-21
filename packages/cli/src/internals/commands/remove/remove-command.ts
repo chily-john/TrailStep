@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { findMcpToolJsonsToRemoveForRegistration } from "../../mcp-tools/mcp-tool-generation.js";
 import {
   cleanupRemovedWorkflowPackageInstall,

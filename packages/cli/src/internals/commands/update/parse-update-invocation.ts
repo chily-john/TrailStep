@@ -1,4 +1,4 @@
-import { CliUsageError } from "../../command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import type { UpdateCommandArgs, UpdateScope } from "./update-command.types.js";
 
 export function parseUpdateInvocation(argv: readonly string[]): UpdateCommandArgs {

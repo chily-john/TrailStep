@@ -3,10 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TEST_CUSTOM_PROVIDERS, withTestCustomProviders } from "../../../test/provider-fixtures.js";
-import type { TrailStepCliPrompts } from "../../command.types.js";
+import type { TrailStepCliPrompts } from "../../command-framework/command.types.js";
 
-import { CliUsageError } from "../../command.types.js";
-import { resolveCommand } from "../../command-registry.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
+import { resolveCommand } from "../../command-framework/command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
   return join("node_modules", ".tmp-trailstep-agents-command-tests", `${task.id}-${randomUUID()}`);

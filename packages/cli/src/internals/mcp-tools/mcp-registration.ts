@@ -4,7 +4,7 @@ import { access, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import type { TrailStepCliIo, TrailStepCliPrompts } from "../command.types.js";
+import type { TrailStepCliIo, TrailStepCliPrompts } from "../command-framework/command.types.js";
 import { promptSelect } from "../prompts/prompt-helpers.js";
 import {
   formatPiManualCommand,

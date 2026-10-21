@@ -2,7 +2,10 @@ import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { PackageCommandResult, PackageCommandRunner } from "../command.types.js";
+import type {
+  PackageCommandResult,
+  PackageCommandRunner,
+} from "../command-framework/command.types.js";
 
 export type PackageManagerName = "pnpm" | "npm" | "yarn" | "bun";
 

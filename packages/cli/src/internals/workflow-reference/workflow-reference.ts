@@ -1,4 +1,4 @@
-import { CliUsageError } from "../command.types.js";
+import { CliUsageError } from "../command-framework/command.types.js";
 import type { BundleWorkflowReference, WorkflowReference } from "./workflow-reference.types.js";
 
 export function parseWorkflowId(workflowId: string): WorkflowReference {

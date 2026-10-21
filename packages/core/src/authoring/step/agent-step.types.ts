@@ -1,26 +1,10 @@
-import type {
-  AgentAdapterSelection,
-  AgentPrompt,
-} from "../../contracts/agents/agent-adapter.types.js";
-import type { AgentExecutionConfig } from "../../contracts/agents/agent-execution.types.js";
-import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
-import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
-
-export interface AgentStepRequestConfig<
-  TInput extends PlainObject = PlainObject,
-  TOutput extends PlainObject = PlainObject,
-> {
-  readonly kind?: "agent";
-  readonly id: string;
-  readonly output: Schema<TOutput>;
-  readonly prompt: AgentPrompt<TInput>;
-  readonly requirements: WorkflowAgentRole;
-  /**
-   * Optional lean execution context for this step. Step-level execution wins
-   * over `requirements.execution`; omitted entirely means current provider
-   * behavior (no hygiene flags rendered).
-   */
-  readonly execution?: AgentExecutionConfig;
-  readonly adapter?: AgentAdapterSelection<TInput, TOutput>;
-  readonly timeout?: number;
-}
+/**
+ * Agent step request configuration.
+ *
+ * The declaration lives in `contracts/agents/agent-adapter.types.ts` because it
+ * is mutually recursive with the adapter contract (the adapter request embeds
+ * the step config, and the step config embeds the adapter selection). It is
+ * re-exported here so authoring code can keep importing the step-facing name
+ * from the authoring layer.
+ */
+export type { AgentStepRequestConfig } from "../../contracts/agents/agent-adapter.types.js";

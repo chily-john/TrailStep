@@ -7,8 +7,8 @@ import {
   type ResolvedRunDirectory,
   resolveRunDirectory as resolveRunDirectoryCore,
 } from "@trailstep/core";
-import type { CliCommandContext } from "../command.types.js";
-import { CliUsageError } from "../command.types.js";
+import type { CliCommandContext } from "../command-framework/command.types.js";
+import { CliUsageError } from "../command-framework/command.types.js";
 
 export type { ResolvedRunDirectory } from "@trailstep/core";
 export {

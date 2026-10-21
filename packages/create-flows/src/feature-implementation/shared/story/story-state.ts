@@ -1,5 +1,5 @@
 import { type Document, state } from "@trailstep/authoring";
-import { runGit } from "../commit-reviewed-story/run-git.js";
+import { runGit } from "../../commit-reviewed-story/run-git.js";
 
 export const STORY_STATE_KEYS = {
   activePhase: "activePhase",

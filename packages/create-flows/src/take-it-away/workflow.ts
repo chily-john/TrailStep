@@ -1,10 +1,10 @@
 import { defineWorkflow } from "@trailstep/authoring";
 import { initializeTakeItAwayStep } from "../feature-implementation/initialize-take-it-away/step.js";
-import { featureImplementationAgents } from "../feature-implementation/shared/agent-roles.js";
-import { takeItAwayInput } from "../feature-implementation/shared/input-schema.js";
-import { takeItAwayOutput } from "../feature-implementation/shared/output-schema.js";
+import { featureImplementationAgents } from "../shared/agent-roles.js";
+import { takeItAwayInput } from "../shared/input-schema.js";
+import { takeItAwayOutput } from "../shared/output-schema.js";
 
-export type { TakeItAwayInput } from "../feature-implementation/shared/input-schema.js";
+export type { TakeItAwayInput } from "../shared/input-schema.js";
 
 export const takeItAway = defineWorkflow({
   id: "take-it-away",

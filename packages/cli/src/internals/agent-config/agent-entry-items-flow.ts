@@ -1,4 +1,4 @@
-import { CliUsageError } from "../command.types.js";
+import { CliUsageError } from "../command-framework/command.types.js";
 
 export function readAgentEntryItems(value: unknown): readonly Record<string, unknown>[] {
   if (value === undefined) {

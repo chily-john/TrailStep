@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CliUsageError } from "../../command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { parseRunArgs } from "./parse-run-args.js";
 
 describe("parseRunArgs", () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TrailStepCliPrompts } from "../command.types.js";
+import type { TrailStepCliPrompts } from "../command-framework/command.types.js";
 import { configureLiteralAgentTarget } from "./configure-target-flow.js";
 
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");

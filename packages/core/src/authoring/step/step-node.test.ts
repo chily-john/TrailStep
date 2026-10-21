@@ -1,11 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type { Workflow } from "../workflow/workflow.types.js";
-import type {
-  ContinuationArray,
-  ContinuationResult,
-  WorkflowInvocationNode,
-} from "./continuation.types.js";
+import type { Workflow, WorkflowInvocationNode } from "../workflow/workflow.types.js";
+import type { ContinuationArray, ContinuationResult } from "./continuation.types.js";
 import {
   absoluteDone,
   absoluteFail,

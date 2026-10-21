@@ -1,4 +1,4 @@
-import { CliUsageError } from "../../command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import type { ContinueCommandArgs } from "./continue-command.types.js";
 
 export function parseContinueInvocation(argv: readonly string[]): ContinueCommandArgs {

@@ -7,7 +7,6 @@ import type { RunContextState } from "../../contracts/run-context/run-context.ty
 import type { PlainObject, ShapeInput } from "../../contracts/shapes/shape.types.js";
 import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TimeoutPolicyInput } from "../../runtime/timeout/timeout-policy.js";
-import type { Workflow } from "../workflow/workflow.types.js";
 
 /** A local text file to load a prompt's content from, resolved relative to the workflow/project `cwd` at dispatch time. */
 export interface PromptTemplateSource {
@@ -376,18 +375,6 @@ export interface WorkflowInvocationOptions {
 export type PostContinuation<TOutput extends PlainObject = PlainObject> = {
   bivarianceHack(output: TOutput): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
-
-export interface WorkflowInvocationNode<
-  TInput extends PlainObject = PlainObject,
-  TOutput extends PlainObject = PlainObject,
-> {
-  readonly kind: "workflowInvocation";
-  readonly workflow: Workflow<TInput, TOutput>;
-  readonly input: TInput;
-  readonly options?: WorkflowInvocationOptions;
-  post(continuation: PostContinuation<TOutput>): WorkflowInvocationNode<TInput, TOutput>;
-  readonly postContinuation?: PostContinuation<TOutput>;
-}
 
 export interface AbsoluteDoneNode<TOutput extends PlainObject = PlainObject> {
   readonly kind: "absoluteDone";

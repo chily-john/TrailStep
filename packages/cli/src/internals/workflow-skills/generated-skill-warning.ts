@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { CliCommandContext } from "../command.types.js";
+import type { CliCommandContext } from "../command-framework/command.types.js";
 import { workflowSkillName } from "./workflow-skill-content.js";
 
 export async function warnIfGeneratedSkillDirectoryExists(

@@ -3,8 +3,12 @@ import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promi
 import { delimiter, join, resolve } from "node:path";
 import type { TrailStepProviderManifest } from "@trailstep/core";
 import * as trailstepCore from "@trailstep/core";
-import type { CliCommand, CliCommandContext, PackageCommandRunner } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type {
+  CliCommand,
+  CliCommandContext,
+  PackageCommandRunner,
+} from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import {
   createPackageAddCommand,
   defaultPackageCommandRunner,

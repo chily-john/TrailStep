@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { resolveCommand } from "../../command-registry.js";
+import { resolveCommand } from "../../command-framework/command-registry.js";
 
 function tmpDir(task: { readonly id: string }): string {
   return join(

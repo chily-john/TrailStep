@@ -1,6 +1,6 @@
 import { type Document, jsonSchema, promptSections, section } from "@trailstep/authoring";
 import type { ExploreStoryOutput } from "../explore-story/prompt.js";
-import { storyViewForImplementer } from "../shared/story-view.js";
+import { storyViewForImplementer } from "../shared/story/story-view.js";
 import type { WriteRedTestsOutput } from "../write-red-tests/prompt.js";
 
 export interface ImplementGreenValidationCommand extends Record<string, unknown> {

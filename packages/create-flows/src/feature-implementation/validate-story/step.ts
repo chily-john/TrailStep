@@ -5,7 +5,7 @@ import {
   loadStoryPhaseContext,
   loadStoryReviewGitContext,
   STORY_STATE_KEYS,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 import type { ValidateStoryInput, ValidateStoryOutput } from "./prompt.js";
 import { runFocusedStoryValidation } from "./validation-runner.js";
 

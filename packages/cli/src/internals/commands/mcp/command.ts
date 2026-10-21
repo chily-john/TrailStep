@@ -1,7 +1,7 @@
 import path from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "@trailstep/mcp";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 
 interface McpCommandArgs {
   readonly project?: string;

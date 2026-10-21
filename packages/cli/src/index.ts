@@ -11,8 +11,8 @@ import {
   type PackageCommandRunner,
   type TrailStepCliPrompts,
   usageText,
-} from "./internals/command.types.js";
-import { resolveCommand } from "./internals/command-registry.js";
+} from "./internals/command-framework/command.types.js";
+import { resolveCommand } from "./internals/command-framework/command-registry.js";
 import { CliInputError } from "./internals/commands/run/load-run-input.js";
 import { CliConfigError } from "./internals/config/config.js";
 import type { TrailStepDeprecationEntry } from "./internals/deprecation-scan/deprecation-scanner.js";

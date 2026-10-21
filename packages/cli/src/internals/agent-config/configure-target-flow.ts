@@ -12,11 +12,11 @@ import {
   type PackageCommandRunner,
   type TrailStepCliIo,
   type TrailStepCliPrompts,
-} from "../command.types.js";
-import { officialProviderSpecFor } from "../official-provider-specs.js";
+} from "../command-framework/command.types.js";
 import {
   isOfficialProviderPackageName,
   officialProviderIdForSelection,
+  officialProviderSpecFor,
 } from "../providers/official-providers.js";
 import { discoverPiModelOverrides } from "./pi-model-discovery.js";
 

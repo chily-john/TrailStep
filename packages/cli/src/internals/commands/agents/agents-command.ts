@@ -24,8 +24,8 @@ import {
   type AgentConfigSaveContext,
   confirmAgentConfigSave,
 } from "../../agent-config/save-confirm-flow.js";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { loadTrailStepProjectConfig } from "../../config/config.js";
 import {
   configPathForScope,

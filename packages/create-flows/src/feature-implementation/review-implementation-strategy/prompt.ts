@@ -1,7 +1,7 @@
 import type { Document } from "@trailstep/authoring";
 import { list, promptSections, section } from "@trailstep/authoring";
-import methodologyFragment from "../shared/feature-methodology.md?raw";
-import implementationStrategyFormatFragment from "../shared/implementation-strategy-format.md?raw";
+import methodologyFragment from "../prompts/feature-methodology.md?raw";
+import implementationStrategyFormatFragment from "../prompts/implementation-strategy-format.md?raw";
 
 const fragments = {
   methodology: methodologyFragment.trimEnd(),

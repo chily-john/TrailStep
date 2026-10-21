@@ -1,6 +1,6 @@
 import type { Workflow } from "@trailstep/core";
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { workflowInputSchema } from "../run/input-overrides.js";
 

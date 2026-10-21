@@ -2,7 +2,7 @@ import type { WorkflowAgentThinking } from "../../contracts/agents/agent-role.ty
 import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
-} from "../../runtime/run-workflow/run-workflow.types.js";
+} from "../../contracts/process/interactive-process.types.js";
 
 /**
  * Request shape for a built-in provider's non-interactive ("working") invocation.

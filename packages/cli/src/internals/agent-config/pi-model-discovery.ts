@@ -1,6 +1,9 @@
 import { resolveCliCommandForSpawn } from "@trailstep/core";
 
-import type { PackageCommandResult, PackageCommandRunner } from "../command.types.js";
+import type {
+  PackageCommandResult,
+  PackageCommandRunner,
+} from "../command-framework/command.types.js";
 import { defaultPackageCommandRunner } from "../package-manager/package-manager.js";
 
 const DEFAULT_PI_MODEL_DISCOVERY_TIMEOUT_MS = 5_000;

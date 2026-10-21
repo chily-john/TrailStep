@@ -1,6 +1,6 @@
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
-import type { TrailStepDeprecationEntry } from "./deprecation-scan/deprecation-scanner.js";
-import type { SkillsCliProcessRunner, SkillsCliResolver } from "./workflow-skills/skills-cli.js";
+import type { TrailStepDeprecationEntry } from "../deprecation-scan/deprecation-scanner.js";
+import type { SkillsCliProcessRunner, SkillsCliResolver } from "../workflow-skills/skills-cli.js";
 
 export const usageText = [
   "Usage:",

@@ -10,7 +10,7 @@ import {
   runWorkflow,
 } from "@trailstep/core";
 
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { loadTrailStepConfig } from "../../config/config.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { CliInputError } from "../run/load-run-input.js";

@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { Event } from "../../contracts/events/event.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import { isNodeError, isPlainObject } from "../../json/guards.js";
-import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 
-export type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
+export type { Event } from "../../contracts/events/event.types.js";
 
 export type RunState = Record<string, unknown>;
 
@@ -164,9 +164,20 @@ function enqueueAtomicWrite(path: string, task: () => Promise<void>): Promise<vo
 }
 
 /** Codes where a failed replace-rename may be transient (Windows antivirus
- * scans or a competing replace) and worth a short bounded retry. */
+ * scans, a competing replace, or a reader holding the target open) and worth
+ * a bounded retry. */
 const retryableRenameCodes: ReadonlySet<string> = new Set(["EPERM", "EACCES", "EBUSY"]);
-const renameMaxAttempts = 4;
+/**
+ * A replace-rename on Windows fails with EPERM while ANY other process has the
+ * target open without FILE_SHARE_DELETE - including the runtime's own wait
+ * poller reading the answer file, and the dashboard's event reader. The
+ * handle is released as soon as that read completes, so the rename is worth
+ * retrying for a while: a short budget turns a normal concurrent read into a
+ * hard write failure.
+ */
+const renameMaxAttempts = 8;
+const renameBaseBackoffMs = 20;
+const renameMaxBackoffMs = 250;
 
 async function renameWithRetry(from: string, to: string): Promise<void> {
   for (let attempt = 1; ; attempt += 1) {
@@ -181,8 +192,9 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
       ) {
         throw error;
       }
+      const backoff = Math.min(renameBaseBackoffMs * attempt, renameMaxBackoffMs);
       await new Promise((resolve) => {
-        setTimeout(resolve, 25 * attempt);
+        setTimeout(resolve, backoff);
       });
     }
   }

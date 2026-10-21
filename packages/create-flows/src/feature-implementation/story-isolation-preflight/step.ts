@@ -9,7 +9,7 @@ import {
   STORY_STATE_KEYS,
   type StoryPreflightStatus,
   type StoryRouterState,
-} from "../shared/story-state.js";
+} from "../shared/story/story-state.js";
 
 export interface StoryIsolationPreflightInput extends Record<string, unknown> {
   readonly currentStory: Document;

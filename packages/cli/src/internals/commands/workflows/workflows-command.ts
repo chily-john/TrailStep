@@ -1,5 +1,5 @@
-import type { CliCommand, CliCommandContext } from "../../command.types.js";
-import { CliUsageError } from "../../command.types.js";
+import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { CliUsageError } from "../../command-framework/command.types.js";
 import { discoverWorkflows } from "../../discovery/discovery.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import {

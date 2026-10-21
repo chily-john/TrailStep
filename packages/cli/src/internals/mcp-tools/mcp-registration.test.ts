@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { TrailStepCliIo, TrailStepCliPrompts } from "../command.types.js";
+import type { TrailStepCliIo, TrailStepCliPrompts } from "../command-framework/command.types.js";
 import {
   buildAddMcpSpawnRequest,
   buildTrailStepMcpServerCommand,

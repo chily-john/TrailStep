@@ -47,7 +47,6 @@ export type {
   WaitOptions,
   WaitPendingInput,
   WaitPendingResult,
-  WorkflowInvocationNode,
   WorkflowInvocationOptions,
 } from "./step/continuation.types.js";
 export {
@@ -72,3 +71,4 @@ export {
   type WorkflowBuilderOptions,
 } from "./workflow/define-workflow.js";
 export { type DeepReadonly, type WorkflowInputApi, workflow } from "./workflow/workflow.js";
+export type { WorkflowInvocationNode } from "./workflow/workflow.types.js";

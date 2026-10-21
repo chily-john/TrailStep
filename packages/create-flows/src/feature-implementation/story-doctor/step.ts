@@ -1,5 +1,5 @@
 import { state, step } from "@trailstep/authoring";
-import { incrementStoryPhaseAttempt, STORY_STATE_KEYS } from "../shared/story-state.js";
+import { incrementStoryPhaseAttempt, STORY_STATE_KEYS } from "../shared/story/story-state.js";
 import { validateStoryStep } from "../validate-story/step.js";
 import {
   type StoryDoctorInput,

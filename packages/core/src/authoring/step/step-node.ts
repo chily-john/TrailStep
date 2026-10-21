@@ -9,6 +9,7 @@ import type {
   ContinuationStepConfig,
   DisplayPhase,
   DoneNode,
+  DoOptions,
   DoPhase,
   FailNode,
   ParallelNode,
@@ -59,9 +60,11 @@ interface StepBuilder {
   ): PromptedStepBuilder<TInput, TOutput>;
   do<TInput extends PlainObject = PlainObject>(
     onOutput: StepContextContinuation<TInput, TInput>,
+    options?: DoOptions,
   ): FluentStepFactory<TInput, TInput>;
   do<TInput extends PlainObject = PlainObject>(
     onOutput: StepContinuation<TInput, TInput>,
+    options?: DoOptions,
   ): FluentStepFactory<TInput, TInput>;
 }
 
@@ -78,8 +81,14 @@ interface PromptedStepBuilder<
     wait: CheckWaitCallback<TInput, TOutput, TWaitOutput>,
     options: WaitOptions<TWaitOutput>,
   ): PromptedStepBuilder<TInput, TOutput>;
-  do(onOutput: StepContextContinuation<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
-  do(onOutput: StepContinuation<TInput, TOutput>): FluentStepFactory<TInput, TOutput>;
+  do(
+    onOutput: StepContextContinuation<TInput, TOutput>,
+    options?: DoOptions,
+  ): FluentStepFactory<TInput, TOutput>;
+  do(
+    onOutput: StepContinuation<TInput, TOutput>,
+    options?: DoOptions,
+  ): FluentStepFactory<TInput, TOutput>;
 }
 
 type FluentStepFactory<
@@ -119,9 +128,13 @@ export function step(config: StepConfig): StepBuilder {
         promptPhase(source, options),
       ]);
     },
-    do<TInput extends PlainObject = PlainObject>(onOutput: StepContinuation<TInput, TInput>) {
+    do<TInput extends PlainObject = PlainObject>(
+      onOutput: StepContinuation<TInput, TInput>,
+      options?: DoOptions,
+    ) {
+      assertDoOptions(options);
       return buildFactory<TInput, TInput>(
-        [...(phaseTemplates as readonly StepPhase<TInput, TInput>[]), doPhase(onOutput)],
+        [...(phaseTemplates as readonly StepPhase<TInput, TInput>[]), doPhase(onOutput, options)],
         onOutput,
       );
     },
@@ -139,8 +152,9 @@ export function step(config: StepConfig): StepBuilder {
     ) {
       return makePromptedBuilder([...phaseTemplates, waitPhase(wait, options)]);
     },
-    do(onOutput) {
-      return buildFactory([...phaseTemplates, doPhase(onOutput)], onOutput);
+    do(onOutput, options) {
+      assertDoOptions(options);
+      return buildFactory([...phaseTemplates, doPhase(onOutput, options)], onOutput);
     },
   });
 
@@ -340,8 +354,27 @@ function promptPhase<TInput extends PlainObject, TOutput extends PlainObject>(
 
 function doPhase<TInput extends PlainObject, TOutput extends PlainObject>(
   onOutput: StepContinuation<TInput, TOutput> | StepContextContinuation<TInput, TOutput>,
+  options?: DoOptions,
 ): DoPhase<TInput, TOutput> {
-  return { kind: "do", onOutput: onOutput as StepContinuation<TInput, TOutput> };
+  return {
+    kind: "do",
+    onOutput: onOutput as StepContinuation<TInput, TOutput>,
+    ...(options?.idempotent === undefined ? {} : { idempotent: options.idempotent }),
+  };
+}
+
+function assertDoOptions(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new TypeError("do(...) options must be an object.");
+  }
+
+  if (value.idempotent !== undefined && typeof value.idempotent !== "boolean") {
+    throw new TypeError("do(...) idempotent must be a boolean.");
+  }
 }
 
 function promptOptionsForConfig<TInput extends PlainObject, TOutput extends PlainObject>(

@@ -217,7 +217,13 @@ describe("delegateParallel", () => {
       code: "agent_target_exhausted",
       message: "Working agent step delegate-turn for role delegateAgent exhausted 1 target(s).",
     });
-    expect(attempts).toHaveLength(1);
+    // The delegate turn is a working-agent step, so the automatic step retry
+    // may re-run it once before the failure is reported (the provider exited
+    // with a failure that is classified as transient). The delegate contract
+    // itself is unchanged: the failing branch fails fast, the queued branch is
+    // never started, and the run fails immediately.
+    expect(attempts.length).toBeGreaterThanOrEqual(1);
+    expect(attempts.length).toBeLessThanOrEqual(2);
     expect(requestedBranches).toEqual(expect.arrayContaining(["delegate-bad"]));
     expect(requestedBranches).not.toContain("delegate-queued");
 

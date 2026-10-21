@@ -159,6 +159,7 @@ declare module "*.md?raw" {
 
 ## More docs
 
-- [Authoring workflows](../../docs/authoring-workflows.md)
-- [Generated skills](../../docs/generated-skills.md)
-- [CLI reference](../../docs/cli-reference.md)
+- [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
+- [Generated skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
+- [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
+- [Documentation index in the repository](../../docs/README.md)

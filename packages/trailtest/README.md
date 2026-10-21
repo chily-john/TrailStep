@@ -4,4 +4,4 @@
 
 This workspace package contains testing utilities for TrailStep workflows and packages while the public testing surface is still being finalized (`trailtest` is the product name for the test runner/helpers; `testkit` remains as a deprecated alias export).
 
-For workflow authoring guidance, see [Authoring workflows](../../docs/authoring-workflows.md).
+For workflow authoring guidance, see [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/).

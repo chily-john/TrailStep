@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const CANCELLATION_MARKER_FILE = "cancel.json";
@@ -63,6 +63,23 @@ export async function writeCancellationMarker(options: {
   } catch (error) {
     if (isNodeError(error) && error.code === "EEXIST") {
       return { marker: (await readCancellationMarker(options.runDir)) ?? {}, alreadyExisted: true };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Remove a pending cancellation marker. Returns true when a marker existed and
+ * was removed, false when there was nothing to clear. Consuming the marker is
+ * what lets a cancelled run be continued again instead of staying bricked.
+ */
+export async function clearCancellationMarker(runDir: string): Promise<boolean> {
+  try {
+    await unlink(cancellationMarkerPath(runDir));
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return false;
     }
     throw error;
   }

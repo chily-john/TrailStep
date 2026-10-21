@@ -20,10 +20,12 @@ describe("usageText", () => {
   });
 
   it("keeps managed session docs on TrailStep naming", async () => {
+    // The canonical docs live in the OpenViking store (see docs/README.md), so
+    // only the docs that remain in-repo are checked here.
     const paths = [
       "../../README.md",
-      "../../docs/cli-reference.md",
-      "../../docs/scopes-and-config.md",
+      "../../docs/README.md",
+      "../../docs/openviking-setup.md",
       "README.md",
     ];
     const docs = await Promise.all(paths.map((path) => readFile(path, "utf8")));

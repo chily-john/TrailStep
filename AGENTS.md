@@ -2,11 +2,13 @@
 
 TrailStep is a durable, typed, observable workflow harness for coding agents. It is a TypeScript-first pnpm monorepo and a clean-slate project separate from Workflower. Workflows are authored in TypeScript, discovered from packages, run through a continuation runtime, and observed through persisted local run artifacts.
 
-This root context file contains a map of the codebase. The OpenViking index (see `docs/openviking-setup.md`, `viking://resources/trailstep/`) is the primary way to explore it — prefer `openviking_search` / `openviking_find` for discovery and `openviking_read` / `openviking_tree` / `openviking_grep` / `openviking_glob` for traversal. Do not fall back to `rg` / `ls` / direct file reads unless the OpenViking tools are unavailable.
+This root context file contains a map of the codebase. **OpenViking is the canonical documentation and code index for this project**: the full documentation tree lives at `viking://resources/trailstep/docs/` inside the repo index `viking://resources/trailstep/` (setup guide: the committed `docs/openviking-setup.md`). In-repo docs under `docs/` are pointers only — see `docs/README.md`. Prefer `openviking_search` / `openviking_find` for discovery and `openviking_read` / `openviking_tree` / `openviking_grep` / `openviking_glob` for traversal. Do not fall back to `rg` / `ls` / direct file reads unless the OpenViking tools are unavailable.
 
 - For "where is X" / "what depends on Y" / architecture questions: use OpenViking `search` / `find` first, then `tree` / `grep` / `glob` to map structure.
-- For "why is it built this way" / conventions / known pitfalls: living source and tests are authoritative; check `docs/`, ADRs, and nearby README sections via OpenViking `read`.
+- For "why is it built this way" / conventions / known pitfalls: living source and tests are authoritative; read the canonical docs via OpenViking (`viking://resources/trailstep/docs/`) and check nearby package README sections.
 - Use OpenViking `read` / `tree` to verify local style, existing APIs, or implementation details in both cases.
+- Do not author new documentation in the repo — write it into the OpenViking doc store (`viking://resources/trailstep/docs/`). The only in-repo docs are `docs/README.md` (pointer) and `docs/openviking-setup.md` (committed setup guide). Package-level READMEs (`packages/*/README.md`) stay in the repo because they ship to npm; they are not documentation duplication.
+- **Never sync the in-repo `./docs` directory into `viking://resources/trailstep/docs`.** OpenViking's sync-to-existing deletes entries missing from the source, and the in-repo `docs/` folder only holds pointers, so such an import WIPES the canonical documentation. Refresh the index with `scripts/refresh-openviking-index.sh` (code trees only) and restore wiped docs with `scripts/refresh-openviking-index.sh --restore-docs` (reads `git show HEAD:docs/<file>` and re-imports). Repo-root imports must keep `.claude`, `.agents` and `.pi` in `--ignore-dirs` or they fail with an `IO Error` on those symlinks.
 
 ## Project Structure
 

@@ -149,6 +149,169 @@ describe("cancel command", () => {
     expect(errors).toEqual([]);
   });
 
+  it("writes conforming evt_ ids for cancellation events", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-evt-ids`);
+    await rm(cwd, { recursive: true, force: true });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("step.started", { runId: "delegate-run", workflowId: "delegate", stepId: "ask" }),
+      event("wait.started", {
+        runId: "delegate-run",
+        workflowId: "delegate",
+        stepId: "ask",
+        payload: {
+          waitId: "approval",
+          message: "Approve?",
+          artifactPaths: { answerFile: "steps/0001-ask/waits/approval/answer.json" },
+        },
+      }),
+    ]);
+
+    await expect(
+      main({
+        argv: ["cancel", "delegate-run"],
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    const appended = eventText
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { id: string; type: string })
+      .filter((parsed) =>
+        ["workflow.cancelRequested", "step.cancelled", "workflow.cancelled"].includes(parsed.type),
+      );
+    expect(appended).toHaveLength(3);
+    for (const parsed of appended) {
+      expect(parsed.id).toMatch(/^evt_/);
+    }
+  });
+
+  it("emits the terminal workflow.cancelled event even without a pending wait", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-no-wait`);
+    await rm(cwd, { recursive: true, force: true });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("step.started", { runId: "delegate-run", workflowId: "delegate", stepId: "ask" }),
+    ]);
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["cancel", "delegate-run"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(eventText).toContain("workflow.cancelRequested");
+    expect(eventText).toContain("workflow.cancelled");
+    expect(eventText).not.toContain("step.cancelled");
+    expect(lines.join("\n")).toContain("Cancellation requested: delegate-run");
+  });
+
+  it("cancelling twice is safe and records a single cancellation cycle", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-twice`);
+    await rm(cwd, { recursive: true, force: true });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("step.started", { runId: "delegate-run", workflowId: "delegate", stepId: "ask" }),
+      event("wait.started", {
+        runId: "delegate-run",
+        workflowId: "delegate",
+        stepId: "ask",
+        payload: {
+          waitId: "approval",
+          message: "Approve?",
+          artifactPaths: { answerFile: "steps/0001-ask/waits/approval/answer.json" },
+        },
+      }),
+    ]);
+    const lines: string[] = [];
+    const io = { writeLine: (line: string) => lines.push(line), writeError: () => undefined };
+
+    await expect(main({ argv: ["cancel", "delegate-run"], cwd, io })).resolves.toBe(0);
+    await expect(main({ argv: ["cancel", "delegate-run"], cwd, io })).resolves.toBe(0);
+
+    expect(lines.join("\n")).toContain("Cancellation requested: delegate-run");
+    expect(lines.join("\n")).toContain("Run already cancelled: delegate-run");
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(eventText.match(/"type":"workflow.cancelRequested"/g)).toHaveLength(1);
+    expect(eventText.match(/"type":"workflow.cancelled"/g)).toHaveLength(1);
+    expect(eventText.match(/"type":"step.cancelled"/g)).toHaveLength(1);
+  });
+
+  it("clears a pending cancellation marker without starting a run", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-clear`);
+    await rm(cwd, { recursive: true, force: true });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("step.started", { runId: "delegate-run", workflowId: "delegate", stepId: "ask" }),
+      event("wait.started", {
+        runId: "delegate-run",
+        workflowId: "delegate",
+        stepId: "ask",
+        payload: {
+          waitId: "approval",
+          message: "Approve?",
+          artifactPaths: { answerFile: "steps/0001-ask/waits/approval/answer.json" },
+        },
+      }),
+    ]);
+    await writeJson(join(runDir, "cancel.json"), {
+      requestedAt: "2026-01-01T00:00:00.000Z",
+      reason: "Pending.",
+      source: "cli",
+    });
+    const eventsBefore = await readFile(join(runDir, "events.jsonl"), "utf8");
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["cancel", "delegate-run", "--clear"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).rejects.toThrow();
+    expect(lines.join("\n")).toContain("Cleared pending cancellation: delegate-run");
+    // Clearing must not start, resume, or otherwise mutate the run.
+    await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toBe(eventsBefore);
+
+    lines.length = 0;
+    await expect(
+      main({
+        argv: ["cancel", "delegate-run", "--clear"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+    expect(lines.join("\n")).toContain("No pending cancellation to clear: delegate-run");
+  });
+
+  it("requires a run target for --clear and rejects --clear with --reason", () => {
+    expect(() => cancelCommand.parseArgs(["cancel", "--clear"])).toThrow(/requires a run/i);
+    expect(() =>
+      cancelCommand.parseArgs(["cancel", "delegate-run", "--clear", "--reason", "x"]),
+    ).toThrow(/--reason/i);
+    expect(cancelCommand.parseArgs(["cancel", "delegate-run", "--clear"])).toEqual({
+      runNameOrRunDir: "delegate-run",
+      clear: true,
+    });
+  });
+
   it("reports an already completed workflow run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-completed-run`);
     await rm(cwd, { recursive: true, force: true });
@@ -170,13 +333,16 @@ describe("cancel command", () => {
     expect(lines.join("\n")).toContain("Run already completed: delegate-run");
   });
 
-  it("is idempotent for an already cancelled workflow run", async ({ task }) => {
+  it("is idempotent for an already cancelled workflow run and repairs its terminal event", async ({
+    task,
+  }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-cancelled-run`);
     await rm(cwd, { recursive: true, force: true });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
       event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelRequested", { runId: "delegate-run", workflowId: "delegate" }),
     ]);
     await writeJson(join(runDir, "cancel.json"), { requestedAt: "2026-01-01T00:00:00.000Z" });
     const lines: string[] = [];
@@ -189,6 +355,11 @@ describe("cancel command", () => {
 
     expect(exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Run already cancelled: delegate-run");
+    // A run that was stuck in cancelRequested reaches workflow.cancelled so it
+    // is never left permanently half-cancelled.
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(eventText).toContain("workflow.cancelled");
+    expect(eventText.match(/"type":"workflow.cancelRequested"/g)).toHaveLength(1);
   });
 
   it("rejects an already completed session", async ({ task }) => {

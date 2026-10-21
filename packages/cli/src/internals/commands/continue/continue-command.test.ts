@@ -273,7 +273,9 @@ describe("continue command", () => {
     expect(lines.join("\n")).toMatch(/still waiting|missing answer/i);
   });
 
-  it("reports a cancelled waiting workflow without resuming", async ({ task }) => {
+  it("clears the pending cancellation and resumes a cancelled waiting workflow", async ({
+    task,
+  }) => {
     const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-cancelled");
     await writeWaitingWorkflowFile(cwd, { dynamicWait: true });
     await main({
@@ -289,6 +291,14 @@ describe("continue command", () => {
       env: {},
       io: { writeLine: () => undefined, writeError: () => undefined },
     });
+    const runDir = join(cwd, ".trailstep", "runs", "wait-run");
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).resolves.toContain("requestedAt");
+    await main({
+      argv: ["answer", "wait-run", "approval", "--json", '{"approved":true}'],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
     const lines: string[] = [];
 
     await expect(
@@ -300,15 +310,77 @@ describe("continue command", () => {
       }),
     ).resolves.toBe(0);
 
-    expect(lines.join("\n")).toContain("Workflow cancelled: wait-run");
+    // A cancelled run is continuable: the pending cancellation is consumed and
+    // the run resumes from the wait it was stopped at.
+    expect(lines.join("\n")).toContain("Cleared pending cancellation: wait-run");
+    expect(lines.join("\n")).toContain("Workflow completed:");
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).rejects.toThrow();
+    // The wait callback is not re-executed; the recorded answer is reused.
     await expect(readFile(join(cwd, "wait-count.txt"), "utf8")).resolves.toBe("1");
-    const events = await readFile(
-      join(cwd, ".trailstep", "runs", "wait-run", "events.jsonl"),
-      "utf8",
-    );
+    const events = await readFile(join(runDir, "events.jsonl"), "utf8");
     expect(events).toContain("workflow.cancelRequested");
     expect(events).toContain("workflow.cancelled");
-    expect(events).not.toContain("workflow.completed");
+    expect(events).toContain("workflow.resumed");
+    expect(events).toContain("workflow.completed");
+  });
+
+  it("keeps a cancelled waiting workflow continuable when no answer exists yet", async ({
+    task,
+  }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "wait-cancelled-no-answer");
+    await writeWaitingWorkflowFile(cwd, { dynamicWait: true });
+    await main({
+      argv: ["./workflows/waiting.mjs", "wait-run", "--input", JSON.stringify({ cwd })],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    await main({
+      argv: ["cancel", "wait-run"],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    const runDir = join(cwd, ".trailstep", "runs", "wait-run");
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["continue", "wait-run"],
+        cwd,
+        env: {},
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    // The cancellation marker is consumed even when the run cannot advance yet,
+    // so the run is never permanently bricked by a cancellation.
+    expect(lines.join("\n")).toContain("Cleared pending cancellation: wait-run");
+    expect(lines.join("\n")).toMatch(/still waiting|missing answer/i);
+    expect(lines.join("\n")).not.toContain("Workflow cancelled: wait-run");
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(cwd, "wait-count.txt"), "utf8")).resolves.toBe("1");
+
+    // The run is still continuable: answering and continuing again resumes it.
+    await main({
+      argv: ["answer", "wait-run", "approval", "--json", '{"approved":true}'],
+      cwd,
+      env: {},
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+    lines.length = 0;
+
+    await expect(
+      main({
+        argv: ["continue", "wait-run"],
+        cwd,
+        env: {},
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    expect(lines.join("\n")).toContain("Workflow completed:");
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).rejects.toThrow();
   });
 
   it("reruns a check wait without requiring an answer file", async ({ task }) => {

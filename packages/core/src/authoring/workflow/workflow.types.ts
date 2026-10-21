@@ -26,6 +26,15 @@ export interface Workflow<
   readonly inputShape?: ShapeInput<TInput>;
   readonly outputShape?: ShapeInput<TOutput>;
   readonly agents?: Readonly<Record<string, WorkflowAgentRole>>;
+  /**
+   * Workflow-level automatic retry policy applied to this workflow's steps
+   * when a step does not configure its own `retry`. Resolution order across
+   * the runtime is step > workflow > global (`settings.retry`) with a built-in
+   * default of `maxAttempts: 2`.
+   *
+   * `retryOn` selects WHICH failures may be retried: `"transient"` (default)
+   * retries only transient failures; `"always"` retries every failure.
+   */
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
   readonly start: (input: TInput) => ContinuationResult<TOutput>;

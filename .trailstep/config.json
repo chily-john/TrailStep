@@ -4,11 +4,21 @@
     "grillingAgent": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "featureWriter": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -18,11 +28,21 @@
     "planner": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "reviewer": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -32,11 +52,21 @@
     "storyExplorer": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "testWriter": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -46,11 +76,21 @@
     "storyImplementer": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "storyDoctor": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -60,6 +100,11 @@
     "validator": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
@@ -67,11 +112,21 @@
     "storyReviewer": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "generalist": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -86,11 +141,21 @@
     "explorer": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "quick-implementor": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -100,11 +165,21 @@
     "smart-implementor": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "debugger": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -114,11 +189,21 @@
     "expert": [
       {
         "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
+        "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
         "thinking": "max"
       }
     ],
     "formatter": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi",
         "model": "openrouter/z-ai/glm-5.3-flash",
@@ -127,22 +212,32 @@
     ],
     "fixer": [
       {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
+      {
         "ref": "debugger"
       }
     ],
     "delegateAgent": [
       {
         "provider": "pi",
-        "model": "openrouter/z-ai/glm-5.3-flash",
-        "thinking": "max"
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
       },
       {
         "provider": "pi",
-        "model": "openrouter/z-ai/glm-5.3-flash",
-        "thinking": "max"
+        "model": "openrouter/deepseek/deepseek-v4-flash-0731",
+        "thinking": "low"
       }
     ],
     "default": [
+      {
+        "provider": "pi",
+        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "thinking": "medium"
+      },
       {
         "provider": "pi"
       }

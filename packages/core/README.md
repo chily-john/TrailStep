@@ -41,6 +41,7 @@ export const trailstepProvider = {
 
 ## More docs
 
-- [Architecture](../../docs/architecture.md)
-- [Authoring workflows](../../docs/authoring-workflows.md)
-- [CLI reference](../../docs/cli-reference.md)
+- [Architecture (canonical copy in OpenViking)](viking://resources/trailstep/docs/architecture/architecture.md)
+- [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
+- [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
+- [Documentation index in the repository](../../docs/README.md)

@@ -1,7 +1,10 @@
 import type { StepNode } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import { replayCompletedSteps } from "../resume/replay-completed-steps/replay-completed-steps.js";
+import {
+  nonIdempotentReplayRefusal,
+  replayCompletedSteps,
+} from "../resume/replay-completed-steps/replay-completed-steps.js";
 import type { Event, RunWorkflowOptions } from "../run-workflow/run-workflow.types.js";
 import { selectLatestUnresolvedFailure } from "./latest-unresolved-failure.js";
 
@@ -80,6 +83,20 @@ export async function replayToRetryFailure<
   }
 
   const { node } = replay;
+  // The retried step re-executes its do phase. When that phase is explicitly
+  // non-idempotent and the trail already shows a failed attempt for the step,
+  // retry must refuse instead of silently re-running the side effect. The
+  // replay window above excludes the failure event itself, so the refusal
+  // check consults the full trail.
+  const nonIdempotentRefusal = nonIdempotentReplayRefusal({
+    node,
+    events: options.events,
+    stepId: failure.stepId,
+  });
+  if (nonIdempotentRefusal) {
+    return { status: "failure", failure: nonIdempotentRefusal };
+  }
+
   if (node.onError) {
     return {
       status: "failure",

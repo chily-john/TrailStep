@@ -62,6 +62,13 @@ export async function replayCompletedSteps<
       };
     }
 
+    if (doPhaseIsNonIdempotent(node)) {
+      return {
+        status: "failure",
+        failure: nonIdempotentReplayFailure(node.config.id),
+      };
+    }
+
     if (hasPromptPhase(node)) {
       const recordedOutput = readPlainPayload(completedEvent, "output");
       if (!recordedOutput) {
@@ -140,7 +147,62 @@ export async function replayCompletedSteps<
     };
   }
 
+  // Re-entering the target step re-executes its do phase. When that phase is
+  // explicitly non-idempotent and the trail shows the step already failed an
+  // attempt, replay must refuse rather than silently run it again.
+  const nonIdempotentRefusal = nonIdempotentReplayRefusal({
+    node,
+    events: options.events,
+    stepId: options.targetStepId,
+  });
+  if (nonIdempotentRefusal) {
+    return { status: "failure", failure: nonIdempotentRefusal };
+  }
+
   return { status: "success", node };
+}
+
+/**
+ * Refusal for replaying a step whose do phase is explicitly non-idempotent
+ * after the trail already shows a failed attempt for it.
+ *
+ * Shared by the resume path (which replays the full trail) and the manual
+ * retry path (whose replay window excludes the failure event itself, so it
+ * must consult the full trail).
+ */
+export function nonIdempotentReplayRefusal(options: {
+  readonly node: StepNode;
+  readonly events: readonly Event[];
+  readonly stepId: string;
+}): Failure | undefined {
+  if (!doPhaseIsNonIdempotent(options.node)) {
+    return undefined;
+  }
+
+  if (!targetHasFailedAttempt(options.events, options.stepId)) {
+    return undefined;
+  }
+
+  return nonIdempotentReplayFailure(options.stepId);
+}
+
+function doPhaseIsNonIdempotent(node: StepNode): boolean {
+  return getStepPhases(node).some((phase) => phase.kind === "do" && phase.idempotent === false);
+}
+
+function targetHasFailedAttempt(events: readonly Event[], stepId: string): boolean {
+  return events.some(
+    (event) =>
+      event.stepId === stepId &&
+      (event.type === "step.failed" || event.type === "step.attemptFailed"),
+  );
+}
+
+function nonIdempotentReplayFailure(stepId: string): Failure {
+  return replayFailure(
+    "resume_non_idempotent_step",
+    `Refusing to re-execute step '${stepId}': its do phase is marked non-idempotent (.do(fn, { idempotent: false })). Replay would have to run that phase again, and the event trail does not record the continuation it produced, so it cannot be skipped safely. Re-author the phase as idempotent (the default .do(fn)), or start a fresh run instead of resuming/retrying.`,
+  );
 }
 
 async function replayStepPhases(

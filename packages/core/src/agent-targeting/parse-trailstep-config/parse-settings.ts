@@ -22,10 +22,14 @@ export function parseSettings(
     if (!isRecord(value.retry)) {
       diagnostics.push(`${path}.retry must be an object when present.`);
       delete settings.retry;
-    } else if (value.retry.maxAttempts === undefined) {
+    } else if (value.retry.maxAttempts === undefined && value.retry.retryOn === undefined) {
       delete settings.retry;
     } else {
-      settings.retry = { maxAttempts: value.retry.maxAttempts } satisfies RetryPolicyInput;
+      const retry: RetryPolicyInput = {
+        ...(value.retry.maxAttempts === undefined ? {} : { maxAttempts: value.retry.maxAttempts }),
+        ...(value.retry.retryOn === undefined ? {} : { retryOn: value.retry.retryOn }),
+      };
+      settings.retry = retry;
     }
   }
 

@@ -9,11 +9,36 @@ describe("resolveRetryPolicy", () => {
     const workflow = { maxAttempts: 4 };
     const step = { maxAttempts: 1 };
 
-    expect(resolveRetryPolicy({ global, workflow, step })).toEqual({ maxAttempts: 1 });
-    expect(resolveRetryPolicy({ global, workflow })).toEqual({ maxAttempts: 4 });
-    expect(resolveRetryPolicy({ global })).toEqual({ maxAttempts: 3 });
-    expect(resolveRetryPolicy({})).toEqual({ maxAttempts: 2 });
-    expect(resolveRetryPolicy({ global, workflow, step: {} })).toEqual({ maxAttempts: 4 });
+    expect(resolveRetryPolicy({ global, workflow, step })).toEqual({
+      maxAttempts: 1,
+      retryOn: "transient",
+    });
+    expect(resolveRetryPolicy({ global, workflow })).toEqual({
+      maxAttempts: 4,
+      retryOn: "transient",
+    });
+    expect(resolveRetryPolicy({ global })).toEqual({ maxAttempts: 3, retryOn: "transient" });
+    expect(resolveRetryPolicy({})).toEqual({ maxAttempts: 2, retryOn: "transient" });
+    expect(resolveRetryPolicy({ global, workflow, step: {} })).toEqual({
+      maxAttempts: 4,
+      retryOn: "transient",
+    });
+  });
+
+  it("resolves retryOn independently of maxAttempts across tiers", () => {
+    expect(resolveRetryPolicy({ step: { retryOn: "always" } })).toEqual({
+      maxAttempts: 2,
+      retryOn: "always",
+    });
+    expect(resolveRetryPolicy({ global: { retryOn: "always" }, step: { maxAttempts: 3 } })).toEqual(
+      { maxAttempts: 3, retryOn: "always" },
+    );
+  });
+
+  it("rejects an unknown retryOn mode", () => {
+    expect(() => resolveRetryPolicy({ step: { retryOn: "sometimes" } })).toThrow(
+      'retry.retryOn must be either "transient" or "always".',
+    );
   });
 
   it("rejects maxAttempts below 1", () => {

@@ -71,9 +71,36 @@ Prereqs: Python 3.10+, Node.js 22.19+, the `pi` agent.
    on next `pi` start — do not also `pi install` it) and configures
    `~/.openviking/ovcli.conf`. The script needs network access and writes to
    your home directory; run it outside any sandbox if one blocks it.
-6. Index this repo (from a `pi` session, or `ov add-resource`):
-   - `openviking_add_resource` with this repo root, or
-     `ov add-resource C:\path\to\trailstep`.
+6. Index this repo with the refresh script (from the repo root):
+   ```bash
+   scripts/refresh-openviking-index.sh
+   ```
+   **Do not import the repo root as a single unit.** Two traps:
+   - The `.claude` / `.agents` / `.pi` directories can be symlinks into your
+     agent configuration, and a repo-root import then fails with an
+     `IO Error`. They must stay in `--ignore-dirs`.
+   - The canonical documentation lives in OpenViking at
+     `viking://resources/trailstep/docs/`, while the in-repo `docs/` folder
+     only holds pointers. OpenViking's sync-to-existing behaviour *deletes*
+     entries that are absent from the source, so importing the repo root
+     would **wipe the canonical docs**.
+
+   The refresh script syncs code trees only (`packages/*`, `scripts`,
+   `.github`, `.changeset`, `AGENTS.md`) and refuses to sync `./docs` into
+   the canonical docs URI. If an earlier bad import wiped the canonical
+   docs, restore them from git history:
+   ```bash
+   scripts/refresh-openviking-index.sh --restore-docs
+   ```
+   (that runs `git show HEAD:docs/<file>` into a temp dir and re-imports it
+   into `viking://resources/trailstep/docs`).
+
+   A manual equivalent that keeps the traps handled:
+   ```bash
+   ov add-resource <repo root> --to viking://resources/trailstep --wait \
+     --ignore-dirs "node_modules,dist,.git,.turbo,.trailstep,coverage,.next,.claude,.agents,.pi,.tmp,data,agent"
+   ```
+   — but prefer the script, which never syncs the in-repo `./docs`.
 7. Verify in `pi`: footer shows `OV ✓`, `/viking` prints the session mapping
    and registered tool count.
 

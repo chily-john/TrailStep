@@ -12,13 +12,12 @@ async function readDoc(...segments: string[]): Promise<string> {
 
 describe("provider public docs", () => {
   it("documents package and local-manifest provider registration instead of built-in core providers", async () => {
-    const [rootReadme, cliReadme, cliReference] = await Promise.all([
+    const [rootReadme, cliReadme] = await Promise.all([
       readDoc("README.md"),
       readDoc("packages", "cli", "README.md"),
-      readDoc("docs", "cli-reference.md"),
     ]);
 
-    const publicDocs = [rootReadme, cliReadme, cliReference].join("\n\n");
+    const publicDocs = [rootReadme, cliReadme].join("\n\n");
 
     expect(publicDocs).toContain("trailstep providers add <path-or-package>");
     expect(publicDocs).toContain("trailstep providers add @trailstep/provider-pi --scope project");
@@ -31,13 +30,12 @@ describe("provider public docs", () => {
   });
 
   it("documents the hook trust boundary for provider packages", async () => {
-    const [rootReadme, cliReadme, cliReference] = await Promise.all([
+    const [rootReadme, cliReadme] = await Promise.all([
       readDoc("README.md"),
       readDoc("packages", "cli", "README.md"),
-      readDoc("docs", "cli-reference.md"),
     ]);
 
-    const publicDocs = [rootReadme, cliReadme, cliReference].join("\n\n");
+    const publicDocs = [rootReadme, cliReadme].join("\n\n");
 
     expect(publicDocs).toContain("execute provider package code");
     expect(publicDocs).toContain("trusted like installed npm");

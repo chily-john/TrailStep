@@ -213,6 +213,7 @@ export {
   type TrailStepProviderWorkingManifest,
 } from "./providers/provider-manifest.js";
 export {
+  appendEvent,
   atomicWriteJson,
   defaultRunsRoot,
   readGlobalState,
@@ -225,9 +226,12 @@ export type { CancellationMarker } from "./runtime/cancellation/cancellation.js"
 export {
   CANCELLATION_MARKER_FILE,
   cancellationMarkerPath,
+  cancellationPayload,
+  clearCancellationMarker,
   readCancellationMarker,
   writeCancellationMarker,
 } from "./runtime/cancellation/cancellation.js";
+export { createEvent } from "./runtime/events/create-run-event.js";
 export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export type {
@@ -236,6 +240,13 @@ export type {
   RetryPolicyInput,
 } from "./runtime/retry/retry-policy.js";
 export { resolveRetryPolicy, validateRetryPolicy } from "./runtime/retry/retry-policy.js";
+export type { RetryOnMode } from "./runtime/retry/retryable-failures.js";
+export {
+  isExplicitlyRetryable,
+  isRetryableStepFailure,
+  shouldRetryStepFailure,
+  TRANSIENT_FAILURE_CODES,
+} from "./runtime/retry/retryable-failures.js";
 export type {
   ResolveSpawnRetryPolicyOptions,
   SpawnRetryPolicy,

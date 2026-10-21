@@ -27,6 +27,7 @@ import {
   runContinuation,
   type WaitingWait,
 } from "../continuation/run-continuation/run-continuation.js";
+import type { RetryPolicyInput } from "../retry/retry-policy.js";
 import { createQueuedRunState } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
 import type { TimeoutPolicyInput } from "../timeout/timeout-policy.js";
@@ -47,6 +48,8 @@ interface RunRootContinuationArraySchedulerOptions {
   readonly workers?: number;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowTimeout?: TimeoutPolicyInput;
+  /** Workflow-level retry tier forwarded to each branch's continuation. */
+  readonly workflowRetry?: RetryPolicyInput;
   readonly runDir: string;
   readonly projectCwd?: string;
   readonly cwd: string;
@@ -461,6 +464,7 @@ export async function runRootContinuationArrayScheduler(
         returnContinuationArrays: true,
         workflowAgents: options.workflowAgents,
         workflowTimeout: options.workflowTimeout,
+        ...(options.workflowRetry === undefined ? {} : { workflowRetry: options.workflowRetry }),
         runDir: options.runDir,
         projectCwd: options.projectCwd,
         cwd: options.cwd,

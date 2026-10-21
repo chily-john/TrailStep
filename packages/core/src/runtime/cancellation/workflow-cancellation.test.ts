@@ -1,14 +1,20 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { done, jsonSchema, runWorkflow, step, type Workflow } from "../../index.js";
-import { readCancellationMarker, writeCancellationMarker } from "./cancellation.js";
+import { appendEvent } from "../artifacts/run-storage.js";
+import { createEvent } from "../events/create-run-event.js";
+import {
+  cancellationPayload,
+  readCancellationMarker,
+  writeCancellationMarker,
+} from "./cancellation.js";
 
 describe("workflow cancellation", () => {
-  it("cancels a waiting run durably and continue does not resume work", async () => {
+  it("consumes the cancel marker and resumes a cancelled run on continue", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-cancel-waiting-"));
     let resumed = false;
     const workflow = waitingWorkflow(() => {
@@ -18,14 +24,50 @@ describe("workflow cancellation", () => {
     const waiting = await runWorkflow({ workflow, input: {}, runName: "waiting-run", cwd });
     expect(waiting.status).toBe("waiting");
 
-    await writeCancellationMarker({
+    // Simulate `trailstep cancel`: a cancel.json marker plus the terminal
+    // cancellation events the CLI appends.
+    const { marker } = await writeCancellationMarker({
       runDir: waiting.runDir,
       reason: "No longer needed.",
       source: "test",
     });
-    await mkdir(join(waiting.runDir, "steps", "0001-review", "waits", "approval"), {
-      recursive: true,
-    });
+    const anchor = waiting.events.at(-1);
+    if (!anchor) {
+      throw new Error("waiting run recorded no events");
+    }
+    for (const type of [
+      "workflow.cancelRequested",
+      "step.cancelled",
+      "workflow.cancelled",
+    ] as const) {
+      await appendEvent(
+        waiting.runDir,
+        createEvent({
+          runId: anchor.runId,
+          workflowId: anchor.workflowId,
+          ...(type === "step.cancelled" ? { stepId: "review" } : {}),
+          type,
+          payload: cancellationPayload(marker),
+        }),
+      );
+    }
+
+    // Answer the pending wait so the resumed run can finish.
+    const waitStarted = waiting.events.find((event) => event.type === "wait.started");
+    const artifactPaths = waitStarted?.payload.artifactPaths;
+    if (
+      typeof artifactPaths !== "object" ||
+      artifactPaths === null ||
+      !("answerFile" in artifactPaths) ||
+      typeof artifactPaths.answerFile !== "string"
+    ) {
+      throw new Error("wait.started event is missing its answer artifact path");
+    }
+    await writeFile(
+      join(waiting.runDir, ...artifactPaths.answerFile.split("/")),
+      `${JSON.stringify({ approved: true })}\n`,
+      "utf8",
+    );
 
     const continued = await runWorkflow({
       workflow,
@@ -33,19 +75,15 @@ describe("workflow cancellation", () => {
       continue: { runDir: waiting.runDir },
     });
 
-    expect(continued.status).toBe("cancelled");
-    expect(resumed).toBe(false);
-    expect(await readCancellationMarker(waiting.runDir)).toMatchObject({
-      reason: "No longer needed.",
-      source: "test",
-    });
-    expect(continued.events.map((event) => event.type)).toEqual([
-      "workflow.started",
-      "step.started",
-      "wait.started",
-      "workflow.cancelRequested",
-      "workflow.cancelled",
-    ]);
+    // The cancelled run is not permanently bricked: continue consumes the
+    // marker, re-opens the run with workflow.resumed, and runs to completion.
+    expect(continued.status).toBe("success");
+    expect(resumed).toBe(true);
+    expect(await readCancellationMarker(waiting.runDir)).toBeUndefined();
+    const types = continued.events.map((event) => event.type);
+    expect(types).toContain("workflow.cancelled");
+    expect(types).toContain("workflow.resumed");
+    expect(types).toContain("workflow.completed");
   });
 
   it("aborts a long-running working agent step when cancellation is requested", async () => {

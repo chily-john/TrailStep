@@ -96,13 +96,13 @@ trailstep mcp [--project <dir>]
 trailstep update [--all | --project | --workflows | --workflow <name>] [--yes]
 ```
 
-See the repository [CLI reference](../../docs/cli-reference.md) for the full command list and detailed behavior.
+See the repository [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/) for the full command list and detailed behavior.
 
 ## MCP server
 
 `trailstep mcp` runs the TrailStep MCP server in the foreground over stdio, exposing registered workflows to MCP clients as `trst_*` tools. `trailstep add` generates per-workflow MCP tool JSONs under `.trailstep/mcp/`, and `trailstep update --workflows` refreshes them; no other command rewrites those artifacts. `trailstep init` and `trailstep add` also offer to register the server with your coding agent via `add-mcp`.
 
-See the [CLI reference](../../docs/cli-reference.md#mcp-server) for the tool inventory, the `mcp.perWorkflowTools` list/fallback mode, registration scopes, and MCP-related environment variables.
+See the [CLI reference - MCP server section (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/CLI_reference/MCP_server.md) for the tool inventory, the `mcp.perWorkflowTools` list/fallback mode, registration scopes, and MCP-related environment variables.
 
 ## Managed agent sessions
 
@@ -161,7 +161,7 @@ TrailStep detects the target package manager from lockfiles or the `packageManag
 - `project`: shared project config; recommended for team workflows.
 - `global`: user-wide config and personal workflows.
 
-See [Scopes and config](../../docs/scopes-and-config.md) for details.
+See [Scopes and config (canonical copy in OpenViking)](viking://resources/trailstep/docs/scopes-and-config/scopes-and-config.md) for details.
 
 ## Run artifacts
 

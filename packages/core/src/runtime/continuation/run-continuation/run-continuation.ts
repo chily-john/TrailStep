@@ -51,6 +51,9 @@ import {
 } from "../../cancellation/cancellation.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
+import { type RetryPolicyInput, resolveRetryPolicy } from "../../retry/retry-policy.js";
+import { shouldRetryStepFailure } from "../../retry/retryable-failures.js";
+import { readRecordedStepAttempts } from "../../retry/step-attempt-history.js";
 import { runContextStorage } from "../../run-context/run-context-storage.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
 import { validateDirectoryCwd } from "../../run-workflow/cwd.js";
@@ -69,6 +72,12 @@ export interface RunContinuationOptions {
   readonly allocateStepIndex?: () => number;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowTimeout?: TimeoutPolicyInput;
+  /**
+   * Workflow-level retry tier (from `Workflow.retry`) applied when a step does
+   * not configure its own `retry`. Follows the same resolution order as
+   * timeouts: step > workflow > global (`settings.retry`).
+   */
+  readonly workflowRetry?: RetryPolicyInput;
   readonly runDir: string;
   readonly projectCwd?: string;
   readonly cwd: string;
@@ -113,6 +122,7 @@ interface WorkflowInvocationFrame {
   readonly workflowId: string;
   readonly workflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly workflowTimeout?: TimeoutPolicyInput;
+  readonly workflowRetry?: RetryPolicyInput;
   readonly workflowOutputSchema?: ReturnType<typeof normalizeShape>;
   readonly invocationWorkflowId: string;
   readonly postContinuation?: (
@@ -156,6 +166,7 @@ export async function runContinuation(
   let currentWorkflowId = options.workflowId;
   let currentWorkflowAgents = options.workflowAgents;
   let currentWorkflowTimeout = options.workflowTimeout;
+  let currentWorkflowRetry = options.workflowRetry;
   let currentWorkflowOutputSchema: ReturnType<typeof normalizeShape> | undefined;
 
   const splitPostContinuationForInvocationFrames = ():
@@ -234,6 +245,7 @@ export async function runContinuation(
         currentWorkflowId = frame.workflowId;
         currentWorkflowAgents = frame.workflowAgents;
         currentWorkflowTimeout = frame.workflowTimeout;
+        currentWorkflowRetry = frame.workflowRetry;
         currentWorkflowOutputSchema = frame.workflowOutputSchema;
 
         if (frame.postContinuation !== undefined) {
@@ -334,6 +346,7 @@ export async function runContinuation(
         ...(currentWorkflowTimeout === undefined
           ? {}
           : { workflowTimeout: currentWorkflowTimeout }),
+        ...(currentWorkflowRetry === undefined ? {} : { workflowRetry: currentWorkflowRetry }),
         ...(currentWorkflowOutputSchema === undefined
           ? {}
           : { workflowOutputSchema: currentWorkflowOutputSchema }),
@@ -345,6 +358,7 @@ export async function runContinuation(
       currentWorkflowId = invocation.workflow.id;
       currentWorkflowAgents = invocation.workflow.agents ?? {};
       currentWorkflowTimeout = invocation.workflow.timeout;
+      currentWorkflowRetry = invocation.workflow.retry;
       currentWorkflowOutputSchema = invocation.workflow.outputShape
         ? normalizeShape(invocation.workflow.outputShape)
         : invocation.workflow.output === undefined
@@ -414,6 +428,50 @@ export async function runContinuation(
       firstPromptPhase(phases)?.maxSubPrompts ??
       config.maxSubPrompts ??
       trailstepConfig?.workflows?.[currentWorkflowId]?.settings?.maxSubPrompts;
+    const retryPolicy = resolveRetryPolicy({
+      global: trailstepConfig?.settings?.retry,
+      workflow:
+        currentWorkflowRetry ?? trailstepConfig?.workflows?.[currentWorkflowId]?.settings?.retry,
+      step: config.retry,
+    });
+    // Automatic retry is skipped when the step's do phase is explicitly
+    // non-idempotent (re-executing it must never happen silently) or when the
+    // author supplied an explicit error continuation (they took over failure
+    // handling).
+    const doPhaseAllowsAutomaticRetry = !phases.some(
+      (phase) => phase.kind === "do" && phase.idempotent === false,
+    );
+    const recordedAttempts = await readRecordedStepAttempts({
+      runDir: options.runDir,
+      stepId: config.id,
+    });
+    const initialAttempt = recordedAttempts.attemptFailures + 1;
+    // Satisfied wait outputs stay shared across retry attempts of this step so
+    // a retried attempt records each wait satisfied exactly once.
+    const attemptWaitOutputs: Record<string, PlainObject> = {
+      ...(resumeWait?.waitOutputs ?? {}),
+    };
+
+    if (resumeWait === undefined && recordedAttempts.attemptFailures >= retryPolicy.maxAttempts) {
+      const failure = exhaustedStepAttemptFailure({
+        stepId: config.id,
+        attemptFailures: recordedAttempts.attemptFailures,
+        maxAttempts: retryPolicy.maxAttempts,
+        ...(recordedAttempts.lastFailure === undefined
+          ? {}
+          : { recordedFailure: recordedAttempts.lastFailure }),
+      });
+      await options.emit(
+        createEvent({
+          runId: options.runId,
+          workflowId: currentWorkflowId,
+          stepId: config.id,
+          type: "step.failed",
+          payload: { failure },
+        }),
+      );
+      return { status: "failure", failure };
+    }
 
     if (resumeWait === undefined) {
       await options.emit(
@@ -432,293 +490,186 @@ export async function runContinuation(
       );
     }
 
-    try {
-      const stepCwd = await resolveStepExecutionCwd({
-        stepId: config.id,
-        workflowId: currentWorkflowId,
-        defaultCwd: options.cwd,
-        input: config.input,
-        cwdInput: config.cwd,
-      });
-      const stepArtifacts = resolveStepArtifactPaths({
-        runDir: options.runDir,
-        stepId: config.id,
-        stepIndex,
-      });
+    let attempt = initialAttempt;
+    for (;;) {
+      try {
+        const stepCwd = await resolveStepExecutionCwd({
+          stepId: config.id,
+          workflowId: currentWorkflowId,
+          defaultCwd: options.cwd,
+          input: config.input,
+          cwdInput: config.cwd,
+        });
+        const stepArtifacts = resolveStepArtifactPaths({
+          runDir: options.runDir,
+          stepId: config.id,
+          stepIndex,
+        });
 
-      const stepResult = await runWithStepControl({
-        stepId: config.id,
-        timeoutMs: timeoutPolicy.timeoutMs,
-        readCancellation: async () => await readCancellationMarker(options.runDir),
-        run: async (signal) =>
-          await withStepContext(
-            config.id,
-            stepArtifacts.stepDir,
-            async () => {
-              const phaseResult = await runStepPhases({
-                stepNode,
-                timeoutMs: timeoutPolicy.timeoutMs,
-                signal,
-                readCancellation: async () => await readCancellationMarker(options.runDir),
-                ...(resumeWait === undefined
-                  ? {}
-                  : {
-                      resume: {
-                        startPhaseIndex: resumeWait.phaseIndex,
-                        phaseValue: resumeWait.phaseValue,
-                        waitOutputs: resumeWait.waitOutputs,
-                        seenWaitIds: resumeWait.seenWaitIds,
-                        wait: resumeWait.wait,
-                      },
+        const stepResult = await runWithStepControl({
+          stepId: config.id,
+          timeoutMs: timeoutPolicy.timeoutMs,
+          readCancellation: async () => await readCancellationMarker(options.runDir),
+          run: async (signal) =>
+            await withStepContext(
+              config.id,
+              stepArtifacts.stepDir,
+              async () => {
+                const phaseResult = await runStepPhases({
+                  stepNode,
+                  timeoutMs: timeoutPolicy.timeoutMs,
+                  signal,
+                  readCancellation: async () => await readCancellationMarker(options.runDir),
+                  sharedWaitOutputs: attemptWaitOutputs,
+                  ...(resumeWait === undefined || attempt > initialAttempt
+                    ? {}
+                    : {
+                        resume: {
+                          startPhaseIndex: resumeWait.phaseIndex,
+                          phaseValue: resumeWait.phaseValue,
+                          waitOutputs: resumeWait.waitOutputs,
+                          seenWaitIds: resumeWait.seenWaitIds,
+                          wait: resumeWait.wait,
+                        },
+                      }),
+                  emitDisplay: async (phase, output, phaseIndex) => {
+                    const payload = await resolveDisplayPayload({
+                      phase,
+                      input: config.input,
+                      output,
+                      phaseIndex,
+                      stepId: config.id,
+                    });
+
+                    await options.emit(
+                      createEvent({
+                        runId: options.runId,
+                        workflowId: currentWorkflowId,
+                        stepId: config.id,
+                        type: "step.display",
+                        payload,
+                      }),
+                    );
+                  },
+                  handleWait: async (phase, output, phaseIndex, waits, previousWaitId) => {
+                    return await handleWaitPhase({
+                      phase,
+                      input: config.input,
+                      output,
+                      waits,
+                      phaseIndex,
+                      previousWaitId,
+                      stepId: config.id,
+                      stepArtifactId: stepArtifacts.artifactStepId,
+                      runDir: options.runDir,
+                      runId: options.runId,
+                      workflowId: currentWorkflowId,
+                      emit: options.emit,
+                    });
+                  },
+                  handleResumedWait: async (wait) =>
+                    await handleResumedWaitPhase({
+                      wait,
+                      stepId: config.id,
+                      runDir: options.runDir,
+                      runId: options.runId,
+                      workflowId: currentWorkflowId,
+                      emit: options.emit,
                     }),
-                emitDisplay: async (phase, output, phaseIndex) => {
-                  const payload = await resolveDisplayPayload({
-                    phase,
-                    input: config.input,
-                    output,
-                    phaseIndex,
-                    stepId: config.id,
-                  });
+                  dispatchPrompt: async (phase) => {
+                    const outputSchema = resolveStepOutputSchema(phase);
+                    if (!outputSchema) {
+                      throw new Error(`step ${config.id} with a prompt requires an output shape`);
+                    }
 
+                    const rawOutput = await dispatchAgentStep({
+                      config: { ...config, ...phase },
+                      outputSchema,
+                      interactiveOutputMode:
+                        phase.mode === "interactive" && phase.output !== undefined
+                          ? "json"
+                          : "session-file",
+                      runId: options.runId,
+                      workflowId: currentWorkflowId,
+                      emit: options.emit,
+                      workflowAgents: currentWorkflowAgents,
+                      runDir: options.runDir,
+                      projectCwd: options.projectCwd ?? options.cwd,
+                      cwd: stepCwd,
+                      trailstepConfig,
+                      workingAgentProcessRunner: options.workingAgentProcessRunner,
+                      providerWorkingRunner: options.providerWorkingRunner,
+                      processRunner: options.processRunner,
+                      stepIndex,
+                      signal,
+                    });
+                    throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
+                    const output = outputSchema.assert(rawOutput, `step ${config.id} output`);
+
+                    await options.emit(
+                      createEvent({
+                        runId: options.runId,
+                        workflowId: currentWorkflowId,
+                        stepId: config.id,
+                        type: "step.completed",
+                        payload: { output },
+                      }),
+                    );
+
+                    return output;
+                  },
+                });
+
+                if (phaseResult.status === "waiting") {
+                  return phaseResult;
+                }
+
+                const nextNode = phaseResult.node;
+                if (isFailNode(nextNode)) {
                   await options.emit(
                     createEvent({
                       runId: options.runId,
                       workflowId: currentWorkflowId,
                       stepId: config.id,
-                      type: "step.display",
-                      payload,
+                      type: "step.failed",
+                      payload: { failure: nextNode.failure },
                     }),
                   );
-                },
-                handleWait: async (phase, output, phaseIndex, waits, previousWaitId) => {
-                  return await handleWaitPhase({
-                    phase,
-                    input: config.input,
-                    output,
-                    waits,
-                    phaseIndex,
-                    previousWaitId,
-                    stepId: config.id,
-                    stepArtifactId: stepArtifacts.artifactStepId,
-                    runDir: options.runDir,
-                    runId: options.runId,
-                    workflowId: currentWorkflowId,
-                    emit: options.emit,
-                  });
-                },
-                handleResumedWait: async (wait) =>
-                  await handleResumedWaitPhase({
-                    wait,
-                    stepId: config.id,
-                    runDir: options.runDir,
-                    runId: options.runId,
-                    workflowId: currentWorkflowId,
-                    emit: options.emit,
-                  }),
-                dispatchPrompt: async (phase) => {
-                  const outputSchema = resolveStepOutputSchema(phase);
-                  if (!outputSchema) {
-                    throw new Error(`step ${config.id} with a prompt requires an output shape`);
-                  }
+                  return phaseResult;
+                }
 
-                  const rawOutput = await dispatchAgentStep({
-                    config: { ...config, ...phase },
-                    outputSchema,
-                    interactiveOutputMode:
-                      phase.mode === "interactive" && phase.output !== undefined
-                        ? "json"
-                        : "session-file",
-                    runId: options.runId,
-                    workflowId: currentWorkflowId,
-                    emit: options.emit,
-                    workflowAgents: currentWorkflowAgents,
-                    runDir: options.runDir,
-                    projectCwd: options.projectCwd ?? options.cwd,
-                    cwd: stepCwd,
-                    trailstepConfig,
-                    workingAgentProcessRunner: options.workingAgentProcessRunner,
-                    providerWorkingRunner: options.providerWorkingRunner,
-                    processRunner: options.processRunner,
-                    stepIndex,
-                    signal,
-                  });
-                  throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
-                  const output = outputSchema.assert(rawOutput, `step ${config.id} output`);
-
+                if (!hasPrompt) {
+                  // A no-prompt step's .do(...) IS its work — only report completion once it has
+                  // actually run without throwing or returning fail(...), matching the with-prompt
+                  // case's "step.completed means the step's own work succeeded" meaning.
                   await options.emit(
                     createEvent({
                       runId: options.runId,
                       workflowId: currentWorkflowId,
                       stepId: config.id,
                       type: "step.completed",
-                      payload: { output },
+                      payload: {},
                     }),
                   );
+                }
 
-                  return output;
-                },
-              });
-
-              if (phaseResult.status === "waiting") {
+                throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
                 return phaseResult;
-              }
+              },
+              { maxSubPrompts, cwd: stepCwd, executionCwd: stepCwd },
+            ),
+        });
 
-              const nextNode = phaseResult.node;
-              if (isFailNode(nextNode)) {
-                await options.emit(
-                  createEvent({
-                    runId: options.runId,
-                    workflowId: currentWorkflowId,
-                    stepId: config.id,
-                    type: "step.failed",
-                    payload: { failure: nextNode.failure },
-                  }),
-                );
-                return phaseResult;
-              }
+        if (stepResult.status === "waiting") {
+          return stepResult;
+        }
 
-              if (!hasPrompt) {
-                // A no-prompt step's .do(...) IS its work — only report completion once it has
-                // actually run without throwing or returning fail(...), matching the with-prompt
-                // case's "step.completed means the step's own work succeeded" meaning.
-                await options.emit(
-                  createEvent({
-                    runId: options.runId,
-                    workflowId: currentWorkflowId,
-                    stepId: config.id,
-                    type: "step.completed",
-                    payload: {},
-                  }),
-                );
-              }
-
-              throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
-              return phaseResult;
-            },
-            { maxSubPrompts, cwd: stepCwd, executionCwd: stepCwd },
-          ),
-      });
-
-      if (stepResult.status === "waiting") {
-        return stepResult;
-      }
-
-      const nextNode = stepResult.node;
-      if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
-        return {
-          status: "split",
-          nodes: nextNode,
-          source: `step ${config.id}`,
-          ...splitPostContinuations(undefined),
-        };
-      }
-
-      if (isParallelNode(nextNode) && options.returnContinuationArrays === true) {
-        return {
-          status: "split",
-          nodes: nextNode.nodes,
-          source: `step ${config.id}`,
-          ...splitPostContinuations(nextNode.postContinuation),
-        };
-      }
-
-      if (options.returnContinuationArrays === true && isAbsoluteDoneNode(nextNode)) {
-        return {
-          status: "absoluteSuccess",
-          output: nextNode.output,
-          ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
-        };
-      }
-
-      if (options.returnContinuationArrays === true && isAbsoluteFailNode(nextNode)) {
-        return {
-          status: "absoluteFailure",
-          failure: nextNode.failure,
-          ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
-        };
-      }
-
-      const unsupportedStepFailure = unsupportedContinuationFailure(nextNode, `step ${config.id}`);
-      if (unsupportedStepFailure !== undefined) {
-        await options.emit(
-          createEvent({
-            runId: options.runId,
-            workflowId: currentWorkflowId,
-            stepId: config.id,
-            type: "step.failed",
-            payload: { failure: unsupportedStepFailure },
-          }),
-        );
-        return { status: "failure", failure: unsupportedStepFailure };
-      }
-
-      if (
-        !isStepNode(nextNode) &&
-        !isWorkflowInvocationNode(nextNode) &&
-        !isDoneNode(nextNode) &&
-        !isFailNode(nextNode)
-      ) {
-        const failure = continuationFailure(`step ${config.id}`);
-        await options.emit(
-          createEvent({
-            runId: options.runId,
-            workflowId: currentWorkflowId,
-            stepId: config.id,
-            type: "step.failed",
-            payload: { failure },
-          }),
-        );
-        return { status: "failure", failure };
-      }
-
-      if (isFailNode(nextNode)) {
-        return {
-          status: "failure",
-          failure: nextNode.failure,
-          ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
-        };
-      }
-
-      node = nextNode;
-      source = `step ${config.id}`;
-    } catch (error) {
-      if (isWorkflowCancellationError(error)) {
-        await options.emit(
-          createEvent({
-            runId: options.runId,
-            workflowId: currentWorkflowId,
-            stepId: config.id,
-            type: "step.cancelled",
-            payload: cancellationPayload(error.cancellation),
-          }),
-        );
-        return { status: "cancelled", cancellation: error.cancellation };
-      }
-
-      const failure = stepExecutionFailure(error);
-
-      await options.emit(
-        createEvent({
-          runId: options.runId,
-          workflowId: currentWorkflowId,
-          stepId: config.id,
-          type: "step.failed",
-          payload: { failure },
-        }),
-      );
-
-      if (!stepNode.onError) {
-        return { status: "failure", failure };
-      }
-
-      try {
-        const nextNode = stepNode.onError(failure);
-        const errorSource = `error continuation for step ${config.id}`;
+        const nextNode = stepResult.node;
         if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
           return {
             status: "split",
             nodes: nextNode,
-            source: errorSource,
+            source: `step ${config.id}`,
             ...splitPostContinuations(undefined),
           };
         }
@@ -727,7 +678,7 @@ export async function runContinuation(
           return {
             status: "split",
             nodes: nextNode.nodes,
-            source: errorSource,
+            source: `step ${config.id}`,
             ...splitPostContinuations(nextNode.postContinuation),
           };
         }
@@ -748,12 +699,21 @@ export async function runContinuation(
           };
         }
 
-        const unsupportedErrorFailure = unsupportedContinuationFailure(nextNode, errorSource);
-        if (unsupportedErrorFailure !== undefined) {
-          return {
-            status: "failure",
-            failure: unsupportedErrorFailure,
-          };
+        const unsupportedStepFailure = unsupportedContinuationFailure(
+          nextNode,
+          `step ${config.id}`,
+        );
+        if (unsupportedStepFailure !== undefined) {
+          await options.emit(
+            createEvent({
+              runId: options.runId,
+              workflowId: currentWorkflowId,
+              stepId: config.id,
+              type: "step.failed",
+              payload: { failure: unsupportedStepFailure },
+            }),
+          );
+          return { status: "failure", failure: unsupportedStepFailure };
         }
 
         if (
@@ -762,23 +722,158 @@ export async function runContinuation(
           !isDoneNode(nextNode) &&
           !isFailNode(nextNode)
         ) {
+          const failure = continuationFailure(`step ${config.id}`);
+          await options.emit(
+            createEvent({
+              runId: options.runId,
+              workflowId: currentWorkflowId,
+              stepId: config.id,
+              type: "step.failed",
+              payload: { failure },
+            }),
+          );
+          return { status: "failure", failure };
+        }
+
+        if (isFailNode(nextNode)) {
           return {
             status: "failure",
-            failure: continuationFailure(errorSource),
+            failure: nextNode.failure,
+            ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
           };
         }
 
         node = nextNode;
-        source = errorSource;
-      } catch (errorContinuationError) {
-        return {
-          status: "failure",
-          failure: stepExecutionFailure(
-            new Error(
-              `error continuation for step ${config.id} failed: ${errorMessage(errorContinuationError)}`,
+        source = `step ${config.id}`;
+        break;
+      } catch (error) {
+        if (isWorkflowCancellationError(error)) {
+          await options.emit(
+            createEvent({
+              runId: options.runId,
+              workflowId: currentWorkflowId,
+              stepId: config.id,
+              type: "step.cancelled",
+              payload: cancellationPayload(error.cancellation),
+            }),
+          );
+          return { status: "cancelled", cancellation: error.cancellation };
+        }
+
+        const failure = stepExecutionFailure(error);
+        // Automatic retry applies ONLY to retryable failures (transient by
+        // default). A permanent failure fails the step on the first attempt and
+        // produces the exact same event trail as before automatic retry existed.
+        const failureIsRetryable = shouldRetryStepFailure(failure, retryPolicy.retryOn);
+
+        if (
+          doPhaseAllowsAutomaticRetry &&
+          !stepNode.onError &&
+          failureIsRetryable &&
+          attempt < retryPolicy.maxAttempts
+        ) {
+          const failedAttempt = attempt;
+          attempt += 1;
+          await options.emit(
+            createEvent({
+              runId: options.runId,
+              workflowId: currentWorkflowId,
+              stepId: config.id,
+              type: "step.attemptFailed",
+              payload: {
+                attempt: failedAttempt,
+                failure,
+                maxAttempts: retryPolicy.maxAttempts,
+              },
+            }),
+          );
+          continue;
+        }
+
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: currentWorkflowId,
+            stepId: config.id,
+            type: "step.failed",
+            payload: { failure },
+          }),
+        );
+
+        if (!stepNode.onError) {
+          return { status: "failure", failure };
+        }
+
+        try {
+          const nextNode = stepNode.onError(failure);
+          const errorSource = `error continuation for step ${config.id}`;
+          if (Array.isArray(nextNode) && options.returnContinuationArrays === true) {
+            return {
+              status: "split",
+              nodes: nextNode,
+              source: errorSource,
+              ...splitPostContinuations(undefined),
+            };
+          }
+
+          if (isParallelNode(nextNode) && options.returnContinuationArrays === true) {
+            return {
+              status: "split",
+              nodes: nextNode.nodes,
+              source: errorSource,
+              ...splitPostContinuations(nextNode.postContinuation),
+            };
+          }
+
+          if (options.returnContinuationArrays === true && isAbsoluteDoneNode(nextNode)) {
+            return {
+              status: "absoluteSuccess",
+              output: nextNode.output,
+              ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+            };
+          }
+
+          if (options.returnContinuationArrays === true && isAbsoluteFailNode(nextNode)) {
+            return {
+              status: "absoluteFailure",
+              failure: nextNode.failure,
+              ...(nextNode.message === undefined ? {} : { message: nextNode.message }),
+            };
+          }
+
+          const unsupportedErrorFailure = unsupportedContinuationFailure(nextNode, errorSource);
+          if (unsupportedErrorFailure !== undefined) {
+            return {
+              status: "failure",
+              failure: unsupportedErrorFailure,
+            };
+          }
+
+          if (
+            !isStepNode(nextNode) &&
+            !isWorkflowInvocationNode(nextNode) &&
+            !isDoneNode(nextNode) &&
+            !isFailNode(nextNode)
+          ) {
+            return {
+              status: "failure",
+              failure: continuationFailure(errorSource),
+            };
+          }
+
+          node = nextNode;
+          source = errorSource;
+          break;
+        } catch (errorContinuationError) {
+          return {
+            status: "failure",
+            failure: stepExecutionFailure(
+              new Error(
+                `error continuation for step ${config.id} failed: ${errorMessage(errorContinuationError)}`,
+              ),
             ),
-          ),
-        };
+          };
+        }
       }
     }
   }
@@ -841,6 +936,8 @@ async function runStepPhases(options: {
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   readonly readCancellation: () => Promise<CancellationMarker | undefined>;
+  /** Satisfied wait outputs shared across retry attempts of the same step. */
+  readonly sharedWaitOutputs?: Record<string, PlainObject>;
   readonly emitDisplay: (
     phase: DisplayPhase,
     output: PlainObject,
@@ -866,7 +963,9 @@ async function runStepPhases(options: {
   const { stepNode } = options;
   let phaseValue = options.resume?.phaseValue ?? stepNode.config.input;
   let nextNode: ContinuationResult | undefined;
-  const waitOutputs: Record<string, PlainObject> = { ...(options.resume?.waitOutputs ?? {}) };
+  const waitOutputs: Record<string, PlainObject> = options.sharedWaitOutputs ?? {
+    ...(options.resume?.waitOutputs ?? {}),
+  };
   const seenWaitIds = new Set<string>(options.resume?.seenWaitIds ?? []);
   const phases = getStepPhases(stepNode);
   assertNoDuplicateStaticWaitIds(phases, stepNode.config.id);
@@ -985,6 +1084,13 @@ async function handleWaitPhase(options: {
   });
   validateWaitDefinition(wait, options.stepId, options.phaseIndex);
 
+  // A retry attempt must not re-record a wait that an earlier attempt already
+  // satisfied: duplicate wait.satisfied events would poison later replays.
+  const alreadySatisfiedOutput = options.waits[wait.id];
+  if (alreadySatisfiedOutput !== undefined) {
+    return { status: "satisfied", waitId: wait.id, output: alreadySatisfiedOutput };
+  }
+
   const artifactPaths = resolveWaitArtifactPaths({
     runDir: options.runDir,
     stepArtifactId: options.stepArtifactId,
@@ -1093,6 +1199,11 @@ async function handleCheckWaitPhase(options: {
   const defaultWaitId = options.previousWaitId ?? `check-${options.phaseIndex}`;
   let waitId = defaultWaitId;
 
+  const alreadySatisfiedCheckOutput = options.waits[waitId];
+  if (alreadySatisfiedCheckOutput !== undefined) {
+    return { status: "satisfied", waitId, output: alreadySatisfiedCheckOutput };
+  }
+
   try {
     if (typeof options.phase.wait !== "function") {
       throw new TypeError(
@@ -1117,6 +1228,10 @@ async function handleCheckWaitPhase(options: {
     if (result.status === "pending") {
       validatePendingWait(result, options.stepId, options.phaseIndex);
       waitId = result.id;
+      const satisfiedPendingOutput = options.waits[waitId];
+      if (satisfiedPendingOutput !== undefined) {
+        return { status: "satisfied", waitId, output: satisfiedPendingOutput };
+      }
       const artifactPaths = resolveWaitArtifactPaths({
         runDir: options.runDir,
         stepArtifactId: options.stepArtifactId,
@@ -1662,6 +1777,21 @@ function continuationFailure(source: string): Failure {
   return {
     code: "invalid_continuation",
     message: `${source} returned an invalid continuation node.`,
+  };
+}
+
+function exhaustedStepAttemptFailure(options: {
+  readonly stepId: string;
+  readonly attemptFailures: number;
+  readonly maxAttempts: number;
+  readonly recordedFailure?: Failure;
+}): Failure {
+  return {
+    code: "step_attempts_exhausted",
+    message: `Step ${options.stepId} already consumed its retry budget (${options.attemptFailures} recorded failed attempt(s), maxAttempts ${options.maxAttempts}); refusing to re-execute it. Raise the retry budget (settings.retry.maxAttempts or step/workflow retry config), or start a fresh run.`,
+    ...(options.recordedFailure === undefined
+      ? {}
+      : { details: { lastFailure: options.recordedFailure } }),
   };
 }
 

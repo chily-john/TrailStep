@@ -1,4 +1,5 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { validateRetryPolicy } from "../../runtime/retry/retry-policy.js";
 import type { WorkflowInvocationOptions } from "../step/continuation.types.js";
 import type { DefinedWorkflow, WorkflowBuilderOptions } from "./workflow.types.js";
 
@@ -11,6 +12,9 @@ export function defineWorkflow<
   assertBuilderObject(options, "defineWorkflow");
   if (typeof options.start !== "function") {
     throw new TypeError("defineWorkflow requires a start function.");
+  }
+  if (options.retry !== undefined) {
+    validateRetryPolicy(options.retry);
   }
 
   const workflow = ((input: TInput, invocationOptions?: WorkflowInvocationOptions) => {

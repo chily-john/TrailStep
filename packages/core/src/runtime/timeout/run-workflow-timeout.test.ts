@@ -90,15 +90,24 @@ describe("workflow step timeouts", () => {
     // array briefly before asserting.
     const attemptFailures = () =>
       result.events.filter((event) => event.type === "agent.attemptFailed");
-    for (let waitedMs = 0; attemptFailures().length === 0 && waitedMs < 5_000; waitedMs += 25) {
+    for (let waitedMs = 0; attemptFailures().length < 2 && waitedMs < 5_000; waitedMs += 25) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    expect(attemptFailures()).toHaveLength(1);
+    // A step timeout is a TRANSIENT failure, so automatic step retry re-runs
+    // the step once (built-in maxAttempts 2) before it fails for good. Each
+    // attempt produces one working-agent attempt failure.
+    expect(attemptFailures()).toHaveLength(2);
     expect(
       result.events.map((event) => event.type).filter((type) => type !== "agent.attemptFailed"),
     ).toEqual([
       "workflow.started",
       "step.started",
+      "step.progress",
+      "agent.targetSelected",
+      "agent.spawned",
+      "agent.promptSent",
+      // first attempt timed out and is retried (transient failure)
+      "step.attemptFailed",
       "step.progress",
       "agent.targetSelected",
       "agent.spawned",

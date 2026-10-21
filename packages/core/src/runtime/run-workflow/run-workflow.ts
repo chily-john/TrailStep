@@ -13,6 +13,7 @@ import { appendEvent, readRunState, writeRunState } from "../artifacts/run-stora
 import {
   type CancellationMarker,
   cancellationPayload,
+  clearCancellationMarker,
   isWorkflowCancellationError,
   readCancellationMarker,
 } from "../cancellation/cancellation.js";
@@ -103,7 +104,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   });
 
   const cancelWorkflow = async (cancellation: CancellationMarker): Promise<Result<TOutput>> => {
-    if (!events.some((event) => event.type === "workflow.cancelRequested")) {
+    // Only the current cancellation cycle counts: a run that was resumed after
+    // an earlier cancellation must emit fresh cancel events for this cycle.
+    const cycleEvents = eventsSinceLastReopen(events);
+    if (!cycleEvents.some((event) => event.type === "workflow.cancelRequested")) {
       await emit(
         createEvent({
           runId,
@@ -114,7 +118,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       );
     }
 
-    if (!events.some((event) => event.type === "workflow.cancelled")) {
+    if (!cycleEvents.some((event) => event.type === "workflow.cancelled")) {
       await emit(
         createEvent({
           runId,
@@ -178,10 +182,18 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       ? normalizeShape(options.workflow.inputShape)
       : options.workflow.input;
 
+    const isContinuationInvocation = isResume || isWaitContinue || isRetry;
+    if (isContinuationInvocation) {
+      // An explicit resume/continue/retry consumes any pending cancellation so
+      // a cancelled run is never permanently bricked: the run resumes from
+      // where it stopped and the cycle's workflow.resumed event re-opens it.
+      await clearCancellationMarker(runDir);
+    }
     const previousTerminalStatus = readPreviousTerminalWorkflowStatus(previousEvents);
     const existingCancellation = readExistingCancellationEvent(previousEvents);
-    const cancellation =
-      previousTerminalStatus === undefined || previousTerminalStatus === "cancelled"
+    const cancellation = isContinuationInvocation
+      ? undefined
+      : previousTerminalStatus === undefined || previousTerminalStatus === "cancelled"
         ? (existingCancellation ?? (await readCancellationMarker(runDir)))
         : undefined;
     if (cancellation !== undefined) {
@@ -687,6 +699,23 @@ function readPreviousTerminalWorkflowStatus(
   }
 
   return undefined;
+}
+
+/**
+ * Events belonging to the run's current lifecycle cycle: everything after the
+ * most recent workflow.resumed/workflow.retryStarted (or all events when the
+ * run was never re-opened). Terminal/cancellation checks use this window so a
+ * resumed run is not judged by an earlier cancellation cycle's events.
+ */
+function eventsSinceLastReopen(events: readonly Event[]): readonly Event[] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index]?.type;
+    if (type === "workflow.resumed" || type === "workflow.retryStarted") {
+      return events.slice(index + 1);
+    }
+  }
+
+  return events;
 }
 
 function readExistingCancellationEvent(events: readonly Event[]): CancellationMarker | undefined {

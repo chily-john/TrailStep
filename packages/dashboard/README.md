@@ -4,4 +4,4 @@
 
 This workspace package contains a Svelte/Vite observability UI for local TrailStep run artifacts under `.trailstep/runs`. It is intended to make TrailStep's persisted run history easier to inspect than reading generated artifact files directly.
 
-For the current public workflow experience, start with the root [README](../../README.md) and [Getting started](../../docs/getting-started.md).
+For the current public workflow experience, start with the root [README](../../README.md) and [Getting started (canonical copy in OpenViking)](viking://resources/trailstep/docs/getting-started/getting-started.md).

@@ -213,7 +213,7 @@ The bullets at the top are powered by one mechanism: continuations. A workflow s
 - `.do(...)` is plain TypeScript — run code, inspect the repo, call APIs, then route to the next step, loop back, fan out delegates, or finish.
 - `.display(...)` / `.wait(...)` add durable progress events and human-approval pauses where needed.
 
-See [Authoring workflows](docs/authoring-workflows.md) and [Architecture](docs/architecture.md) for the full lifecycle.
+See [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/) and [Architecture (canonical copy in OpenViking)](viking://resources/trailstep/docs/architecture/architecture.md) for the full lifecycle.
 
 ## Parallel sub-agents in one minute
 
@@ -276,12 +276,16 @@ Workspace packages not yet part of the initial public publish set:
 
 ## Learn more
 
-- [Getting started](docs/getting-started.md)
-- [Authoring workflows](docs/authoring-workflows.md)
-- [Generated skills](docs/generated-skills.md)
-- [Scopes and config](docs/scopes-and-config.md)
-- [CLI reference](docs/cli-reference.md)
-- [Architecture](docs/architecture.md)
+The TrailStep documentation is canonical in OpenViking (`viking://resources/trailstep/docs/`); the in-repo `docs/` directory holds pointers only (see [docs/README.md](docs/README.md)).
+
+- [Getting started (canonical copy in OpenViking)](viking://resources/trailstep/docs/getting-started/getting-started.md)
+- [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
+- [Generated skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
+- [Scopes and config (canonical copy in OpenViking)](viking://resources/trailstep/docs/scopes-and-config/scopes-and-config.md)
+- [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
+- [Architecture (canonical copy in OpenViking)](viking://resources/trailstep/docs/architecture/architecture.md)
+- [Delegate reliability writeup (canonical copy in OpenViking)](viking://resources/trailstep/docs/delegate-reliability-writeup/delegate-reliability-writeup.md)
+- [Parallel tracks design (canonical copy in OpenViking)](viking://resources/trailstep/docs/design/parallel-tracks/)
 - [OpenViking setup (optional codebase index + pi memory)](docs/openviking-setup.md)
 - [Reusable create flows](packages/create-flows/README.md)
 

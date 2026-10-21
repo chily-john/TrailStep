@@ -64,6 +64,7 @@ export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
     | "workflow.cancelled"
     | "step.started"
     | "step.completed"
+    | "step.attemptFailed"
     | "step.failed"
     | "step.cancelled"
     | "step.display"

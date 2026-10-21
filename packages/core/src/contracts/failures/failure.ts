@@ -2,6 +2,12 @@ export interface Failure {
   readonly code: string;
   readonly message: string;
   readonly details?: unknown;
+  /**
+   * Opt-in marker that makes this failure retryable even when its code is
+   * not part of the canonical transient allowlist. See
+   * `runtime/retry/retryable-failures.ts`.
+   */
+  readonly retryable?: boolean;
 }
 
 export class TrailStepFailureError extends Error {

@@ -37,6 +37,19 @@ export interface StepConfig {
   readonly title?: string;
   readonly description?: string;
   readonly cwd?: StepCwdInput;
+  /**
+   * Automatic retry policy for this step's attempts. Resolution order is
+   * step > workflow > global (`settings.retry`) with a built-in default of
+   * `maxAttempts: 2`. When an attempt fails and another attempt is allowed,
+   * the runtime emits `step.attemptFailed` and re-runs the step; the final
+   * failed attempt emits `step.failed` exactly once. Attempt counts are
+   * derived from the persisted event trail, so retries survive crash/resume.
+   *
+   * `retryOn` selects WHICH failures may be retried: `"transient"` (default)
+   * retries only transient failures (timeouts, provider unavailability /
+   * failure / spawn errors); every other failure is permanent and fails on
+   * the first attempt. `"always"` opts into retrying every failure.
+   */
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
 }
@@ -225,12 +238,38 @@ export type StepContextContinuation<
   ): ContinuationResult | Promise<ContinuationResult>;
 }["bivarianceHack"];
 
+/**
+ * Options for the `do(...)` phase builder.
+ */
+export interface DoOptions {
+  /**
+   * Idempotency contract for the do phase. Defaults to `true`.
+   *
+   * A do phase is assumed idempotent by default: replaying it on resume or
+   * retry re-executes its continuation safely. When a do phase is explicitly
+   * marked non-idempotent (`{ idempotent: false }`), the runtime will not
+   * silently re-execute it: automatic step retry skips such steps, and
+   * resume/retry replay refuses with an actionable error when the event trail
+   * does not record enough to skip the phase safely.
+   */
+  readonly idempotent?: boolean;
+}
+
 export interface DoPhase<
   TInput extends PlainObject = PlainObject,
   TOutput extends PlainObject = PlainObject,
 > {
   readonly kind: "do";
   readonly onOutput: StepContinuation<TInput, TOutput>;
+  /**
+   * Idempotency contract for this phase; `undefined` means `true` (the
+   * default). A do phase is assumed idempotent by default, so replaying it on
+   * resume/retry re-executes its continuation safely. When explicitly
+   * `false`, the runtime must not silently re-execute the phase on
+   * resume/retry: it refuses instead when the trail cannot prove skipping is
+   * safe, and automatic step retry will not re-run the step's attempts.
+   */
+  readonly idempotent?: boolean;
 }
 
 export type StepPhase<

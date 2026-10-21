@@ -61,6 +61,8 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "workflow.cancelled"
     | "step.started"
     | "step.completed"
+    /** A step attempt failed but another automatic attempt will follow; payload carries the failed `attempt`, the `failure`, and the resolved `maxAttempts` so attempt trails reconstruct durably from the event log. */
+    | "step.attemptFailed"
     | "step.failed"
     | "step.cancelled"
     | "step.display"

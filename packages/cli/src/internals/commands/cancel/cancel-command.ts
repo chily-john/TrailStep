@@ -1,8 +1,12 @@
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 
 import {
+  appendEvent,
   type CancellationMarker,
+  cancellationPayload,
+  clearCancellationMarker,
+  createEvent,
   type Event,
   readCancellationMarker,
   writeCancellationMarker,
@@ -23,7 +27,7 @@ export const cancelCommand: CliCommand<CancelCommandArgs> = {
   parseArgs: parseCancelInvocation,
   async run(args, context) {
     if (args.runNameOrRunDir !== undefined) {
-      return await cancelWorkflowRun(args.runNameOrRunDir, args.reason, context);
+      return await cancelWorkflowRun(args.runNameOrRunDir, args, context);
     }
 
     return await cancelInteractiveSession(args, context);
@@ -32,38 +36,83 @@ export const cancelCommand: CliCommand<CancelCommandArgs> = {
 
 async function cancelWorkflowRun(
   runNameOrRunDir: string,
-  reason: string | undefined,
+  args: CancelCommandArgs,
   context: CliCommandContext,
 ): Promise<number> {
   const resolvedRun = await resolveRunDirectory(runNameOrRunDir, context);
-  const events = await readEventsForRun(resolvedRun.runDir);
   const displayName = basename(resolvedRun.runDir);
-  const terminalStatus = selectTerminalStatus(events);
+
+  if (args.clear) {
+    const cleared = await clearCancellationMarker(resolvedRun.runDir);
+    context.io.writeLine(
+      cleared
+        ? `Cleared pending cancellation: ${displayName}`
+        : `No pending cancellation to clear: ${displayName}`,
+    );
+    return 0;
+  }
+
+  const events = await readEventsForRun(resolvedRun.runDir);
+  const cycleEvents = activeRunCycleEvents(events);
+  const terminalStatus = selectTerminalStatus(cycleEvents);
 
   if (terminalStatus === "completed" || terminalStatus === "failed") {
     context.io.writeLine(`Run already completed: ${displayName}`);
     return 0;
   }
 
-  if (terminalStatus === "cancelled" || (await readCancellationMarker(resolvedRun.runDir))) {
+  if (terminalStatus === "cancelled") {
+    context.io.writeLine(`Run already cancelled: ${displayName}`);
+    return 0;
+  }
+
+  const existingMarker = await readCancellationMarker(resolvedRun.runDir);
+  if (existingMarker !== undefined) {
+    // A cancellation was requested but never reached its terminal event
+    // (legacy or interrupted cancel). Complete the terminal transition so the
+    // run does not stay stuck in workflow.cancelRequested, without restarting
+    // the cancellation.
+    if (!cycleEvents.some((event) => event.type === "workflow.cancelRequested")) {
+      await appendCancellationEvent({
+        runDir: resolvedRun.runDir,
+        events,
+        marker: existingMarker,
+        type: "workflow.cancelRequested",
+      });
+    }
+    if (!cycleEvents.some((event) => event.type === "workflow.cancelled")) {
+      await appendCancellationEvent({
+        runDir: resolvedRun.runDir,
+        events,
+        marker: existingMarker,
+        type: "workflow.cancelled",
+      });
+    }
     context.io.writeLine(`Run already cancelled: ${displayName}`);
     return 0;
   }
 
   const { marker } = await writeCancellationMarker({
     runDir: resolvedRun.runDir,
-    ...(reason === undefined ? {} : { reason }),
+    ...(args.reason === undefined ? {} : { reason: args.reason }),
     source: "cli",
   });
-  await appendCancellationEvent({
-    runDir: resolvedRun.runDir,
-    events,
-    marker,
-    type: "workflow.cancelRequested",
-  });
+  if (!cycleEvents.some((event) => event.type === "workflow.cancelRequested")) {
+    await appendCancellationEvent({
+      runDir: resolvedRun.runDir,
+      events,
+      marker,
+      type: "workflow.cancelRequested",
+    });
+  }
 
-  const pendingWait = findLatestPendingWait(events);
-  if (pendingWait?.stepId !== undefined) {
+  const pendingWait = findLatestPendingWait(cycleEvents);
+  if (
+    pendingWait?.stepId !== undefined &&
+    !cycleEvents.some(
+      (event) => event.type === "step.cancelled" && event.stepId === pendingWait.stepId,
+    )
+  ) {
     await appendCancellationEvent({
       runDir: resolvedRun.runDir,
       events,
@@ -71,6 +120,10 @@ async function cancelWorkflowRun(
       type: "step.cancelled",
       stepId: pendingWait.stepId,
     });
+  }
+  // The terminal event is unconditional so a run without a pending wait can
+  // never be left permanently in workflow.cancelRequested.
+  if (!cycleEvents.some((event) => event.type === "workflow.cancelled")) {
     await appendCancellationEvent({
       runDir: resolvedRun.runDir,
       events,
@@ -117,24 +170,33 @@ async function appendCancellationEvent(options: {
   const runId =
     anchor?.runId ?? options.events.find((event) => event.runId)?.runId ?? basename(options.runDir);
 
-  const event: Event = {
-    id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    runId,
-    workflowId,
-    ...(options.stepId === undefined ? {} : { stepId: options.stepId }),
-    type: options.type,
-    timestamp: new Date().toISOString(),
-    schemaVersion: "v0",
-    payload: {
-      ...(options.marker.requestedAt === undefined
-        ? {}
-        : { requestedAt: options.marker.requestedAt }),
-      ...(options.marker.reason === undefined ? {} : { reason: options.marker.reason }),
-      ...(options.marker.source === undefined ? {} : { source: options.marker.source }),
-    },
-  };
+  await appendEvent(
+    options.runDir,
+    createEvent({
+      runId,
+      workflowId,
+      ...(options.stepId === undefined ? {} : { stepId: options.stepId }),
+      type: options.type,
+      payload: cancellationPayload(options.marker),
+    }),
+  );
+}
 
-  await appendFile(join(options.runDir, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+/**
+ * Events of the run's current lifecycle cycle: everything after the most
+ * recent workflow.resumed/workflow.retryStarted (or all events when the run
+ * was never re-opened). A resumed run must be cancelable again even though an
+ * earlier cycle already recorded a workflow.cancelled event.
+ */
+function activeRunCycleEvents(events: readonly Event[]): readonly Event[] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index]?.type;
+    if (type === "workflow.resumed" || type === "workflow.retryStarted") {
+      return events.slice(index + 1);
+    }
+  }
+
+  return events;
 }
 
 function selectTerminalStatus(

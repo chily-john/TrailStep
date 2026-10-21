@@ -37,7 +37,19 @@ The server performs no regeneration: the tool JSONs and the mode flag are re-rea
 
 ## Registration
 
-`trailstep init` and `trailstep add` auto-offer registering the server with detected coding agents through `add-mcp`. The registration scope maps to server names: project/local use `trailstep`, global uses `trailstep-global` (follows the client's cwd), and local appends the `.mcp.json` gitignore entry. Headless runs (`--yes`) and any spawn failure print the exact manual `npx add-mcp ...` command instead of prompting.
+`trailstep init` and `trailstep add` auto-offer registering the server with detected coding agents. Every agent except pi is registered through `add-mcp`: project/local use the server name `trailstep`, global uses `trailstep-global` (follows the client's cwd), and local appends the `.mcp.json` gitignore entry. Headless runs (`--yes`) and any spawn failure print the exact manual `npx add-mcp ...` command instead of prompting.
+
+pi is registered by writing pi's `mcp.json` entry directly, because pi's `exposure` / `toolExposure` keys are pi-only concepts that `add-mcp` cannot express. pi is excluded from the `add-mcp` agent list so no competing entry is written into the user-level file.
+
+| Scope | pi config file | Server name |
+| --- | --- | --- |
+| project | `<projectDir>/.pi/mcp.json` | `trailstep` |
+| local | `<projectDir>/.pi/mcp.json` (same path as project) | `trailstep` |
+| global | `<PI_CODING_AGENT_DIR ?? ~/.pi/agent>/mcp.json` | `trailstep-global` |
+
+The written entry carries `exposure: "codemode"` for the whole server plus a `toolExposure` override that makes the generic run-loop tools (`trst_run_workflow`, `trst_watch`, `trst_answer`, `trst_resume`) `direct`, so the model can call them without a codemode script while the large-schema per-workflow `trst_*` tools stay `codemode`. The write is atomic (temp file + rename in the same directory), preserves other servers and unknown top-level keys such as `autoEnableCodemode`, and never clobbers an existing entry that is configured differently. A failed write never fails the run: it warns and prints the manual `pi mcp add <name> -- <command> <args...>` command instead.
+
+Note that a pi project entry that carries a `command` replaces the same-named user-level entry for that project (only `enabled` / `exposure` / `toolExposure` merge between the two), which is what the project-scope entry intends.
 
 ## Resources
 

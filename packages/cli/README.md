@@ -100,7 +100,7 @@ See the repository [CLI reference (canonical copy in OpenViking)](viking://resou
 
 ## MCP server
 
-`trailstep mcp` runs the TrailStep MCP server in the foreground over stdio, exposing registered workflows to MCP clients as `trst_*` tools. `trailstep add` generates per-workflow MCP tool JSONs under `.trailstep/mcp/`, and `trailstep update --workflows` refreshes them; no other command rewrites those artifacts. `trailstep init` and `trailstep add` also offer to register the server with your coding agent via `add-mcp`.
+`trailstep mcp` runs the TrailStep MCP server in the foreground over stdio, exposing registered workflows to MCP clients as `trst_*` tools. `trailstep add` generates per-workflow MCP tool JSONs under `.trailstep/mcp/`, and `trailstep update --workflows` refreshes them; no other command rewrites those artifacts. `trailstep init` and `trailstep add` also offer to register the server with your coding agent. pi is registered by writing pi's `mcp.json` entry directly (project/local scope: `<project>/.pi/mcp.json`; global scope: `$PI_CODING_AGENT_DIR` or `~/.pi/agent/mcp.json`) so pi's `exposure` / `toolExposure` profile can be applied, and every other coding agent is registered via `add-mcp`.
 
 See the [CLI reference - MCP server section (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/CLI_reference/MCP_server.md) for the tool inventory, the `mcp.perWorkflowTools` list/fallback mode, registration scopes, and MCP-related environment variables.
 

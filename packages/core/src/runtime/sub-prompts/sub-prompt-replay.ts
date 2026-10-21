@@ -1,5 +1,6 @@
 import type { RunContextEvent } from "../../contracts/run-context/run-context.types.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
 
 interface CompletedSubPromptEventPayload extends PlainObject {
   readonly parentStepId: string;
@@ -32,13 +33,4 @@ export function findCompletedSubPromptEvent(
   }
 
   return undefined;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

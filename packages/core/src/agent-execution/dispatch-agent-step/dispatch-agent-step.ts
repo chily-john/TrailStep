@@ -10,6 +10,7 @@ import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js"
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
+import { TRAILSTEP_DIR_NAME } from "../../runtime/artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
 import type { Event, RunWorkflowOptions } from "../../runtime/run-workflow/run-workflow.types.js";
@@ -207,7 +208,7 @@ function throwMissingAgentConfig(options: {
 }): never {
   throw new TrailStepFailureError({
     code: "missing_agent_config",
-    message: `Missing .trailstep/config.json: workflow ${options.workflowId} step ${options.stepId} needs configured ${options.mode} agent '${options.agent}'.`,
+    message: `Missing ${TRAILSTEP_DIR_NAME}/config.json: workflow ${options.workflowId} step ${options.stepId} needs configured ${options.mode} agent '${options.agent}'.`,
     details: {
       workflowId: options.workflowId,
       stepId: options.stepId,

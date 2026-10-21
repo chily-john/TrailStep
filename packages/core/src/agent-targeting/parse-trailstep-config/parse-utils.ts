@@ -1,13 +1,11 @@
 import { TrailStepFailureError, validationFailure } from "../../contracts/failures/failure.js";
+import { isRecord } from "../../json/guards.js";
+import { TRAILSTEP_DIR_NAME } from "../../runtime/artifacts/run-storage.js";
 
 export function throwValidationFailure(diagnostics: readonly string[]): never {
   throw new TrailStepFailureError(
-    validationFailure("Invalid .trailstep/config.json.", { diagnostics }),
+    validationFailure(`Invalid ${TRAILSTEP_DIR_NAME}/config.json.`, { diagnostics }),
   );
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function parseOptionalStringArray(

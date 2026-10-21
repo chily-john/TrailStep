@@ -1,4 +1,5 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
 
 export interface LatestUnresolvedFailure {
@@ -149,13 +150,4 @@ function toLatestUnresolvedFailure(
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {
   const value = event.payload[key];
   return isPlainObject(value) ? value : undefined;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

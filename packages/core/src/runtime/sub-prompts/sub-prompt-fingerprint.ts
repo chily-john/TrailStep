@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
 
 export function fingerprintSubPrompt(options: {
   readonly input: PlainObject;
@@ -22,13 +23,4 @@ export function stableJsonStringify(value: unknown): string {
   }
 
   return JSON.stringify(value);
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

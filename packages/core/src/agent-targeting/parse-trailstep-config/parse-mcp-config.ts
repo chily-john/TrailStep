@@ -1,5 +1,5 @@
+import { isRecord } from "../../json/guards.js";
 import type { TrailStepMcpConfig } from "../targeting.types.js";
-import { isRecord } from "./parse-utils.js";
 
 /**
  * Parses the optional `mcp` config section (MCP server behavior switches).

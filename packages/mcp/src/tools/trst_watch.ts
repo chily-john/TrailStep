@@ -3,7 +3,7 @@
  *
  * The run is resolved from the runs root — `<cwd>/.trailstep/runs` or the
  * `TRAILSTEP_RUNS_ROOT` override — through the shared `resolveRunsRoot` helper
- * from run-wait-files.ts, exactly like the CLI (`options.env`, defaulting to
+ * from `@trailstep/core`, exactly like the CLI (`options.env`, defaulting to
  * `process.env`). Then it reads `<runDir>/events.jsonl` by byte offset (the
  * "cursor") and returns a header plus a capped slice of new complete event
  * lines. When nothing new is
@@ -23,8 +23,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Event } from "@trailstep/core";
-
-import { isPathLike, resolveRunsRoot } from "./run-wait-files.js";
+import { isPathLike, resolveRunsRoot } from "@trailstep/core";
 
 export type TrstWatchVerbosity = "brief" | "normal" | "full";
 

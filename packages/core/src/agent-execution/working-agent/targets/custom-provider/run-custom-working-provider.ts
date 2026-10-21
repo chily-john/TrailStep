@@ -8,6 +8,7 @@ import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/proc
 import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
+import { errorMessage } from "../../../../json/guards.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type {
   Event,
@@ -152,7 +153,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       details: {
         target: options.target.provider,
         ...(options.target.model === undefined ? {} : { model: options.target.model }),
-        cause: error instanceof Error ? error.message : String(error),
+        cause: errorMessage(error),
       },
     });
   } finally {

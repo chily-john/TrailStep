@@ -1,6 +1,7 @@
 import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
 import type {
   AbsoluteDoneNode,
   AbsoluteFailNode,
@@ -400,13 +401,4 @@ function hasRetryOption(value: unknown): boolean {
 
 function hasTimeoutOption(value: unknown): boolean {
   return isPlainObject(value) && "timeout" in value;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

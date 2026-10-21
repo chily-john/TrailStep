@@ -1,3 +1,4 @@
+import { isRecord } from "../../json/guards.js";
 import {
   parseTrailStepProviderRegistrations,
   type TrailStepProviderRegistration,
@@ -9,7 +10,7 @@ import { parseCustomProviders } from "./parse-custom-providers.js";
 import { parseMcpConfig } from "./parse-mcp-config.js";
 import { parseSettings } from "./parse-settings.js";
 import { parseStorageConfig } from "./parse-storage-config.js";
-import { isRecord, throwValidationFailure } from "./parse-utils.js";
+import { throwValidationFailure } from "./parse-utils.js";
 import { parseWorkflows } from "./parse-workflow-agent-mappings.js";
 import { validateProviderReferences } from "./validate-provider-references.js";
 

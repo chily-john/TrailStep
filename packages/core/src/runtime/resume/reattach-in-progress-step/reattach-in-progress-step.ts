@@ -3,6 +3,7 @@ import { firstPromptPhase, getStepPhases } from "../../../authoring/step/step-no
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../../json/guards.js";
 import type {
   Event,
   RunWorkflowOptions,
@@ -279,15 +280,6 @@ async function continueAfterPromptPhase(
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {
   const value = event.payload[key];
   return isPlainObject(value) ? value : undefined;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }
 
 function resumeFailure(code: string, message: string): Failure {

@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
+import { TRAILSTEP_DIR_NAME } from "./runtime/artifacts/run-storage.js";
+
 function homeDir(): string {
   return homedir();
 }
@@ -10,7 +12,10 @@ function workspaceRoot(): string {
   // Best-effort: cwd or directory containing package.json / .trailstep
   try {
     const cwd = process.cwd();
-    if (existsSync(path.join(cwd, ".trailstep")) || existsSync(path.join(cwd, "package.json"))) {
+    if (
+      existsSync(path.join(cwd, TRAILSTEP_DIR_NAME)) ||
+      existsSync(path.join(cwd, "package.json"))
+    ) {
       return cwd;
     }
   } catch {
@@ -30,9 +35,9 @@ export function layeredDirs(options?: { projectDir?: string; homeDir?: string })
   const root = options?.projectDir ? path.resolve(options.projectDir) : workspaceRoot();
   const globalRoot = options?.homeDir ? path.resolve(options.homeDir) : homeDir();
   return [
-    path.resolve(root, ".trailstep/mcp/"),
-    path.resolve(root, "project/.trailstep/mcp/"),
-    path.resolve(globalRoot, ".trailstep/mcp/"),
+    path.resolve(root, TRAILSTEP_DIR_NAME, "mcp"),
+    path.resolve(root, "project", TRAILSTEP_DIR_NAME, "mcp"),
+    path.resolve(globalRoot, TRAILSTEP_DIR_NAME, "mcp"),
   ];
 }
 

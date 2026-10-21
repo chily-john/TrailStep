@@ -1,4 +1,5 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
 
 /**
  * Extraction logic ported from the retired `claude-rpc-trailstep-agent.mjs` mock
@@ -327,8 +328,4 @@ function parseJson(text: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

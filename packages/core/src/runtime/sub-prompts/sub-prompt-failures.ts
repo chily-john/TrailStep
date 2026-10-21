@@ -1,6 +1,7 @@
 import type { Failure } from "../../contracts/failures/failure.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { RunContext } from "../../contracts/run-context/run-context.types.js";
+import { TRAILSTEP_DIR_NAME } from "../artifacts/run-storage.js";
 import { createEvent } from "../events/create-run-event.js";
 import { isFailureLikeError } from "../failures/failure-like.js";
 
@@ -48,7 +49,7 @@ export function throwMissingSubPromptAgentConfig(options: {
 }): never {
   throw new TrailStepFailureError({
     code: "missing_agent_config",
-    message: `Missing .trailstep/config.json: workflow ${options.workflowId} parent step ${options.parentStepId} subPrompt ${options.subPromptId} needs configured working agent '${options.agent}'.`,
+    message: `Missing ${TRAILSTEP_DIR_NAME}/config.json: workflow ${options.workflowId} parent step ${options.parentStepId} subPrompt ${options.subPromptId} needs configured working agent '${options.agent}'.`,
     details: {
       workflowId: options.workflowId,
       parentStepId: options.parentStepId,

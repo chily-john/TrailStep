@@ -1,8 +1,8 @@
+import { isRecord } from "../../json/guards.js";
 import type { TrailStepSettings } from "../targeting.types.js";
 import { parseAgentMappings } from "./parse-agent-mappings.js";
 import type { RawTrailStepAgentMappings } from "./parse-agent-targets.js";
 import { parseSettings } from "./parse-settings.js";
-import { isRecord } from "./parse-utils.js";
 
 export interface RawTrailStepWorkflowConfig {
   readonly agents?: RawTrailStepAgentMappings;

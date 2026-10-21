@@ -32,6 +32,7 @@ import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.typ
 import type { Failure } from "../../../contracts/failures/failure.js";
 import { TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
+import { isNodeError, isPlainObject } from "../../../json/guards.js";
 import type {
   Event,
   RunWorkflowOptions,
@@ -1635,19 +1636,6 @@ function normalizeDisplayValue(
 
 function isDisplayLevel(value: unknown): value is "info" | "warning" | "error" | "debug" {
   return value === "info" || value === "warning" || value === "error" || value === "debug";
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }
 
 async function runWithStepControl<T>(options: {

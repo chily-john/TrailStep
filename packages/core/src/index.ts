@@ -187,6 +187,7 @@ export type {
   DeprecationTargetPackage,
 } from "./deprecations/deprecations.types.js";
 export { TRST_KEY_ORDER } from "./json/constants.js";
+export { errorMessage, isNodeError, isPlainObject, isRecord } from "./json/guards.js";
 export { serializeOrdered } from "./json/ordered-serialize.js";
 export { validateStructural } from "./json/validate-structural.js";
 export { layeredDirs, load } from "./load-order.js";
@@ -213,12 +214,41 @@ export {
   type TrailStepProviderWorkingManifest,
 } from "./providers/provider-manifest.js";
 export {
+  deriveWorkflowExportName,
+  type GenerateRunNameOptions,
+  generateRunName,
+  slugifyRunNamePart,
+} from "./runs/generate-run-name.js";
+export {
+  hasEventsFile,
+  isPathLike,
+  type ResolvedRunDirectory,
+  type ResolveRunDirectoryOptions,
+  type RunDirectoryContext,
+  type RunNotFoundContext,
+  readEventsForRun,
+  resolveConfiguredRunsRoot,
+  resolveRunDirectory,
+  resolveRunsRoot,
+  TRAILSTEP_RUNS_ROOT_ENV,
+} from "./runs/run-directory.js";
+export { writeWaitAnswerFile } from "./runs/wait-answer-file.js";
+export {
+  findLatestPendingWait,
+  findPendingWaitsById,
+  readWaitAnswerFile,
+  readWaitQuestion,
+  waitEventBranchId,
+  waitEventKey,
+} from "./runs/wait-events.js";
+export {
   appendEvent,
   atomicWriteJson,
   defaultRunsRoot,
   readGlobalState,
   readRunEvents,
   readRunState,
+  TRAILSTEP_DIR_NAME,
   writeGlobalState,
   writeRunState,
 } from "./runtime/artifacts/run-storage.js";

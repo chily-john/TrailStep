@@ -7,6 +7,7 @@ import {
 } from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../../json/guards.js";
 import type {
   Event,
   RunWorkflowOptions,
@@ -374,15 +375,6 @@ function withWaitsDoContext(
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {
   const value = event.payload[key];
   return isPlainObject(value) ? value : undefined;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }
 
 function replayFailure(code: string, message: string): Failure {

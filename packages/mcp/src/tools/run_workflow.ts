@@ -23,12 +23,18 @@
  * are the real ones the background run writes events.jsonl into.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import type { PlainObject } from "@trailstep/core";
+import {
+  deriveWorkflowExportName,
+  generateRunName,
+  type PlainObject,
+  resolveRunsRoot,
+} from "@trailstep/core";
+
+import { resolveCliEntry, TRAILSTEP_CLI_ENTRY_ENV } from "./cli-entry.js";
 
 export interface RunWorkflowToolOptions {
   /** Workflow reference (package id, bundle id, or direct workflow file path). */
@@ -60,8 +66,6 @@ export interface RunWorkflowToolResult {
   readonly error?: string;
 }
 
-const TRAILSTEP_RUNS_ROOT_ENV = "TRAILSTEP_RUNS_ROOT";
-const TRAILSTEP_CLI_ENTRY_ENV = "TRAILSTEP_CLI_ENTRY";
 const defaultVerifyStartTimeoutMs = 2_000;
 const verifyStartPollIntervalMs = 25;
 
@@ -76,24 +80,24 @@ export async function runWorkflowTool(
     ...options.env,
   };
 
+  // The canonical run-name scheme: `<readable-name>-<timestamp>-<random-hex>`.
+  // The readable name is the workflow export name derived from the raw ref,
+  // so the CLI and the MCP name the same workflow's run identically.
   const runName = generateRunName({
-    workflowRef,
-    now: options.now,
-    randomSuffix: options.randomSuffix,
+    exportName: deriveWorkflowExportName(workflowRef),
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.randomSuffix === undefined ? {} : { randomSuffix: options.randomSuffix }),
   });
 
   // Runs-root parity with the CLI (`resolveRunsRoot`): env override resolved
   // against the run cwd, else `<cwd>/.trailstep/runs`.
-  const configuredRunsRoot = env[TRAILSTEP_RUNS_ROOT_ENV]?.trim();
-  const runsRoot = configuredRunsRoot
-    ? resolve(cwd, configuredRunsRoot)
-    : join(cwd, ".trailstep", "runs");
+  const runsRoot = resolveRunsRoot({ cwd, env });
   const runDir = join(runsRoot, runName);
 
   // `trailstep <workflow-ref> [workflowRunName] [--input '<json>']` — the run
   // command is the bare workflow-ref form; there is no `run` subcommand token.
   const runArgs = [workflowRef, runName, "--input", JSON.stringify(input)];
-  const cliEntry = resolveCliEntry(options.cliEntry, env);
+  const cliEntry = resolveCliEntryForTool(options.cliEntry, env);
   const platform = options.platform ?? process.platform;
 
   // Precheck 1: never let cmd.exe near the --input JSON. The win32 PATH
@@ -238,81 +242,22 @@ function validateInput(input: unknown): PlainObject {
 }
 
 /**
- * Resolve the trailstep CLI entry to run via `process.execPath`:
- * explicit option, then TRAILSTEP_CLI_ENTRY env, then the running process when
- * it IS the trailstep CLI (`trailstep mcp` foreground server). Falls back to
- * spawning `trailstep` from PATH when none resolve.
+ * Resolve the trailstep CLI entry to run via `process.execPath`.
+ *
+ * The shared resolver (see `cli-entry.ts`) handles the explicit option, the
+ * `TRAILSTEP_CLI_ENTRY` env override and the running-process detection. The
+ * node_modules/workspace walk-up is disabled here on purpose: this tool's
+ * win32 PATH-fallback refusal depends on the CLI entry being explicitly
+ * configured, so an implicit lookup must not silently replace the PATH
+ * fallback with a workspace build.
  */
-function resolveCliEntry(
+function resolveCliEntryForTool(
   cliEntry: string | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
-  const fromOptions = cliEntry?.trim();
-  if (fromOptions) {
-    return resolve(fromOptions);
-  }
-  const fromEnv = env[TRAILSTEP_CLI_ENTRY_ENV]?.trim();
-  if (fromEnv) {
-    return resolve(fromEnv);
-  }
-  return detectCliEntryFromProcess();
-}
-
-function detectCliEntryFromProcess(): string | undefined {
-  const entry = process.argv[1];
-  if (!entry) {
-    return undefined;
-  }
-  const resolvedEntry = resolve(entry);
-  if (basename(resolvedEntry) !== "index.js" || !existsSync(resolvedEntry)) {
-    return undefined;
-  }
-  try {
-    const packageJsonPath = join(dirname(resolvedEntry), "package.json");
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { name?: unknown };
-    return packageJson.name === "@trailstep/cli" ? resolvedEntry : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Real run ids — same scheme as the CLI's
- * `packages/cli/src/internals/commands/run/generate-run-name.ts`
- * (`<readable-name>-<timestamp>-<random-hex>`), kept local because the mcp
- * package must not depend on the cli package (cli already depends on mcp).
- */
-function generateRunName(options: {
-  readonly workflowRef: string;
-  readonly now?: () => Date;
-  readonly randomSuffix?: () => string;
-}): string {
-  const date = options.now?.() ?? new Date();
-  const timestamp = date
-    .toISOString()
-    .replace(/[-:]/gu, "")
-    .replace(/\.\d{3}Z$/u, "")
-    .replace("T", "-");
-  const readableName = slugify(deriveReadableName(options.workflowRef));
-  const suffix = slugify(options.randomSuffix?.() ?? randomBytes(4).toString("hex"));
-  return `${readableName}-${timestamp}-${suffix}`;
-}
-
-function deriveReadableName(workflowRef: string): string {
-  const separatorIndex = workflowRef.lastIndexOf(":");
-  const exportName = separatorIndex >= 0 ? workflowRef.slice(separatorIndex + 1) : undefined;
-  if (exportName && !exportName.includes("/") && !exportName.includes("\\")) {
-    return exportName;
-  }
-  const base = basename(workflowRef);
-  return base.replace(/\.[^.]+$/u, "") || workflowRef;
-}
-
-function slugify(value: string): string {
-  const slug = value
-    .replace(/([a-z0-9])([A-Z])/gu, "$1-$2")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-|-$/gu, "");
-  return slug === "" ? "workflow" : slug;
+  const resolved = resolveCliEntry(env, {
+    ...(cliEntry === undefined ? {} : { cliEntry }),
+    allowWorkspaceLookup: false,
+  });
+  return resolved === undefined ? undefined : resolve(resolved);
 }

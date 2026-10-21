@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
+import { errorMessage } from "../../json/guards.js";
 
 export async function waitForInteractiveCompletion(
   interactiveFile: string,
@@ -96,7 +97,7 @@ async function readPlainJsonFile(
     throw new TrailStepFailureError({
       code: failure.readCode,
       message: failure.message,
-      details: { path, cause: error instanceof Error ? error.message : String(error) },
+      details: { path, cause: errorMessage(error) },
     });
   }
 
@@ -107,7 +108,7 @@ async function readPlainJsonFile(
     throw new TrailStepFailureError({
       code: failure.invalidCode,
       message: failure.message,
-      details: { path, cause: error instanceof Error ? error.message : String(error) },
+      details: { path, cause: errorMessage(error) },
     });
   }
 

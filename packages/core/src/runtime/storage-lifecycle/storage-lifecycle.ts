@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { basename, dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
+import { isNodeError } from "../../json/guards.js";
 import { defaultRunsRoot } from "../artifacts/run-storage.js";
 import { listRunSummaries, type RunSummary } from "../runs/run-summaries.js";
 
@@ -488,8 +489,4 @@ function assertRunId(runId: string): void {
   if (runId !== basename(runId) || runId === "." || runId === ".." || runId.trim() === "") {
     throw new Error("Run id must be a single path segment.");
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

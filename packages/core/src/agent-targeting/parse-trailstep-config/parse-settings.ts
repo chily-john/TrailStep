@@ -1,6 +1,6 @@
+import { isRecord } from "../../json/guards.js";
 import type { RetryPolicyInput } from "../../runtime/retry/retry-policy.js";
 import type { TrailStepSettings } from "../targeting.types.js";
-import { isRecord } from "./parse-utils.js";
 
 export function parseSettings(
   path: string,

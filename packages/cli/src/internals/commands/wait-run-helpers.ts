@@ -1,119 +1,62 @@
 import { constants } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
-import type { Event } from "@trailstep/core";
-import { readRunEvents } from "@trailstep/core";
+import { join } from "node:path";
+import {
+  findPendingWaitsById,
+  isPathLike,
+  type ResolvedRunDirectory,
+  resolveRunDirectory as resolveRunDirectoryCore,
+} from "@trailstep/core";
 import type { CliCommandContext } from "../command.types.js";
 import { CliUsageError } from "../command.types.js";
-import { resolveRunsRoot } from "../runs-root.js";
 
-export interface ResolvedRunDirectory {
-  readonly runDir: string;
-  readonly displayName: string;
-}
+export type { ResolvedRunDirectory } from "@trailstep/core";
+export {
+  findLatestPendingWait,
+  findPendingWaitsById,
+  isPathLike,
+  readEventsForRun,
+  readWaitAnswerFile,
+  waitEventBranchId,
+  waitEventKey,
+} from "@trailstep/core";
 
+/**
+ * Resolve a run name (under the runs root) or a run directory path.
+ *
+ * Thin CLI wrapper over the shared core resolution: the CLI keeps its
+ * archived-run awareness, which turns an archived run into the
+ * `trailstep storage restore <run>` usage hint instead of a missing run.
+ */
 export async function resolveRunDirectory(
   runNameOrRunDir: string,
   context: Pick<CliCommandContext, "cwd" | "env">,
 ): Promise<ResolvedRunDirectory> {
-  const directCandidate = isPathLike(runNameOrRunDir)
-    ? resolve(context.cwd, runNameOrRunDir)
-    : undefined;
-  if (directCandidate !== undefined && (await hasEventsFile(directCandidate))) {
-    return { runDir: directCandidate, displayName: runNameOrRunDir };
-  }
-
-  const namedCandidate = join(resolveRunsRoot(context), runNameOrRunDir);
-  if (await hasEventsFile(namedCandidate)) {
-    return { runDir: namedCandidate, displayName: runNameOrRunDir };
-  }
-
-  if (
-    !isPathLike(runNameOrRunDir) &&
-    (await hasArchivedRunManifest(resolveRunsRoot(context), runNameOrRunDir))
-  ) {
-    throw new CliUsageError(
-      `Run ${runNameOrRunDir} is archived. Restore it with:\n  trailstep storage restore ${runNameOrRunDir}`,
-    );
-  }
-
-  if (directCandidate !== undefined) {
-    return { runDir: directCandidate, displayName: runNameOrRunDir };
-  }
-
-  return { runDir: namedCandidate, displayName: runNameOrRunDir };
+  return await resolveRunDirectoryCore(
+    runNameOrRunDir,
+    { cwd: context.cwd, env: context.env },
+    {
+      onRunNotFound: async ({ runNameOrRunDir: missingRun, runsRoot }) => {
+        if (isPathLike(missingRun)) {
+          return;
+        }
+        if (await hasArchivedRunManifest(runsRoot, missingRun)) {
+          throw new CliUsageError(
+            `Run ${missingRun} is archived. Restore it with:\n  trailstep storage restore ${missingRun}`,
+          );
+        }
+      },
+    },
+  );
 }
 
-export async function readEventsForRun(runDir: string): Promise<readonly Event[]> {
-  return await readRunEvents(runDir);
-}
-
-export function findPendingWaitById(events: readonly Event[], waitId: string): Event | undefined {
+/** The last unresolved wait with the given wait id (CLI convenience wrapper). */
+export function findPendingWaitById(
+  events: Parameters<typeof findPendingWaitsById>[0],
+  waitId: string,
+): ReturnType<typeof findPendingWaitsById>[number] | undefined {
   const pending = findPendingWaitsById(events, waitId);
   return pending[pending.length - 1];
-}
-
-/**
- * Every unresolved wait.started event with the given waitId, in event order.
- * Same-id waits on different parallel branches are distinct waits, so callers
- * that address a wait must disambiguate by branch instead of picking one.
- */
-export function findPendingWaitsById(events: readonly Event[], waitId: string): Event[] {
-  const pending: Event[] = [];
-  for (let index = 0; index < events.length; index += 1) {
-    const event = events[index];
-    if (event?.type !== "wait.started" || event.payload.waitId !== waitId) {
-      continue;
-    }
-
-    const key = waitEventKey(event);
-    const resolvedLater = key
-      ? events
-          .slice(index + 1)
-          .some(
-            (laterEvent) =>
-              (laterEvent.type === "wait.satisfied" || laterEvent.type === "wait.failed") &&
-              waitEventKey(laterEvent) === key,
-          )
-      : false;
-    if (!resolvedLater) {
-      pending.push(event);
-    }
-  }
-
-  return pending;
-}
-
-/** Branch identity of a wait event; events without a branch belong to the implicit root branch. */
-export function waitEventBranchId(event: Event): string {
-  return typeof event.payload.branchId === "string" && event.payload.branchId.length > 0
-    ? event.payload.branchId
-    : "root";
-}
-
-export function findLatestPendingWait(events: readonly Event[]): Event | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type !== "wait.started" || typeof event.payload.waitId !== "string") {
-      continue;
-    }
-
-    const key = waitEventKey(event);
-    const resolvedLater = key
-      ? events
-          .slice(index + 1)
-          .some(
-            (laterEvent) =>
-              (laterEvent.type === "wait.satisfied" || laterEvent.type === "wait.failed") &&
-              waitEventKey(laterEvent) === key,
-          )
-      : false;
-    if (!resolvedLater) {
-      return event;
-    }
-  }
-
-  return undefined;
 }
 
 export async function writeRunWorkflowRef(runDir: string, workflowRef: string): Promise<void> {
@@ -131,43 +74,12 @@ export async function readRunWorkflowRef(runDir: string): Promise<string | undef
       return parsed.workflowRef;
     }
   } catch (error) {
-    if (!(isNodeError(error) && error.code === "ENOENT")) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
       throw error;
     }
   }
 
   return undefined;
-}
-
-export function readWaitAnswerFile(event: Event): string | undefined {
-  const artifactPaths = event.payload.artifactPaths;
-  if (!isPlainObject(artifactPaths)) {
-    return undefined;
-  }
-
-  return typeof artifactPaths.answerFile === "string" ? artifactPaths.answerFile : undefined;
-}
-
-function isPathLike(value: string): boolean {
-  return (
-    isAbsolute(value) ||
-    value.startsWith("./") ||
-    value.startsWith("../") ||
-    value.startsWith(".\\") ||
-    value.startsWith("..\\") ||
-    value.includes("/") ||
-    value.includes("\\") ||
-    /^[A-Za-z]:[\\/]/u.test(value)
-  );
-}
-
-async function hasEventsFile(runDir: string): Promise<boolean> {
-  try {
-    await access(join(runDir, "events.jsonl"), constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function hasArchivedRunManifest(runsRoot: string, runId: string): Promise<boolean> {
@@ -177,20 +89,6 @@ async function hasArchivedRunManifest(runsRoot: string, runId: string): Promise<
   } catch {
     return false;
   }
-}
-
-function waitEventKey(event: Event): string | undefined {
-  // Branch identity is part of the wait identity so that same-id waits on
-  // different parallel branches never resolve each other. Events from
-  // non-parallel runs carry no branchId and belong to the implicit root branch.
-  const branchId = waitEventBranchId(event);
-  const artifactPaths = event.payload.artifactPaths;
-  if (isPlainObject(artifactPaths) && typeof artifactPaths.answerFile === "string") {
-    return `${branchId}:${artifactPaths.answerFile}`;
-  }
-
-  const waitId = typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
-  return event.stepId && waitId ? `${branchId}:${event.stepId}:${waitId}` : undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

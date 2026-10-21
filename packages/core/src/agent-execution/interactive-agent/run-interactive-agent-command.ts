@@ -10,6 +10,7 @@ import { resolveCliCommandForSpawn } from "../../cli-provider-runtime/process/re
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
+import { errorMessage } from "../../json/guards.js";
 import type { StepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
 import {
   isInteractiveCompleted,
@@ -133,7 +134,7 @@ async function runInteractiveAgentTarget(options: {
           details: {
             provider: options.target.provider,
             ...(options.target.model === undefined ? {} : { model: options.target.model }),
-            cause: error instanceof Error ? error.message : String(error),
+            cause: errorMessage(error),
           },
         }),
       runProcess: async () =>
@@ -196,7 +197,7 @@ async function runInteractiveAgentTarget(options: {
         details: {
           target: options.target.provider,
           ...(options.target.model === undefined ? {} : { model: options.target.model }),
-          cause: error instanceof Error ? error.message : String(error),
+          cause: errorMessage(error),
         },
       }),
     runProcess: async () =>

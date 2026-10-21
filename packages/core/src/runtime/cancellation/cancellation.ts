@@ -1,6 +1,8 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isNodeError, isPlainObject } from "../../json/guards.js";
+
 export const CANCELLATION_MARKER_FILE = "cancel.json";
 
 export interface CancellationMarker {
@@ -113,17 +115,4 @@ function normalizeCancellationMarker(value: unknown): CancellationMarker {
     ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
     ...(typeof value.source === "string" ? { source: value.source } : {}),
   };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

@@ -1,10 +1,11 @@
 import type { WorkflowAgentThinking } from "../../contracts/agents/agent-role.types.js";
+import { isRecord } from "../../json/guards.js";
 import type {
   TrailStepCustomProviderConfig,
   TrailStepCustomProviderModelOverrideSupport,
   TrailStepCustomProviderThinkingOverrideSupport,
 } from "../targeting.types.js";
-import { isRecord, parseOptionalStringArray, parseOptionalStringRecord } from "./parse-utils.js";
+import { parseOptionalStringArray, parseOptionalStringRecord } from "./parse-utils.js";
 
 const THINKING_LEVELS = new Set<WorkflowAgentThinking>(["low", "medium", "high", "xhigh", "max"]);
 

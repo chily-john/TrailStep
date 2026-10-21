@@ -1,4 +1,5 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
 import { runContextStorage } from "../../runtime/run-context/run-context-storage.js";
 
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown
@@ -66,13 +67,4 @@ function deepFreeze<T>(value: T): T {
   }
 
   return value;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

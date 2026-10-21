@@ -2,8 +2,9 @@ import type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "../../contracts/agents/agent-role.types.js";
+import { isRecord } from "../../json/guards.js";
 import type { TrailStepAgentTarget } from "../targeting.types.js";
-import { isRecord, parseOptionalStringArray } from "./parse-utils.js";
+import { parseOptionalStringArray } from "./parse-utils.js";
 
 export interface RawTrailStepAgentRef {
   readonly ref: string;

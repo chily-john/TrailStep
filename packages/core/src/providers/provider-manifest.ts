@@ -1,11 +1,11 @@
 import {
-  isRecord,
   parseOptionalStringArray,
   parseOptionalStringRecord,
   throwValidationFailure,
 } from "../agent-targeting/parse-trailstep-config/parse-utils.js";
 import type { ResolvedAgentExecutionConfig } from "../contracts/agents/agent-execution.types.js";
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
+import { isRecord } from "../json/guards.js";
 
 export interface TrailStepProviderRegistration {
   readonly source: TrailStepProviderSource;

@@ -1,9 +1,9 @@
+import { isRecord } from "../../json/guards.js";
 import {
   parseTargetArray,
   type RawTrailStepAgentMappings,
   type RawTrailStepAgentTarget,
 } from "./parse-agent-targets.js";
-import { isRecord } from "./parse-utils.js";
 
 export function parseAgentMappings(
   path: string,

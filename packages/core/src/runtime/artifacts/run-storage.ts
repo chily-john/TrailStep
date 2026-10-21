@@ -2,12 +2,18 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
+import { isNodeError, isPlainObject } from "../../json/guards.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
+
+export type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
 
 export type RunState = Record<string, unknown>;
 
+/** Name of the per-project TrailStep state directory (e.g. `<cwd>/.trailstep`). */
+export const TRAILSTEP_DIR_NAME = ".trailstep";
+
 export function defaultRunsRoot(cwd: string): string {
-  return join(cwd, ".trailstep", "runs");
+  return join(cwd, TRAILSTEP_DIR_NAME, "runs");
 }
 
 /**
@@ -115,7 +121,7 @@ export async function readJsonStateArtifact(path: string): Promise<RunState> {
     const contents = await readFile(path, "utf8");
     const parsed: unknown = JSON.parse(contents);
 
-    if (!isRunState(parsed)) {
+    if (!isPlainObject(parsed)) {
       throw new Error("run state must be a JSON object");
     }
 
@@ -248,10 +254,6 @@ export async function writeBranchRunState(
   await writeJsonStateArtifact(branchStatePath(runDir, branchId), state);
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
 function validateRunName(runName: string): void {
   if (
     runName.trim().length === 0 ||
@@ -268,18 +270,9 @@ function validateRunName(runName: string): void {
   }
 }
 
-function isRunState(value: unknown): value is RunState {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
-}
-
 async function ensureTrailStepGitignoreForRunsRoot(runsRoot: string): Promise<void> {
   const trailstepRoot = dirname(runsRoot);
-  if (basename(trailstepRoot) !== ".trailstep") {
+  if (basename(trailstepRoot) !== TRAILSTEP_DIR_NAME) {
     return;
   }
 

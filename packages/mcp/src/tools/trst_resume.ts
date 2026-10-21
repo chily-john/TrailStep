@@ -8,20 +8,18 @@
  * fabricates a {resumed:true} result without the continue machinery running.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-import type { Event } from "@trailstep/core";
 
 import {
+  type Event,
   type ResolvedRunDirectory,
   type RunDirectoryContext,
   readEventsForRun,
   resolveRunDirectory,
-} from "./run-wait-files.js";
+} from "@trailstep/core";
 
-export const TRAILSTEP_CLI_ENTRY_ENV = "TRAILSTEP_CLI_ENTRY";
+import { resolveCliEntry, TRAILSTEP_CLI_ENTRY_ENV } from "./cli-entry.js";
+
+export { resolveCliEntry, TRAILSTEP_CLI_ENTRY_ENV };
 
 export type ContinueStatus = "completed" | "waiting" | "cancelled" | "failed" | "unknown";
 
@@ -134,44 +132,6 @@ export async function trstResume(options: TrstResumeOptions): Promise<TrstResume
     ...(status === undefined ? {} : { status }),
     ...(error === undefined ? {} : { error }),
   };
-}
-
-/**
- * Resolves the @trailstep/cli package entry that owns the real continue
- * command. Order: explicit env override, then a walk-up search that covers the
- * pnpm workspace layout (packages/cli/dist) and node_modules installs.
- */
-export function resolveCliEntry(env?: Record<string, string | undefined>): string | undefined {
-  const override = env?.[TRAILSTEP_CLI_ENTRY_ENV]?.trim();
-  if (override) {
-    return override;
-  }
-
-  let current = dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    const nodeModulesCandidate = join(
-      current,
-      "node_modules",
-      "@trailstep",
-      "cli",
-      "dist",
-      "index.js",
-    );
-    if (existsSync(nodeModulesCandidate)) {
-      return nodeModulesCandidate;
-    }
-
-    const workspaceCandidate = join(current, "packages", "cli", "dist", "index.js");
-    if (existsSync(workspaceCandidate)) {
-      return workspaceCandidate;
-    }
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return undefined;
-    }
-    current = parent;
-  }
 }
 
 /**

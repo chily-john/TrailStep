@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { errorMessage, isNodeError } from "../../json/guards.js";
 import { defaultRunsRoot, readRunEvents } from "../artifacts/run-storage.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
@@ -66,7 +67,7 @@ export async function listRunSummaries(options: {
         runId,
         runDir,
         status: "unknown",
-        warning: `Warning: Could not read run ${runId}: ${readErrorMessage(error)}`,
+        warning: `Warning: Could not read run ${runId}: ${errorMessage(error)}`,
       });
     }
   }
@@ -112,7 +113,7 @@ async function summarizeReadableRun(options: {
   try {
     track = await readTrackSummary(options);
   } catch (error) {
-    trackWarning = `Warning: Could not read track summary for run ${options.runId}: ${readErrorMessage(error)}`;
+    trackWarning = `Warning: Could not read track summary for run ${options.runId}: ${errorMessage(error)}`;
   }
   const trackFields = {
     ...(track === undefined ? {} : { track }),
@@ -248,7 +249,7 @@ async function listArchivedRunSummaries(runsRoot: string): Promise<RunSummary[]>
         runId: entry.name.replace(/\.manifest\.json$/u, ""),
         runDir: join(archiveDir, entry.name),
         status: "unknown",
-        warning: `Warning: Could not read archived run manifest ${entry.name}: ${readErrorMessage(error)}`,
+        warning: `Warning: Could not read archived run manifest ${entry.name}: ${errorMessage(error)}`,
       });
     }
   }
@@ -259,12 +260,4 @@ function compareTimestampDescending(left: string | undefined, right: string | un
   const leftTime = left ? Date.parse(left) : Number.NEGATIVE_INFINITY;
   const rightTime = right ? Date.parse(right) : Number.NEGATIVE_INFINITY;
   return rightTime - leftTime;
-}
-
-function readErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

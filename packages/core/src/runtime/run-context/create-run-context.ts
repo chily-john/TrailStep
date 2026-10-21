@@ -8,6 +8,7 @@ import type {
   RunContextState,
   RunContextWorkingAgentProcessRunner,
 } from "../../contracts/run-context/run-context.types.js";
+import { errorMessage } from "../../json/guards.js";
 import {
   type RunState,
   readGlobalState,
@@ -68,7 +69,7 @@ export function createRunContext(options: {
  * so a failing stderr write must not poison the queue for later operations.
  */
 function reportPersistFailure(scope: string, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   try {
     process.stderr.write(`trailstep: ${scope} persistence failed: ${message}\n`);
   } catch {

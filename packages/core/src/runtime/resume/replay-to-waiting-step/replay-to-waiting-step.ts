@@ -4,6 +4,7 @@ import type { StepNode, WaitPhase } from "../../../authoring/step/continuation.t
 import { getStepPhases } from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
+import { errorMessage, isPlainObject } from "../../../json/guards.js";
 import type {
   Event,
   RunWorkflowOptions,
@@ -94,7 +95,7 @@ export async function replayToWaitingStep<
         status: "failure",
         failure: resumeFailure(
           "continue_target_not_found",
-          `Branch ${scopeBranchId} run state is missing or unreadable: ${error instanceof Error ? error.message : String(error)}`,
+          `Branch ${scopeBranchId} run state is missing or unreadable: ${errorMessage(error)}`,
         ),
       };
     }
@@ -610,15 +611,6 @@ function readWaitId(event: Event): string | undefined {
 function readPlainPayload(event: Event, key: string): PlainObject | undefined {
   const value = event.payload[key];
   return isPlainObject(value) ? value : undefined;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }
 
 function resumeFailure(code: string, message: string): Failure {

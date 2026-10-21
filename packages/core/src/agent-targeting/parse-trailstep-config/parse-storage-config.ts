@@ -1,6 +1,7 @@
+import { isRecord } from "../../json/guards.js";
 import { parseStorageLifecycleDurationDays } from "../../runtime/storage-lifecycle/storage-lifecycle.js";
 import type { TrailStepStorageConfig } from "../targeting.types.js";
-import { isRecord, parseOptionalStringArray } from "./parse-utils.js";
+import { parseOptionalStringArray } from "./parse-utils.js";
 
 const VALID_RUN_ON = new Set(["run", "open", "runs"]);
 

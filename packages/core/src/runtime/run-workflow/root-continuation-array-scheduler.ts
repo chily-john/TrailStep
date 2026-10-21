@@ -15,6 +15,7 @@ import {
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { errorMessage } from "../../json/guards.js";
 import {
   atomicWriteJson,
   readBranchRunState,
@@ -991,7 +992,7 @@ async function createPersistedTrackRetryPlan(input: {
         status: "failure",
         failure: {
           code: "retry_track_metadata_unreadable",
-          message: `Retry target track metadata is missing or unreadable: ${error instanceof Error ? error.message : String(error)}`,
+          message: `Retry target track metadata is missing or unreadable: ${errorMessage(error)}`,
         },
       },
     };

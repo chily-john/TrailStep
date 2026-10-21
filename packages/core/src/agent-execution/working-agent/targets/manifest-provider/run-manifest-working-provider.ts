@@ -17,6 +17,7 @@ import type {
 } from "../../../../contracts/agents/agent-role.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
+import { errorMessage, isRecord } from "../../../../json/guards.js";
 import {
   buildProviderHygieneArgs,
   type ProviderHygieneArgs,
@@ -537,7 +538,7 @@ async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(context: 
     } catch (error) {
       // Output validation/parse failure: retry Phase 2 in the SAME session.
       // The worker (Phase 1) is never re-run for format failures.
-      formatFailureMessage = error instanceof Error ? error.message : String(error);
+      formatFailureMessage = errorMessage(error);
       validationDiagnostics.push(`format attempt ${attempt}: ${formatFailureMessage}`);
     }
   }
@@ -805,7 +806,7 @@ async function spawnManifestPhase(options: {
         phase: options.phase,
         target: options.provider,
         ...(options.model === undefined ? {} : { model: options.model }),
-        cause: error instanceof Error ? error.message : String(error),
+        cause: errorMessage(error),
       },
     });
   } finally {
@@ -919,7 +920,7 @@ async function writeEnvelopeOutput(options: {
       message: `Working agent step ${options.stepId} provider '${options.provider}' could not parse stdout envelope output.`,
       details: {
         provider: options.provider,
-        cause: error instanceof Error ? error.message : String(error),
+        cause: errorMessage(error),
       },
     });
   }
@@ -997,8 +998,4 @@ function extractJsonObject(stdout: string): Record<string, unknown> | undefined 
   }
 
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

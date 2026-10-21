@@ -9,6 +9,7 @@ import type {
 import type { ManagedSessionPromptInjectionMode } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import { resolveCliCommandForSpawn } from "../../cli-provider-runtime/process/resolve-cli-command.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
+import { errorMessage, isNodeError } from "../../json/guards.js";
 import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
@@ -168,19 +169,8 @@ function isSpawnEnoentError(error: unknown, command: string, message: string): b
   ).test(message);
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }
 
 function definedProcessEnv(): Record<string, string> {

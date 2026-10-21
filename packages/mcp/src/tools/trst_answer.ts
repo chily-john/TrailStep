@@ -10,13 +10,12 @@
  * Waiting-state results carry the verbatim question text of the pending wait
  * plus the exact submitted recommendation, unmodified.
  */
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-
-import type { Event, PlainObject } from "@trailstep/core";
+import { join } from "node:path";
 
 import {
+  type Event,
   findPendingWaitsById,
+  type PlainObject,
   type ResolvedRunDirectory,
   type RunDirectoryContext,
   readEventsForRun,
@@ -24,7 +23,9 @@ import {
   readWaitQuestion,
   resolveRunDirectory,
   waitEventBranchId,
-} from "./run-wait-files.js";
+  writeWaitAnswerFile,
+} from "@trailstep/core";
+
 import { type ContinueRunner, type TrstResumeResult, trstResume } from "./trst_resume.js";
 
 export interface TrstAnswerOptions {
@@ -153,7 +154,7 @@ export async function trstAnswer(options: TrstAnswerOptions): Promise<TrstAnswer
 
   const branchId = waitEventBranchId(waitStarted);
   const answerPath = join(resolvedRun.runDir, answerFile);
-  await atomicWriteJson(answerPath, options.answer);
+  await writeWaitAnswerFile(answerPath, options.answer);
 
   // The continue step runs AFTER the answer is persisted; a throwing continue
   // path must never discard the persisted-answer report — surface the failure
@@ -188,16 +189,8 @@ export async function trstAnswer(options: TrstAnswerOptions): Promise<TrstAnswer
 }
 
 /**
- * Atomic write (temp file + rename in the same directory) so a concurrent
- * continue never reads a half-written answer file.
+ * Strict plain-object check (the answer payload must be a plain JSON object).
  */
-async function atomicWriteJson(path: string, answer: PlainObject): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tempPath, `${JSON.stringify(answer, null, 2)}\n`, "utf8");
-  await rename(tempPath, path);
-}
-
 function isPlainObject(value: unknown): value is PlainObject {
   return (
     typeof value === "object" &&

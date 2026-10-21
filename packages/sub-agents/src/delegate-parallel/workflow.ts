@@ -31,8 +31,7 @@ export type {
 
 export const delegateParallel = defineWorkflow<DelegateParallelInput, DelegateParallelOutput>({
   id: "delegateParallel",
-  description:
-    "Use when you have 2+ independent codebase tasks that can run in parallel. Fans out required delegate tasks across parallel delegate workflows.",
+  description: `Fans out 2+ independent codebase tasks across parallel delegate workflows, one branch per task. Each task takes a \`mode\` (explore = read-only investigation, implement = edits files, review = review, general = judgement) and an optional \`maxTurns\` that bounds the number of turns, and a delegate that needs a decision returns a question, which you answer with \`trst_answer\` and then continue the run with \`trst_resume\`.`,
   skill: delegateParallelSkill(),
   inputShape: delegateParallelInputShape,
   outputShape: delegateParallelOutputShape,

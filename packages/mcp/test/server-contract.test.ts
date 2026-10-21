@@ -62,6 +62,26 @@ describe("MCP server contract", () => {
     expect(required.trst_resume).toContain("runId");
   });
 
+  it("describes the per-workflow tool preference and the watch loop in the tool descriptions", async () => {
+    const client = await connectedClient(tmpProject("mcp-contract-"));
+    const listed = await client.listTools();
+    const descriptions = Object.fromEntries(
+      listed.tools.map((tool) => [tool.name, tool.description ?? ""]),
+    );
+
+    expect(descriptions.trst_run_workflow).toContain("per-workflow tool");
+    expect(descriptions.trst_run_workflow).toContain("trst_delegate");
+    expect(descriptions.trst_watch).toContain("Observe a TrailStep run");
+    expect(descriptions.trst_watch).toContain("persisted per run");
+    expect(descriptions.trst_watch).toContain("trst_answer");
+  });
+
+  it("sends server instructions that point at the instructions resource", async () => {
+    const client = await connectedClient(tmpProject("mcp-contract-"));
+    const instructions = client.getInstructions();
+    expect(instructions).toContain(INSTRUCTIONS_RESOURCE_URI);
+  });
+
   it("trst_run_workflow rejects a missing workflow without spawning", async () => {
     const client = await connectedClient(tmpProject("mcp-contract-"));
     const call = await client.callTool({ name: "trst_run_workflow", arguments: {} });

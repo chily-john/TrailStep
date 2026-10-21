@@ -63,7 +63,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_run_workflow",
     description:
-      'Start a TrailStep workflow run in the background and return immediately with {runId, runDir, status, workflow}. status is "started" only once the background run\'s directory actually materializes (bounded verification); when the run never starts (missing or refused CLI entry, spawn failure, or a run directory that never appears), status is "failed" with an "error" field and the result is reported as an isError tool result — never a false "started".',
+      'Start a TrailStep workflow run in the background and return immediately with {runId, runDir, status, workflow}. status is "started" only once the background run\'s directory actually materializes (bounded verification); when the run never starts (missing or refused CLI entry, spawn failure, or a run directory that never appears), status is "failed" with an "error" field and the result is reported as an isError tool result — never a false "started". When a per-workflow tool exists for the workflow you want (for example trst_delegate or trst_take-it-away), prefer it: it already knows the workflow reference and its input schema. Use this generic tool only when no per-workflow tool covers the workflow.',
     inputSchema: {
       type: "object",
       properties: {
@@ -84,7 +84,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_watch",
     description:
-      "Observe a TrailStep run's event stream since a byte-offset cursor (persisted across calls) with long-polling.",
+      "Observe a TrailStep run's event stream since a byte-offset cursor (persisted across calls) with long-polling. The byte-offset cursor is persisted per run, so repeated calls continue where the last one stopped. An unknown or unreadable run id returns an error result instead of waiting. Use it together with trst_run_workflow to follow a run and trst_answer to answer a question the run is waiting on.",
     inputSchema: {
       type: "object",
       properties: {
@@ -171,6 +171,14 @@ export interface CreateServerOptions {
 
 const SERVER_INFO = { name: "trailstep-mcp", version: "0.1.0" } as const;
 
+/**
+ * Server instructions sent on initialize: the run -> watch -> answer -> resume
+ * loop, with a pointer to the `trailstep://instructions` resource that carries
+ * the same mapping in detail.
+ */
+export const SERVER_INSTRUCTIONS =
+  "TrailStep MCP server: start a workflow with trst_run_workflow (or a per-workflow trst_* tool), follow it with trst_watch, answer a question the run is waiting on with trst_answer, and continue the run with trst_resume. The trailstep://instructions resource describes this run -> watch -> answer -> resume loop.";
+
 export const PROJECT_RESOURCE_URI = "trailstep://project";
 export const INSTRUCTIONS_RESOURCE_URI = "trailstep://instructions";
 
@@ -247,6 +255,7 @@ export function createServer(options: CreateServerOptions = {}): Server {
       tools: {},
       resources: {},
     },
+    instructions: SERVER_INSTRUCTIONS,
   });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

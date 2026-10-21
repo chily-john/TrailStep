@@ -52,6 +52,18 @@ export const LEAN_DELEGATE_EXECUTION: AgentExecutionConfig = {
   contextFiles: "project-only",
 };
 
+/**
+ * Shared sentence fragments for the delegate workflow descriptions. The
+ * description of a workflow is what a calling model sees in the generated
+ * per-workflow MCP tool JSON, so it has to say what `mode` and `maxTurns`
+ * do and how a delegate question is answered.
+ */
+const MODE_SENTENCE =
+  "`mode` selects the delegate behavior (explore = read-only investigation, implement = edits files, review = review, general = judgement)";
+const MAX_TURNS_SENTENCE = "`maxTurns` bounds the number of turns";
+const QUESTION_SENTENCE =
+  "a delegate that needs a decision returns a question, which you answer with `trst_answer` and then continue the run with `trst_resume`";
+
 export function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
   return defineWorkflow<DelegateInput, DelegateOutput>({
     id: config.id,
@@ -79,7 +91,7 @@ export function defineDelegateWorkflow(config: DelegateWorkflowConfig) {
 
 export const delegate = defineDelegateWorkflow({
   id: "delegate",
-  description: "Runs delegated focused work while preserving run-local continuity.",
+  description: `Runs one bounded delegated task in a separate working agent while preserving run-local continuity. ${MODE_SENTENCE}, ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate",
   skillDescription:
     "Use when you need to delegate a single bounded task and want to choose mode, turn budget, and context shape explicitly. General-purpose delegate for focused work.",
@@ -91,7 +103,7 @@ export const delegate = defineDelegateWorkflow({
 
 export const delegateExplore = defineDelegateWorkflow({
   id: "delegateExplore",
-  description: "Runs read-oriented delegated exploration while preserving run-local continuity.",
+  description: `Runs a read-only delegated exploration (explore mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-explore",
   skillDescription:
     "Use when you need to investigate the codebase, understand how code works, find where something lives, or trace a flow. Read-only exploration that summarizes findings without editing files.",
@@ -104,7 +116,7 @@ export const delegateExplore = defineDelegateWorkflow({
 
 export const delegateSimpleExplore = defineDelegateWorkflow({
   id: "delegateSimpleExplore",
-  description: "Runs narrow, low-cost read-only exploration while preserving run-local continuity.",
+  description: `Runs a narrow, low-cost read-only delegated lookup (explore mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-simple-explore",
   skillDescription:
     "Use when you need a quick low-cost answer to a narrow repo question like where is X, what calls Y, or what does this file do. Read-only single-area lookup.",
@@ -119,7 +131,7 @@ export const delegateSimpleExplore = defineDelegateWorkflow({
 
 export const delegateArchitectPlanner = defineDelegateWorkflow({
   id: "delegateArchitectPlanner",
-  description: "Scouts the codebase to identify the few files or seams likely needing edits.",
+  description: `Scouts the codebase to identify the few files or seams likely needing edits (explore mode by default), without changing them. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-architect-planner",
   skillDescription:
     "Use when you have a bug report or feature request and need to map it to the 3-4 files or seams most likely to need edits before implementing. Read-only scouting, no code changes.",
@@ -134,7 +146,7 @@ export const delegateArchitectPlanner = defineDelegateWorkflow({
 
 export const delegateReview = defineDelegateWorkflow({
   id: "delegateReview",
-  description: "Runs delegated review work while preserving run-local continuity.",
+  description: `Runs a delegated review of existing code, a plan, or a diff (review mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-review",
   skillDescription:
     "Use when you need to review existing code, a plan, or a diff for concrete issues and risks. Inspects without editing unless a fix is explicitly requested.",
@@ -147,7 +159,7 @@ export const delegateReview = defineDelegateWorkflow({
 
 export const delegateImplement = defineDelegateWorkflow({
   id: "delegateImplement",
-  description: "Runs delegated implementation work while preserving run-local continuity.",
+  description: `Runs delegated implementation work that edits files (implement mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-implement",
   skillDescription:
     "Use when you need to change files to implement a bounded fix or feature. Makes edits, runs focused checks when practical, and reports changed files.",
@@ -161,7 +173,7 @@ export const delegateImplement = defineDelegateWorkflow({
 
 export const delegateQuickImplementor = defineDelegateWorkflow({
   id: "delegateQuickImplementor",
-  description: "Runs strict localized implementation work for mechanical changes.",
+  description: `Runs strict, localized implementation work for mechanical changes (implement mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-quick-implementor",
   skillDescription:
     "Use when instructions are already concrete and you need strict localized boilerplate edits with no architecture decisions. Mechanical typist that edits files.",
@@ -176,7 +188,7 @@ export const delegateQuickImplementor = defineDelegateWorkflow({
 
 export const delegateSmartImplementor = defineDelegateWorkflow({
   id: "delegateSmartImplementor",
-  description: "Runs complex implementation, algorithmic work, or cross-file refactors.",
+  description: `Runs complex implementation, algorithmic work, or cross-file refactors (implement mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-smart-implementor",
   skillDescription:
     "Use when you need complex cross-file refactoring, algorithmic work, or interconnected system changes. Heavy-lifter that edits files and keeps scope bounded.",
@@ -191,7 +203,7 @@ export const delegateSmartImplementor = defineDelegateWorkflow({
 
 export const delegateRelentlessDebugger = defineDelegateWorkflow({
   id: "delegateRelentlessDebugger",
-  description: "Diagnoses and fixes validation, lint, test, or runtime failures.",
+  description: `Diagnoses and fixes validation, lint, test, or runtime failures (implement mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-relentless-debugger",
   skillDescription:
     "Use when lint, typecheck, tests, or runtime are failing and you need to diagnose stack traces or diagnostics and fix them iteratively. Preserves intent while editing files.",
@@ -206,7 +218,7 @@ export const delegateRelentlessDebugger = defineDelegateWorkflow({
 
 export const delegateSchemaFormatter = defineDelegateWorkflow({
   id: "delegateSchemaFormatter",
-  description: "Produces exact structured output for schema-bound handoffs.",
+  description: `Produces exact structured output for schema-bound handoffs (general mode by default) in a separate working agent while preserving run-local continuity. ${MAX_TURNS_SENTENCE}, and ${QUESTION_SENTENCE}.`,
   skillName: "trst-delegate-schema-formatter",
   skillDescription:
     "Use when you need exact JSON, XML, or schema-constrained output for a handoff. Formatting-only, prioritizes exact structure over prose.",

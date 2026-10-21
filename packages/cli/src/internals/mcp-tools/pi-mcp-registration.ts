@@ -33,7 +33,7 @@ export const PI_MCP_DIRECT_TOOL_NAMES = [
 ] as const;
 
 export const PI_MCP_SERVER_DESCRIPTION =
-  "TrailStep workflow runtime: run, watch, answer and resume workflows, plus per-workflow trst_* tools.";
+  "TrailStep workflow runtime: run, watch, answer and resume workflows, plus per-workflow trst_* tools. The trailstep://instructions resource describes the run -> watch -> answer -> resume loop.";
 
 export interface PiMcpLaunchSpec {
   readonly command: string;

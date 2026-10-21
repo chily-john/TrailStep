@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { coerceScalarStrings } from "../../authoring/shape/coerce-scalars.js";
 import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
-import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 import type {
   Event,
   Result,
@@ -230,9 +231,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       }
       await runContext.state.hydratePersisted();
 
-      workflowInput = inputSchema
-        ? (inputSchema.assert(replay.input, "workflow input") as TInput)
-        : (replay.input as TInput);
+      workflowInput = assertWorkflowInput(inputSchema, replay.input);
       startNode = replay.node;
       await emit(
         createEvent({
@@ -267,9 +266,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }
         await runContext.state.hydratePersisted();
         await runContext.globalState.hydratePersisted();
-        workflowInput = inputSchema
-          ? (inputSchema.assert(persistedInput, "workflow input") as TInput)
-          : (persistedInput as TInput);
+        workflowInput = assertWorkflowInput(inputSchema, persistedInput);
         startNode = options.workflow.start(workflowInput);
         isWaitContinueTrackResume = true;
         waitResume = undefined;
@@ -333,9 +330,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }
         await runContext.state.hydratePersisted();
 
-        workflowInput = inputSchema
-          ? (inputSchema.assert(replay.input, "workflow input") as TInput)
-          : (replay.input as TInput);
+        workflowInput = assertWorkflowInput(inputSchema, replay.input);
         startNode = replay.node;
         waitResume = replay;
         await emit(
@@ -363,9 +358,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }
         await runContext.state.hydratePersisted();
         await runContext.globalState.hydratePersisted();
-        workflowInput = inputSchema
-          ? (inputSchema.assert(persistedInput, "workflow input") as TInput)
-          : (persistedInput as TInput);
+        workflowInput = assertWorkflowInput(inputSchema, persistedInput);
         isTrackRetry = true;
         await emit(
           createEvent({
@@ -392,9 +385,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         }
         await runContext.state.hydratePersisted();
 
-        workflowInput = inputSchema
-          ? (inputSchema.assert(replay.input, "workflow input") as TInput)
-          : (replay.input as TInput);
+        workflowInput = assertWorkflowInput(inputSchema, replay.input);
         startNode = replay.node;
         await emit(
           createEvent({
@@ -412,9 +403,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         );
       }
     } else {
-      workflowInput = inputSchema
-        ? inputSchema.assert(options.input, "workflow input")
-        : (options.input as TInput);
+      workflowInput = assertWorkflowInput(inputSchema, options.input);
       await emit(
         createEvent({
           runId,
@@ -737,4 +726,27 @@ function cancellationFromPayload(payload: Record<string, unknown>): Cancellation
     ...(typeof payload.reason === "string" ? { reason: payload.reason } : {}),
     ...(typeof payload.source === "string" ? { source: payload.source } : {}),
   };
+}
+
+/**
+ * Validates caller-supplied workflow input against the workflow's input
+ * shape, coercing stringified scalars first.
+ *
+ * An MCP client that stringifies nested input delivers values like
+ * `{ maxTurns: "25" }`; the coercion turns those into the scalar type the
+ * schema declares (when the conversion is unambiguous) so the run does not
+ * fail input validation. The coerced value is what gets persisted with the
+ * run, so a replayed or resumed run validates the same value.
+ */
+function assertWorkflowInput<TInput extends PlainObject>(
+  inputSchema: Schema<TInput> | undefined,
+  input: unknown,
+): TInput {
+  if (!inputSchema) {
+    return input as TInput;
+  }
+
+  const coerced = coerceScalarStrings(input, inputSchema.jsonSchema);
+
+  return inputSchema.assert(coerced, "workflow input") as TInput;
 }

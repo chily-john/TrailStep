@@ -14,6 +14,7 @@ import {
 import {
   buildPiMcpServerEntry,
   formatPiManualCommand,
+  PI_MCP_SERVER_DESCRIPTION,
   resolvePiMcpConfigPath,
   writePiMcpServerEntry,
 } from "./pi-mcp-registration.js";
@@ -94,9 +95,12 @@ describe("pi mcp registration", () => {
         trst_answer: "direct",
         trst_resume: "direct",
       },
-      description:
-        "TrailStep workflow runtime: run, watch, answer and resume workflows, plus per-workflow trst_* tools.",
+      description: PI_MCP_SERVER_DESCRIPTION,
     });
+  });
+
+  it("points at the instructions resource in the pi server description", () => {
+    expect(PI_MCP_SERVER_DESCRIPTION).toContain("trailstep://instructions");
   });
 
   it("uses the same project path for local scope", async () => {

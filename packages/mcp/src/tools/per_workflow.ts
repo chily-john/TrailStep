@@ -12,13 +12,22 @@
  *
  * Malformed payloads are skipped with a warning; JSON files whose `name` is
  * not a `trst_`-prefixed tool name are not per-workflow tool JSONs and are
- * skipped silently.
+ * skipped silently. Payloads whose `workflowRef` no longer resolves — an
+ * unregistered `<namespace>/<name>` ref or a missing direct workflow source,
+ * e.g. after `trailstep remove` left a stale JSON behind — are skipped with a
+ * stderr warning instead of publishing a dead tool (defense in depth; the
+ * dispatch path would otherwise fail at runtime).
+ *
+ * The `mcp.perWorkflowTools` mode flag reuses `@trailstep/core`'s
+ * `parseMcpConfig` semantics over the shallow-merged (global < project <
+ * local) config layers: invalid values are dropped as diagnostics through a
+ * single warning path and fall back to the default so the server stays usable.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { load, validateStructural } from "@trailstep/core";
+import { load, parseMcpConfig, validateStructural } from "@trailstep/core";
 
 export interface PerWorkflowToolDefinition {
   readonly name: string;
@@ -44,7 +53,8 @@ export const DEFAULT_PER_WORKFLOW_TOOLS = true;
 
 /**
  * Loads and validates every layered per-workflow tool JSON. Duplicate tool
- * names keep the first occurrence (layering order).
+ * names keep the first occurrence (layering order). Entries whose
+ * `workflowRef` no longer resolves are skipped with a stderr warning.
  */
 export function loadPerWorkflowTools(
   options: LoadPerWorkflowToolsOptions = {},
@@ -54,6 +64,16 @@ export function loadPerWorkflowTools(
     ...(options.homeDir === undefined ? {} : { homeDir: options.homeDir }),
   });
 
+  const projectDir = options.projectDir ? path.resolve(options.projectDir) : process.cwd();
+  const homeDir = options.homeDir ? path.resolve(options.homeDir) : homedir();
+  // Layered config is read at most once per load, and only when a tool JSON
+  // actually needs the registry check.
+  let layeredConfig: readonly LayeredConfigFile[] | undefined;
+  const resolutionContext: WorkflowRefResolutionContext = {
+    projectDir,
+    layeredConfig: () => (layeredConfig ??= readLayeredConfigFiles(projectDir, homeDir)),
+  };
+
   const byName = new Map<string, PerWorkflowToolDefinition>();
   for (const item of items) {
     const parsed = parsePerWorkflowToolJson(item);
@@ -61,6 +81,13 @@ export function loadPerWorkflowTools(
       continue;
     }
     if (parsed === undefined) {
+      continue;
+    }
+    const resolutionFailure = workflowRefResolutionFailure(parsed.workflowRef, resolutionContext);
+    if (resolutionFailure !== undefined) {
+      console.error(
+        `Warning: skipping per-workflow MCP tool JSON "${parsed.name}": workflowRef "${parsed.workflowRef}" no longer resolves (${resolutionFailure}).`,
+      );
       continue;
     }
     if (!byName.has(parsed.name)) {
@@ -75,14 +102,50 @@ export function loadPerWorkflowTools(
  * (`~/.trailstep/config.json` < `<project>/.trailstep/config.json` <
  * `<project>/.trailstep/config-local.json`, shallow top-level merge matching
  * the CLI's config merge). Defaults to {@link DEFAULT_PER_WORKFLOW_TOOLS} when
- * the section or key is absent; malformed files and invalid values are
- * reported on stderr and fall back to the default so the server stays usable.
+ * the section or key is absent. Invalid values follow `@trailstep/core`'s
+ * `parseMcpConfig` handling: they are reported as diagnostics (one warning
+ * path on stderr) and dropped from the parsed section, so the effective value
+ * falls back to the default and the server stays usable.
  */
 export function resolvePerWorkflowToolsEnabled(options: LoadPerWorkflowToolsOptions = {}): boolean {
   const projectDir = options.projectDir ? path.resolve(options.projectDir) : process.cwd();
   const homeDir = options.homeDir ? path.resolve(options.homeDir) : homedir();
 
-  const configPaths: { readonly label: string; readonly filePath: string }[] = [
+  let merged: Record<string, unknown> = {};
+  for (const file of readLayeredConfigFiles(projectDir, homeDir)) {
+    if (file.raw !== undefined) {
+      merged = { ...merged, ...file.raw };
+    }
+  }
+
+  const diagnostics: string[] = [];
+  const mcp = parseMcpConfig("mcp", merged.mcp, diagnostics);
+  for (const diagnostic of diagnostics) {
+    console.error(
+      `Warning: ${diagnostic} Using mcp.perWorkflowTools=${DEFAULT_PER_WORKFLOW_TOOLS}.`,
+    );
+  }
+  return mcp?.perWorkflowTools ?? DEFAULT_PER_WORKFLOW_TOOLS;
+}
+
+type ParsedPerWorkflowTool = PerWorkflowToolDefinition | "not-a-tool";
+
+/** One layered `.trailstep` config file in merge order (global < project < local). */
+interface LayeredConfigFile {
+  readonly label: string;
+  readonly filePath: string;
+  /** Raw record; undefined when the file is absent, unreadable, or not an object. */
+  readonly raw?: Record<string, unknown>;
+}
+
+/**
+ * Reads the three layered config files once each. File-level problems
+ * (unreadable / malformed JSON) warn per file here; invalid VALUES are left to
+ * `parseMcpConfig` so both the mode flag and the `workflowRef` registry check
+ * share one read.
+ */
+function readLayeredConfigFiles(projectDir: string, homeDir: string): LayeredConfigFile[] {
+  const files: { readonly label: string; readonly filePath: string }[] = [
     {
       label: "~/.trailstep/config.json",
       filePath: path.join(homeDir, ".trailstep", "config.json"),
@@ -96,39 +159,122 @@ export function resolvePerWorkflowToolsEnabled(options: LoadPerWorkflowToolsOpti
       filePath: path.join(projectDir, ".trailstep", "config-local.json"),
     },
   ];
-
-  let merged: Record<string, unknown> = {};
-  for (const { label, filePath } of configPaths) {
-    const raw = readRawJsonRecord(filePath, label);
-    if (raw !== undefined) {
-      merged = { ...merged, ...raw };
-    }
-  }
-
-  const mcp = merged.mcp;
-  if (mcp === undefined) {
-    return DEFAULT_PER_WORKFLOW_TOOLS;
-  }
-  if (!isRecord(mcp)) {
-    console.error(
-      `Warning: .trailstep/config.json "mcp" must be an object; using mcp.perWorkflowTools=${DEFAULT_PER_WORKFLOW_TOOLS}.`,
-    );
-    return DEFAULT_PER_WORKFLOW_TOOLS;
-  }
-  const value = mcp.perWorkflowTools;
-  if (value === undefined) {
-    return DEFAULT_PER_WORKFLOW_TOOLS;
-  }
-  if (typeof value !== "boolean") {
-    console.error(
-      `Warning: .trailstep/config.json "mcp.perWorkflowTools" must be a boolean; using mcp.perWorkflowTools=${DEFAULT_PER_WORKFLOW_TOOLS}.`,
-    );
-    return DEFAULT_PER_WORKFLOW_TOOLS;
-  }
-  return value;
+  return files.map((file) => ({ ...file, raw: readRawJsonRecord(file.filePath, file.label) }));
 }
 
-type ParsedPerWorkflowTool = PerWorkflowToolDefinition | "not-a-tool";
+interface WorkflowRefResolutionContext {
+  readonly projectDir: string;
+  /** Layered config files, read at most once per load (lazy). */
+  readonly layeredConfig: () => readonly LayeredConfigFile[];
+}
+
+/**
+ * Static check mirroring how the CLI resolves a dispatched `workflowRef`,
+ * without importing workflow modules at publish/load time. Returns a failure
+ * reason when the ref can no longer resolve, `undefined` when it can:
+ *
+ * - direct file refs must point at an existing workflow source file;
+ * - `<namespace>/<name>` refs must be registered in a layered `.trailstep`
+ *   config — the CLI rejects unregistered namespaced refs before any
+ *   discovery fallback, so an absent registration means dispatch would fail;
+ * - package/bundle refs (`pkg#name`, `scheme:...`) and unqualified or
+ *   discovered ids can only be verified at dispatch time and are treated as
+ *   resolvable here.
+ */
+function workflowRefResolutionFailure(
+  workflowRef: string,
+  context: WorkflowRefResolutionContext,
+): string | undefined {
+  const hashIndex = workflowRef.lastIndexOf("#");
+  const pathRef = hashIndex === -1 ? workflowRef : workflowRef.slice(0, hashIndex);
+
+  if (isDirectWorkflowPathRef(pathRef)) {
+    return directWorkflowSourceExists(pathRef, context.projectDir)
+      ? undefined
+      : `direct workflow source not found: ${pathRef}`;
+  }
+
+  if (hashIndex !== -1 || workflowRef.includes(":")) {
+    return undefined;
+  }
+
+  const separatorIndex = workflowRef.indexOf("/");
+  if (separatorIndex <= 0 || separatorIndex === workflowRef.length - 1) {
+    return undefined;
+  }
+  const namespace = workflowRef.slice(0, separatorIndex);
+  const name = workflowRef.slice(separatorIndex + 1);
+  const registered = context
+    .layeredConfig()
+    .some((file) => hasRegisteredWorkflowTarget(file.raw, namespace, name));
+  return registered ? undefined : "not registered in any .trailstep config layer";
+}
+
+/** Mirrors the CLI's direct-workflow file reference detection. */
+function isDirectWorkflowPathRef(ref: string): boolean {
+  return (
+    ref.startsWith("./") ||
+    ref.startsWith("../") ||
+    ref.startsWith(".\\") ||
+    ref.startsWith("..\\") ||
+    path.isAbsolute(ref) ||
+    /^[A-Za-z]:[\\/]/u.test(ref) ||
+    ref.startsWith("\\\\")
+  );
+}
+
+/**
+ * Statically checks a direct workflow source path with the same candidate
+ * resolution the CLI's direct-file resolver uses (exact file, extensionless
+ * `.ts`/`.mts`/`.js`/`.mjs` candidates, then a directory `index.*`).
+ */
+function directWorkflowSourceExists(pathRef: string, projectDir: string): boolean {
+  const base = path.isAbsolute(pathRef) ? path.resolve(pathRef) : path.resolve(projectDir, pathRef);
+  const extension = path.extname(base).toLowerCase();
+  if (extension === ".tsx") {
+    return false;
+  }
+  if (extension !== "") {
+    return isFile(base);
+  }
+  if (isFile(base)) {
+    return true;
+  }
+  if ([".ts", ".mts", ".js", ".mjs"].some((candidate) => isFile(`${base}${candidate}`))) {
+    return true;
+  }
+  return ["index.ts", "index.mts", "index.js", "index.mjs"].some((indexFile) =>
+    isFile(path.join(base, indexFile)),
+  );
+}
+
+function isFile(candidate: string): boolean {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** True when one config layer registers `workflows[namespace][name]` as a target ref. */
+function hasRegisteredWorkflowTarget(
+  raw: Record<string, unknown> | undefined,
+  namespace: string,
+  name: string,
+): boolean {
+  if (raw === undefined) {
+    return false;
+  }
+  const workflows = raw.workflows;
+  if (!isRecord(workflows)) {
+    return false;
+  }
+  const bucket = workflows[namespace];
+  if (!isRecord(bucket)) {
+    return false;
+  }
+  return typeof bucket[name] === "string";
+}
 
 /**
  * Validates one loaded tool JSON payload.

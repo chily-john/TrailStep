@@ -92,10 +92,17 @@ trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <pat
 trailstep watch <runNameOrRunDir> [--jsonl]
 trailstep continue
 trailstep retry <workflow-ref> <runName>
+trailstep mcp [--project <dir>]
 trailstep update [--all | --project | --workflows | --workflow <name>] [--yes]
 ```
 
 See the repository [CLI reference](../../docs/cli-reference.md) for the full command list and detailed behavior.
+
+## MCP server
+
+`trailstep mcp` runs the TrailStep MCP server in the foreground over stdio, exposing registered workflows to MCP clients as `trst_*` tools. `trailstep add` generates per-workflow MCP tool JSONs under `.trailstep/mcp/`, and `trailstep update --workflows` refreshes them; no other command rewrites those artifacts. `trailstep init` and `trailstep add` also offer to register the server with your coding agent via `add-mcp`.
+
+See the [CLI reference](../../docs/cli-reference.md#mcp-server) for the tool inventory, the `mcp.perWorkflowTools` list/fallback mode, registration scopes, and MCP-related environment variables.
 
 ## Managed agent sessions
 

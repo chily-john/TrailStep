@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   appendEvent,
+  atomicWriteJson,
   createRunDirectory,
+  readJsonStateArtifact,
   readRunEvents,
   readRunState,
+  writeJsonStateArtifact,
   writeRunState,
 } from "./run-storage.js";
 
@@ -113,5 +116,59 @@ describe("run storage", () => {
     await expect(readFile(join(runDir, "state.json"), "utf8")).resolves.toBe(
       `${JSON.stringify({ count: { value: 1 } }, null, 2)}\n`,
     );
+  });
+
+  it("atomicWriteJson leaves no *.tmp file behind on success", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-core-atomic-"));
+    const target = join(dir, "state.json");
+
+    await atomicWriteJson(target, { hello: "world", nested: { n: 1 } });
+
+    await expect(readFile(target, "utf8")).resolves.toBe(
+      `${JSON.stringify({ hello: "world", nested: { n: 1 } }, null, 2)}\n`,
+    );
+    expect((await readdir(dir)).filter((file) => file.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("atomicWriteJson rejects and removes its tmp file when the rename cannot complete", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-core-atomic-"));
+    const target = join(dir, "blocked.json");
+    // Occupy the target with a directory so the final same-directory rename
+    // must fail after the tmp file has already been written.
+    await mkdir(target);
+
+    await expect(atomicWriteJson(target, { a: 1 })).rejects.toBeInstanceOf(Error);
+
+    expect((await readdir(dir)).filter((file) => file.includes(".tmp"))).toEqual([]);
+  });
+
+  it("writeJsonStateArtifact round-trips through readJsonStateArtifact without tmp residue", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-core-atomic-"));
+    const target = join(dir, "state.json");
+    const state = { count: { value: 3 }, flag: true, list: [1, "two"] };
+
+    await writeJsonStateArtifact(target, state);
+
+    await expect(readJsonStateArtifact(target)).resolves.toEqual(state);
+    await expect(readJsonStateArtifact(join(dir, "missing.json"))).resolves.toEqual({});
+    expect((await readdir(dir)).filter((file) => file.includes(".tmp"))).toEqual([]);
+  });
+
+  it("atomicWriteJson serializes concurrent writes to one target and leaves no tmp files", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-core-atomic-"));
+    const target = join(dir, "track.json");
+    await atomicWriteJson(target, { writer: 0 });
+
+    // Overlapping replace-renames of one target fail with EPERM on Windows;
+    // the writes must be serialized so every caller succeeds and exactly one
+    // complete document remains.
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) => atomicWriteJson(target, { writer: index + 1 })),
+    );
+
+    await expect(readJsonStateArtifact(target)).resolves.toEqual({
+      writer: expect.any(Number),
+    });
+    expect((await readdir(dir)).filter((file) => file.includes(".tmp"))).toEqual([]);
   });
 });

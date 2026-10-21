@@ -63,7 +63,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_run_workflow",
     description:
-      "Start a TrailStep workflow run in the background and return immediately with {runId, runDir, status}.",
+      'Start a TrailStep workflow run in the background and return immediately with {runId, runDir, status, workflow}. status is "started" only once the background run\'s directory actually materializes (bounded verification); when the run never starts (missing or refused CLI entry, spawn failure, or a run directory that never appears), status is "failed" with an "error" field and the result is reported as an isError tool result — never a false "started".',
     inputSchema: {
       type: "object",
       properties: {
@@ -270,6 +270,15 @@ export function createServer(options: CreateServerOptions = {}): Server {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],
       };
     } catch (error) {
+      if (error instanceof ToolReportError) {
+        // Structured failure payload (e.g. run_workflow status "failed"):
+        // an isError result whose text is the JSON payload, so callers can
+        // parse {runId, runDir, status, error} while still seeing the failure.
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(error.payload) }],
+          isError: true,
+        };
+      }
       return toolError(`${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
@@ -328,6 +337,22 @@ export async function serveStdio(options: CreateServerOptions = {}): Promise<Ser
   return server;
 }
 
+/**
+ * Dispatch completed but the tool reported an operational failure with a
+ * structured JSON payload (run_workflow `status: "failed"`). Rethrown through
+ * dispatch so the CallTool handler can emit an `isError` tool result whose
+ * text is the payload — consistent with the server's convention that failures
+ * are `isError` results and a started run is plain content.
+ */
+class ToolReportError extends Error {
+  readonly payload: unknown;
+
+  constructor(payload: unknown) {
+    super("tool reported a failed result");
+    this.payload = payload;
+  }
+}
+
 function toolError(text: string): {
   content: { type: "text"; text: string }[];
   isError: true;
@@ -344,6 +369,9 @@ function toolError(text: string): {
  * fresh from the layered tool JSONs, with the JSON's `workflowRef` preset so
  * callers cannot redirect the run). Throws on malformed arguments and unknown
  * tools; the CallTool handler converts throws into `isError` tool results.
+ * A run_workflow dispatch that reports `status: "failed"` throws a
+ * `ToolReportError` so the structured JSON payload is surfaced as an
+ * `isError` result too (a successfully started run stays plain content).
  */
 async function dispatchTool(
   name: string,
@@ -375,7 +403,11 @@ async function dispatchTool(
         ...(args.input === undefined ? {} : { input: args.input }),
         cwd,
       });
-      return { ...result, workflow };
+      const payload = { ...result, workflow };
+      if (result.status === "failed") {
+        throw new ToolReportError(payload);
+      }
+      return payload;
     }
     case "trst_watch": {
       return await trst_watch(
@@ -458,7 +490,11 @@ async function dispatchPerWorkflowTool(
     input: args,
     cwd,
   });
-  return { ...result, workflow: tool.workflowRef, tool: tool.name };
+  const payload = { ...result, workflow: tool.workflowRef, tool: tool.name };
+  if (result.status === "failed") {
+    throw new ToolReportError(payload);
+  }
+  return payload;
 }
 
 function readOptionalString(value: unknown): string | undefined {

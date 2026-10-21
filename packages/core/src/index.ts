@@ -7,6 +7,7 @@ export {
   isTransientSpawnExitCode,
   isTransientWorkingAgentFailure,
 } from "./agent-execution/working-agent/failures/transient-spawn-failures.js";
+export { parseMcpConfig } from "./agent-targeting/parse-trailstep-config/parse-mcp-config.js";
 export { parseTrailStepConfig } from "./agent-targeting/parse-trailstep-config/parse-trailstep-config.js";
 export { resolveAgentTargets } from "./agent-targeting/resolve-agent-targets/resolve-agent-targets.js";
 export type {
@@ -174,7 +175,6 @@ export type {
   ShapeObject,
   ShapePrimitive,
 } from "./contracts/shapes/shape.types.js";
-export { deferEngineInit } from "./defer-engine-init.js";
 export type { FindDeprecationsAsOfQuery } from "./deprecations/deprecation-manifest.js";
 export {
   deprecationManifest,
@@ -213,6 +213,7 @@ export {
   type TrailStepProviderWorkingManifest,
 } from "./providers/provider-manifest.js";
 export {
+  atomicWriteJson,
   defaultRunsRoot,
   readGlobalState,
   readRunEvents,

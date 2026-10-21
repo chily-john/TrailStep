@@ -202,6 +202,58 @@ describe("trst_watch", () => {
     expect(result.cursor).toBe(0);
   });
 
+  it("keeps the cursor file intact across overlapping watch calls in one process", async () => {
+    const sandbox = createSandbox();
+    const lines = [eventLine("workflow.started", 1), eventLine("step.started", 2)];
+    appendLines(sandbox, lines);
+
+    // Overlapping polls share pid + cursor file; each must use its own random
+    // tmp path so concurrent tmp+rename writes cannot corrupt or lose each
+    // other's cursor.
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        trst_watch({ runId: "run-1", cursor: 0 }, quickOptions(sandbox)),
+      ),
+    );
+
+    const expectedCursor = byteLength(`${lines.join("\n")}\n`);
+    for (const result of results) {
+      expect(result.lines).toEqual(lines);
+      expect(result.cursor).toBe(expectedCursor);
+    }
+
+    const cursorFile = path.join(sandbox.cursorDir, "run-1.json");
+    const parsed = JSON.parse(readFileSync(cursorFile, "utf8"));
+    expect(parsed).toEqual({ runId: "run-1", cursor: expectedCursor });
+    expect(readdirSync(sandbox.cursorDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("resolves runs under TRAILSTEP_RUNS_ROOT via resolveRunsRoot (cwd-anchored, like the CLI)", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "trst-watch-env-"));
+    const runDir = path.join(root, "elsewhere", "runs", "run-1");
+    const cursorDir = path.join(root, "mcp-cursor");
+    mkdirSync(runDir, { recursive: true });
+    const eventsFile = path.join(runDir, "events.jsonl");
+    writeFileSync(eventsFile, `${eventLine("workflow.started", 1)}\n`, "utf8");
+    sandboxes.push({ root, runDir, cursorDir, eventsFile });
+
+    const base = { cwd: root, cursorDir, timeoutMs: 250, pollIntervalMs: 5 };
+
+    // Empty override falls back to <cwd>/.trailstep/runs → the run is not found.
+    await expect(
+      trst_watch({ runId: "run-1" }, { ...base, env: { TRAILSTEP_RUNS_ROOT: "" } }),
+    ).rejects.toThrow(/run not found/u);
+
+    // A relative override is anchored to cwd, exactly like the CLI's resolveRunsRoot.
+    const result = await trst_watch(
+      { runId: "run-1" },
+      { ...base, env: { TRAILSTEP_RUNS_ROOT: path.join("elsewhere", "runs") } },
+    );
+    expect(result.runId).toBe("run-1");
+    expect(result.state).toBe("in-progress");
+    expect(result.lines).toHaveLength(1);
+  });
+
   it("fails clearly for an unknown run and for missing runId", async () => {
     const sandbox = createSandbox();
     await expect(trst_watch({ runId: "nope" }, quickOptions(sandbox))).rejects.toThrow(

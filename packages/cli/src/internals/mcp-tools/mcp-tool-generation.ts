@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 
 import {
   normalizeShape,
@@ -85,6 +85,113 @@ export function workflowSourceSnapshot(workflow: WorkflowDefinitionLike): string
 }
 
 /**
+ * Absolute path of the generated `.trailstep/mcp/trst_<id>.json` for one
+ * workflow id. Single source of the `trst_<id>.json` naming rule: generation
+ * and `trailstep remove` both go through here so they can never drift.
+ */
+export function mcpToolJsonPathForWorkflowId(
+  workflowId: string,
+  options?: GenerateMcpToolJsonOptions,
+): string {
+  return join(
+    resolve(options?.projectDir ?? process.cwd(), MCP_TOOL_OUTPUT_DIR),
+    `trst_${workflowSlug(workflowId)}.json`,
+  );
+}
+
+export interface McpToolJsonRemovalOptions {
+  /** Registered ref (`<namespace>/<name>`) whose registration was removed. */
+  readonly workflowRef: string;
+  /**
+   * Registration name the workflow was removed under. The default add flow
+   * derives it from the workflow id, so the shared naming logic names the
+   * usual file directly; `--name`-renamed registrations are covered by the
+   * `workflowRef` scan below.
+   */
+  readonly registrationName: string;
+  /** Project root whose `.trailstep/mcp/` layer is searched. Defaults to cwd. */
+  readonly projectDir?: string;
+}
+
+/**
+ * Generated tool JSON paths that `trailstep remove` should delete for one
+ * unregistered workflow, so the MCP server stops publishing a tool for a
+ * workflow that no longer resolves.
+ *
+ * Candidates are the file named for `registrationName` (via the shared
+ * {@link mcpToolJsonPathForWorkflowId} naming logic) plus every
+ * `.trailstep/mcp/trst_*.json` whose recorded `workflowRef` matches — which
+ * covers stale and `--name`-renamed registrations. Only files that actually
+ * record `workflowRef` are returned, so a slug collision can never delete
+ * another workflow's tool JSON.
+ */
+export async function findMcpToolJsonsToRemoveForRegistration(
+  options: McpToolJsonRemovalOptions,
+): Promise<string[]> {
+  const projectDir = options.projectDir ?? process.cwd();
+  const candidates = new Set<string>();
+  try {
+    candidates.add(mcpToolJsonPathForWorkflowId(options.registrationName, { projectDir }));
+  } catch {
+    // Registration names without filename-safe characters never produced a tool JSON.
+  }
+  for (const filePath of await findMcpToolJsonPathsForWorkflowRef(options.workflowRef, {
+    projectDir,
+  })) {
+    candidates.add(filePath);
+  }
+
+  const matches: string[] = [];
+  for (const filePath of candidates) {
+    if ((await readMcpToolJsonWorkflowRef(filePath)) === options.workflowRef) {
+      matches.push(filePath);
+    }
+  }
+  return matches;
+}
+
+/** Scans `.trailstep/mcp/trst_*.json` for files recording exactly `workflowRef`. */
+async function findMcpToolJsonPathsForWorkflowRef(
+  workflowRef: string,
+  options: GenerateMcpToolJsonOptions,
+): Promise<string[]> {
+  const outputDir = resolve(options.projectDir ?? process.cwd(), MCP_TOOL_OUTPUT_DIR);
+  let names: string[];
+  try {
+    names = await readdir(outputDir);
+  } catch {
+    return [];
+  }
+
+  const matches: string[] = [];
+  for (const name of names) {
+    if (!name.startsWith("trst_") || !name.endsWith(".json")) {
+      continue;
+    }
+    const filePath = join(outputDir, name);
+    if ((await readMcpToolJsonWorkflowRef(filePath)) === workflowRef) {
+      matches.push(filePath);
+    }
+  }
+  return matches;
+}
+
+/** Recorded `workflowRef` of a tool JSON; undefined when missing/unreadable/malformed. */
+async function readMcpToolJsonWorkflowRef(filePath: string): Promise<string | undefined> {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(await readFile(filePath, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return undefined;
+  }
+  const workflowRef = (payload as { readonly workflowRef?: unknown }).workflowRef;
+  return typeof workflowRef === "string" ? workflowRef : undefined;
+}
+
+/**
  * Writes `.trailstep/mcp/trst_<id>.json` for one workflow and returns its path.
  *
  * Throws {@link McpToolGenerationError} (without touching disk) when the input
@@ -122,9 +229,8 @@ export async function generateMcpToolJson(
     );
   }
 
-  const outputDir = resolve(options?.projectDir ?? process.cwd(), MCP_TOOL_OUTPUT_DIR);
-  await mkdir(outputDir, { recursive: true });
-  const filePath = join(outputDir, `trst_${slug}.json`);
+  const filePath = mcpToolJsonPathForWorkflowId(workflow.id, options);
+  await mkdir(dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${randomUUID()}.tmp`;
 
   await writeFile(tmpPath, serializeOrdered(payload), "utf8");

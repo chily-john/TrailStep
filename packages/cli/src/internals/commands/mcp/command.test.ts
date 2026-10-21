@@ -1,5 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -30,11 +30,40 @@ async function writeMcpEntry(projectDir: string): Promise<string> {
   return entryPath;
 }
 
+// The CLI bin auto-run guard fires only for the built index.js entry, so the
+// test drives main() through a tiny wrapper module (run via tsx) that mimics
+// `trailstep mcp --project <dir>`.
+//
+// TRAILSTEP_CLI_ENTRY points the server's run_workflow spawn at a stub CLI
+// entry that materializes the run directory: the real entry cannot start a
+// `demo` workflow, and without a materialized run the tool reports
+// status "failed" (isError) instead of "started" — see
+// packages/mcp/src/tools/run_workflow.ts start verification. The stub makes
+// the dispatch assertion deterministic on every platform (win32 refuses the
+// PATH fallback outright).
+async function writeStubCliEntry(): Promise<string> {
+  await mkdir(tmpRoot, { recursive: true });
+  const stubPath = resolve(
+    tmpRoot,
+    `stub-cli-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
+  );
+  await writeFile(
+    stubPath,
+    'import { mkdirSync } from "node:fs";\n' +
+      'import { join } from "node:path";\n' +
+      'const runsRoot = join(process.cwd(), ".trailstep", "runs");\n' +
+      "mkdirSync(join(runsRoot, process.argv[3]), { recursive: true });\n",
+  );
+  return stubPath;
+}
+
 async function spawnMcpClient(projectDir: string): Promise<Client> {
   const entryPath = await writeMcpEntry(projectDir);
+  const stubCliEntry = await writeStubCliEntry();
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", "tsx", entryPath],
+    env: { TRAILSTEP_CLI_ENTRY: stubCliEntry },
   });
   const client = new Client({ name: "trailstep-mcp-test", version: "0.0.0" });
   await client.connect(transport);

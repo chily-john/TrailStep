@@ -25,7 +25,7 @@ import {
   resolveRunDirectory,
   waitEventBranchId,
 } from "./run-wait-files.js";
-import { type TrstResumeResult, trstResume } from "./trst_resume.js";
+import { type ContinueRunner, type TrstResumeResult, trstResume } from "./trst_resume.js";
 
 export interface TrstAnswerOptions {
   /** Run name (under the runs root) or run directory path. */
@@ -40,6 +40,8 @@ export interface TrstAnswerOptions {
   readonly env?: Record<string, string | undefined>;
   /** After persisting, run the same continue path trst_resume uses. */
   readonly continueAfterAnswer?: boolean;
+  /** Test seam: continue runner passed through to trstResume (mirrors TrstResumeOptions.runner). */
+  readonly resumeRunner?: ContinueRunner;
 }
 
 export interface TrstAnswerResult {
@@ -153,13 +155,25 @@ export async function trstAnswer(options: TrstAnswerOptions): Promise<TrstAnswer
   const answerPath = join(resolvedRun.runDir, answerFile);
   await atomicWriteJson(answerPath, options.answer);
 
-  const continued = options.continueAfterAnswer
-    ? await trstResume({
+  // The continue step runs AFTER the answer is persisted; a throwing continue
+  // path must never discard the persisted-answer report — surface the failure
+  // inside `continued` instead of rejecting the whole call.
+  let continued: TrstResumeResult | undefined;
+  if (options.continueAfterAnswer) {
+    try {
+      continued = await trstResume({
         runId: resolvedRun.runDir,
         cwd: context.cwd,
-        env: context.env,
-      })
-    : undefined;
+        ...(context.env === undefined ? {} : { env: context.env }),
+        ...(options.resumeRunner === undefined ? {} : { runner: options.resumeRunner }),
+      });
+    } catch (error) {
+      continued = {
+        resumed: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
   return {
     persisted: true,

@@ -1,5 +1,8 @@
+import { rm } from "node:fs/promises";
+
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
+import { findMcpToolJsonsToRemoveForRegistration } from "../../mcp-tools/mcp-tool-generation.js";
 import {
   cleanupRemovedWorkflowPackageInstall,
   reportRemovedWorkflowPackageInstallCleanup,
@@ -100,6 +103,11 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
     reportRemovedWorkflowPackageInstallCleanup(cleanupResult, context.io);
 
     await warnIfGeneratedSkillDirectoryExists(context, parsed.namespace, parsed.name);
+    await removeGeneratedMcpToolJsonIfOrphaned(
+      `${parsed.namespace}/${parsed.name}`,
+      parsed.name,
+      context,
+    );
 
     return cleanupResult.status === "failed" ? 1 : 0;
   },
@@ -115,6 +123,40 @@ async function findRegisteredEntry(
   return entries.find(
     (entry) => entry.scope === scope && entry.namespace === namespace && entry.name === name,
   );
+}
+
+/**
+ * Deletes the generated `.trailstep/mcp/trst_<id>.json` once a workflow
+ * registration is gone, so the MCP server stops publishing a tool for a
+ * workflow that no longer resolves. Skipped while another scope still
+ * registers the same ref (the tool JSON is shared by ref and still live).
+ * File naming/removal rules live in mcp-tool-generation.ts; failures here are
+ * reported as warnings and never fail the remove.
+ */
+async function removeGeneratedMcpToolJsonIfOrphaned(
+  workflowRef: string,
+  registrationName: string,
+  context: CliCommandContext,
+): Promise<void> {
+  const remainingEntries = await listRegisteredWorkflowEntries(context);
+  if (remainingEntries.some((entry) => `${entry.namespace}/${entry.name}` === workflowRef)) {
+    return;
+  }
+
+  const toolJsonPaths = await findMcpToolJsonsToRemoveForRegistration({
+    workflowRef,
+    registrationName,
+    projectDir: context.cwd,
+  });
+  for (const toolJsonPath of toolJsonPaths) {
+    try {
+      await rm(toolJsonPath, { force: true });
+    } catch (error) {
+      context.io.writeError(
+        `Warning: could not delete generated MCP tool JSON ${toolJsonPath}: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
 }
 
 function parseFlags(argv: readonly string[]): Record<string, string | undefined> {

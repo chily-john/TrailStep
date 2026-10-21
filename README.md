@@ -264,6 +264,7 @@ See [`packages/create-flows/README.md`](packages/create-flows/README.md) for the
 Public packages:
 
 - [`@trailstep/cli`](packages/cli/README.md) — the `trailstep` command for init, agents, workflow registration, execution, retry, and updates.
+- [`@trailstep/mcp`](packages/mcp/README.md) — the TrailStep MCP server, exposing registered workflows to MCP clients as `trst_*` tools.
 - [`@trailstep/authoring`](packages/authoring/README.md) — TypeScript helpers for authoring workflows with `defineWorkflow`, `step`, and `done`.
 - [`@trailstep/core`](packages/core/README.md) — framework-neutral runtime primitives, validation, events, retry state, providers, and run artifacts.
 - [`@trailstep/create-flows`](packages/create-flows/README.md) — reusable general-purpose workflows, including `grill-it-away` and `take-it-away`.

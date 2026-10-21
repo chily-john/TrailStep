@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { atomicWriteJson } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command.types.js";
 import { CliUsageError } from "../../command.types.js";
 import { continueCommand } from "../continue/continue-command.js";
@@ -74,8 +74,7 @@ export const answerCommand: CliCommand<AnswerCommandArgs> = {
 
     const answer = await loadAnswerJson(args, context.cwd);
     const outputPath = join(resolvedRun.runDir, answerFile);
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, `${JSON.stringify(answer, null, 2)}\n`, "utf8");
+    await atomicWriteJson(outputPath, answer);
     context.io.writeLine(`Wrote wait answer: ${outputPath}`);
 
     if (args.continueAfterAnswer) {

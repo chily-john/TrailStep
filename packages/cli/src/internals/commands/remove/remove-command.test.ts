@@ -19,6 +19,24 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+async function writeToolJson(cwd: string, fileName: string, workflowRef: string): Promise<void> {
+  const filePath = join(cwd, ".trailstep", "mcp", fileName);
+  await mkdir(join(filePath, ".."), { recursive: true });
+  await writeFile(
+    filePath,
+    JSON.stringify({
+      schemaVersion: "1.0.0",
+      name: fileName.replace(/\.json$/u, ""),
+      workflowRef,
+      description: `Tool for ${workflowRef}.`,
+      inputSchema: { type: "object", properties: {} },
+      source: { scope: "local", hash: "abc" },
+      generatedBy: "trailstep",
+    }),
+    "utf8",
+  );
+}
+
 describe("removeCommand", () => {
   it("removes a registration found in exactly one scope", async ({ task }) => {
     const cwd = tmpDir(task);
@@ -586,5 +604,99 @@ describe("removeCommand", () => {
       errors.some((line) => line.includes("skill directory") && line.includes("not removed")),
     ).toBe(true);
     await expect(stat(join(cwd, ".trailstep", "skills", "trst-review"))).resolves.toBeTruthy();
+  });
+
+  it("deletes the generated MCP tool JSON when the last registration for the ref is removed", async ({
+    task,
+  }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeToolJson(cwd, "trst_review.json", "project/review");
+    await writeToolJson(cwd, "trst_other.json", "project/other");
+
+    const command = resolveCommand(["remove", "project/review"]);
+    const exitCode = await command.run(command.parseArgs(["remove", "project/review"]) as never, {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    await expect(stat(join(cwd, ".trailstep", "mcp", "trst_review.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    // Tool JSONs of other workflow refs are never touched.
+    await expect(stat(join(cwd, ".trailstep", "mcp", "trst_other.json"))).resolves.toBeTruthy();
+  });
+
+  it("deletes a renamed registration's tool JSON by its recorded workflowRef", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { "my-review": "./review.mjs" } },
+    });
+    // The file is named after the workflow id ("review"), not the registration
+    // name ("my-review"); the recorded workflowRef is what ties it to the ref.
+    await writeToolJson(cwd, "trst_review.json", "project/my-review");
+
+    const command = resolveCommand(["remove", "project/my-review"]);
+    const exitCode = await command.run(
+      command.parseArgs(["remove", "project/my-review"]) as never,
+      {
+        cwd,
+        homeDir: tmpDir(task),
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    await expect(stat(join(cwd, ".trailstep", "mcp", "trst_review.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps the tool JSON while another scope still registers the same ref", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "./shared-review.mjs" } },
+    });
+    await writeJson(join(cwd, ".trailstep", "config-local.json"), {
+      workflows: { project: { review: "./shared-review.mjs" } },
+    });
+    await writeToolJson(cwd, "trst_review.json", "project/review");
+
+    const command = resolveCommand(["remove", "project/review", "--scope", "local"]);
+    const exitCode = await command.run(
+      command.parseArgs(["remove", "project/review", "--scope", "local"]) as never,
+      {
+        cwd,
+        homeDir: tmpDir(task),
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config-local.json"))).toEqual({ workflows: {} });
+    // project scope still registers project/review, so its tool JSON stays live.
+    await expect(stat(join(cwd, ".trailstep", "mcp", "trst_review.json"))).resolves.toBeTruthy();
+  });
+
+  it("does not delete a tool JSON that records a different workflowRef", async ({ task }) => {
+    const cwd = tmpDir(task);
+    await writeJson(join(cwd, ".trailstep", "config.json"), {
+      workflows: { project: { review: "./review.mjs" } },
+    });
+    await writeToolJson(cwd, "trst_review.json", "legacy/review");
+
+    const command = resolveCommand(["remove", "project/review"]);
+    const exitCode = await command.run(command.parseArgs(["remove", "project/review"]) as never, {
+      cwd,
+      homeDir: tmpDir(task),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    await expect(stat(join(cwd, ".trailstep", "mcp", "trst_review.json"))).resolves.toBeTruthy();
   });
 });

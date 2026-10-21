@@ -38,6 +38,7 @@ trailstep cancel [--reason '<text>']
 trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh]
 trailstep runs [--json]
 trailstep doctor
+trailstep mcp [--project <dir>]
 trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
 ```
 
@@ -47,7 +48,7 @@ trailstep update [--all | --project | --workflows | --workflow <name>] [--force]
 trailstep init --scope project --install-skill
 ```
 
-`trailstep init` writes TrailStep config. `--install-skill` installs the packaged TrailStep usage skill; `--no-install-skill` skips it. There is no npm postinstall prompt.
+`trailstep init` writes TrailStep config. `--install-skill` installs the packaged TrailStep usage skill; `--no-install-skill` skips it. There is no npm postinstall prompt. After setup, `init` offers to register the TrailStep MCP server with detected coding agents (see [MCP server](#mcp-server)).
 
 ## Providers
 
@@ -158,6 +159,8 @@ trailstep add github:acme/trailstep-workflows --scope project --workflow review 
 
 By default, registrations use the workflow id published by the package. Use `--name <name>` to override a single selected workflow and `--namespace <namespace>` when you need a namespace other than the scope default.
 
+A successful (non-`--dry-run`) add also generates per-workflow MCP tool JSONs under `.trailstep/mcp/` and offers MCP server registration (see [MCP server](#mcp-server)).
+
 ## Remove workflows
 
 ```bash
@@ -224,6 +227,40 @@ trailstep update --all --yes
 ```
 
 Local-file workflow refs are not package update targets. GitHub-sourced workflow package updates are not supported yet.
+
+Any update that covers workflows (`--workflows`, `--workflow`, `--all`) also rewrites the generated per-workflow MCP tool JSONs for every registered workflow and reports per-registration failures as warnings (see [MCP server](#mcp-server)).
+
+## MCP server
+
+`trailstep mcp` runs the TrailStep MCP server in the foreground over stdio:
+
+```bash
+trailstep mcp --project /some/dir
+```
+
+The server exposes the generic toolkit — `trst_run_workflow`, `trst_watch`, `trst_answer`, `trst_resume` — plus one `trst_<id>` tool per registered workflow by default. `trst_run_workflow` follows the non-blocking run contract: it spawns the real CLI as a detached background process and returns `{runId, runDir, status, workflow}` in bounded time, where `status` is `"started"` only once the background run's directory actually materializes and `"failed"` (with an `error`) otherwise; the server reports a `"failed"` result as an `isError` tool result. It also exposes two resources: `trailstep://project` (the resolved project directory as JSON) and `trailstep://instructions` (the project's `.trailstep/mcp/instructions.md` when present, else an embedded generic fallback).
+
+### MCP tool generation and refresh
+
+- `trailstep add` writes `.trailstep/mcp/trst_<id>.json` for each added workflow.
+- Any `trailstep update` that covers workflows (`--workflows`, `--workflow`, `--all`) rewrites those JSONs for every registered workflow.
+- No other command regenerates them, and the server itself never regenerates: it reads the layered tool JSONs and config fresh on every ListTools/CallTool request. Treat generated `.trailstep/mcp` artifacts as output; do not hand-edit them.
+
+### MCP tool exposure config
+
+`mcp.perWorkflowTools` (default `true`) in TrailStep config controls the tool surface:
+
+```json
+{ "mcp": { "perWorkflowTools": false } }
+```
+
+With `true`, each generated tool JSON is listed as its own `trst_<id>` tool whose dispatch presets the JSON's `workflowRef`. With `false`, the server lists a single `trst_list` discovery tool instead, and clients use the generic `trst_run_workflow` / `trst_watch` / `trst_answer` / `trst_resume` toolkit for everything. Generic tool names are reserved; per-workflow JSONs cannot shadow them.
+
+### MCP registration
+
+`trailstep init` and `trailstep add` auto-offer registering the server with detected coding agents through `add-mcp`. After accepting, choose where the registration lives: project (committed), local (project file gitignored; appends the `.mcp.json` entry), or global (user-level; the server omits `--project` and follows the agent client's cwd). Headless runs (`--yes`) and registration failures print the exact manual `npx add-mcp ...` command instead of prompting.
+
+`TRAILSTEP_CLI_ENTRY` overrides the CLI entry the MCP tools use for background runs and resumes when it cannot be derived from the running process. On Windows it is effectively required for `trst_run_workflow`: the win32 PATH fallback is refused (cmd.exe would mangle the `--input` JSON), so without it the tool reports `status: "failed"`. `TRAILSTEP_RUNS_ROOT` (see [Artifacts](#artifacts)) applies to the MCP tools the same way it applies to the CLI.
 
 ## Artifacts
 

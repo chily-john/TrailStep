@@ -15,6 +15,7 @@ This root context file contains a map of the codebase. The OpenViking index (see
 │   ├── core/             # Framework-neutral runtime, shapes, continuation engine, events, agent targeting, provider CLI registry
 │   ├── authoring/        # TypeScript authoring helpers layered over core primitives
 │   ├── cli/              # `trailstep` workflow discovery, skill checks, config loading, and local execution command
+│   ├── mcp/              # TrailStep MCP server (`trst_*` tools over real CLI seams; generated `.trailstep/mcp` tool JSONs)
 │   ├── sub-agents/       # Reusable delegate/sub-agent workflows
 │   ├── trailtest/        # Workflow testing utilities package surface (`@trailstep/trailtest`)
 │   └── dashboard/        # Svelte/Vite local workflow run observability UI

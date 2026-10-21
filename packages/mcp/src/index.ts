@@ -10,7 +10,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStdio, tools } from "./server.js";
 
-export { runWorkflow } from "./run_workflow.js";
 export type { CreateServerOptions, McpToolDefinition } from "./server.js";
 export { createServer, serveStdio } from "./server.js";
 export {

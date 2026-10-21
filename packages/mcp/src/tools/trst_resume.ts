@@ -49,6 +49,8 @@ export interface ContinueRunnerOptions {
   readonly cliEntry: string;
   readonly runDir: string;
   readonly cwd: string;
+  /** Caller-provided env, merged over process.env by the default spawn runner. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 export interface ContinueRunnerResult {
@@ -115,6 +117,7 @@ export async function trstResume(options: TrstResumeOptions): Promise<TrstResume
     cliEntry,
     runDir: resolvedRun.runDir,
     cwd: context.cwd,
+    ...(context.env === undefined ? {} : { env: context.env }),
   });
 
   const status = readContinueStatus(runResult.stdout, runResult.stderr, runResult.exitCode);
@@ -171,10 +174,17 @@ export function resolveCliEntry(env?: Record<string, string | undefined>): strin
   }
 }
 
-async function spawnContinue(options: ContinueRunnerOptions): Promise<ContinueRunnerResult> {
+/**
+ * Default continue runner: spawn `node <cliEntry> continue <runDir>` with the
+ * caller's env merged over `process.env` so TRAILSTEP_* overrides (e.g.
+ * TRAILSTEP_RUNS_ROOT, TRAILSTEP_CLI_ENTRY) reach the continue process.
+ * Exported for tests that verify the env merge without running the real CLI.
+ */
+export async function spawnContinue(options: ContinueRunnerOptions): Promise<ContinueRunnerResult> {
   return await new Promise<ContinueRunnerResult>((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [options.cliEntry, "continue", options.runDir], {
       cwd: options.cwd,
+      env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
       windowsHide: true,

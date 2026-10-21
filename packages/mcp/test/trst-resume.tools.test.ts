@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   type ContinueRunnerOptions,
   resolveCliEntry,
+  spawnContinue,
   trstResume,
 } from "../src/tools/trst_resume.js";
 
@@ -116,6 +117,26 @@ describe("trst_resume delegates to the real continue path", () => {
     expect(result.status).toBe("cancelled");
   });
 
+  it("passes the caller env through to the continue runner", async () => {
+    const runDir = await makeTempDir("trst-resume-env-thread");
+    await writeStartedRun(runDir);
+
+    const calls: ContinueRunnerOptions[] = [];
+    const env = { TRAILSTEP_RUNS_ROOT: "custom-runs", TRST_THREAD_CHECK: "bar" };
+    const result = await trstResume({
+      runId: runDir,
+      env,
+      runner: async (options) => {
+        calls.push(options);
+        return { exitCode: 0, stdout: "Workflow completed: wf-test at x\n", stderr: "" };
+      },
+    });
+
+    expect(result.resumed).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.env).toEqual(env);
+  });
+
   it("does not call continue for a run directory without events", async () => {
     const missingDir = await makeTempDir("trst-resume-missing");
     let runnerCalled = false;
@@ -161,6 +182,54 @@ describe("trst_resume delegates to the real continue path", () => {
     expect(runnerCalled).toBe(false);
     expect(result.resumed).toBe(false);
     expect(result.error).toContain("no workflow.started event");
+  });
+});
+
+describe("spawnContinue merges caller env over process.env", () => {
+  it("passes TRAILSTEP_* overrides and the underlying process.env into the spawned CLI", async () => {
+    const dir = await makeTempDir("trst-spawn-env");
+    const scriptPath = join(dir, "fake-cli.cjs");
+    const dumpPath = join(dir, "env-dump.json");
+    await writeFile(
+      scriptPath,
+      [
+        'const fs = require("node:fs");',
+        "fs.writeFileSync(",
+        "  process.env.TRST_TEST_ENV_DUMP,",
+        "  JSON.stringify({",
+        "    marker: process.env.TRST_TEST_MARKER,",
+        "    runsRoot: process.env.TRAILSTEP_RUNS_ROOT ?? null,",
+        "    hasPath: Boolean(process.env.PATH),",
+        "  }),",
+        '  "utf8",',
+        ");",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await spawnContinue({
+      cliEntry: scriptPath,
+      runDir: join(dir, "run"),
+      cwd: dir,
+      env: {
+        TRST_TEST_ENV_DUMP: dumpPath,
+        TRST_TEST_MARKER: "caller",
+        TRAILSTEP_RUNS_ROOT: "custom-runs",
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const dump = JSON.parse(await readFile(dumpPath, "utf8")) as {
+      marker?: string;
+      runsRoot?: string | null;
+      hasPath?: boolean;
+    };
+    // Caller env wins over process.env…
+    expect(dump.marker).toBe("caller");
+    expect(dump.runsRoot).toBe("custom-runs");
+    // …while the rest of process.env still reaches the child.
+    expect(dump.hasPath).toBe(true);
   });
 });
 

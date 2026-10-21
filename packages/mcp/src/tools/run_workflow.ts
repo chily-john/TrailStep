@@ -6,16 +6,27 @@
  * `trailstep <workflowRef> <runName> --input <json>` as a detached background
  * process (the blocking runtime in
  * `@trailstep/core` run-workflow/initialize-run is intentionally NOT awaited),
- * and returns `{ runId, runDir, status: "started" }` in bounded time.
+ * then verifies within a bounded budget (default 2 s, `verifyStartTimeoutMs`)
+ * that the background run's directory actually materialized. It returns
+ * `{ runId, runDir, status: "started" }` only once the run really exists;
+ * otherwise it returns `status: "failed"` with an `error` — never a false
+ * "started" for a run that never exists (missing CLI entry, spawn failure, or
+ * a background CLI that exits before creating the run).
+ *
+ * The win32 PATH fallback is refused: cmd.exe would mangle the `--input` JSON,
+ * so Windows callers without an explicit `cliEntry` must set
+ * `TRAILSTEP_CLI_ENTRY`. With a resolved CLI entry the args are passed without
+ * a shell, so the JSON reaches the CLI verbatim on every platform.
  *
  * The generated run name is passed to the CLI as the positional run name, so
  * the spawned run lands in `<runsRoot>/<runName>` and the returned runId/runDir
  * are the real ones the background run writes events.jsonl into.
  */
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { PlainObject } from "@trailstep/core";
 
@@ -34,19 +45,25 @@ export interface RunWorkflowToolOptions {
   readonly now?: () => Date;
   /** Test seam mirroring the CLI's run-name random suffix. */
   readonly randomSuffix?: () => string;
+  /** Test seam: platform used for the win32 PATH-fallback refusal. Defaults to process.platform. */
+  readonly platform?: NodeJS.Platform;
+  /** Bound (ms) for the post-spawn run-materialization check. Defaults to 2000. */
+  readonly verifyStartTimeoutMs?: number;
 }
 
 export interface RunWorkflowToolResult {
   readonly runId: string;
   readonly runDir: string;
-  readonly status: "started";
+  /** "started" only once the background run's directory actually exists. */
+  readonly status: "started" | "failed";
+  /** Why the run never materialized; present when status is "failed". */
+  readonly error?: string;
 }
-
-/** Legacy-compatible alias for the run_workflow tool result. */
-export type RunWorkflowResult = RunWorkflowToolResult;
 
 const TRAILSTEP_RUNS_ROOT_ENV = "TRAILSTEP_RUNS_ROOT";
 const TRAILSTEP_CLI_ENTRY_ENV = "TRAILSTEP_CLI_ENTRY";
+const defaultVerifyStartTimeoutMs = 2_000;
+const verifyStartPollIntervalMs = 25;
 
 export async function runWorkflowTool(
   options: RunWorkflowToolOptions,
@@ -77,33 +94,131 @@ export async function runWorkflowTool(
   // command is the bare workflow-ref form; there is no `run` subcommand token.
   const runArgs = [workflowRef, runName, "--input", JSON.stringify(input)];
   const cliEntry = resolveCliEntry(options.cliEntry, env);
+  const platform = options.platform ?? process.platform;
+
+  // Precheck 1: never let cmd.exe near the --input JSON. The win32 PATH
+  // fallback used `shell: true`, which mangles quoted/braced arguments; refuse
+  // it with an actionable error instead of spawning a doomed run.
+  if (cliEntry === undefined && platform === "win32") {
+    return {
+      runId: runName,
+      runDir,
+      status: "failed",
+      error: `run_workflow: refusing the win32 PATH fallback because cmd.exe would mangle the --input JSON. Set ${TRAILSTEP_CLI_ENTRY_ENV} to the built @trailstep/cli entry path.`,
+    };
+  }
+
+  // Precheck 2: an explicitly configured but missing CLI entry can never start
+  // a run; report it instead of spawning and guessing.
+  if (cliEntry !== undefined && !existsSync(cliEntry)) {
+    return {
+      runId: runName,
+      runDir,
+      status: "failed",
+      error: `run_workflow: CLI entry not found: ${cliEntry}. Set ${TRAILSTEP_CLI_ENTRY_ENV} to a built @trailstep/cli entry path.`,
+    };
+  }
+
+  // `trailstep <workflow-ref> [workflowRunName] [--input '<json>']` — the run
+  // command is the bare workflow-ref form; there is no `run` subcommand token.
   const usePathFallback = cliEntry === undefined;
-  const command = usePathFallback
-    ? process.platform === "win32"
-      ? "trailstep.cmd"
-      : "trailstep"
-    : process.execPath;
+  const command = usePathFallback ? "trailstep" : process.execPath;
   const args = usePathFallback ? runArgs : [cliEntry, ...runArgs];
 
-  // Detached background spawn: never await workflow completion here.
+  // Detached background spawn: never await workflow completion here. No shell
+  // is ever used (the win32 PATH fallback was refused above), so args arrive at
+  // the CLI unmangled.
   const child = spawn(command, args, {
     cwd,
     env,
     detached: true,
     stdio: "ignore",
     windowsHide: true,
-    shell: usePathFallback && process.platform === "win32",
-  });
-  child.on("error", () => {
-    // Background start failures must not crash the MCP server process.
+    shell: false,
   });
   child.unref();
+
+  // Do not report "started" for a run that never exists: verify (bounded) that
+  // the background run created its run directory, and surface spawn errors or
+  // an early CLI exit instead.
+  const verification = await verifyRunMaterialization(
+    child,
+    runDir,
+    options.verifyStartTimeoutMs ?? defaultVerifyStartTimeoutMs,
+  );
+  if (!verification.ok) {
+    return { runId: runName, runDir, status: "failed", error: verification.error };
+  }
 
   return { runId: runName, runDir, status: "started" };
 }
 
-/** Legacy-compatible alias: quick-return run_workflow entry. */
-export const runWorkflow = runWorkflowTool;
+type StartVerification = { readonly ok: true } | { readonly ok: false; readonly error: string };
+
+/**
+ * Bounded post-spawn check that the run actually materializes. Reports OK only
+ * once `<runDir>` exists; surfaces a spawn error or a background CLI that
+ * exits before creating it. Never waits longer than `budgetMs`, preserving the
+ * bounded-time contract. The error/exit listeners attached here also keep a
+ * late spawn failure from becoming an unhandled `error` event.
+ */
+async function verifyRunMaterialization(
+  child: ChildProcess,
+  runDir: string,
+  budgetMs: number,
+): Promise<StartVerification> {
+  let spawnError: Error | undefined;
+  let exitInfo:
+    | { readonly code: number | null; readonly signal: NodeJS.Signals | null }
+    | undefined;
+  child.on("error", (error: Error) => {
+    spawnError = error;
+  });
+  child.on("exit", (code, signal) => {
+    exitInfo = { code, signal };
+  });
+
+  const earlyFailure = (): StartVerification | undefined => {
+    if (spawnError !== undefined) {
+      return {
+        ok: false,
+        error: `run_workflow: failed to spawn the background run: ${spawnError.message}`,
+      };
+    }
+    if (exitInfo !== undefined) {
+      const how = exitInfo.code === null ? `signal ${exitInfo.signal}` : `code ${exitInfo.code}`;
+      return {
+        ok: false,
+        error: `run_workflow: background CLI exited with ${how} before ${runDir} appeared; not reporting status "started".`,
+      };
+    }
+    return undefined;
+  };
+
+  const deadline = Date.now() + Math.max(0, budgetMs);
+  while (Date.now() < deadline) {
+    if (existsSync(runDir)) {
+      return { ok: true };
+    }
+    const failure = earlyFailure();
+    if (failure !== undefined) {
+      return failure;
+    }
+    await sleep(Math.max(1, Math.min(verifyStartPollIntervalMs, deadline - Date.now())));
+  }
+
+  if (existsSync(runDir)) {
+    return { ok: true };
+  }
+  const failure = earlyFailure();
+  if (failure !== undefined) {
+    return failure;
+  }
+  return {
+    ok: false,
+    error: `run_workflow: ${runDir} did not appear within ${budgetMs}ms; not reporting status "started" for a run that never materialized.`,
+  };
+}
 
 function validateWorkflowRef(workflowRef: unknown): string {
   if (typeof workflowRef !== "string" || workflowRef.trim() === "") {

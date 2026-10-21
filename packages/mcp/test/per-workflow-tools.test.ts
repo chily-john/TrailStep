@@ -13,6 +13,9 @@ import { createServer } from "../src/server.js";
 // - CallTool dispatches them through runWorkflowTool with the JSON's
 //   `workflowRef` preset (args become the workflow input);
 // - malformed JSONs and non-`trst_` names are skipped;
+// - tool JSONs whose workflowRef no longer resolves (unregistered
+//   `<namespace>/<name>`, missing direct workflow source) are skipped with a
+//   stderr warning instead of publishing a dead tool;
 // - `mcp.perWorkflowTools: false` lists `trst_list` instead of per-workflow
 //   tools, and the default (config absent) is per-workflow tools.
 //
@@ -120,6 +123,9 @@ describe("per-workflow MCP tools", () => {
       },
       { projectDir },
     );
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { "ship-it": "./flows/ship-it.mjs" } },
+    });
 
     const client = await connectedClient(projectDir);
     const listed = await client.listTools();
@@ -143,6 +149,9 @@ describe("per-workflow MCP tools", () => {
   it("defaults to per-workflow tools (no trst_list) when config is absent", async () => {
     const projectDir = createTmpProject();
     writeToolJson(projectDir, "trst_demo.json", validToolPayload());
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
+    });
 
     const client = await connectedClient(projectDir);
     const names = (await client.listTools()).tools.map((tool) => tool.name);
@@ -166,6 +175,9 @@ describe("per-workflow MCP tools", () => {
       validToolPayload({ name: "notes", workflowRef: "flows/notes" }),
     );
     writeToolJson(projectDir, "trst_ok.json", validToolPayload({ name: "trst_ok" }));
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
+    });
 
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const client = await connectedClient(projectDir);
@@ -194,6 +206,9 @@ describe("per-workflow MCP tools", () => {
         description: "Impostor tool.",
       }),
     );
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { impostor: "./flows/impostor.mjs" } },
+    });
 
     const client = await connectedClient(projectDir);
     const listed = await client.listTools();
@@ -205,14 +220,25 @@ describe("per-workflow MCP tools", () => {
   it("dispatches a per-workflow tool through runWorkflowTool with the preset workflowRef", async () => {
     const projectDir = createTmpProject();
     writeToolJson(projectDir, "trst_demo.json", validToolPayload());
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
+    });
 
-    // Stub CLI entry: records the spawned argv instead of running a workflow.
+    // Stub CLI entry: records the spawned argv instead of running a workflow,
+    // then materializes the run directory so run_workflowTool's bounded
+    // start-verification can confirm the run actually exists.
     const stubPath = path.join(projectDir, "stub-cli.mjs");
     const argvLogPath = path.join(projectDir, "spawned-argv.jsonl");
     fs.writeFileSync(
       stubPath,
-      'import { appendFileSync } from "node:fs";\n' +
-        'appendFileSync(process.env.MCP_TEST_ARGV_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");\n',
+      'import { appendFileSync, mkdirSync } from "node:fs";\n' +
+        'import { join, resolve } from "node:path";\n' +
+        'appendFileSync(process.env.MCP_TEST_ARGV_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");\n' +
+        "const configuredRoot = process.env.TRAILSTEP_RUNS_ROOT;\n" +
+        "const runsRoot = configuredRoot\n" +
+        "  ? resolve(process.cwd(), configuredRoot)\n" +
+        '  : join(process.cwd(), ".trailstep", "runs");\n' +
+        "mkdirSync(join(runsRoot, process.argv[3]), { recursive: true });\n",
       "utf8",
     );
 
@@ -268,6 +294,7 @@ describe("list mode (mcp.perWorkflowTools: false)", () => {
     const projectDir = createTmpProject();
     writeProjectConfig(projectDir, "config.json", {
       version: 1,
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
       mcp: { perWorkflowTools: false },
     });
     writeToolJson(projectDir, "trst_demo.json", validToolPayload());
@@ -296,6 +323,7 @@ describe("list mode (mcp.perWorkflowTools: false)", () => {
     const projectDir = createTmpProject();
     writeProjectConfig(projectDir, "config.json", {
       version: 1,
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
       mcp: { perWorkflowTools: false },
     });
     writeProjectConfig(projectDir, "config-local.json", {
@@ -314,6 +342,75 @@ describe("list mode (mcp.perWorkflowTools: false)", () => {
     const dir = path.join(projectDir, ".trailstep");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "config.json"), "{ not valid json", "utf8");
+    // A direct workflow source ref keeps the tool resolvable while the project
+    // config layer is unreadable (so no registry entry can be written there).
+    fs.writeFileSync(path.join(projectDir, "demo.mjs"), "export const demo = {};\n", "utf8");
+    writeToolJson(projectDir, "trst_demo.json", validToolPayload({ workflowRef: "./demo.mjs" }));
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const client = await connectedClient(projectDir);
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names).toContain("trst_demo");
+    expect(names).not.toContain("trst_list");
+    consoleError.mockRestore();
+  });
+});
+
+describe("stale workflowRef defense (load-time resolution check)", () => {
+  it("skips only the tools whose workflowRef no longer resolves, with a stderr warning", async () => {
+    const projectDir = createTmpProject();
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { kept: "./flows/kept.mjs" } },
+    });
+    // flows/demo is not registered in any config layer (e.g. left behind by a
+    // remove); flows/kept is registered and must stay published.
+    writeToolJson(projectDir, "trst_demo.json", validToolPayload());
+    writeToolJson(
+      projectDir,
+      "trst_kept.json",
+      validToolPayload({ name: "trst_kept", workflowRef: "flows/kept" }),
+    );
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const client = await connectedClient(projectDir);
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+
+    expect(names).toContain("trst_kept");
+    expect(names).not.toContain("trst_demo");
+    expect(
+      consoleError.mock.calls.some((call) =>
+        call.some(
+          (part) =>
+            String(part).includes("trst_demo") &&
+            String(part).includes("flows/demo") &&
+            String(part).includes("no longer resolves"),
+        ),
+      ),
+    ).toBe(true);
+    consoleError.mockRestore();
+  });
+
+  it("skips tools whose direct workflow source file no longer exists", async () => {
+    const projectDir = createTmpProject();
+    writeToolJson(
+      projectDir,
+      "trst_gone.json",
+      validToolPayload({ name: "trst_gone", workflowRef: "./flows/gone.mjs" }),
+    );
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const client = await connectedClient(projectDir);
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names).not.toContain("trst_gone");
+    consoleError.mockRestore();
+  });
+
+  it("falls back to the default for an invalid mcp.perWorkflowTools value (core parseMcpConfig semantics)", async () => {
+    const projectDir = createTmpProject();
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
+      mcp: { perWorkflowTools: "yes" },
+    });
     writeToolJson(projectDir, "trst_demo.json", validToolPayload());
 
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -321,6 +418,11 @@ describe("list mode (mcp.perWorkflowTools: false)", () => {
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain("trst_demo");
     expect(names).not.toContain("trst_list");
+    expect(
+      consoleError.mock.calls.some((call) =>
+        call.some((part) => String(part).includes("mcp.perWorkflowTools must be a boolean")),
+      ),
+    ).toBe(true);
     consoleError.mockRestore();
   });
 });

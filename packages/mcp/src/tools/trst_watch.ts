@@ -1,8 +1,12 @@
 /**
  * trst_watch — observe a TrailStep run's event stream over MCP.
  *
- * Reads `<runDir>/events.jsonl` by byte offset (the "cursor") and returns a
- * header plus a capped slice of new complete event lines. When nothing new is
+ * The run is resolved from the runs root — `<cwd>/.trailstep/runs` or the
+ * `TRAILSTEP_RUNS_ROOT` override — through the shared `resolveRunsRoot` helper
+ * from run-wait-files.ts, exactly like the CLI (`options.env`, defaulting to
+ * `process.env`). Then it reads `<runDir>/events.jsonl` by byte offset (the
+ * "cursor") and returns a header plus a capped slice of new complete event
+ * lines. When nothing new is
  * available it long-polls by actually polling the file (default 50 ms interval
  * up to a 25 s budget, within the 20-30 s range) instead of returning a fake
  * timeout constant. The cursor is persisted atomically (tmp file + rename) at
@@ -13,11 +17,14 @@
  * keep every artifact in caller-provided directories — tests never write the
  * repo's own `.trailstep/mcp`.
  */
+import { randomBytes } from "node:crypto";
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Event } from "@trailstep/core";
+
+import { isPathLike, resolveRunsRoot } from "./run-wait-files.js";
 
 export type TrstWatchVerbosity = "brief" | "normal" | "full";
 
@@ -43,6 +50,8 @@ export interface TrstWatchOptions {
   readonly timeoutMs?: number;
   /** Poll interval in ms; defaults to 50 (matches `trailstep watch`). */
   readonly pollIntervalMs?: number;
+  /** Env used to resolve `TRAILSTEP_RUNS_ROOT`; defaults to process.env. */
+  readonly env?: Record<string, string | undefined>;
 }
 
 export interface TrstWatchResult {
@@ -88,7 +97,8 @@ export async function trst_watch(
   }
 
   const cwd = options.cwd ?? process.cwd();
-  const eventsFile = resolveEventsFile(cwd, runId, options.runDir);
+  const runsRoot = resolveRunsRoot({ cwd, env: options.env ?? process.env });
+  const eventsFile = resolveEventsFile(cwd, runsRoot, runId, options.runDir);
   await requireEventsFile(eventsFile, runId);
 
   const cursorDir = options.cursorDir ?? path.join(cwd, ".trailstep", "mcp", ".cursor");
@@ -210,12 +220,29 @@ async function readEventsSince(eventsFile: string, startCursor: number): Promise
   };
 }
 
-/** Persist the cursor atomically: write a tmp file, then rename over the target. */
+/**
+ * Persist the cursor atomically: write a tmp file, then rename over the target.
+ * The tmp suffix is randomized per call so overlapping polls in one process
+ * (same pid) never collide on the same tmp path, and the rename retries briefly
+ * because Windows can transiently refuse a replace (EPERM/EBUSY) while another
+ * overlapping poll or a scanner still touches the target.
+ */
 async function persistCursor(cursorFile: string, runId: string, cursor: number): Promise<void> {
   await mkdir(path.dirname(cursorFile), { recursive: true });
-  const tmpFile = `${cursorFile}.${process.pid}.tmp`;
+  const tmpFile = `${cursorFile}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   await writeFile(tmpFile, `${JSON.stringify({ runId, cursor })}\n`, "utf8");
-  await rename(tmpFile, cursorFile);
+  const maxAttempts = 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await rename(tmpFile, cursorFile);
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+      await sleep(15 * attempt);
+    }
+  }
 }
 
 /** Read the persisted cursor so a reconnect resumes where it left off. */
@@ -237,14 +264,14 @@ async function readPersistedCursor(cursorFile: string, runId: string): Promise<n
   return undefined;
 }
 
-function resolveEventsFile(cwd: string, runId: string, runDir?: string): string {
+function resolveEventsFile(cwd: string, runsRoot: string, runId: string, runDir?: string): string {
   if (runDir !== undefined) {
     return path.resolve(runDir, "events.jsonl");
   }
   if (isPathLike(runId)) {
     return path.resolve(cwd, runId, "events.jsonl");
   }
-  return path.join(cwd, ".trailstep", "runs", runId, "events.jsonl");
+  return path.join(runsRoot, runId, "events.jsonl");
 }
 
 async function requireEventsFile(eventsFile: string, runId: string): Promise<void> {
@@ -270,19 +297,6 @@ function verbosityLineCap(verbosity?: TrstWatchVerbosity): number {
 
 function cursorFileBaseName(runId: string): string {
   return runId.replace(/[^A-Za-z0-9._-]/gu, "_");
-}
-
-function isPathLike(value: string): boolean {
-  return (
-    path.isAbsolute(value) ||
-    value.startsWith("./") ||
-    value.startsWith("../") ||
-    value.startsWith(".\\") ||
-    value.startsWith("..\\") ||
-    value.includes("/") ||
-    value.includes("\\") ||
-    /^[A-Za-z]:[\\/]/u.test(value)
-  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

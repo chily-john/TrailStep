@@ -69,6 +69,39 @@ describe("MCP server contract", () => {
     expect(firstText(call)).toContain("workflow");
   });
 
+  it("trst_run_workflow surfaces status 'failed' as an isError result with the JSON payload", async () => {
+    const client = await connectedClient(tmpProject("mcp-contract-"));
+    // A configured-but-missing CLI entry can never start a run; the tool
+    // reports status "failed" and the server must surface it as isError
+    // (failures are isError results; a started run is plain content).
+    const savedCliEntry = process.env.TRAILSTEP_CLI_ENTRY;
+    process.env.TRAILSTEP_CLI_ENTRY = path.join(
+      tmpProject("mcp-contract-"),
+      "no-such-cli-entry.js",
+    );
+    try {
+      const call = await client.callTool({
+        name: "trst_run_workflow",
+        arguments: { workflow: "flows/demo" },
+      });
+      expect(call.isError).toBe(true);
+      const payload = JSON.parse(firstText(call)) as {
+        status?: unknown;
+        error?: unknown;
+        workflow?: unknown;
+      };
+      expect(payload.status).toBe("failed");
+      expect(typeof payload.error).toBe("string");
+      expect(payload.workflow).toBe("flows/demo");
+    } finally {
+      if (savedCliEntry === undefined) {
+        delete process.env.TRAILSTEP_CLI_ENTRY;
+      } else {
+        process.env.TRAILSTEP_CLI_ENTRY = savedCliEntry;
+      }
+    }
+  });
+
   it("trst_answer dispatches to the real adapter and reports unresolved waits", async () => {
     const client = await connectedClient(tmpProject("mcp-contract-"));
     const call = await client.callTool({

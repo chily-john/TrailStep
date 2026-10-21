@@ -61,6 +61,21 @@ export function createRunContext(options: {
   };
 }
 
+/**
+ * Report a persistence failure alongside the rejection handed back to the
+ * caller that triggered it. Written to stderr so MCP/CLI protocol channels
+ * (stdout) stay clean. Never throws: this runs inside the queue's catch link,
+ * so a failing stderr write must not poison the queue for later operations.
+ */
+function reportPersistFailure(scope: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    process.stderr.write(`trailstep: ${scope} persistence failed: ${message}\n`);
+  } catch {
+    // Observability must never break the write queue itself.
+  }
+}
+
 export function createQueuedRunState(options: {
   readonly read: () => Promise<RunState>;
   readonly write: (state: RunState) => Promise<void>;
@@ -69,6 +84,7 @@ export function createQueuedRunState(options: {
   let cache: RunState | undefined;
   let loadPromise: Promise<RunState> | undefined;
   let writeQueue: Promise<unknown> = Promise.resolve();
+  let lastPersistError: unknown;
 
   function ensureLoaded(): Promise<RunState> {
     if (cache) return Promise.resolve(cache);
@@ -76,7 +92,15 @@ export function createQueuedRunState(options: {
       cache = { ...options.initialState };
       return Promise.resolve(cache);
     }
-    loadPromise ??= options.read().then((state) => (cache = state));
+    loadPromise ??= options.read().then(
+      (state) => (cache = state),
+      (error: unknown) => {
+        // Never cache a rejected load: the next access retries the read instead
+        // of rejecting forever with this same error (queue poisoning).
+        loadPromise = undefined;
+        throw error;
+      },
+    );
     return loadPromise;
   }
 
@@ -85,8 +109,29 @@ export function createQueuedRunState(options: {
       const state = await ensureLoaded();
       await options.write(state);
     });
-    writeQueue = next.catch(() => {});
-    return next;
+    // The queue link must stay resolvable after a failed write so later
+    // operations still run. The catch reaction attached here runs before the
+    // one returned below, so it stores (and reports) the failure first; the
+    // awaiter for THIS write then drains that stored copy exactly once. A later
+    // successful write must never inherit the earlier failure.
+    writeQueue = next.catch((error: unknown) => {
+      lastPersistError = error;
+      reportPersistFailure("run state", error);
+    });
+    return next.catch((error: unknown) => drainPersistError(error));
+  }
+
+  /**
+   * Consume the stored persistence failure for the write that produced it and
+   * clear the slot, so the failure surfaces once — to the caller that triggered
+   * it — and never onto an unrelated later success. Always throws: the stored
+   * copy when present, otherwise the write's own error as a defensive fallback
+   * so a failed write can never settle as a success.
+   */
+  function drainPersistError(fallback: unknown): never {
+    const error = lastPersistError === undefined ? fallback : lastPersistError;
+    lastPersistError = undefined;
+    throw error;
   }
 
   return {
@@ -124,10 +169,19 @@ export function createQueuedGlobalState(options: {
   let cache: RunState | undefined;
   let loadPromise: Promise<RunState> | undefined;
   let mutationQueue: Promise<unknown> = Promise.resolve();
+  let lastPersistError: unknown;
 
   function ensureLoaded(): Promise<RunState> {
     if (cache) return Promise.resolve(cache);
-    loadPromise ??= options.read().then((state) => (cache = state));
+    loadPromise ??= options.read().then(
+      (state) => (cache = state),
+      (error: unknown) => {
+        // Never cache a rejected load: the next access retries the read instead
+        // of rejecting forever with this same error (queue poisoning).
+        loadPromise = undefined;
+        throw error;
+      },
+    );
     return loadPromise;
   }
 
@@ -136,8 +190,28 @@ export function createQueuedGlobalState(options: {
       const state = await ensureLoaded();
       return await mutation(state);
     });
-    mutationQueue = next.catch(() => {});
-    return next;
+    // Same contract as the run-state queue: keep the link alive, store and
+    // report the failure for THIS mutation's awaiter (the catch reaction
+    // attached here runs first), and never let a later successful mutation
+    // inherit it.
+    mutationQueue = next.catch((error: unknown) => {
+      lastPersistError = error;
+      reportPersistFailure("global state", error);
+    });
+    return next.catch((error: unknown) => drainPersistError(error));
+  }
+
+  /**
+   * Consume the stored persistence failure for the mutation that produced it
+   * and clear the slot, so the failure surfaces once — to the caller that
+   * triggered it — and never onto an unrelated later success. Always throws:
+   * the stored copy when present, otherwise the mutation's own error as a
+   * defensive fallback so a failed mutation can never settle as a success.
+   */
+  function drainPersistError(fallback: unknown): never {
+    const error = lastPersistError === undefined ? fallback : lastPersistError;
+    lastPersistError = undefined;
+    throw error;
   }
 
   return {

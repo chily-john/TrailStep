@@ -6,10 +6,8 @@ export {
   resolvePerWorkflowToolsEnabled,
 } from "./per_workflow.js";
 export {
-  type RunWorkflowResult,
   type RunWorkflowToolOptions,
   type RunWorkflowToolResult,
-  runWorkflow,
   runWorkflowTool,
 } from "./run_workflow.js";
 export {

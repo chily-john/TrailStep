@@ -6,11 +6,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  findMcpToolJsonsToRemoveForRegistration,
   generateMcpToolJson,
   MCP_TOOL_OUTPUT_DIR,
   McpToolGenerationError,
   type McpToolWorkflowInput,
   mcpToolInputFromWorkflow,
+  mcpToolJsonPathForWorkflowId,
 } from "./mcp-tool-generation.js";
 
 const KEY_ORDER = [
@@ -156,5 +158,85 @@ describe("mcpToolInputFromWorkflow", () => {
       "flows/ship-it",
     );
     expect(input.description).toBe("Ship it.");
+  });
+});
+
+describe("mcpToolJsonPathForWorkflowId", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    projectDir = await mkdtemp(join(tmpdir(), "trst-mcp-tool-path-"));
+  });
+
+  afterEach(async () => {
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("slugifies ids with the same naming rules generation uses", () => {
+    expect(mcpToolJsonPathForWorkflowId("take-it-away", { projectDir })).toBe(
+      join(projectDir, MCP_TOOL_OUTPUT_DIR, "trst_take-it-away.json"),
+    );
+    expect(mcpToolJsonPathForWorkflowId("pkg#ship-it", { projectDir })).toBe(
+      join(projectDir, MCP_TOOL_OUTPUT_DIR, "trst_pkg_ship-it.json"),
+    );
+    expect(() => mcpToolJsonPathForWorkflowId("###", { projectDir })).toThrow(
+      McpToolGenerationError,
+    );
+  });
+
+  it("returns the exact path generateMcpToolJson writes", async () => {
+    const writtenPath = await generateMcpToolJson(workflowInput(), { projectDir });
+    expect(writtenPath).toBe(mcpToolJsonPathForWorkflowId("take-it-away", { projectDir }));
+  });
+});
+
+describe("findMcpToolJsonsToRemoveForRegistration", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    projectDir = await mkdtemp(join(tmpdir(), "trst-mcp-tool-remove-"));
+  });
+
+  afterEach(async () => {
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("returns only tool JSONs that record the removed registration's workflowRef", async () => {
+    await generateMcpToolJson(workflowInput({ id: "review", workflowRef: "project/review" }), {
+      projectDir,
+    });
+    // Renamed registration: file named for the workflow id, not the name.
+    await generateMcpToolJson(workflowInput({ id: "other-id", workflowRef: "project/renamed" }), {
+      projectDir,
+    });
+    // Slug collision: trst_mismatch.json exists under the removed registration's
+    // name but records a different ref, so it must never be deleted.
+    await generateMcpToolJson(workflowInput({ id: "mismatch", workflowRef: "legacy/review" }), {
+      projectDir,
+    });
+
+    const forRenamed = await findMcpToolJsonsToRemoveForRegistration({
+      workflowRef: "project/renamed",
+      registrationName: "renamed",
+      projectDir,
+    });
+    expect(forRenamed).toEqual([join(projectDir, MCP_TOOL_OUTPUT_DIR, "trst_other-id.json")]);
+
+    const forOriginal = await findMcpToolJsonsToRemoveForRegistration({
+      workflowRef: "project/review",
+      registrationName: "mismatch",
+      projectDir,
+    });
+    expect(forOriginal).toEqual([join(projectDir, MCP_TOOL_OUTPUT_DIR, "trst_review.json")]);
+  });
+
+  it("returns nothing when no tool JSON records the ref", async () => {
+    await expect(
+      findMcpToolJsonsToRemoveForRegistration({
+        workflowRef: "project/never-generated",
+        registrationName: "never-generated",
+        projectDir,
+      }),
+    ).resolves.toEqual([]);
   });
 });

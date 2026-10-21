@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
@@ -15,7 +15,11 @@ import {
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import { readBranchRunState, writeBranchRunState } from "../artifacts/run-storage.js";
+import {
+  atomicWriteJson,
+  readBranchRunState,
+  writeBranchRunState,
+} from "../artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../artifacts/step-artifacts.js";
 import {
   type ResumeWaitOptions,
@@ -1266,7 +1270,7 @@ async function persistTrack(
     ...(terminalOutput === undefined ? {} : { terminalOutput }),
     ...(failure === undefined ? {} : { failure }),
   };
-  await writeJson(join(options.runDir, "track.json"), trackState);
+  await atomicWriteJson(join(options.runDir, "track.json"), trackState);
 }
 
 async function persistBranch(runDir: string, branch: BranchState): Promise<void> {
@@ -1292,10 +1296,5 @@ async function persistBranch(runDir: string, branch: BranchState): Promise<void>
     latestStepIndex: branch.latestStepIndex,
     ...(branch.latestStepId === undefined ? {} : { latestStepId: branch.latestStepId }),
   };
-  await writeJson(join(runDir, "branches", `${branch.branchId}.json`), branchState);
-}
-
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await atomicWriteJson(join(runDir, "branches", `${branch.branchId}.json`), branchState);
 }

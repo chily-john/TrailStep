@@ -41,6 +41,15 @@ Use direct refs for local files, registered refs for named project or user workf
 - Generated workflow skills are separate from the packaged TrailStep usage/authoring skills. They are created by `trailstep add` for specific installed workflows and should describe when an agent should invoke that workflow.
 - Use project skills for team-shared repository workflows and user skills for personal/global workflows.
 
+## MCP server
+
+- Run the TrailStep MCP server for a project with `trailstep mcp [--project <dir>]` — a foreground stdio server exposing registered workflows to MCP clients as `trst_*` tools.
+- `trailstep add` generates per-workflow tool JSONs under `.trailstep/mcp/`; `trailstep update --workflows` refreshes them. Regenerate only through `add`/`update` — never hand-edit generated `.trailstep/mcp` artifacts.
+- Default exposure is one `trst_<id>` tool per workflow. Set `mcp.perWorkflowTools: false` in TrailStep config to fall back to `trst_list` plus the generic `trst_run_workflow`, `trst_watch`, `trst_answer`, and `trst_resume` tools.
+- `trailstep init` and `trailstep add` offer to register the server with detected coding agents via `add-mcp` (project, local gitignored, or global scope); declining or running headless prints the exact manual `npx add-mcp ...` command.
+- MCP tools honor the same environment contract as the CLI: `TRAILSTEP_RUNS_ROOT` overrides the runs root, and `TRAILSTEP_CLI_ENTRY` points at the CLI entry used for background runs and resumes (effectively required on Windows — the win32 PATH fallback is refused).
+- `trst_run_workflow` is non-blocking: it returns `{runId, runDir, status, workflow}` immediately with `status: "started"` only once the run directory materializes, or `status: "failed"` plus `error` (reported as an MCP `isError` result) when the run never starts; observe it with `trst_watch` and answer waits with `trst_answer`.
+
 ## Safety and run artifacts
 
 - Do not manually edit `.trailstep/runs`.

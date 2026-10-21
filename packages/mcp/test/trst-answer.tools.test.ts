@@ -304,4 +304,34 @@ describe("trst_answer tool adapters over the real wait answer files", () => {
     expect(result.persisted).toBe(false);
     expect(result.error).toContain("plain JSON object");
   });
+
+  it("keeps the persisted-answer report when the continue runner throws", async () => {
+    const runDir = await makeTempDir("trst-answer-throwing-runner");
+    await writeWaitRun({
+      runDir,
+      waitId: "wait-1",
+      message: "Question",
+      answerFile: "waits/wait-1.answer.json",
+    });
+
+    const result = await trstAnswer({
+      runId: runDir,
+      waitId: "wait-1",
+      answer: { ok: true },
+      continueAfterAnswer: true,
+      // Guarantees trstResume resolves a cli entry so it reaches the runner.
+      env: { TRAILSTEP_CLI_ENTRY: join(runDir, "fake-cli-entry.js") },
+      resumeRunner: async () => {
+        throw new Error("continue runner exploded");
+      },
+    });
+
+    // The persisted-answer report survives a throwing continue path.
+    expect(result.persisted).toBe(true);
+    expect(result.answerFile).toBe("waits/wait-1.answer.json");
+    expect(result.recommendation).toBe(JSON.stringify({ ok: true }));
+    expect(result.continued).toEqual({ resumed: false, error: "continue runner exploded" });
+    // The answer artifact was written before continueAfterAnswer ran.
+    expect(existsSync(join(runDir, "waits", "wait-1.answer.json"))).toBe(true);
+  });
 });

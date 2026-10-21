@@ -1,4 +1,5 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { Event } from "../../runtime/run-workflow/run-workflow.types.js";
@@ -9,6 +10,16 @@ export function defaultRunsRoot(cwd: string): string {
   return join(cwd, ".trailstep", "runs");
 }
 
+/**
+ * Creates a fresh run directory under the runs root.
+ *
+ * - `runName`: caller-chosen base name for the run (validated; defaults to the
+ *   workflow id via callers). It is the first choice for the directory name.
+ * - `runId`: the unique name actually used — `runName`, or `runName-<n>` when
+ *   a previous run already took the base name (n increments until free).
+ * - `runDir`: the absolute path of the new run directory
+ *   (`<runsRoot>/<runId>`) where events.jsonl and other artifacts are written.
+ */
 export async function createRunDirectory(options: {
   readonly cwd: string;
   readonly runName: string;
@@ -118,9 +129,83 @@ export async function readJsonStateArtifact(path: string): Promise<RunState> {
   }
 }
 
-export async function writeJsonStateArtifact(path: string, state: RunState): Promise<void> {
+/**
+ * Serialize atomic writes per target path in-process. Concurrent writers of
+ * one file (e.g. the scheduler persisting track.json from parallel branches)
+ * must not race their replace-renames: Windows rejects overlapping renames of
+ * a single target with EPERM. Writes to different paths still run fully
+ * concurrently.
+ */
+const pendingAtomicWrites = new Map<string, Promise<void>>();
+
+function enqueueAtomicWrite(path: string, task: () => Promise<void>): Promise<void> {
+  const previous = pendingAtomicWrites.get(path) ?? Promise.resolve();
+  // `previous` is always a settled-OK tail (or a fresh resolve), so a failed
+  // predecessor can neither skip nor fail the next writer; each caller only
+  // observes its own task result.
+  const result = previous.then(task);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  pendingAtomicWrites.set(path, tail);
+  void tail.then(() => {
+    if (pendingAtomicWrites.get(path) === tail) {
+      pendingAtomicWrites.delete(path);
+    }
+  });
+  return result;
+}
+
+/** Codes where a failed replace-rename may be transient (Windows antivirus
+ * scans or a competing replace) and worth a short bounded retry. */
+const retryableRenameCodes: ReadonlySet<string> = new Set(["EPERM", "EACCES", "EBUSY"]);
+const renameMaxAttempts = 4;
+
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      if (
+        attempt >= renameMaxAttempts ||
+        !isNodeError(error) ||
+        !retryableRenameCodes.has(error.code ?? "")
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25 * attempt);
+      });
+    }
+  }
+}
+
+/**
+ * Persist JSON durably: write to a unique tmp file in the same directory, then
+ * rename over the target so concurrent readers only ever observe the previous
+ * complete file or the new complete file, never a partial write. On success no
+ * `*.tmp` file is left behind; on failure the tmp file is removed. Concurrent
+ * calls for the same target are serialized in-process, and transient rename
+ * failures are retried briefly before giving up.
+ */
+export async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await enqueueAtomicWrite(path, async () => {
+    try {
+      await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+      await renameWithRetry(tempPath, path);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+}
+
+export async function writeJsonStateArtifact(path: string, state: RunState): Promise<void> {
+  await atomicWriteJson(path, state);
 }
 
 export function runStatePath(runDir: string): string {

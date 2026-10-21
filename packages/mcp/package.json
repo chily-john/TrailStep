@@ -10,11 +10,16 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "test": "cd ../.. && vitest run packages/mcp/test/",
-    "test:fast": "cd ../.. && vitest run packages/mcp/test/ --exclude **/run-workflow-tool.test.ts",
-    "test:e2e": "cd ../.. && vitest run packages/mcp/test/run-workflow-tool.test.ts",
+    "test": "vitest run",
+    "test:fast": "vitest run --exclude test/run-workflow-tool.test.ts",
+    "test:e2e": "vitest run test/run-workflow-tool.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src"
   },

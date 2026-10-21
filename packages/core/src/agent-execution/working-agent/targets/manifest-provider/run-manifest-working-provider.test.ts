@@ -567,7 +567,21 @@ function leanManifestConfig(): TrailStepConfig {
   } as unknown as TrailStepConfig;
 }
 
-const LEAN_HYGIENE_ARGS = ["--no-skills", "--no-mcp", "--no-extensions", "--no-context-files"];
+// Context files are loaded by default, so the lean execution block renders
+// the suppression flags for skills, MCP and extensions only.
+const LEAN_HYGIENE_ARGS = ["--no-skills", "--no-mcp", "--no-extensions"];
+
+function configWithExecution(execution: {
+  readonly settings?: { readonly execution?: unknown };
+  readonly workflows?: Record<string, { readonly settings?: { readonly execution?: unknown } }>;
+}): TrailStepConfig {
+  const base = leanManifestConfig() as unknown as Record<string, unknown>;
+  return {
+    ...base,
+    ...(execution.settings === undefined ? {} : { settings: execution.settings }),
+    ...(execution.workflows === undefined ? {} : { workflows: execution.workflows }),
+  } as unknown as TrailStepConfig;
+}
 
 describe("runManifestWorkingProvider lean execution hygiene", () => {
   async function runLeanPhase(
@@ -682,6 +696,111 @@ describe("runManifestWorkingProvider lean execution hygiene", () => {
 
     expect(caught).toBeInstanceOf(TrailStepFailureError);
     expect((caught as TrailStepFailureError).failure.code).toBe("agent_execution_invalid");
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe("runManifestWorkingProvider config execution knob", () => {
+  async function runWithConfig(
+    config: TrailStepConfig,
+    requests: WorkingAgentProcessRequest[],
+  ): Promise<void> {
+    const dir = await mkdtemp(join(tmpdir(), "trailstep-config-exec-"));
+    const files = await createTwoPhaseFiles(dir);
+    const { emit } = createMockEmit();
+
+    await runManifestWorkingProvider({
+      config,
+      step: twoPhaseStep(),
+      role: { size: "medium" },
+      cwd: dir,
+      target: { provider: "worker" },
+      files,
+      renderedPrompt: "Do the configured work.",
+      timeoutMs: 30_000,
+      runner: async (request): Promise<WorkingAgentProcessResult> => {
+        requests.push(request);
+        if (requests.length === 1) {
+          await writeFile(request.outputFile, "configured work report", "utf8");
+          return { exitCode: 0 };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "configured" }), "utf8");
+        return { exitCode: 0 };
+      },
+      emit,
+      runId: "test-run",
+      workflowId: "test-workflow",
+    });
+  }
+
+  it("applies the global settings.execution block to the provider args", async () => {
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    await runWithConfig(
+      configWithExecution({ settings: { execution: { contextFiles: true } } }),
+      requests,
+    );
+
+    const phase1Args = requests[0]?.args ?? [];
+    expect(phase1Args).not.toContain("--no-context-files");
+    expect(phase1Args).toContain("--no-skills");
+    expect(phase1Args).toContain("--no-mcp");
+    expect(phase1Args).toContain("--no-extensions");
+  });
+
+  it("renders the context file suppression flag for false and project-only", async () => {
+    for (const contextFiles of [false, "project-only"] as const) {
+      const requests: WorkingAgentProcessRequest[] = [];
+
+      await runWithConfig(
+        configWithExecution({ settings: { execution: { contextFiles } } }),
+        requests,
+      );
+
+      expect(requests[0]?.args ?? []).toContain("--no-context-files");
+    }
+  });
+
+  it("lets the per-workflow settings.execution block win over the global one", async () => {
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    await runWithConfig(
+      configWithExecution({
+        settings: { execution: { contextFiles: true, skills: ["global-skill"] } },
+        workflows: {
+          "test-workflow": {
+            settings: { execution: { contextFiles: false, skills: ["workflow-skill"] } },
+          },
+        },
+      }),
+      requests,
+    );
+
+    const phase1Args = requests[0]?.args ?? [];
+    // The per-workflow block wins field by field.
+    expect(phase1Args).toContain("--no-context-files");
+    expect(phase1Args).toContain("--skill");
+    expect(phase1Args).toContain("workflow-skill");
+    expect(phase1Args).not.toContain("global-skill");
+  });
+
+  it("fails fast with a config-scoped diagnostic when a config block is invalid", async () => {
+    const requests: WorkingAgentProcessRequest[] = [];
+
+    let caught: unknown;
+    try {
+      await runWithConfig(
+        configWithExecution({ settings: { execution: { contextFiles: "sometimes" } } }),
+        requests,
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(TrailStepFailureError);
+    const failure = (caught as TrailStepFailureError).failure;
+    expect(failure.code).toBe("agent_execution_invalid");
+    expect(failure.message).toContain("settings.execution");
     expect(requests).toHaveLength(0);
   });
 });

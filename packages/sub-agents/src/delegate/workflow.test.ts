@@ -714,14 +714,14 @@ describe("delegate lean execution context", () => {
     }
 
     const args = capturedArgs[0] ?? [];
-    expect(args).toEqual(
-      expect.arrayContaining(["--no-skills", "--no-mcp", "--no-extensions", "--no-context-files"]),
-    );
+    expect(args).toEqual(expect.arrayContaining(["--no-skills", "--no-mcp", "--no-extensions"]));
+    // Context files are loaded for the delegate, so the suppression flag is absent.
+    expect(args).not.toContain("--no-context-files");
     // Lean defaults: all tools (no --tools allowlist), no named skills.
     expect(args).not.toContain("--tools");
     expect(args).not.toContain("--skill");
     // Hygiene vars collapse in place: prompt file, flags, output file.
     expect(args.indexOf("--no-skills")).toBe(args.indexOf("--prompt-file") + 2);
-    expect(args.indexOf("--output-file")).toBe(args.indexOf("--no-context-files") + 1);
+    expect(args.indexOf("--output-file")).toBe(args.indexOf("--no-extensions") + 1);
   });
 });

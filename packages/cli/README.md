@@ -78,6 +78,42 @@ Provider manifests may declare a `hygiene` block mapping execution fields — `t
 
 `flag` is a value flag rendered as `flag value` (an explicit tools allowlist, or one named skill); `disableFlag` renders when the execution block suppresses that capability, and `skills` accepts both so non-empty lists load skills while an empty list disables discovery. Flags are split on whitespace into separate argv entries (`-c key=value` renders as `-c`, `key=value`); prefer the single-token `--flag=value` form for values. Omit any capability the CLI does not support per run — an omitted capability renders nothing (graceful no-op); never declare a guessed flag. Back-compat rule: manifest loaders ignore unknown keys, so `trailstep providers add` and `trailstep providers inspect` succeed even when a manifest carries keys the installed version does not read yet; unknown entries are skipped, never rejected.
 
+## Execution settings
+
+The TrailStep config can carry an `execution` block that controls the whole
+execution (hygiene) context of agent steps, globally and per workflow:
+
+```jsonc
+{
+  "settings": {
+    "execution": { "contextFiles": true }
+  },
+  "workflows": {
+    "delegate": {
+      "settings": {
+        "execution": { "skills": ["trst-delegate"], "mcp": true }
+      }
+    }
+  }
+}
+```
+
+The block has the same shape as the agent execution block: `tools`
+(`"*"` or a list of tool names), `skills` (a list of skill names), `mcp`
+(boolean), `extensions` (a list of extension paths) and `contextFiles`
+(`true`, `false` or `"project-only"`).
+
+Blocks are merged **field by field** with the workflow's own agent-role block,
+in this precedence order: step execution > per-workflow config > global config >
+agent role. A config block that names only `contextFiles` therefore changes only
+that field and leaves the role's other fields alone, and an explicit `false`,
+`[]` or `"project-only"` overrides the lower-precedence value. A workflow with
+no block anywhere still renders no hygiene flags at all; a workflow whose only
+block is a config block takes TrailStep's lean defaults for the fields the
+config does not name. An invalid block fails fast, before any provider process
+starts, with a diagnostic that names the config path (e.g.
+`settings.execution.contextFiles must be a boolean ...`).
+
 ## Common commands
 
 ```bash

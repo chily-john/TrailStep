@@ -14,9 +14,9 @@ describe("resolveAgentExecutionConfig", () => {
       skills: [],
       mcp: false,
       extensions: [],
-      contextFiles: "project-only",
+      contextFiles: true,
     });
-    expect(DEFAULT_AGENT_EXECUTION.contextFiles).toBe("project-only");
+    expect(DEFAULT_AGENT_EXECUTION.contextFiles).toBe(true);
   });
 
   it("keeps explicitly configured values", () => {

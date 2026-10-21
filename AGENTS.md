@@ -50,6 +50,8 @@ This root context file contains a map of the codebase. **OpenViking is the canon
 ## Gotchas
 
 - Generated output (`dist/`, `.turbo/`, coverage, package `node_modules/`, `.trailstep/runs/`) is not source of truth.
+- Search with `rg` (it respects `.gitignore`); never run `grep -r` / `find` from the repository root — that walks ~150k files in `node_modules/`, `data/` and `.trailstep/`, while `rg` sees ~579 in under a second. Scope searches to `packages/<pkg>/src`.
+- The OpenViking vector store lives in `data/vectordb/context` and is rebuildable; the sibling `data/viking` tree is **not** — it holds the canonical documentation, which exists only in OpenViking at `viking://resources/trailstep/docs/`. Never delete `data/viking`. Changing the embedding model or dimension means deleting `data/vectordb/context` and re-running the reindex (see `docs/openviking-setup.md`).
 - Internal `@trailstep/*` cross-links must use `workspace:*` (enforced by `pnpm check:public-packages`); never pin them to `^x.y.z` in `package.json`, or version bumps will desync `pnpm-lock.yaml` and fail CI `pnpm install --frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`.
 - After editing any `package.json`, run `pnpm install` and commit the updated `pnpm-lock.yaml` — but only regenerate the lockfile on a CLEAN tree (uncommitted manifest edits get baked into it and fail CI `--frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`). Verify with `node scripts/check-lockfile-sync.mjs` before pushing.
 - New workflows should use the continuation model: `defineWorkflow({ ... start })`, `step(...)`, and `done(...)`; do not expand the older static `steps: []` path.

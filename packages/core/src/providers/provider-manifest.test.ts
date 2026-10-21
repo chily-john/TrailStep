@@ -362,13 +362,24 @@ describe("buildProviderHygieneArgs", () => {
       hygiene: piHygiene,
     });
 
+    // Context files are loaded by default, so no context-file flag is
+    // rendered; the suppression flags cover the lean parts only.
     expect(args).toEqual({
       skills: ["--no-skills"],
       mcpArgs: ["--no-mcp"],
       extensionsArgs: ["--no-extensions"],
-      contextFilesArgs: ["--no-context-files"],
     });
     expect(args.tools).toBeUndefined();
+    expect(args.contextFilesArgs).toBeUndefined();
+  });
+
+  it("renders the context-file suppression flag when context files are turned off", () => {
+    const args = buildProviderHygieneArgs({
+      execution: resolveAgentExecutionConfig({ contextFiles: false }),
+      hygiene: piHygiene,
+    });
+
+    expect(args.contextFilesArgs).toEqual(["--no-context-files"]);
   });
 
   it("renders an explicit tools allowlist as flag plus comma-joined value", () => {

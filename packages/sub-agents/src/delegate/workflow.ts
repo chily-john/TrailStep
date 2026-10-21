@@ -32,24 +32,32 @@ export type DelegateWorkflowConfig = {
   /**
    * Lean execution context for the delegate's working agent. Defaults to
    * {@link LEAN_DELEGATE_EXECUTION}: all tools, no skills, no MCP, no
-   * extensions, project-only context. Only rendered for providers whose
-   * manifest declares a hygiene capability mapping; other providers keep
-   * their current behavior.
+   * extensions, with the project's context files loaded. Only rendered for
+   * providers whose manifest declares a hygiene capability mapping; other
+   * providers keep their current behavior.
    */
   readonly execution?: AgentExecutionConfig;
 };
 
 /**
  * Default lean execution context applied to every delegate workflow.
- * `contextFiles: "project-only"` renders `--no-context-files` on pi
- * (which disables all discovery) since no CLI offers a project-only flag.
+ *
+ * The delegate is lean about the things a sub-agent rarely needs: no skills,
+ * no MCP, no extension loading, all tools. Context files are NOT pinned here
+ * — the delegate inherits the framework default (context files loaded), so
+ * the repository's own instructions reach it, and a project can change that
+ * through the `settings.execution` config block.
+ *
+ * For pi this renders `--no-skills --no-mcp --no-extensions` and no
+ * context-file flag. Note that `contextFiles: "project-only"` and `false`
+ * both render `--no-context-files` on pi (which disables all discovery)
+ * since no CLI offers a project-only flag.
  */
 export const LEAN_DELEGATE_EXECUTION: AgentExecutionConfig = {
   tools: "*",
   skills: [],
   mcp: false,
   extensions: [],
-  contextFiles: "project-only",
 };
 
 /**

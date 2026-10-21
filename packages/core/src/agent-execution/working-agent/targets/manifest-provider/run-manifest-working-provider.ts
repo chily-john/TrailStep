@@ -10,7 +10,6 @@ import {
   extractEnvelopeText,
 } from "../../../../cli-provider-runtime/envelopes/envelope.js";
 import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
-import { resolveAgentExecutionConfig } from "../../../../contracts/agents/agent-execution.types.js";
 import type {
   WorkflowAgentRole,
   WorkflowAgentThinking,
@@ -27,6 +26,7 @@ import {
   type TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
+import { resolveExecutionPolicy } from "../../../../runtime/execution/execution-policy.js";
 import {
   resolveSpawnRetryPolicy,
   type SpawnRetryPolicy,
@@ -88,16 +88,28 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       global: options.config.settings?.spawnRetry,
     });
 
-  // Lean execution context: step-level wins over the role's block. Omitted
-  // execution (or a hygiene-less manifest) renders no hygiene args at all,
-  // preserving current provider behavior byte-for-byte. Invalid blocks fail
-  // fast before any provider process is spawned.
-  const execution = options.step.execution ?? options.role.execution;
+  // Execution (hygiene) context: step > workflow config > global config >
+  // role, merged field by field. Omitted execution (or a hygiene-less
+  // manifest) renders no hygiene args at all, preserving current provider
+  // behavior byte-for-byte. Invalid blocks (including invalid config blocks)
+  // fail fast before any provider process is spawned.
+  const execution = resolveExecutionPolicy({
+    role: options.role.execution,
+    step: options.step.execution,
+    global: {
+      path: "settings.execution",
+      block: options.config.settings?.execution,
+    },
+    workflow: {
+      path: `workflows.${options.workflowId}.settings.execution`,
+      block: options.config.workflows?.[options.workflowId]?.settings?.execution,
+    },
+  });
   const hygieneArgs: ProviderHygieneArgs =
     execution === undefined
       ? {}
       : buildProviderHygieneArgs({
-          execution: resolveAgentExecutionConfig(execution),
+          execution,
           hygiene: manifest.hygiene,
         });
 

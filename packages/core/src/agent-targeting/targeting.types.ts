@@ -1,3 +1,4 @@
+import type { AgentExecutionConfig } from "../contracts/agents/agent-execution.types.js";
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
 import type { TrailStepProviderRegistration } from "../providers/provider-manifest.js";
 import type { RetryPolicyInput } from "../runtime/retry/retry-policy.js";
@@ -51,6 +52,12 @@ export interface TrailStepSettings {
   /** Backoff retry policy for transient working-agent spawn failures. */
   readonly spawnRetry?: SpawnRetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
+  /**
+   * Execution (hygiene) block applied to agent roles that do not define
+   * their own block. Merged field by field with the per-workflow block and
+   * the agent role's block (per-workflow wins over this one).
+   */
+  readonly execution?: AgentExecutionConfig;
   readonly [key: string]: unknown;
 }
 

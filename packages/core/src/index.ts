@@ -105,7 +105,6 @@ export type {
   WaitPendingInput,
   WaitPendingResult,
   WaitPhase,
-  WorkflowInvocationNode,
   WorkflowInvocationOptions,
 } from "./authoring/step/continuation.types.js";
 export type {
@@ -113,7 +112,11 @@ export type {
   WorkflowBuilderOptions,
 } from "./authoring/workflow/define-workflow.js";
 export type { DeepReadonly, WorkflowInputApi } from "./authoring/workflow/workflow.js";
-export type { Workflow, WorkflowSkillOptions } from "./authoring/workflow/workflow.types.js";
+export type {
+  Workflow,
+  WorkflowInvocationNode,
+  WorkflowSkillOptions,
+} from "./authoring/workflow/workflow.types.js";
 export type {
   ManagedSessionPromptInjectionMode,
   ProviderAdapter,
@@ -262,6 +265,11 @@ export {
   writeCancellationMarker,
 } from "./runtime/cancellation/cancellation.js";
 export { createEvent } from "./runtime/events/create-run-event.js";
+export type {
+  ExecutionPolicyConfigSource,
+  ResolveExecutionPolicyOptions,
+} from "./runtime/execution/execution-policy.js";
+export { resolveExecutionPolicy } from "./runtime/execution/execution-policy.js";
 export type { LatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export { selectLatestUnresolvedFailure } from "./runtime/retry/latest-unresolved-failure.js";
 export type {

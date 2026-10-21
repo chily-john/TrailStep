@@ -18,8 +18,9 @@ export interface AgentExecutionConfig {
   /** Extensions to enable. Default `[]` (no extensions). */
   readonly extensions?: readonly string[];
   /**
-   * Context-file loading: `true` loads everything, `'project-only'`
-   * (default) restricts to the project, `false` disables loading.
+   * Context-file loading: `true` (default) loads the context files,
+   * `'project-only'` restricts to the project for providers that offer a
+   * dedicated project-only flag, `false` disables loading.
    *
    * Note: provider CLIs without a dedicated project-only flag (including
    * `pi --no-context-files`, which disables AGENTS.md/CLAUDE.md discovery
@@ -44,8 +45,42 @@ export const DEFAULT_AGENT_EXECUTION: ResolvedAgentExecutionConfig = {
   skills: [],
   mcp: false,
   extensions: [],
-  contextFiles: "project-only",
+  contextFiles: true,
 };
+
+/**
+ * Validates a raw (untrusted) execution block and returns the problems it
+ * has, if any.
+ *
+ * `path` prefixes every diagnostic so config-sourced blocks are reported
+ * against their config location (e.g.
+ * `settings.execution.contextFiles must be a boolean ...`) instead of the
+ * generic `execution.` prefix.
+ */
+export function collectAgentExecutionDiagnostics(config: unknown, path = "execution"): string[] {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) {
+    return [`${path} must be an object when present.`];
+  }
+
+  try {
+    resolveAgentExecutionConfig(config as AgentExecutionConfig);
+    return [];
+  } catch (error) {
+    if (error instanceof TrailStepFailureError) {
+      const details = error.failure.details;
+      const diagnostics =
+        typeof details === "object" &&
+        details !== null &&
+        Array.isArray((details as { readonly diagnostics?: unknown }).diagnostics)
+          ? (details as { readonly diagnostics: unknown[] }).diagnostics
+          : [];
+      return diagnostics
+        .filter((diagnostic): diagnostic is string => typeof diagnostic === "string")
+        .map((diagnostic) => diagnostic.replace(/^execution\./u, `${path}.`));
+    }
+    throw error;
+  }
+}
 
 /**
  * Validates an execution block and fills omitted fields with lean defaults.

@@ -1,5 +1,28 @@
 # @trailstep/cli
 
+## 0.9.0
+
+### Minor Changes
+
+- 9fc5734: HARD-REMOVE the deprecated per-workflow generated-skills feature from the TrailStep CLI.
+  
+  Breaking changes:
+  
+  - `trailstep add` no longer accepts `--project-skill` or `--user-skill`; both flags are now rejected as unknown options.
+  - Generated per-workflow skill files are no longer written during `trailstep add`.
+  
+  Migration:
+  
+  - Agents that should discover registered workflows use the TrailStep MCP server (`trst_*` tools) or the packaged TrailStep skills installed via `trailstep init --install-skill`.
+  
+  No changes for `trailstep init --install-skill`, `trailstep skill-check`, the packaged `trailstep-skill` / authoring-skill installs, or provider execution-time skill handling.
+
+### Patch Changes
+
+- Updated dependencies [9fc5734]
+  - @trailstep/core@0.7.0
+  - @trailstep/mcp@0.3.1
+
 ## 0.8.0
 
 ### Minor Changes

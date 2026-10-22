@@ -50,6 +50,28 @@ function parseEvents(jsonl: string): readonly { type: string; payload: Record<st
     .map((line) => JSON.parse(line) as { type: string; payload: Record<string, unknown> });
 }
 
+async function writeWaitingWorkflow(cwd: string): Promise<void> {
+  await mkdir(join(cwd, "workflows"), { recursive: true });
+  await writeFile(
+    join(cwd, "workflows", "waiting.mjs"),
+    `import { done, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value) => value,
+    };
+    export default {
+      id: 'waiting',
+      input: schema,
+      output: schema,
+      start: (input) => step({ id: 'publish' })
+        .wait({ id: 'approval', kind: 'input', message: 'Approve this change?', output: { approved: 'boolean' } })
+        .do(({ waits }) => done({ ok: waits.approval.approved }))(input),
+    };`,
+    "utf8",
+  );
+}
+
 describe("retry command", () => {
   it("fails safely with no target in non-interactive mode", async () => {
     const errors: string[] = [];
@@ -67,7 +89,7 @@ describe("retry command", () => {
 
   it("exits cleanly when no eligible failed runs exist", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     const lines: string[] = [];
 
@@ -87,7 +109,7 @@ describe("retry command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
     const errors: string[] = [];
@@ -155,7 +177,7 @@ describe("retry command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
     await writeFile(join(cwd, "fixed.txt"), "fixed\n", "utf8");
@@ -237,7 +259,7 @@ describe("retry command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
     const errors: string[] = [];
@@ -277,7 +299,7 @@ describe("retry command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     await writeRetryWorkflow(cwd);
     const errors: string[] = [];
@@ -325,5 +347,52 @@ describe("retry command", () => {
     );
     await expect(stat(join(cwd, ".trailstep", "runs", "retry-me-2"))).rejects.toThrow();
     expect(lines.join("\n")).toContain(runDir);
+  });
+
+  it("retries a cancelled run and consumes its pending cancellation", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await mkdir(cwd, { recursive: true });
+    await writeWaitingWorkflow(cwd);
+    const errors: string[] = [];
+    const io = { writeLine: () => undefined, writeError: (line: string) => errors.push(line) };
+
+    // The run starts and parks on a wait.
+    await expect(
+      main({
+        argv: ["./workflows/waiting.mjs", "wait-run", "--input", "{}"],
+        cwd,
+        io,
+      }),
+    ).resolves.toBe(0);
+
+    // Cancelling it leaves a pending cancellation request behind.
+    await expect(main({ argv: ["cancel", "wait-run"], cwd, io })).resolves.toBe(0);
+    const runDir = join(cwd, ".trailstep", "runs", "wait-run");
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).resolves.toContain("requestedAt");
+
+    const lines: string[] = [];
+    await expect(
+      main({
+        argv: ["retry", "./workflows/waiting.mjs", "wait-run"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    // The retry consumes the pending cancellation, so the retried run is not
+    // cancelled again by the request it replaces.
+    expect(lines.join("\n")).toContain("Cleared pending cancellation: wait-run");
+    await expect(readFile(join(runDir, "cancel.json"), "utf8")).rejects.toThrow();
+
+    const events = parseEvents(await readFile(join(runDir, "events.jsonl"), "utf8"));
+    const types = events.map((event) => event.type);
+    expect(types).toContain("workflow.cancelRequested");
+    expect(types).toContain("workflow.cancelled");
+    expect(types).toContain("workflow.retryStarted");
+    // The retried run re-executed the cancelled step and is waiting again.
+    expect(types.filter((type) => type === "step.started")).toHaveLength(2);
+    expect(types.at(-1)).toBe("wait.started");
+    expect(errors.join("\n")).toBe("");
   });
 });

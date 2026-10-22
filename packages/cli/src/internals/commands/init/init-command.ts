@@ -7,6 +7,7 @@ import type {
   TrailStepCliPrompts,
 } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
+import { parseCommandFlags } from "../../command-framework/flags.js";
 import { offerMcpRegistration } from "../../mcp-tools/mcp-registration.js";
 import {
   createPackageAddCommand,
@@ -57,7 +58,11 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       throw new CliUsageError("Expected init command.");
     }
 
-    const flags = parseFlags(argv.slice(1));
+    const flags = parseCommandFlags(argv.slice(1), {
+      commandLabel: "trailstep init",
+      booleanFlags: ["--install-skill", "--no-install-skill"],
+      valueFlags: ["--scope"],
+    });
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
@@ -137,45 +142,16 @@ export const initCommand: CliCommand<InitCommandArgs> = {
   },
 };
 
-function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
-  const flags: Record<string, string | undefined> = {};
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const option = argv[index];
-    if (option === "--install-skill") {
-      flags.installSkill = "true";
-      continue;
-    }
-
-    if (option === "--no-install-skill") {
-      flags.noInstallSkill = "true";
-      continue;
-    }
-
-    if (option !== "--scope") {
-      throw new CliUsageError(`Unknown option for trailstep init: ${option ?? ""}`);
-    }
-
-    const value = argv[index + 1];
-    if (!value) {
-      throw new CliUsageError(`Missing value for ${option}.`);
-    }
-
-    flags.scope = value;
-    index += 1;
-  }
-
-  return flags;
-}
-
 function resolveSkillInstallMode(flags: Record<string, string | undefined>): SkillInstallMode {
-  if (flags.installSkill === "true" && flags.noInstallSkill === "true") {
+  const installSkill = flags["install-skill"] === "true";
+  const noInstallSkill = flags["no-install-skill"] === "true";
+  if (installSkill && noInstallSkill) {
     throw new CliUsageError("Use only one of --install-skill or --no-install-skill.");
   }
-  if (flags.installSkill === "true") {
+  if (installSkill) {
     return "install";
   }
-  if (flags.noInstallSkill === "true") {
+  if (noInstallSkill) {
     return "skip";
   }
   return "prompt";

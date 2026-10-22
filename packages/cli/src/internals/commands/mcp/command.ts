@@ -2,20 +2,10 @@ import path from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "@trailstep/mcp";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
+import { parseCommandFlags } from "../../command-framework/flags.js";
 
 interface McpCommandArgs {
   readonly project?: string;
-}
-
-function parseFlags(argv: readonly string[]): McpCommandArgs {
-  const flags: { project?: string } = {};
-  for (let i = 1; i < argv.length; i++) {
-    if (argv[i] === "--project" && i + 1 < argv.length) {
-      flags.project = argv[i + 1];
-      i++;
-    }
-  }
-  return flags as McpCommandArgs;
 }
 
 export const mcpCommand: CliCommand<McpCommandArgs> = {
@@ -24,7 +14,14 @@ export const mcpCommand: CliCommand<McpCommandArgs> = {
     if (argv[0] !== "mcp") {
       throw new Error("Expected mcp command.");
     }
-    return parseFlags(argv);
+    const flags = parseCommandFlags(argv.slice(1), {
+      commandLabel: "trailstep mcp",
+      valueFlags: ["--project"],
+      onUnknownFlag: "ignore",
+      onMissingValue: "ignore",
+      allowEmptyValue: true,
+    });
+    return flags.project === undefined ? {} : { project: flags.project };
   },
   async run(args: McpCommandArgs, _context: CliCommandContext): Promise<number> {
     // Lazy-load assumption: no full engine init at subcommand startup.

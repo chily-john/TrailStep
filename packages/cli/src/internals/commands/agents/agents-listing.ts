@@ -1,6 +1,7 @@
 import { resolveAgentTargets, type TrailStepConfig } from "@trailstep/core";
 
 import { findAgentReferrers } from "../../agent-config/agent-referrers.js";
+import { isAgentTargetsUnavailableError } from "../../agent-config/agent-targets-error.js";
 import type { CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { loadTrailStepProjectConfig } from "../../config/config.js";
@@ -225,12 +226,6 @@ function explainWorkflowRoleFinalTargets(
     }
     throw error;
   }
-}
-
-function isAgentTargetsUnavailableError(error: unknown): boolean {
-  return (
-    isRecord(error) && isRecord(error.failure) && error.failure.code === "agent_targets_unavailable"
-  );
 }
 
 export function explainAgentEntry(

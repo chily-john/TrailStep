@@ -1,4 +1,4 @@
-import { jsonSchema } from "@trailstep/authoring";
+import { jsonSchema, nonEmptyOptional } from "@trailstep/authoring";
 
 export type DelegateMode = "explore" | "implement" | "review" | "general";
 export type DelegateStatus = "completed" | "blocked" | "cancelled";
@@ -132,6 +132,20 @@ export const delegateArtifactShape = {
   additionalProperties: false,
 } as const;
 
+export const delegateWorktreeInputShape = {
+  type: "object",
+  properties: {
+    enabled: { type: "boolean" },
+    path: { type: "string" },
+    baseRef: { type: "string" },
+    baseBranch: { type: "string" },
+    branch: { type: "string" },
+    cleanup: { type: "string", enum: ["auto", "never", "always"] },
+    forceCleanup: { type: "boolean" },
+  },
+  additionalProperties: false,
+} as const;
+
 export const delegateInputShape = jsonSchema<DelegateInput>({
   type: "object",
   properties: {
@@ -141,19 +155,7 @@ export const delegateInputShape = jsonSchema<DelegateInput>({
     cwd: { type: "string" },
     maxTurns: { type: "number" },
     summarize: { type: "boolean" },
-    worktree: {
-      type: "object",
-      properties: {
-        enabled: { type: "boolean" },
-        path: { type: "string" },
-        baseRef: { type: "string" },
-        baseBranch: { type: "string" },
-        branch: { type: "string" },
-        cleanup: { type: "string", enum: ["auto", "never", "always"] },
-        forceCleanup: { type: "boolean" },
-      },
-      additionalProperties: false,
-    },
+    worktree: delegateWorktreeInputShape,
   },
   required: ["task"],
   additionalProperties: false,
@@ -257,9 +259,4 @@ function normalizeMaxTurns(value: number | undefined): number {
   }
 
   return Math.max(1, Math.floor(value));
-}
-
-function nonEmptyOptional(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }

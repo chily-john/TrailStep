@@ -32,7 +32,7 @@ function event(type: string, payload: Record<string, unknown>): Record<string, u
 describe("output command", () => {
   it("prints a selected final output field", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeEvents(cwd, "complete-run", [
       event("workflow.completed", { output: { summary: "completed tests" } }),
     ]);
@@ -51,7 +51,7 @@ describe("output command", () => {
 
   it("prints the persisted terminal message", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeEvents(cwd, "complete-run", [
       event("workflow.completed", {
         output: { summary: "completed tests" },
@@ -73,7 +73,7 @@ describe("output command", () => {
 
   it("prints the persisted terminal message for failed runs", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeEvents(cwd, "failed-run", [
       event("workflow.failed", {
         failure: { code: "rejected", message: "Rejected tests" },
@@ -95,7 +95,7 @@ describe("output command", () => {
 
   it("tells users to restore archived runs before reading output", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(join(cwd, ".trailstep", "runs", ".archive"), { recursive: true });
     await writeFile(
       join(cwd, ".trailstep", "runs", ".archive", "archived-run.manifest.json"),
@@ -118,7 +118,7 @@ describe("output command", () => {
 
   it("reports no final output for a waiting run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-output-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeEvents(cwd, "waiting-run", [event("wait.started", { waitId: "approval" })]);
     const errors: string[] = [];
 

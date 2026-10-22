@@ -350,7 +350,7 @@ describe("removeCommand", () => {
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: async (request) => {
         packageCommandCalls.push(request);
-        await rm(packageDir, { recursive: true, force: true });
+        await rm(packageDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
         await writeJson(join(cwd, "package.json"), { name: "consumer", devDependencies: {} });
         return { exitCode: 0 };
       },
@@ -412,7 +412,7 @@ describe("removeCommand", () => {
       io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
       packageCommandRunner: async (request) => {
         packageCommandCalls.push(request);
-        await rm(packageDir, { recursive: true, force: true });
+        await rm(packageDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
         await writeJson(join(packageStore, "package.json"), { dependencies: {} });
         return { exitCode: 0 };
       },

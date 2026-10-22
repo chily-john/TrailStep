@@ -342,7 +342,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
 
@@ -369,7 +369,7 @@ describe("run command", () => {
 
   it("builds workflow input from generated input flags like input-file JSON", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeInputEchoWorkflowFile(cwd);
     await writeJson(join(cwd, "input.json"), {
       task: "Investigate failing tests",
@@ -419,7 +419,7 @@ describe("run command", () => {
 
   it("applies --set nested paths with JSON-like scalar values", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeInputEchoWorkflowFile(cwd);
 
     await expect(
@@ -451,7 +451,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeWaitingWorkflowFile(cwd);
     const lines: string[] = [];
     const errors: string[] = [];
@@ -477,7 +477,7 @@ describe("run command", () => {
     const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "worktree");
     const runsRoot = resolve(root, "source", ".trailstep", "runs");
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
 
@@ -500,7 +500,7 @@ describe("run command", () => {
 
   it("runs a directly referenced workflow file with an explicit run name", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
 
@@ -521,7 +521,7 @@ describe("run command", () => {
 
   it("fails clearly for a missing directly referenced workflow file", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const errors: string[] = [];
 
     await expect(
@@ -539,7 +539,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeAmbiguousDirectWorkflowFile(cwd);
     const errors: string[] = [];
 
@@ -558,7 +558,7 @@ describe("run command", () => {
 
   it("runs a project-registered workflow from .trailstep/config.json", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRegisteredProjectWorkflow(cwd);
     const lines: string[] = [];
     const errors: string[] = [];
@@ -587,7 +587,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRegisteredProjectWorkflow(cwd);
     const errors: string[] = [];
 
@@ -605,7 +605,7 @@ describe("run command", () => {
     const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
     await mkdir(join(homeDir, ".trailstep"), { recursive: true });
     await writeConflictingRegisteredWorkflows(cwd, homeDir);
@@ -643,7 +643,7 @@ describe("run command", () => {
     const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     await writeDirectWorkflowFile(cwd);
     const lines: string[] = [];
@@ -676,7 +676,7 @@ describe("run command", () => {
     const root = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     const cwd = join(root, "outside-node-project");
     const homeDir = join(root, "home");
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
     await writeGlobalBundleWorkflowPackage(homeDir);
     const lines: string[] = [];
@@ -697,7 +697,7 @@ describe("run command", () => {
 
   it("runs a workflow from scoped package bundle manifest metadata", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeBundleWorkflowPackage(cwd);
     const lines: string[] = [];
 
@@ -726,7 +726,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeWorkflowPackage(cwd);
     const lines: string[] = [];
 
@@ -754,7 +754,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeWorkflowPackage(cwd);
     await mkdir(join(cwd, ".trailstep", "runs", "my-run"), { recursive: true });
     await writeJson(join(cwd, "input.json"), { ok: true });
@@ -781,7 +781,7 @@ describe("run command", () => {
 
   it("rejects legacy resume syntax and points users to retry", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const errors: string[] = [];
 
     await expect(
@@ -799,7 +799,7 @@ describe("run command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeWorkflowPackage(cwd);
     const errors: string[] = [];
 

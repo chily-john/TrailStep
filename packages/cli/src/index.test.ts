@@ -40,7 +40,7 @@ describe("main", () => {
   });
 
   beforeAll(async () => {
-    await rm(MAIN_TEST_ROOT, { recursive: true, force: true });
+    await rm(MAIN_TEST_ROOT, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("open creates a managed standalone session for the default configured agent", async ({

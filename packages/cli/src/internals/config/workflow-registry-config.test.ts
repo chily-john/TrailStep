@@ -63,7 +63,7 @@ describe("workflow registry project config", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeConfig(cwd, {
       version: 1,
       customProviders: {
@@ -104,7 +104,7 @@ describe("workflow registry project config", () => {
 
   it("ignores registry metadata while parsing core agent config", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeConfig(cwd, {
       version: 1,
       agents: {
@@ -152,7 +152,7 @@ describe("workflow registry project config", () => {
     const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 
     await writeUserConfig(homeDir, {
       version: 1,
@@ -204,7 +204,7 @@ describe("workflow registry project config", () => {
     const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 
     await writeUserConfig(homeDir, {
       version: 1,
@@ -266,7 +266,7 @@ describe("workflow registry project config", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeConfig(cwd, {
       version: 1,
       customProviders: {
@@ -300,7 +300,7 @@ describe("workflow registry project config", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeConfig(cwd, {
       workflows: {
         project: {
@@ -330,7 +330,7 @@ describe("workflow registry project config", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeConfig(cwd, {
       workflows: {
         project: {
@@ -357,7 +357,7 @@ describe("workflow registry project config", () => {
 
   it("loads config-local.json alone when config.json is absent", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeLocalConfig(cwd, {
       customProviders: {
         local: { binary: "pi", args: ["--model", "small"] },

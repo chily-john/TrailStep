@@ -1,4 +1,4 @@
-import { jsonSchema } from "@trailstep/authoring";
+import { jsonSchema, nonEmptyOptional, nonEmptyOrDefault } from "@trailstep/authoring";
 
 export interface TakeItAwayPullRequestInput extends Record<string, unknown> {
   readonly enabled?: boolean;
@@ -103,14 +103,4 @@ export function normalizeTakeItAwayWorkflowOptions(
       enabled: input.planningCheckpoint?.enabled ?? defaults.planningCheckpoint.enabled,
     },
   };
-}
-
-function nonEmptyOrDefault(value: string | undefined, fallback: string): string {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : fallback;
-}
-
-function nonEmptyOptional(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }

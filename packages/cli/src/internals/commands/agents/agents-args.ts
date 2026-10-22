@@ -1,4 +1,5 @@
 import { CliUsageError } from "../../command-framework/command.types.js";
+import { parseCommandFlags } from "../../command-framework/flags.js";
 import type { WorkflowRegistryScope } from "../../workflow-registry/workflow-registry.js";
 
 import { type AgentCommandArgs, THINKING_CHOICES } from "./agents-command.types.js";
@@ -33,7 +34,11 @@ export function parseAgentsCommandArgs(argv: readonly string[]): AgentCommandArg
 function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
   const [name, ...flagsArgv] = argv;
   assertAgentName(name, "trailstep agents set requires <name>.");
-  const flags = parseFlags(flagsArgv, ["--provider", "--model", "--thinking", "--scope"]);
+  const flags = parseCommandFlags(flagsArgv, {
+    commandLabel: "trailstep agents",
+    valueFlags: ["--provider", "--model", "--thinking", "--scope"],
+    allowEmptyValue: true,
+  });
   const scope = parseRequiredScope(
     flags.scope,
     "trailstep agents set requires --scope <local|project|global>.",
@@ -58,7 +63,11 @@ function parseSetArgs(argv: readonly string[]): AgentCommandArgs {
 function parseDeleteArgs(argv: readonly string[]): AgentCommandArgs {
   const [name, ...flagsArgv] = argv;
   assertAgentName(name, "trailstep agents delete requires <name>.");
-  const flags = parseFlags(flagsArgv, ["--scope"]);
+  const flags = parseCommandFlags(flagsArgv, {
+    commandLabel: "trailstep agents",
+    valueFlags: ["--scope"],
+    allowEmptyValue: true,
+  });
   return {
     action: "delete",
     name,
@@ -76,7 +85,11 @@ function parseRenameArgs(argv: readonly string[]): AgentCommandArgs {
   if (oldName === newName) {
     throw new CliUsageError("trailstep agents rename requires different old and new names.");
   }
-  const flags = parseFlags(flagsArgv, ["--scope"]);
+  const flags = parseCommandFlags(flagsArgv, {
+    commandLabel: "trailstep agents",
+    valueFlags: ["--scope"],
+    allowEmptyValue: true,
+  });
   return {
     action: "rename",
     oldName,
@@ -91,7 +104,11 @@ function parseRenameArgs(argv: readonly string[]): AgentCommandArgs {
 function parseExplainArgs(argv: readonly string[]): AgentCommandArgs {
   const [name, ...flagsArgv] = argv;
   assertAgentName(name, "trailstep agents explain requires <name>.");
-  const flags = parseFlags(flagsArgv, ["--scope"]);
+  const flags = parseCommandFlags(flagsArgv, {
+    commandLabel: "trailstep agents",
+    valueFlags: ["--scope"],
+    allowEmptyValue: true,
+  });
   if (name.includes("/")) {
     return { action: "explain-workflow", workflowRef: name };
   }
@@ -103,30 +120,6 @@ function parseExplainArgs(argv: readonly string[]): AgentCommandArgs {
       "trailstep agents explain requires --scope <local|project|global>.",
     ),
   };
-}
-
-function parseFlags(
-  argv: readonly string[],
-  allowedFlags: readonly string[],
-): Record<string, string | undefined> {
-  const flags: Record<string, string | undefined> = {};
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const option = argv[index];
-    if (option === undefined || !allowedFlags.includes(option)) {
-      throw new CliUsageError(`Unknown option for trailstep agents: ${option ?? ""}`);
-    }
-
-    const value = argv[index + 1];
-    if (value === undefined) {
-      throw new CliUsageError(`Missing value for ${option}.`);
-    }
-
-    flags[option.slice(2)] = value;
-    index += 1;
-  }
-
-  return flags;
 }
 
 export function parseRequiredScope(

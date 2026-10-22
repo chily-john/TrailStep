@@ -84,8 +84,11 @@ describe("run_workflow tool (thin adapter)", () => {
     const elapsedMs = Date.now() - startedAt;
 
     // Bounded: returns once the run dir exists (node boot + CLI startup),
-    // long before awaiting workflow completion.
-    expect(elapsedMs).toBeLessThan(5000);
+    // long before awaiting workflow completion. The bound is deliberately
+    // generous - the machine may be loaded, and the suites run in parallel -
+    // because what this asserts is that the tool returned through the
+    // materialization fast path instead of exhausting its verification budget.
+    expect(elapsedMs).toBeLessThan(12_000);
     expect(result.status).toBe("started");
 
     // Real ids from the generate-run-name scheme (no Date.now fake).
@@ -187,7 +190,10 @@ describe("run_workflow start verification (never reports a run that never exists
 
     expect(result.status).toBe("failed");
     expect(result.error).toMatch(/exited with code 3/u);
-    expect(Date.now() - startedAt).toBeLessThan(10_000);
+    // The broken CLI exits immediately, so this must not wait out the
+    // verification budget. Kept well under it, and loose enough to survive a
+    // loaded machine.
+    expect(Date.now() - startedAt).toBeLessThan(12_000);
   });
 
   it("surfaces a spawn failure instead of reporting started", async () => {

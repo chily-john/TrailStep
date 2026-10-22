@@ -4,10 +4,24 @@ export const OFFICIAL_PROVIDER_IDS = ["claude", "codex", "gemini", "pi"] as cons
 
 export type OfficialProviderId = (typeof OFFICIAL_PROVIDER_IDS)[number];
 
-interface OfficialProviderSpec {
+/**
+ * CLI-side mirror of the capability metadata declared by the official
+ * provider packages (`@trailstep/provider-*`).
+ *
+ * The provider package manifest is the source of truth: the package knows
+ * which flags its own CLI supports. This table only carries the two pieces
+ * the CLI needs before a provider package is installed (model discovery and
+ * the thinking levels offered in the agent setup wizard), so it must agree
+ * with the manifest. `official-providers.test.ts` pins that agreement.
+ */
+export interface OfficialProviderSpec {
   readonly model?:
     | { readonly supported: false }
-    | { readonly supported: true; readonly discovery: ProviderModelDiscoverySpec };
+    | {
+        readonly supported: true;
+        /** Present only when the provider CLI can list its models. */
+        readonly discovery?: ProviderModelDiscoverySpec;
+      };
   readonly thinking?:
     | { readonly supported: false }
     | { readonly supported: true; readonly levels: readonly WorkflowAgentThinking[] };
@@ -17,15 +31,21 @@ const GENERIC_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as con
 
 const OFFICIAL_PROVIDER_SPECS: Record<OfficialProviderId, OfficialProviderSpec> = {
   claude: {
-    model: { supported: false },
+    // `claude --model <name>` is supported, but the CLI has no model-listing
+    // command, so no discovery spec exists.
+    model: { supported: true },
     thinking: { supported: true, levels: GENERIC_THINKING_LEVELS },
   },
   codex: {
-    model: { supported: false },
+    // `codex -m <name>` is supported, but the CLI has no model-listing
+    // command, so no discovery spec exists.
+    model: { supported: true },
     thinking: { supported: true, levels: ["low", "medium", "high", "xhigh"] },
   },
   gemini: {
-    model: { supported: false },
+    // `gemini -m <name>` is supported, but the CLI has no model-listing
+    // command, so no discovery spec exists.
+    model: { supported: true },
     thinking: { supported: false },
   },
   pi: {

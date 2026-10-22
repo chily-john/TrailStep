@@ -1,5 +1,5 @@
 import type { Event } from "@trailstep/core";
-import { readRunEvents } from "@trailstep/core";
+import { isFailureLikeError, readFailureCode, readRunEvents } from "@trailstep/core";
 
 export async function readDashboardRunEvents(runDir: string): Promise<Event[]> {
   try {
@@ -57,13 +57,11 @@ export function streamRunEvents(options: {
 }
 
 function isResumeTargetNotFound(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "failure" in error &&
-    typeof error.failure === "object" &&
-    error.failure !== null &&
-    "code" in error.failure &&
-    error.failure.code === "resume_target_not_found"
-  );
+  if (isFailureLikeError(error)) {
+    return error.failure.code === "resume_target_not_found";
+  }
+
+  // Fall back to a code-only check: failures that crossed a serialization
+  // boundary can lose their message while keeping the code.
+  return readFailureCode(error) === "resume_target_not_found";
 }

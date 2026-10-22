@@ -3,12 +3,15 @@ import {
   type CancellationMarker,
   WorkflowCancellationError,
 } from "../../cancellation/cancellation.js";
+import { reportUnexpectedFailure } from "../../failures/report-unexpected-failure.js";
 
 export async function runWithStepControl<T>(options: {
   readonly stepId: string;
   readonly timeoutMs?: number;
   readonly readCancellation: () => Promise<CancellationMarker | undefined>;
   readonly run: (signal: AbortSignal) => Promise<T>;
+  /** Receives failures that would otherwise be discarded by the abort path. */
+  readonly onUnexpectedError?: (error: unknown) => void;
 }): Promise<T> {
   const initialCancellation = await options.readCancellation();
   if (initialCancellation !== undefined) {
@@ -20,7 +23,23 @@ export async function runWithStepControl<T>(options: {
   let stopCancellationWatch: (() => void) | undefined;
 
   const runPromise = options.run(abortController.signal);
-  void runPromise.catch(() => undefined);
+  // The step promise is raced against cancellation/timeout. When the race is
+  // already settled (cancelled or timed out), a later rejection of the step
+  // promise would be discarded, so it is reported instead of dropped. While
+  // the race is still pending the rejection propagates to the caller and must
+  // not be reported twice.
+  let raceSettled = false;
+  void runPromise.catch((error: unknown) => {
+    if (!raceSettled) {
+      return;
+    }
+
+    reportUnexpectedFailure({
+      error,
+      context: `step ${options.stepId}`,
+      ...(options.onUnexpectedError === undefined ? {} : { report: options.onUnexpectedError }),
+    });
+  });
 
   const cancellationPromise = new Promise<never>((_, reject) => {
     stopCancellationWatch = watchCancellation(options.readCancellation, (result) => {
@@ -50,6 +69,7 @@ export async function runWithStepControl<T>(options: {
   try {
     return await Promise.race(raced);
   } finally {
+    raceSettled = true;
     stopCancellationWatch?.();
     if (timeout !== undefined) {
       clearTimeout(timeout);

@@ -56,8 +56,17 @@ async function cancelWorkflowRun(
   const cycleEvents = activeRunCycleEvents(events);
   const terminalStatus = selectTerminalStatus(cycleEvents);
 
-  if (terminalStatus === "completed" || terminalStatus === "failed") {
+  // The run's real terminal status comes from the event trail, never from the
+  // marker: the marker is a PENDING REQUEST, so a stale marker left behind by
+  // an already honoured cancellation must not turn an already cancelled run
+  // back into a "cancellation requested" report.
+  if (terminalStatus === "completed") {
     context.io.writeLine(`Run already completed: ${displayName}`);
+    return 0;
+  }
+
+  if (terminalStatus === "failed") {
+    context.io.writeLine(`Run already failed: ${displayName}`);
     return 0;
   }
 

@@ -17,7 +17,7 @@ async function writeWaitingWorkflowFile(
   cwd: string,
   options: { dynamicWait?: boolean; promptBeforeWait?: boolean } = {},
 ): Promise<void> {
-  await rm(cwd, { recursive: true, force: true });
+  await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -75,7 +75,7 @@ async function writeWaitingWorkflowFile(
 }
 
 async function writeCheckWaitingWorkflowFile(cwd: string): Promise<void> {
-  await rm(cwd, { recursive: true, force: true });
+  await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(

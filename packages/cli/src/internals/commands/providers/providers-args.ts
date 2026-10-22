@@ -1,5 +1,6 @@
 import type { CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
+import { parseCommandFlags } from "../../command-framework/flags.js";
 import type { WorkflowRegistryScope } from "../../workflow-registry/workflow-registry.js";
 
 import type { ProviderCommandArgs } from "./providers-command.types.js";
@@ -19,11 +20,11 @@ export function parseProvidersCommandArgs(argv: readonly string[]): ProviderComm
   if (action === "add") {
     const manifestPath = argv[2];
     assertRequiredArg(manifestPath, "trailstep providers add requires <path>.");
-    const flags = parseFlags(argv.slice(3));
+    const flags = parseScopeFlags(argv.slice(3));
     return { action: "add", path: manifestPath, scope: parseOptionalScope(flags.scope) };
   }
   if (action === "list") {
-    const flags = parseFlags(argv.slice(2));
+    const flags = parseScopeFlags(argv.slice(2));
     return { action: "list", scope: parseOptionalScope(flags.scope) };
   }
   if (action === "show") {
@@ -32,17 +33,17 @@ export function parseProvidersCommandArgs(argv: readonly string[]): ProviderComm
   if (action === "test") {
     const provider = argv[2];
     assertRequiredArg(provider, "trailstep providers test requires <provider>.");
-    const flags = parseFlags(argv.slice(3));
+    const flags = parseScopeFlags(argv.slice(3));
     return { action: "test", provider, scope: parseOptionalScope(flags.scope) };
   }
   if (action === "migrate") {
-    const flags = parseFlags(argv.slice(2));
+    const flags = parseScopeFlags(argv.slice(2));
     return { action: "migrate", scope: parseOptionalScope(flags.scope) };
   }
   if (action === "remove") {
     const provider = argv[2];
     assertRequiredArg(provider, "trailstep providers remove requires <provider>.");
-    const flags = parseFlags(argv.slice(3));
+    const flags = parseScopeFlags(argv.slice(3));
     return { action: "remove", provider, scope: parseOptionalScope(flags.scope) };
   }
   if (action === undefined || action === "--scope" || !isProviderSubcommand(action)) {
@@ -58,7 +59,7 @@ function parseShowArgs(
   argv: readonly string[],
 ): Extract<ProviderCommandArgs, { readonly action: "show" }> {
   const provider = argv[0]?.startsWith("--") ? undefined : argv[0];
-  const flags = parseFlags(provider === undefined ? argv : argv.slice(1));
+  const flags = parseScopeFlags(provider === undefined ? argv : argv.slice(1));
   return {
     action: "show",
     ...(provider === undefined ? {} : { provider }),
@@ -84,21 +85,12 @@ export async function resolveScope(
   return parseScope(selection);
 }
 
-function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
-  const flags: Record<string, string | undefined> = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const option = argv[index];
-    if (option !== "--scope") {
-      throw new CliUsageError(`Unknown option for trailstep providers: ${option ?? ""}`);
-    }
-    const value = argv[index + 1];
-    if (value === undefined) {
-      throw new CliUsageError("Missing value for --scope.");
-    }
-    flags.scope = value;
-    index += 1;
-  }
-  return flags;
+function parseScopeFlags(argv: readonly string[]): Record<string, string | undefined> {
+  return parseCommandFlags(argv, {
+    commandLabel: "trailstep providers",
+    valueFlags: ["--scope"],
+    allowEmptyValue: true,
+  });
 }
 
 function parseOptionalScope(value: string | undefined): WorkflowRegistryScope | undefined {

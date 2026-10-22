@@ -59,7 +59,7 @@ describe("generateMcpToolJson", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("reflects a changed description when refreshed", async () => {
@@ -169,7 +169,7 @@ describe("mcpToolJsonPathForWorkflowId", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("slugifies ids with the same naming rules generation uses", () => {
@@ -198,7 +198,7 @@ describe("findMcpToolJsonsToRemoveForRegistration", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("returns only tool JSONs that record the removed registration's workflowRef", async () => {

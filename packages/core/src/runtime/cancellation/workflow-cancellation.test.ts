@@ -170,6 +170,70 @@ describe("workflow cancellation", () => {
       "workflow.cancelled",
     );
   });
+
+  it("leaves no cancellation marker behind when the runtime honours a cancellation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-cancel-marker-"));
+    const runDir = join(cwd, ".trailstep", "runs", "cancel-marker-run");
+    let markRunnerStarted: () => void = () => undefined;
+    const runnerStarted = new Promise<void>((resolve) => {
+      markRunnerStarted = resolve;
+    });
+
+    const workflow: Workflow = {
+      id: "cancel-marker-workflow",
+      agents: { default: { size: "default" } },
+      start() {
+        return step({ id: "slow-agent" })
+          .prompt("Take too long.", {
+            output: jsonSchema({
+              type: "object",
+              properties: { ok: { type: "boolean" } },
+              required: ["ok"],
+              additionalProperties: false,
+            }),
+          })
+          .do((output) => done(output))({});
+      },
+    };
+
+    const resultPromise = runWorkflow({
+      workflow,
+      input: {},
+      runName: "cancel-marker-run",
+      cwd,
+      trailstepConfig: {
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { default: [{ provider: "worker" }] },
+      },
+      workingAgentProcessRunner: async (request) => {
+        markRunnerStarted();
+        await new Promise<void>((resolve) => {
+          if (request.signal?.aborted) {
+            resolve();
+            return;
+          }
+
+          request.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { exitCode: 1, stdout: "" };
+      },
+    });
+
+    await runnerStarted;
+    await writeCancellationMarker({ runDir, reason: "Stop work.", source: "test" });
+    // The marker is a pending request, so it exists while the request is
+    // still unanswered.
+    expect(await readCancellationMarker(runDir)).toBeDefined();
+
+    const result = await resultPromise;
+
+    expect(result.status).toBe("cancelled");
+    // The runtime honoured the cancellation, so the pending request is
+    // consumed: no marker is left behind for the next cancel/continue/retry
+    // to misread as "requested but not yet acted on".
+    expect(await readCancellationMarker(runDir)).toBeUndefined();
+  });
 });
 
 function waitingWorkflow(onResumed: () => void): Workflow {

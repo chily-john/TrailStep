@@ -1,7 +1,14 @@
 import { join } from "node:path";
 
-import type { Event, PlainObject, RunWorkflowTrackRetryOptions } from "@trailstep/core";
-import { readRunEvents, runWorkflow } from "@trailstep/core";
+import {
+  clearCancellationMarker,
+  type Event,
+  type PlainObject,
+  type RunWorkflowTrackRetryOptions,
+  readCancellationMarker,
+  readRunEvents,
+  runWorkflow,
+} from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
@@ -77,16 +84,25 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
       ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
     };
 
+    const targetRunDir = join(runsRoot, retryTarget.workflowRunName);
+    // Retrying consumes a pending cancellation the same way continuing does:
+    // the marker is a pending request, so the retried run is not cancelled
+    // again by the request it is replacing.
+    if (await readCancellationMarker(targetRunDir)) {
+      await clearCancellationMarker(targetRunDir);
+      io.writeLine(`Cleared pending cancellation: ${retryTarget.workflowRunName}`);
+    }
+
     const result = retryTarget.fresh
       ? await runWorkflow({
           ...sharedRunOptions,
-          input: await readOriginalInput(join(runsRoot, retryTarget.workflowRunName)),
+          input: await readOriginalInput(targetRunDir),
           runName: retryTarget.workflowRunName,
         })
       : await runWorkflow({
           ...sharedRunOptions,
           retry: {
-            runDir: join(runsRoot, retryTarget.workflowRunName),
+            runDir: targetRunDir,
             kind: "manual",
             ...(retryTarget.track === undefined ? {} : { track: retryTarget.track }),
           },
@@ -98,6 +114,16 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
     if (result.status === "success") {
       io.writeLine(`Workflow completed: ${resolvedWorkflow.id} at ${result.runDir}`);
+      return 0;
+    }
+
+    if (result.status === "waiting") {
+      io.writeLine(`Workflow waiting: ${resolvedWorkflow.id} at ${result.runDir}`);
+      return 0;
+    }
+
+    if (result.status === "cancelled") {
+      io.writeLine(`Workflow cancelled: ${resolvedWorkflow.id} at ${result.runDir}`);
       return 0;
     }
 

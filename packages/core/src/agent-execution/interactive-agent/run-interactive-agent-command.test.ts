@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   done,
@@ -860,6 +860,120 @@ describe("continuation interactive agent roles", () => {
     });
     expect(runnerCalls[0]?.command).not.toBe("working-agent");
     expect(result.output).toEqual({ exitCode: 0 });
+  });
+
+  it("reports an unexpected interactive process failure that arrives after completion", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-late-failure-"));
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-late-failure-run");
+    const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });
+    const reported: unknown[] = [];
+    const failure = new Error("late interactive failure");
+
+    const result = await runInteractiveAgentCommand({
+      config: {
+        version: 1,
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: [{ provider: "terminalAgent" }] },
+      },
+      workflowId: "interactive-late-failure-workflow",
+      roleName: "reviewer",
+      role: { size: "small" },
+      stepId: "review",
+      renderedPrompt: "Review late failure handling.",
+      runDir,
+      outputSchema: jsonSchema({
+        type: "object",
+        properties: { notes: { type: "string" } },
+        required: ["notes"],
+        additionalProperties: false,
+      }),
+      artifactPaths,
+      outputMode: "json",
+      onUnexpectedError: (error) => reported.push(error),
+      runner: async (call) => {
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
+        if (!interactiveFile) {
+          throw new Error("Expected TRAILSTEP_INTERACTIVE_FILE to be set.");
+        }
+
+        const protocol = JSON.parse(await readFile(interactiveFile, "utf8"));
+        await writeFile(
+          protocol.outputFile,
+          `${JSON.stringify({ notes: "Completed." }, null, 2)}\n`,
+          "utf8",
+        );
+        await writeFile(
+          interactiveFile,
+          `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
+          "utf8",
+        );
+        await delay(250);
+        throw failure;
+      },
+    });
+
+    expect(result.output).toEqual({ notes: "Completed." });
+    await vi.waitFor(() => expect(reported).toEqual([failure]));
+  });
+
+  it("keeps abort-related interactive failures quiet", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-interactive-late-abort-"));
+    const runDir = join(cwd, ".trailstep", "runs", "interactive-late-abort-run");
+    const artifactPaths = resolveStepArtifactPaths({ runDir, stepId: "review", stepIndex: 1 });
+    const reported: unknown[] = [];
+
+    const result = await runInteractiveAgentCommand({
+      config: {
+        version: 1,
+        customProviders: {
+          terminalAgent: { binary: "terminal-agent", interactiveArgs: ["{{promptFile}}"] },
+        },
+        agents: { small: [{ provider: "terminalAgent" }] },
+      },
+      workflowId: "interactive-late-abort-workflow",
+      roleName: "reviewer",
+      role: { size: "small" },
+      stepId: "review",
+      renderedPrompt: "Review late abort handling.",
+      runDir,
+      outputSchema: jsonSchema({
+        type: "object",
+        properties: { notes: { type: "string" } },
+        required: ["notes"],
+        additionalProperties: false,
+      }),
+      artifactPaths,
+      outputMode: "json",
+      onUnexpectedError: (error) => reported.push(error),
+      runner: async (call) => {
+        const interactiveFile = call.env?.TRAILSTEP_INTERACTIVE_FILE;
+        if (!interactiveFile) {
+          throw new Error("Expected TRAILSTEP_INTERACTIVE_FILE to be set.");
+        }
+
+        const protocol = JSON.parse(await readFile(interactiveFile, "utf8"));
+        await writeFile(
+          protocol.outputFile,
+          `${JSON.stringify({ notes: "Completed." }, null, 2)}\n`,
+          "utf8",
+        );
+        await writeFile(
+          interactiveFile,
+          `${JSON.stringify({ ...protocol, status: "completed" }, null, 2)}\n`,
+          "utf8",
+        );
+        await delay(250);
+        const aborted = new Error("The operation was aborted.");
+        aborted.name = "AbortError";
+        throw aborted;
+      },
+    });
+
+    expect(result.output).toEqual({ notes: "Completed." });
+    await delay(50);
+    expect(reported).toEqual([]);
   });
 
   it("rejects a custom interactive provider that only declares working args", async () => {

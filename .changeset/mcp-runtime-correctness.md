@@ -5,6 +5,12 @@
 
 Make the MCP server correct under real-world conditions.
 
+BREAKING (minor, because the package is pre-1.0): the legacy `run_workflow`
+module and the `runWorkflow` / `RunWorkflowResult` aliases were removed. Use
+`runWorkflowTool` and the `RunWorkflowToolOptions` / `RunWorkflowToolResult`
+types instead. The `run_workflow` TOOL itself is unchanged and still
+registered on the server.
+
 The MCP tools are thin adapters over the real CLI seams, and several of them
 were not correct:
 

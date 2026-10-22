@@ -103,6 +103,7 @@ export function defineWorkflow<
   // Delegate workflows may pass skill; it is accepted but not enforced.
   return _defineWorkflow<TInput, TOutput>(options);
 }
+export { nonEmptyOptional, nonEmptyOrDefault } from "./strings.js";
 export { defineWorkflow as defineWorkflowOriginal } from "./workflow-builder/workflow-builder.js";
 export type {
   DefinedWorkflow,

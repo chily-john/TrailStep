@@ -61,8 +61,8 @@ describe("pi mcp registration", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
-    await rm(userAgentDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await rm(userAgentDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("writes the full pi entry for project scope", async () => {
@@ -303,7 +303,7 @@ describe("offerMcpRegistration with pi detected", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("excludes pi from the add-mcp -a list and forwards the other detected agents", async () => {

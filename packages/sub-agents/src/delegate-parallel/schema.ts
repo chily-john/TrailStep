@@ -5,6 +5,7 @@ import type {
   DelegateOutput,
   DelegateWorktreeInput,
 } from "../delegate/schema.js";
+import { delegateWorktreeInputShape } from "../delegate/schema.js";
 
 export type DelegateParallelDelegate =
   | "delegate"
@@ -63,19 +64,7 @@ export const delegateParallelInputShape = jsonSchema<DelegateParallelInput>({
     cwd: { type: "string" },
     maxTurns: { type: "number" },
     summarize: { type: "boolean" },
-    worktree: {
-      type: "object",
-      properties: {
-        enabled: { type: "boolean" },
-        path: { type: "string" },
-        baseRef: { type: "string" },
-        baseBranch: { type: "string" },
-        branch: { type: "string" },
-        cleanup: { type: "string", enum: ["auto", "never", "always"] },
-        forceCleanup: { type: "boolean" },
-      },
-      additionalProperties: false,
-    },
+    worktree: delegateWorktreeInputShape,
     tasks: {
       type: "array",
       items: {
@@ -101,19 +90,7 @@ export const delegateParallelInputShape = jsonSchema<DelegateParallelInput>({
           cwd: { type: "string" },
           maxTurns: { type: "number" },
           summarize: { type: "boolean" },
-          worktree: {
-            type: "object",
-            properties: {
-              enabled: { type: "boolean" },
-              path: { type: "string" },
-              baseRef: { type: "string" },
-              baseBranch: { type: "string" },
-              branch: { type: "string" },
-              cleanup: { type: "string", enum: ["auto", "never", "always"] },
-              forceCleanup: { type: "boolean" },
-            },
-            additionalProperties: false,
-          },
+          worktree: delegateWorktreeInputShape,
         },
         anyOf: [{ required: ["mode"] }, { required: ["delegate"] }],
         required: ["id", "task"],

@@ -50,7 +50,7 @@ function createContext(cwd: string, io: ReturnType<typeof createIo>): CliCommand
 }
 
 async function writeRunEvents(runDir: string, events: readonly Event[]): Promise<void> {
-  await rm(runDir, { recursive: true, force: true });
+  await rm(runDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await mkdir(runDir, { recursive: true });
   await writeFile(
     join(runDir, "events.jsonl"),

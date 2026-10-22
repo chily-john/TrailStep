@@ -5,6 +5,10 @@
 
 Make run artifacts durable under concurrent access.
 
+BREAKING (minor, because the package is pre-1.0): the `deferEngineInit`
+export was removed. It was a no-op that was never called; use the runtime's
+own initialization instead.
+
 - Run state, global state, branch state and track artifacts are now written
   atomically (temp file in the same directory plus a rename), so a reader
   never observes a partially written document. The CLI wait-answer write

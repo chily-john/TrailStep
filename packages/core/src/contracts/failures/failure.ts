@@ -27,3 +27,45 @@ export function validationFailure(message: string, details?: unknown): Failure {
     ...(details === undefined ? {} : { details }),
   };
 }
+
+/**
+ * True when `error` carries a complete structured failure (a `failure` object
+ * with a string `code` and a string `message`).
+ */
+export function isFailureLikeError(error: unknown): error is { readonly failure: Failure } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "failure" in error &&
+    typeof error.failure === "object" &&
+    error.failure !== null &&
+    "code" in error.failure &&
+    typeof error.failure.code === "string" &&
+    "message" in error.failure &&
+    typeof error.failure.message === "string"
+  );
+}
+
+/**
+ * Reads the failure code of a failure-like value.
+ *
+ * `isFailureLikeError` requires a complete structured failure (code *and*
+ * message). Callers that only care about the code — for example to map a
+ * specific failure onto a recovery path — need a tolerant variant: failures
+ * that crossed a serialization boundary can lose the message while keeping
+ * the code. Returns `undefined` when the value carries no string failure
+ * code.
+ */
+export function readFailureCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("failure" in error)) {
+    return undefined;
+  }
+
+  const failure: unknown = error.failure;
+  if (typeof failure !== "object" || failure === null || !("code" in failure)) {
+    return undefined;
+  }
+
+  const code: unknown = failure.code;
+  return typeof code === "string" ? code : undefined;
+}

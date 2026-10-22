@@ -170,7 +170,11 @@ export type {
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
 export type { Failure } from "./contracts/failures/failure.js";
-export { TrailStepFailureError } from "./contracts/failures/failure.js";
+export {
+  isFailureLikeError,
+  readFailureCode,
+  TrailStepFailureError,
+} from "./contracts/failures/failure.js";
 export type {
   PlainObject,
   Schema,

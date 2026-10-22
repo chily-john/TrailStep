@@ -31,7 +31,7 @@ async function writeTemplateWorkflow(cwd: string): Promise<void> {
 describe("input-template command", () => {
   it("generates expected JSON for a simple input schema", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-input-template-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeTemplateWorkflow(cwd);
     const lines: string[] = [];
 

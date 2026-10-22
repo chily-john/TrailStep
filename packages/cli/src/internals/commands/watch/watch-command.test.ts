@@ -48,7 +48,7 @@ async function appendRunEvent(cwd: string, runName: string, runEvent: Event): Pr
 describe("watch command", () => {
   it("prints existing events for a completed run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRunEvents(cwd, "completed-run", [
       event("step.started", {
         stepId: "delegate-turn",
@@ -79,7 +79,7 @@ describe("watch command", () => {
 
   it("follows a live run and receives appended events", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRunEvents(cwd, "live-run", [
       event("step.started", { stepId: "delegate-turn", payload: { title: "Delegate turn" } }),
     ]);
@@ -108,7 +108,7 @@ describe("watch command", () => {
 
   it("prints a waiting run and exits", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRunEvents(cwd, "waiting-run", [
       event("wait.started", {
         stepId: "delegate-turn",
@@ -130,7 +130,7 @@ describe("watch command", () => {
 
   it("prints parseable JSONL", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRunEvents(cwd, "jsonl-run", [
       event("step.progress", { stepId: "delegate-turn", payload: { message: "Halfway" } }),
       event("workflow.completed"),
@@ -154,7 +154,7 @@ describe("watch command", () => {
 
   it("fails clearly for a missing run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const errors: string[] = [];
 
     await expect(
@@ -170,7 +170,7 @@ describe("watch command", () => {
 
   it("exits when workflow.completed is appended", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeRunEvents(cwd, "terminal-run", [event("step.started", { stepId: "one" })]);
 
     const watchPromise = main({
@@ -185,9 +185,65 @@ describe("watch command", () => {
     await expect(watchPromise).resolves.toBe(0);
   });
 
+  it("skips and reports a malformed event line without crashing the watcher", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = await writeRunEvents(cwd, "malformed-run", [
+      event("step.display", { stepId: "delegate-turn", payload: { message: "Before" } }),
+    ]);
+    await appendFile(join(runDir, "events.jsonl"), "{not json}\n", "utf8");
+    await appendFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify(event("step.progress", { payload: { message: "After" } }))}\n`,
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["watch", "malformed-run", "--jsonl", "--no-follow"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    expect(errors.join("\n")).toContain("Unable to parse event JSONL");
+    expect(lines.map((line) => JSON.parse(line))).toMatchObject([
+      { type: "step.display" },
+      { type: "step.progress" },
+    ]);
+  });
+
+  it("skips and reports a line that is not a TrailStep event", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = await writeRunEvents(cwd, "shape-run", [
+      event("step.display", { stepId: "delegate-turn", payload: { message: "Before" } }),
+    ]);
+    await appendFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify({ hello: "world" })}\n`,
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["watch", "shape-run", "--jsonl", "--no-follow"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    expect(errors.join("\n")).toContain("Unexpected event shape");
+    expect(lines.map((line) => JSON.parse(line))).toMatchObject([{ type: "step.display" }]);
+  });
+
   it("ignores a partially-written trailing line", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-watch-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = await writeRunEvents(cwd, "partial-run", [
       event("step.display", { stepId: "delegate-turn", payload: { message: "Complete line" } }),
     ]);

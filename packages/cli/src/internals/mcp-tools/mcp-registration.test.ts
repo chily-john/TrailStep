@@ -230,7 +230,7 @@ describe("offerMcpRegistration headless", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("defaults to project scope and prints the manual fallback without prompting", async () => {
@@ -308,7 +308,7 @@ describe("offerMcpRegistration prompt flow", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("asks the scope question after the register confirm and spawns with project argv", async () => {
@@ -464,7 +464,7 @@ describe("offerMcpRegistration manual fallback re-render", () => {
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("re-renders the manual command with the resolved scope flags when add-mcp cannot be resolved", async () => {

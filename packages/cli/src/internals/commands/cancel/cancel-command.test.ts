@@ -111,7 +111,7 @@ describe("cancel command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-waiting-run`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -151,7 +151,7 @@ describe("cancel command", () => {
 
   it("writes conforming evt_ ids for cancellation events", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-evt-ids`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -195,7 +195,7 @@ describe("cancel command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-no-wait`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -220,7 +220,7 @@ describe("cancel command", () => {
 
   it("cancelling twice is safe and records a single cancellation cycle", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-twice`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -253,7 +253,7 @@ describe("cancel command", () => {
 
   it("clears a pending cancellation marker without starting a run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-clear`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -314,7 +314,7 @@ describe("cancel command", () => {
 
   it("reports an already completed workflow run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-completed-run`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -337,7 +337,7 @@ describe("cancel command", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-cancelled-run`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
     await mkdir(runDir, { recursive: true });
     await writeEvents(runDir, [
@@ -360,6 +360,60 @@ describe("cancel command", () => {
     const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
     expect(eventText).toContain("workflow.cancelled");
     expect(eventText.match(/"type":"workflow.cancelRequested"/g)).toHaveLength(1);
+  });
+
+  it("reports an already failed workflow run", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-failed-run`);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.failed", { runId: "delegate-run", workflowId: "delegate" }),
+    ]);
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["cancel", "delegate-run"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Run already failed: delegate-run");
+  });
+
+  it("reports the true terminal state of an already cancelled run with a stale marker", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-stale-marker`);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelRequested", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelled", { runId: "delegate-run", workflowId: "delegate" }),
+    ]);
+    // A marker left behind by an already honoured cancellation is a stale
+    // pending request: it must not turn the run back into a "cancellation
+    // requested" report.
+    await writeJson(join(runDir, "cancel.json"), { requestedAt: "2026-01-01T00:00:00.000Z" });
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["cancel", "delegate-run"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Run already cancelled: delegate-run");
+    expect(lines.join("\n")).not.toContain("Cancellation requested");
+    // The already cancelled run is not cancelled a second time.
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(eventText.match(/"type":"workflow.cancelRequested"/g)).toHaveLength(1);
+    expect(eventText.match(/"type":"workflow.cancelled"/g)).toHaveLength(1);
   });
 
   it("rejects an already completed session", async ({ task }) => {

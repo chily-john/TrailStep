@@ -36,6 +36,7 @@ import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
 import { resolveAndValidateRunCwds } from "./cwd.js";
 import { initializeRun } from "./initialize-run.js";
+import { replayToCancelledStep } from "./replay-to-cancelled-step.js";
 import { runRootContinuationArrayScheduler } from "./root-continuation-array-scheduler.js";
 import { parseTrailStepConfigInput } from "./trailstep-config-input.js";
 
@@ -130,6 +131,14 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       );
     }
 
+    // The marker is a PENDING REQUEST, not a record of the cancellation: the
+    // event trail (workflow.cancelRequested + workflow.cancelled) is the
+    // record. Once the runtime has acted on the cancellation and the run ends
+    // cancelled, the marker is removed so a later cancel/continue/retry can
+    // tell "requested but not yet acted on" from "already honoured and the
+    // run is over".
+    await clearCancellationMarker(runDir);
+
     return {
       status: "cancelled",
       runId,
@@ -191,6 +200,14 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       await clearCancellationMarker(runDir);
     }
     const previousTerminalStatus = readPreviousTerminalWorkflowStatus(previousEvents);
+    // A retry of a run that was cancelled in its current cycle re-executes the
+    // step the cancellation interrupted. The cycle view keeps a cancellation
+    // from an earlier (already resumed) cycle from becoming the retry target.
+    const isCancelledCycleRetry =
+      isRetry && readCycleTerminalWorkflowStatus(previousEvents) === "cancelled";
+    const cancelledRetryTarget = isCancelledCycleRetry
+      ? findCycleCancelledStepIndex(previousEvents)
+      : undefined;
     const existingCancellation = readExistingCancellationEvent(previousEvents);
     const cancellation = isContinuationInvocation
       ? undefined
@@ -369,6 +386,38 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
               retryKind: options.retry.kind,
               retryPlanner: "track",
               retriedFromRunDir: runDir,
+            },
+          }),
+        );
+      } else if (isCancelledCycleRetry) {
+        // A cancelled run has no unresolved failure to retry, so the retry
+        // target is the step the cancellation interrupted: the run re-executes
+        // that step instead of staying bricked.
+        const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
+          replayToCancelledStep({
+            workflow: options.workflow,
+            events: previousEvents,
+            runDir,
+            cancelledEventIndex: cancelledRetryTarget ?? -1,
+          }),
+        );
+        if (replay.status === "failure") {
+          return failResumeValidation(replay.failure);
+        }
+        await runContext.state.hydratePersisted();
+
+        workflowInput = assertWorkflowInput(inputSchema, replay.input);
+        startNode = replay.node;
+        await emit(
+          createEvent({
+            runId,
+            workflowId: options.workflow.id,
+            type: "workflow.retryStarted",
+            payload: {
+              retryKind: options.retry.kind,
+              retriedFromRunDir: runDir,
+              retriedStepId: replay.retriedStepId,
+              sourceCancellationEventId: replay.sourceCancellationEventId,
             },
           }),
         );
@@ -697,14 +746,50 @@ function readPreviousTerminalWorkflowStatus(
  * resumed run is not judged by an earlier cancellation cycle's events.
  */
 function eventsSinceLastReopen(events: readonly Event[]): readonly Event[] {
+  return events.slice(findCycleStartIndex(events));
+}
+
+/**
+ * Index of the first event of the run's current lifecycle cycle: everything
+ * after the most recent workflow.resumed/workflow.retryStarted (or the whole
+ * trail when the run was never re-opened).
+ */
+function findCycleStartIndex(events: readonly Event[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const type = events[index]?.type;
     if (type === "workflow.resumed" || type === "workflow.retryStarted") {
-      return events.slice(index + 1);
+      return index + 1;
     }
   }
 
-  return events;
+  return 0;
+}
+
+/**
+ * Terminal status of the run's current lifecycle cycle. A run that was
+ * cancelled in an earlier cycle and re-opened since is judged by its current
+ * cycle, not by the older cancellation.
+ */
+function readCycleTerminalWorkflowStatus(
+  events: readonly Event[],
+): "completed" | "failed" | "cancelled" | undefined {
+  return readPreviousTerminalWorkflowStatus(eventsSinceLastReopen(events));
+}
+
+/**
+ * Index of the last step.cancelled event of the run's current cycle, or
+ * undefined when the current cycle has no cancelled step to retry.
+ */
+function findCycleCancelledStepIndex(events: readonly Event[]): number | undefined {
+  const cycleStartIndex = findCycleStartIndex(events);
+  for (let index = events.length - 1; index >= cycleStartIndex; index -= 1) {
+    const event = events[index];
+    if (event?.type === "step.cancelled" && event.stepId !== undefined) {
+      return index;
+    }
+  }
+
+  return undefined;
 }
 
 function readExistingCancellationEvent(events: readonly Event[]): CancellationMarker | undefined {

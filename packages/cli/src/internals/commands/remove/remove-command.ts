@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
+import { parseCommandFlags } from "../../command-framework/flags.js";
 import { findMcpToolJsonsToRemoveForRegistration } from "../../mcp-tools/mcp-tool-generation.js";
 import {
   cleanupRemovedWorkflowPackageInstall,
@@ -38,7 +39,10 @@ export const removeCommand: CliCommand<RemoveCommandArgs> = {
       throw new CliUsageError("trailstep remove requires <namespace>/<name>.");
     }
 
-    const flags = parseFlags(argv.slice(2));
+    const flags = parseCommandFlags(argv.slice(2), {
+      commandLabel: "trailstep remove",
+      valueFlags: ["--scope"],
+    });
     const scope = flags.scope;
     if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
       throw new CliUsageError(
@@ -157,27 +161,6 @@ async function removeGeneratedMcpToolJsonIfOrphaned(
       );
     }
   }
-}
-
-function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
-  const flags: Record<string, string | undefined> = {};
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const option = argv[index];
-    if (option !== "--scope") {
-      throw new CliUsageError(`Unknown option for trailstep remove: ${option ?? ""}`);
-    }
-
-    const value = argv[index + 1];
-    if (!value) {
-      throw new CliUsageError(`Missing value for ${option}.`);
-    }
-
-    flags.scope = value;
-    index += 1;
-  }
-
-  return flags;
 }
 
 function parseNamespaceNameRef(

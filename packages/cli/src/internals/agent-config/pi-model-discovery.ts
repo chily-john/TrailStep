@@ -6,6 +6,19 @@ import type {
 } from "../command-framework/command.types.js";
 import { defaultPackageCommandRunner } from "../package-manager/package-manager.js";
 
+/**
+ * Pi model discovery runs the `pi` CLI and parses its model table.
+ *
+ * This lives in the CLI on purpose: `@trailstep/provider-pi` is a
+ * dependency-free manifest package that only describes *how* the pi CLI is
+ * invoked (the `pi --list-models` discovery spec now lives in its manifest),
+ * while the discovery *implementation* needs the CLI's package-command runner
+ * seam and the core spawn resolver. Moving it into the provider package would
+ * require the CLI to depend on a provider package (the CLI deliberately
+ * depends on none, so official providers stay optional) or would give the
+ * provider packages a runtime dependency on the CLI/core for a helper that
+ * only the CLI's interactive wizard calls.
+ */
 const DEFAULT_PI_MODEL_DISCOVERY_TIMEOUT_MS = 5_000;
 const PI_MODEL_LIST_COMMAND = "pi";
 const PI_MODEL_LIST_ARGS = ["--list-models"] as const;

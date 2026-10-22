@@ -1,5 +1,5 @@
 import { resolveAgentTargets, type TrailStepConfig, type WorkflowAgentRole } from "@trailstep/core";
-
+import { isAgentTargetsUnavailableError } from "../../agent-config/agent-targets-error.js";
 import { configureLiteralAgentTarget } from "../../agent-config/configure-target-flow.js";
 import type { CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
@@ -115,17 +115,11 @@ function isRoleCoveredByEffectiveConfig(
     resolveAgentTargets({ config, workflowId, roleName, roleSize: role.size });
     return true;
   } catch (error) {
-    if (isAgentTargetsUnavailable(error)) {
+    if (isAgentTargetsUnavailableError(error)) {
       return false;
     }
     throw error;
   }
-}
-
-function isAgentTargetsUnavailable(error: unknown): boolean {
-  return (
-    isRecord(error) && isRecord(error.failure) && error.failure.code === "agent_targets_unavailable"
-  );
 }
 
 function isWorkflowAgentRole(value: unknown): value is WorkflowAgentRole {

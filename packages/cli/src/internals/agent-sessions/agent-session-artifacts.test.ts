@@ -12,7 +12,7 @@ import {
 const ARTIFACT_TEST_ROOT = join("node_modules", ".tmp-trailstep-agent-session-artifacts-tests");
 
 beforeEach(async () => {
-  await rm(ARTIFACT_TEST_ROOT, { recursive: true, force: true });
+  await rm(ARTIFACT_TEST_ROOT, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
 describe("createAgentSessionArtifacts", () => {

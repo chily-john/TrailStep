@@ -60,7 +60,16 @@ export const trailstepProvider = {
       supported: true,
       command: "pi",
     },
-    model: { supported: true },
+    model: {
+      supported: true,
+      // `pi --list-models` prints the available model table; the CLI uses this
+      // to offer discovered model choices in the agent setup wizard.
+      discovery: {
+        command: "pi",
+        args: ["--list-models"],
+        outputParser: "pi-list-models-table",
+      },
+    },
     thinking: { supported: true, levels: ["low", "medium", "high", "xhigh", "max"] },
     hygiene: {
       tools: { flag: "--tools" },

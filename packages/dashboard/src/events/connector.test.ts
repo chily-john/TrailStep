@@ -36,4 +36,80 @@ describe("dashboard API connector", () => {
     stop();
     expect(close).toHaveBeenCalled();
   });
+
+  it("reports and skips a malformed event frame without breaking the stream", () => {
+    const { listener, close } = fakeEventSource();
+    const onState = vi.fn();
+    const onError = vi.fn();
+
+    connectRunEventStream({
+      runId: "run-a",
+      onState,
+      onError,
+      eventSourceFactory: () =>
+        ({ addEventListener: listener.add, close }) as unknown as EventSource,
+    });
+
+    expect(() => listener.emit("{not json")).not.toThrow();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onState).not.toHaveBeenCalled();
+
+    listener.emit(JSON.stringify(trailstepEvent("step.started")));
+    expect(onState).toHaveBeenCalledTimes(1);
+    expect(onState.mock.calls[0]?.[0]).toMatchObject({
+      rows: [{ id: "event-1", type: "step.started" }],
+    });
+  });
+
+  it("reports and skips a frame that is not a TrailStep event", () => {
+    const { listener, close } = fakeEventSource();
+    const onState = vi.fn();
+    const onError = vi.fn();
+
+    connectRunEventStream({
+      runId: "run-a",
+      onState,
+      onError,
+      eventSourceFactory: () =>
+        ({ addEventListener: listener.add, close }) as unknown as EventSource,
+    });
+
+    expect(() => listener.emit(JSON.stringify({ hello: "world" }))).not.toThrow();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onState).not.toHaveBeenCalled();
+  });
 });
+
+function fakeEventSource(): {
+  readonly listener: {
+    readonly add: (type: string, handler: (message: { readonly data: string }) => void) => void;
+    readonly emit: (data: string) => void;
+  };
+  readonly close: () => void;
+} {
+  let handler: ((message: { readonly data: string }) => void) | undefined;
+
+  return {
+    listener: {
+      add: (_type, registered) => {
+        handler = registered;
+      },
+      emit: (data) => {
+        handler?.({ data });
+      },
+    },
+    close: () => undefined,
+  };
+}
+
+function trailstepEvent(type: string): Record<string, unknown> {
+  return {
+    id: "event-1",
+    runId: "run-a",
+    workflowId: "workflow-a",
+    type,
+    timestamp: "2026-01-02T03:00:00.000Z",
+    schemaVersion: "v0",
+    payload: {},
+  };
+}

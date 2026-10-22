@@ -12,6 +12,7 @@ import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 import { errorMessage } from "../../json/guards.js";
 import type { StepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
+import { reportUnexpectedFailure } from "../../runtime/failures/report-unexpected-failure.js";
 import {
   isInteractiveCompleted,
   readCompletedInteractiveOutput,
@@ -37,6 +38,8 @@ export async function runInteractiveAgentCommand(options: {
   readonly outputMode: "session-file" | "json";
   readonly runner?: InteractiveProcessRunner;
   readonly signal?: AbortSignal;
+  /** Receives failures that would otherwise be discarded by the abort path. */
+  readonly onUnexpectedError?: (error: unknown) => void;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const [target] = resolveAgentTargets({
     config: options.config,
@@ -70,6 +73,7 @@ async function runInteractiveAgentTarget(options: {
   readonly runner?: InteractiveProcessRunner;
   readonly target: TrailStepAgentTarget;
   readonly signal?: AbortSignal;
+  readonly onUnexpectedError?: (error: unknown) => void;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const files = options.artifactPaths;
   const thinking = options.target.thinking ?? options.role.thinking;
@@ -126,6 +130,7 @@ async function runInteractiveAgentTarget(options: {
       target: options.target.provider,
       interactiveFile: files.interactiveFile,
       abortController,
+      onUnexpectedError: options.onUnexpectedError,
       readOutput: async () => await readCompletedOutput(options),
       mapSpawnError: (error) =>
         new TrailStepFailureError({
@@ -189,6 +194,7 @@ async function runInteractiveAgentTarget(options: {
     target: options.target.provider,
     interactiveFile: files.interactiveFile,
     abortController,
+    onUnexpectedError: options.onUnexpectedError,
     readOutput: async () => await readCompletedOutput(options),
     mapSpawnError: (error) =>
       new TrailStepFailureError({
@@ -229,9 +235,24 @@ async function runProcessUntilExitOrCompletion(options: {
   readonly runProcess: () => Promise<InteractiveProcessResult>;
   readonly readOutput: () => Promise<PlainObject>;
   readonly mapSpawnError?: (error: unknown) => TrailStepFailureError;
+  readonly onUnexpectedError?: (error: unknown) => void;
 }): Promise<{ readonly exitCode: number; readonly output: PlainObject }> {
   const processPromise = options.runProcess();
-  void processPromise.catch(() => undefined);
+  // When the completion watcher wins the race, the process promise is
+  // detached and a later rejection would be discarded. Report it instead of
+  // dropping it; abort-related rejections stay quiet.
+  let raceSettled = false;
+  void processPromise.catch((error: unknown) => {
+    if (!raceSettled) {
+      return;
+    }
+
+    reportUnexpectedFailure({
+      error,
+      context: `interactive step ${options.stepId}`,
+      ...(options.onUnexpectedError === undefined ? {} : { report: options.onUnexpectedError }),
+    });
+  });
   const watcherAbortController = new AbortController();
 
   const winner = await Promise.race<
@@ -247,6 +268,8 @@ async function runProcessUntilExitOrCompletion(options: {
       () => ({ type: "completed" }) as const,
     ),
   ]);
+
+  raceSettled = true;
 
   watcherAbortController.abort();
 

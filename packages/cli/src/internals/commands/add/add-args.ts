@@ -1,6 +1,17 @@
 import { CliUsageError } from "../../command-framework/command.types.js";
+import { parseCommandFlags } from "../../command-framework/flags.js";
 
 import type { AddCommandArgs } from "./add-command.types.js";
+
+const ADD_BOOLEAN_FLAGS: readonly string[] = [
+  "--force",
+  "--yes",
+  "--dry-run",
+  "--project-skill",
+  "--user-skill",
+];
+
+const ADD_VALUE_FLAGS: readonly string[] = ["--scope", "--namespace", "--name", "--workflow"];
 
 interface SplitAddSourceAndFlagArgsResult {
   readonly source?: string;
@@ -19,7 +30,11 @@ export function parseAddCommandArgs(argv: readonly string[]): AddCommandArgs {
     );
   }
 
-  const flags = parseFlags(parsedInvocation.flagArgs);
+  const flags = parseCommandFlags(parsedInvocation.flagArgs, {
+    commandLabel: "trailstep add",
+    booleanFlags: ADD_BOOLEAN_FLAGS,
+    valueFlags: ADD_VALUE_FLAGS,
+  });
   const scope = flags.scope;
   if (scope !== undefined && scope !== "local" && scope !== "project" && scope !== "global") {
     throw new CliUsageError(
@@ -77,56 +92,5 @@ function splitAddSourceAndFlagArgs(argv: readonly string[]): SplitAddSourceAndFl
 }
 
 function isAddOptionWithValue(option: string): boolean {
-  return (
-    option === "--scope" ||
-    option === "--namespace" ||
-    option === "--name" ||
-    option === "--workflow"
-  );
-}
-
-function parseFlags(argv: readonly string[]): Record<string, string | undefined> {
-  const flags: Record<string, string | undefined> = {};
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const option = argv[index];
-    if (option === "--force") {
-      flags.force = "true";
-      continue;
-    }
-
-    if (option === "--yes") {
-      flags.yes = "true";
-      continue;
-    }
-
-    if (option === "--dry-run") {
-      flags["dry-run"] = "true";
-      continue;
-    }
-
-    if (option === "--project-skill" || option === "--user-skill") {
-      flags[option.slice(2)] = "true";
-      continue;
-    }
-
-    if (
-      option !== "--scope" &&
-      option !== "--namespace" &&
-      option !== "--name" &&
-      option !== "--workflow"
-    ) {
-      throw new CliUsageError(`Unknown option for trailstep add: ${option ?? ""}`);
-    }
-
-    const value = argv[index + 1];
-    if (!value) {
-      throw new CliUsageError(`Missing value for ${option}.`);
-    }
-
-    flags[option.slice(2)] = value;
-    index += 1;
-  }
-
-  return flags;
+  return ADD_VALUE_FLAGS.includes(option);
 }

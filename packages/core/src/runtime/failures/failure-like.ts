@@ -1,15 +1,10 @@
-import type { Failure } from "../../contracts/failures/failure.js";
-
-export function isFailureLikeError(error: unknown): error is { readonly failure: Failure } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "failure" in error &&
-    typeof error.failure === "object" &&
-    error.failure !== null &&
-    "code" in error.failure &&
-    typeof error.failure.code === "string" &&
-    "message" in error.failure &&
-    typeof error.failure.message === "string"
-  );
-}
+/**
+ * Failure-shape guards.
+ *
+ * The implementations live in the failure contract so the public entrypoint
+ * can export them without reaching into the runtime internals.
+ */
+export {
+  isFailureLikeError,
+  readFailureCode,
+} from "../../contracts/failures/failure.js";

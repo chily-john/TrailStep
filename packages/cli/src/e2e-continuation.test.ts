@@ -83,7 +83,7 @@ describe("continuation workflow CLI e2e", () => {
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-e2e-continuation-tests", `${task.id}-direct`);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeDirectWorkflowFile(cwd);
 
     const cliPackage = await readCliPackageJson();
@@ -111,7 +111,7 @@ describe("continuation workflow CLI e2e", () => {
 
   it("lists and runs a local continuation workflow package through the CLI", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-e2e-continuation-tests", task.id);
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await writeContinuationWorkflowPackage(cwd);
 
     const listLines: string[] = [];

@@ -193,7 +193,12 @@ export { TRST_KEY_ORDER } from "./json/constants.js";
 export { errorMessage, isNodeError, isPlainObject, isRecord } from "./json/guards.js";
 export { serializeOrdered } from "./json/ordered-serialize.js";
 export { validateStructural } from "./json/validate-structural.js";
-export { layeredDirs, load } from "./load-order.js";
+export {
+  layeredMcpToolDirs,
+  layeredMcpToolDirs as layeredDirs,
+  loadLayeredMcpToolDefinitions,
+  loadLayeredMcpToolDefinitions as load,
+} from "./mcp/layered-mcp-loader.js";
 export {
   buildProviderHygieneArgs,
   type ProviderHygieneArgs,

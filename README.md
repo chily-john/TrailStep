@@ -213,7 +213,7 @@ The bullets at the top are powered by one mechanism: continuations. A workflow s
 - `.do(...)` is plain TypeScript — run code, inspect the repo, call APIs, then route to the next step, loop back, fan out delegates, or finish.
 - `.display(...)` / `.wait(...)` add durable progress events and human-approval pauses where needed.
 
-See [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/) and [Architecture (canonical copy in OpenViking)](viking://resources/trailstep/docs/architecture/architecture.md) for the full lifecycle.
+See [Authoring workflows](https://github.com/chily-john/trailstep/blob/main/packages/authoring/README.md) and [Architecture](https://github.com/chily-john/trailstep/blob/main/packages/core/README.md) for the full lifecycle.
 
 ## Parallel sub-agents in one minute
 
@@ -276,16 +276,16 @@ Workspace packages not yet part of the initial public publish set:
 
 ## Learn more
 
-The TrailStep documentation is canonical in OpenViking (`viking://resources/trailstep/docs/`); the in-repo `docs/` directory holds pointers only (see [docs/README.md](docs/README.md)).
+The TrailStep documentation is canonical in the OpenViking context store; the in-repo `docs/` directory holds pointers only (see [docs/README.md](docs/README.md)).
 
-- [Getting started (canonical copy in OpenViking)](viking://resources/trailstep/docs/getting-started/getting-started.md)
-- [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
-- [Workflow skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
-- [Scopes and config (canonical copy in OpenViking)](viking://resources/trailstep/docs/scopes-and-config/scopes-and-config.md)
-- [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
-- [Architecture (canonical copy in OpenViking)](viking://resources/trailstep/docs/architecture/architecture.md)
-- [Delegate reliability writeup (canonical copy in OpenViking)](viking://resources/trailstep/docs/delegate-reliability-writeup/delegate-reliability-writeup.md)
-- [Parallel tracks design (canonical copy in OpenViking)](viking://resources/trailstep/docs/design/parallel-tracks/)
+- [Getting started](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md)
+- [Authoring workflows](https://github.com/chily-john/trailstep/blob/main/packages/authoring/README.md)
+- [Workflow skills](https://github.com/chily-john/trailstep/blob/main/packages/cli/trailstep-authoring-skill/SKILL.md)
+- [Scopes and config](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md)
+- [CLI reference](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md)
+- [Architecture](https://github.com/chily-john/trailstep/blob/main/packages/core/README.md)
+- [Delegate reliability writeup](https://github.com/chily-john/trailstep/blob/main/packages/sub-agents/README.md)
+- [Parallel tracks design](https://github.com/chily-john/trailstep/blob/main/packages/sub-agents/README.md)
 - [OpenViking setup (optional codebase index + pi memory)](docs/openviking-setup.md)
 - [Reusable create flows](packages/create-flows/README.md)
 

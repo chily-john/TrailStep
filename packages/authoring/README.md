@@ -159,7 +159,7 @@ declare module "*.md?raw" {
 
 ## More docs
 
-- [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
-- [Workflow skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
-- [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
+- [Authoring workflows](https://github.com/chily-john/trailstep/blob/main/packages/authoring/README.md)
+- [Workflow skills](https://github.com/chily-john/trailstep/blob/main/packages/cli/trailstep-authoring-skill/SKILL.md)
+- [CLI reference](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md)
 - [Documentation index in the repository](../../docs/README.md)

@@ -120,25 +120,58 @@ starts, with a diagnostic that names the config path (e.g.
 trailstep
 trailstep <agent-or-provider>
 trailstep open [agent-or-provider]
+trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--force] [--yes] [--dry-run]
+trailstep remove <namespace>/<name> [--scope <local|project|global>]
 trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]
 trailstep agents
-trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--force] [--yes] [--dry-run]
+trailstep agents set <name> --provider <provider> [--model <model>] [--thinking <low|medium|high|xhigh|max>] --scope <local|project|global>
+trailstep agents delete <name> --scope <local|project|global>
+trailstep agents rename <old> <new> --scope <local|project|global>
+trailstep agents explain <name> --scope <local|project|global>
+trailstep agents explain <namespace>/<name> --scope <local|project|global>
+trailstep providers [provider] [--scope <local|project|global>]
+trailstep providers show [provider] [--scope <local|project|global>]
+trailstep providers inspect <path-or-package>
+trailstep providers add <path-or-package> [--scope <local|project|global>]
+trailstep providers list [--scope <local|project|global>]
+trailstep providers test <provider> [--scope <local|project|global>]
+trailstep providers migrate [--scope <local|project|global>]
+trailstep providers remove <provider> [--scope <local|project|global>]
 trailstep workflows
-trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]
-trailstep watch <runNameOrRunDir> [--jsonl]
+trailstep input-template <workflow-ref>
+trailstep output <runNameOrRunDir> [--json] [--field <path>]
+trailstep watch <runNameOrRunDir> [--json | --jsonl] [--since beginning] [--follow | --no-follow]
 trailstep continue
-trailstep retry <workflow-ref> <runName>
+trailstep continue <runNameOrRunDir>
+trailstep continue --interactive-file <path>
+trailstep continue --session-file <path>
+trailstep continue --json-file <path>
+trailstep continue --json '<json>'
+trailstep answer <runNameOrRunDir> <waitId> [--json '<json>' | --json-file <path>] [--branch <branchId>] [--continue]
+trailstep cancel <runNameOrRunDir> [--reason '<text>']
+trailstep cancel <runNameOrRunDir> --clear
+trailstep cancel [--reason '<text>']
+trailstep doctor
+trailstep update [--all | --project | --workflows | --workflow <name>] [--force] [--yes | --assume-yes]
+trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->] [--set <path=value>] [--<input-key> <value>]
+trailstep retry <workflow-ref> <runName> [--failed | --branch <branchId> | --fresh]
+trailstep runs
+trailstep storage status
+trailstep storage gc [--dry-run]
+trailstep storage restore <runId>
+trailstep storage pin <runId>
+trailstep storage unpin <runId>
+trailstep storage delete <runId>
 trailstep mcp [--project <dir>]
-trailstep update [--all | --project | --workflows | --workflow <name>] [--yes]
 ```
 
-See the repository [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/) for the full command list and detailed behavior.
+See the repository [CLI reference](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md) for the full command list and detailed behavior.
 
 ## MCP server
 
 `trailstep mcp` runs the TrailStep MCP server in the foreground over stdio, exposing registered workflows to MCP clients as `trst_*` tools. `trailstep add` generates per-workflow MCP tool JSONs under `.trailstep/mcp/`, and `trailstep update --workflows` refreshes them; no other command rewrites those artifacts. `trailstep init` and `trailstep add` also offer to register the server with your coding agent. pi is registered by writing pi's `mcp.json` entry directly (project/local scope: `<project>/.pi/mcp.json`; global scope: `$PI_CODING_AGENT_DIR` or `~/.pi/agent/mcp.json`) so pi's `exposure` / `toolExposure` profile can be applied, and every other coding agent is registered via `add-mcp`.
 
-See the [CLI reference - MCP server section (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/CLI_reference/MCP_server.md) for the tool inventory, the `mcp.perWorkflowTools` list/fallback mode, registration scopes, and MCP-related environment variables.
+See the [CLI reference - MCP server section](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md#mcp-server) for the tool inventory, the `mcp.perWorkflowTools` list/fallback mode, registration scopes, and MCP-related environment variables.
 
 ## Managed agent sessions
 
@@ -197,7 +230,7 @@ TrailStep detects the target package manager from lockfiles or the `packageManag
 - `project`: shared project config; recommended for team workflows.
 - `global`: user-wide config and personal workflows.
 
-See [Scopes and config (canonical copy in OpenViking)](viking://resources/trailstep/docs/scopes-and-config/scopes-and-config.md) for details.
+See [Scopes and config](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md#scopes) for details.
 
 ## Run artifacts
 

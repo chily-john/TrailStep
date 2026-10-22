@@ -64,6 +64,11 @@ Local style may use direct `step(...)` helpers or the builder form. For new work
 - Override a single unit of work with step-level `agent` only when needed.
 - Keep workflow inputs and outputs as typed JSON object values.
 
+### Retries
+
+- Configure retries per step with the step `retry` option, per workflow, or globally via settings.
+- Defaults: `maxAttempts: 2` and `retryOn: "transient"` — one automatic retry on transient failures only; set `maxAttempts: 1` to disable retries or `retryOn: "always"` to retry every failure.
+
 ## Pass/fail and review loops
 
 - Model gates as explicit structured outputs, for example `{ "passed": true, "summary": "..." }`.
@@ -71,6 +76,36 @@ Local style may use direct `step(...)` helpers or the builder form. For new work
 - Use `fail(...)` only when the workflow cannot safely continue or the retry budget/route is exhausted.
 - Do not hide failure state in prose; make pass/fail booleans, summaries, and required improvements part of the output shape.
 - Keep each step narrow: planning, implementation, validation, and review should usually be separate steps with separate prompts and outputs.
+
+## Parallel fan-out and join
+
+- Use `parallel(...)` with a continuation array of branch nodes for durable fan-out.
+- Use `.post(...)` on the parallel node to join once branches settle; the post continuation receives `{ status, branches }` keyed by branch id.
+- Pick `failurePolicy: "fail-fast"` (default) to stop the fan-out when one branch fails, or `failurePolicy: "all-settled"` to let every branch settle before joining.
+- Express fan-out as a continuation array consumed by `parallel(...)`, not as a hand-rolled array reduction; pair it with `.post(...)` for the durable join.
+- Prefer durable `parallel(...)` + `.post(...)` over in-step fan-out with `subPrompt(...)` + `Promise.all`: sub-prompt fan-out is not durable across waits, retries, or restarts, while the parallel node replays through the continuation runtime.
+
+## Retry and timeouts
+
+- Put retry config on `step(...)`: `retry: { maxAttempts?: number, retryOn?: "transient" | "always" }`, alongside `timeout: { seconds }`.
+- Defaults: `maxAttempts: 2` and `retryOn: "transient"` — only transient failures (timeouts, provider unavailability/failure/spawn errors) are retried; deterministic failures (schema violations, invalid continuations, exhausted agent targets) fail on the first attempt.
+- Retry policy resolves field by field with precedence step > workflow (`Workflow.retry` / per-workflow settings) > global (`settings.retry`); use `retryOn: "always"` only for idempotent work and `maxAttempts: 1` to disable automatic retries.
+- Retried attempts emit `step.attemptFailed`; the terminal `step.failed` event fires exactly once when the budget or route is exhausted.
+
+## Parallel fan-out and joins
+
+- `parallel(nodes, { concurrency?, failurePolicy? }).post((aggregate) => ...)` runs an array of runnable nodes (steps or workflow invocations) as sibling branches and joins them in `post()` once every branch settles.
+- The join receives `{ status: "completed", branches }` keyed by persisted branch id.
+- Default `failurePolicy: "fail-fast"`: each branch contributes its raw output, and a branch failure terminalizes the track immediately, so `post()` runs only after every branch succeeds.
+- `failurePolicy: "all-settled"`: every branch settles; each entry is `{ status, output?, message?, failure? }`, so failures reach `post()` instead of stopping the track.
+- Returned arrays split the current branch into child branches; they are not a reducer — combining results happens in `post()`, and `concurrency` caps how many branches run at once.
+- For lightweight fan-out inside one step, combine `subPrompt(...)` calls with `Promise.all(...)`; that concurrency lives within a single step and does not survive resume. Use `parallel(...).post(...)` when the fan-out must be durable across interruption and retry.
+- Coordinate across branches with `globalState.update(...)` (atomic within one scheduler process); `state` stays branch-local.
+
+## Execution context and inputs
+
+- Execution blocks merge field by field with precedence step > workflow config (`workflows.<id>.settings.execution`) > global config (`settings.execution`) > the role's own block; `contextFiles` defaults to `true`, and an invalid config block fails fast with an error naming its config path.
+- Stringified scalars in caller-supplied run inputs are coerced against `inputShape` when unambiguous (plain decimal strings to numbers, exact `true`/`false` to booleans, recursed through objects and arrays); ambiguous strings are left untouched so validation fails as written. The coerced value is what the run persists.
 
 ## Workflow skill metadata
 

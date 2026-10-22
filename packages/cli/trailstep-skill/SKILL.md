@@ -38,16 +38,40 @@ Use direct refs for local files, registered refs for named project or user workf
 
 - Workflow inputs should be JSON object values, not raw prose or arrays.
 - Prefer `--input-file -` for one-shot agent-generated JSON; use a named `--input-file` for large context and reproducible runs.
+- TrailStep coerces stringified scalar inputs into the types declared by the workflow input shape before validating and persisting the run; nested objects and arrays must already be JSON objects.
 - Per-workflow agent discovery is provided by the TrailStep MCP server (`trst_*` tools) and packaged skills; there are no per-workflow generated skills.
+
+## Run lifecycle
+
+- Continue waiting or interrupted runs with `trailstep continue`.
+- Answer human/parent waits with `trailstep answer <runName> <waitId> --json '{"answer":"..."}'`; add `--branch <branchId>` to disambiguate same-id waits pending on parallel branches, and `--continue` to persist the answer and resume in one step.
+- Retry failed work with `trailstep retry <workflow-ref> <runName>`; retry instead of inventing a separate resume mechanism.
+- Cancel with `trailstep cancel <runNameOrRunDir> [--reason '<text>']`; clear a stale pending cancel marker with `trailstep cancel <runNameOrRunDir> --clear`; cancel the active interactive session with `trailstep cancel --reason '<text>'`.
+- The cancellation marker is a pending request, not a record of an honored cancellation; `trailstep continue` and `trailstep retry` consume a pending marker, and already-terminal runs are never re-cancelled by a stale marker.
+
+### Automatic retries
+
+- Retries default to a single automatic retry: `retry.maxAttempts` defaults to `2` and `retry.retryOn` defaults to `"transient"`.
+- Only transient failures retry by default (`step_timeout`, `agent_provider_unavailable`, `agent_provider_failed`, `agent_provider_spawn_error`, `agent_provider_timeout`); deterministic failures fail on the first attempt.
+- Opt in with `retryOn: "always"` to retry every failure, or set `maxAttempts: 1` to disable retries; failures may also opt in explicitly with `retryable: true`, and the terminal `step.failed` event is emitted exactly once.
+
+## Execution settings
+
+- Agent steps accept an execution block (`tools`, `skills`, `mcp`, `extensions`, `contextFiles`) for per-step hygiene.
+- Configure globally (`settings.execution`) and per workflow (`workflows.<id>.settings.execution`).
+- Blocks merge field by field with precedence step execution > per-workflow config > global config > agent role, so a block naming only `contextFiles` changes only that field.
+- `contextFiles` defaults to `true` and accepts `true`, `false`, or `"project-only"`.
+- An invalid block fails fast before any provider process starts, naming the config path.
 
 ## MCP server
 
 - Run the TrailStep MCP server for a project with `trailstep mcp [--project <dir>]` — a foreground stdio server exposing registered workflows to MCP clients as `trst_*` tools.
 - `trailstep add` generates per-workflow tool JSONs under `.trailstep/mcp/`; `trailstep update --workflows` refreshes them. Regenerate only through `add`/`update` — never hand-edit generated `.trailstep/mcp` artifacts.
 - Default exposure is one `trst_<id>` tool per workflow. Set `mcp.perWorkflowTools: false` in TrailStep config to fall back to `trst_list` plus the generic `trst_run_workflow`, `trst_watch`, `trst_answer`, and `trst_resume` tools.
-- `trailstep init` and `trailstep add` offer to register the server with detected coding agents via `add-mcp` (project, local gitignored, or global scope); declining or running headless prints the exact manual `npx add-mcp ...` command.
+- `trailstep init` and `trailstep add` offer to register the server with detected coding agents via `add-mcp` (project, local gitignored, or global scope); declining or running headless prints the exact manual `npx add-mcp ...` command. pi is registered by writing pi's own MCP server entry directly (project/local scope: `<project>/.pi/mcp.json`; global scope: `$PI_CODING_AGENT_DIR` or `~/.pi/agent/mcp.json`) so pi's `exposure` / `toolExposure` profile can be applied; every other coding agent is registered through `add-mcp`.
 - MCP tools honor the same environment contract as the CLI: `TRAILSTEP_RUNS_ROOT` overrides the runs root, and `TRAILSTEP_CLI_ENTRY` points at the CLI entry used for background runs and resumes (effectively required on Windows — the win32 PATH fallback is refused).
 - `trst_run_workflow` is non-blocking: it returns `{runId, runDir, status, workflow}` immediately with `status: "started"` only once the run directory materializes, or `status: "failed"` plus `error` (reported as an MCP `isError` result) when the run never starts; observe it with `trst_watch` and answer waits with `trst_answer`.
+- The MCP tool surface covers starting, watching, answering, resuming, and listing workflow runs; cancel, retry, storage, and other lifecycle operations stay on the CLI.
 
 ## Safety and run artifacts
 

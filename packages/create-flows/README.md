@@ -19,7 +19,7 @@ trailstep init
 trailstep add @trailstep/create-flows@latest
 ```
 
-Choose **project** scope, install the TrailStep usage skill, select the workflows you want, and add project skills when prompted. Project skills let supported coding agents discover and run the workflows from the agent UI.
+Choose **project** scope, install the TrailStep usage skill, select the workflows you want, and install the registered workflows. Supported coding agents discover and run the workflows from the agent UI through the installed skills and MCP integrations.
 
 <details>
 <summary>Scriptable setup</summary>
@@ -28,11 +28,11 @@ Choose **project** scope, install the TrailStep usage skill, select the workflow
 # Initialize config and install the packaged TrailStep usage skill.
 trailstep init --scope project --install-skill
 
-# Preview without installing, registering, or writing skills.
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --dry-run
+# Preview without installing or registering.
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --dry-run
 
-# Install/register the workflows and generate project skills.
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
+# Install/register the workflows.
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --yes
 ```
 
 </details>

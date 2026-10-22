@@ -16,13 +16,13 @@ describe("parseCommandFlags", () => {
   });
 
   it("strips the leading dashes from the flag name", () => {
-    const flags = parseCommandFlags(["--dry-run", "--project-skill"], {
+    const flags = parseCommandFlags(["--dry-run", "--force"], {
       commandLabel: "trailstep add",
-      booleanFlags: ["--dry-run", "--project-skill"],
+      booleanFlags: ["--dry-run", "--force"],
     });
 
     expect(flags["dry-run"]).toBe("true");
-    expect(flags["project-skill"]).toBe("true");
+    expect(flags.force).toBe("true");
   });
 
   it("throws a usage error for unknown flags", () => {

@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Document,
   done,
@@ -37,6 +37,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
+  delete process.env.TRAILSTEP_AGENT_HEARTBEAT_INTERVAL_MS;
   if (originalPlatformDescriptor !== undefined) {
     Object.defineProperty(process, "platform", originalPlatformDescriptor);
   }
@@ -246,6 +248,79 @@ describe("runWorkingAgentCommand", () => {
         .filter((event) => event.type === "step.progress")
         .map((event) => event.payload.message),
     ).toEqual(["agent reviewer via first", "agent reviewer via second second-model"]);
+  });
+
+  it("emits agent heartbeat step.progress events while the agent step is in flight and stops on settle", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-working-agent-heartbeat-"));
+    process.env.TRAILSTEP_AGENT_HEARTBEAT_INTERVAL_MS = "10";
+    vi.useFakeTimers();
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "working-agent-heartbeat-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: { answer: "string" },
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    let releaseRunner!: () => void;
+    const runnerGate = new Promise<void>((resolve) => {
+      releaseRunner = resolve;
+    });
+    let runnerStarted!: () => void;
+    const runnerStartedGate = new Promise<void>((resolve) => {
+      runnerStarted = resolve;
+    });
+
+    const runPromise = runWorkflow({
+      workflow,
+      input: { task: "heartbeat" },
+      runName: "working-agent-heartbeat-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: { worker: { binary: "worker-agent" } },
+        agents: { medium: [{ provider: "worker" }] },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        runnerStarted();
+        await runnerGate;
+        await writeFile(request.outputFile, JSON.stringify({ answer: "ok" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    await runnerStartedGate;
+    await vi.advanceTimersByTimeAsync(10);
+    releaseRunner();
+    const result = await runPromise;
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+
+    const heartbeats = () =>
+      result.events.filter(
+        (event) =>
+          event.type === "step.progress" &&
+          (event.payload.data as { heartbeat?: boolean } | undefined)?.heartbeat === true,
+      );
+
+    expect(heartbeats()).toHaveLength(1);
+    expect(heartbeats()[0]?.payload.message).toBe("Agent step review still running (elapsed 10)");
+
+    // The heartbeat timer is cleared when the agent step settles, so no
+    // further heartbeats fire after completion.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(heartbeats()).toHaveLength(1);
   });
 
   it("preserves provider failure details in exhausted target attempts", async () => {

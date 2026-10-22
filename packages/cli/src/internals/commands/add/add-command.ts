@@ -9,13 +9,11 @@ import type {
   AddCommandArgs,
   AddRegistrationPlan,
   PreparedAddSource,
-  ResolvedAddCommandArgs,
 } from "./add-command.types.js";
 import { applyRecommendedConfigForPreparedSource } from "./add-config-writes.js";
 import { runPackageAddDryRun } from "./add-dry-run.js";
 import { generateMcpToolJsonForRegistration } from "./add-mcp-registration.js";
 import { buildAddRegistrationPlan } from "./add-registration-plan.js";
-import { tryWriteAndDistributeWorkflowSkill } from "./add-skill-installation.js";
 import { prepareAddSource, reportPackageAddInstallCleanup } from "./add-source-resolution.js";
 
 const SCOPE_PROMPT_LABEL =
@@ -74,7 +72,6 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       registrationConflicts,
       successfulRegistrations,
       skippedConflicts,
-      resolvedArgs,
     } = registrationPlan;
 
     if (successfulRegistrations.length > 0) {
@@ -115,31 +112,9 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       );
     }
 
-    let skillWarnings = 0;
-    for (const registration of successfulRegistrations) {
-      const finalArgs: ResolvedAddCommandArgs = {
-        source: args.source,
-        scope,
-        namespace,
-        name: registration.name,
-        workflow: args.workflow,
-        force: args.force,
-        projectSkill: resolvedArgs.projectSkill,
-        userSkill: resolvedArgs.userSkill,
-      };
-
-      if (finalArgs.projectSkill || finalArgs.userSkill) {
-        skillWarnings += await tryWriteAndDistributeWorkflowSkill(
-          finalArgs,
-          registration.registryTarget,
-          context,
-        );
-      }
-    }
-
     if (registrations.length > 1 || skippedConflicts > 0 || registrationConflicts.length > 0) {
       context.io.writeLine(
-        `Summary: registered ${successfulRegistrations.length}, skipped conflicts ${skippedConflicts}, skill warnings ${skillWarnings}.`,
+        `Summary: registered ${successfulRegistrations.length}, skipped conflicts ${skippedConflicts}.`,
       );
     }
 
@@ -150,6 +125,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
       scope,
       ...(context.prompts === undefined ? {} : { prompts: context.prompts }),
       ...(context.env === undefined ? {} : { env: context.env }),
+      ...(context.homeDir === undefined ? {} : { homeDir: context.homeDir }),
     });
 
     return 0;

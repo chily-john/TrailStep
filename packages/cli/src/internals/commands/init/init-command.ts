@@ -136,6 +136,7 @@ export const initCommand: CliCommand<InitCommandArgs> = {
       scope,
       ...(context.prompts === undefined ? {} : { prompts: context.prompts }),
       ...(context.env === undefined ? {} : { env: context.env }),
+      ...(context.homeDir === undefined ? {} : { homeDir: context.homeDir }),
     });
 
     return 0;

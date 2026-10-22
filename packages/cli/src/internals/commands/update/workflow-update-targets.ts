@@ -14,10 +14,8 @@ import {
   type RegisteredWorkflowEntry,
   type WorkflowPackageRegistryMetadata,
   type WorkflowRegistryScope,
-  type WorkflowSkillInstallTarget,
 } from "../../workflow-registry/workflow-registry.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
-import { workflowSkillName } from "../../workflow-skills/workflow-skill-content.js";
 import type { UpdateScope } from "./update-command.types.js";
 import {
   type DependencySection,
@@ -40,21 +38,9 @@ export interface WorkflowPackageUpdateTarget {
   readonly registeredRefs: readonly string[];
   /**
    * Bundle workflow names covered by registered entries (from package workflow
-   * metadata). Workflow exports of the installed package outside this set have no
-   * registration and no generated skill yet.
+   * metadata).
    */
   readonly registeredWorkflowNames: readonly string[];
-  /**
-   * Generated skill names for this package's tracked (registered) workflows. Used to
-   * infer add-time skill targets for legacy registrations without a recorded choice.
-   */
-  readonly trackedSkillNames: readonly string[];
-  /**
-   * Union of skill targets recorded at add time across the package's registrations.
-   * Undefined when none of them recorded a choice (legacy registrations), in which
-   * case untracked-workflow skill targets are inferred instead.
-   */
-  readonly recordedSkillTargets?: readonly WorkflowSkillInstallTarget[];
   readonly currentRange: string;
   readonly dependencySection: DependencySection;
   readonly installedVersion?: string;
@@ -92,13 +78,11 @@ interface MutableWorkflowPackageUpdateTarget {
   githubRef?: string;
   registeredRefs: string[];
   registeredWorkflowNames: string[];
-  trackedSkillNames: string[];
-  recordedSkillTargets?: WorkflowSkillInstallTarget[];
 }
 
 type WorkflowPackageTargetSeed = Omit<
   MutableWorkflowPackageUpdateTarget,
-  "registeredRefs" | "registeredWorkflowNames" | "trackedSkillNames" | "recordedSkillTargets"
+  "registeredRefs" | "registeredWorkflowNames"
 >;
 
 type ResolvedWorkflowPackageEntryTarget =
@@ -132,8 +116,6 @@ export async function resolveWorkflowPackageUpdateTargets({
     addPackageTarget(targetsByInstallKey, resolved.target, {
       registeredRef,
       workflowName: entry.packageMetadata?.workflowName,
-      skillName: workflowSkillName(entry.namespace, entry.name),
-      skillTargets: entry.packageMetadata?.skillTargets,
     });
   }
 
@@ -238,8 +220,6 @@ function addPackageTarget(
   registration: {
     readonly registeredRef?: string;
     readonly workflowName?: string;
-    readonly skillName?: string;
-    readonly skillTargets?: readonly WorkflowSkillInstallTarget[];
   } = {},
 ): void {
   const installKey = workflowPackageInstallKey(targetSeed);
@@ -247,7 +227,6 @@ function addPackageTarget(
     ...targetSeed,
     registeredRefs: [],
     registeredWorkflowNames: [],
-    trackedSkillNames: [],
   };
 
   const registeredRef = registration.registeredRef;
@@ -258,19 +237,6 @@ function addPackageTarget(
   const workflowName = registration.workflowName;
   if (workflowName !== undefined && !target.registeredWorkflowNames.includes(workflowName)) {
     target.registeredWorkflowNames.push(workflowName);
-  }
-
-  const skillName = registration.skillName;
-  if (skillName !== undefined && !target.trackedSkillNames.includes(skillName)) {
-    target.trackedSkillNames.push(skillName);
-  }
-
-  for (const skillTarget of registration.skillTargets ?? []) {
-    const recorded = target.recordedSkillTargets ?? [];
-    if (!recorded.includes(skillTarget)) {
-      recorded.push(skillTarget);
-    }
-    target.recordedSkillTargets = recorded;
   }
 
   targetsByInstallKey.set(installKey, target);
@@ -319,10 +285,6 @@ async function createWorkflowPackageUpdateTarget({
     installRoot: target.installRoot,
     registeredRefs: target.registeredRefs,
     registeredWorkflowNames: target.registeredWorkflowNames,
-    trackedSkillNames: target.trackedSkillNames,
-    ...(target.recordedSkillTargets === undefined
-      ? {}
-      : { recordedSkillTargets: target.recordedSkillTargets }),
     currentRange: current.range,
     dependencySection: current.section,
     installedVersion,

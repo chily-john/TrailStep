@@ -3,13 +3,7 @@ import { parseCommandFlags } from "../../command-framework/flags.js";
 
 import type { AddCommandArgs } from "./add-command.types.js";
 
-const ADD_BOOLEAN_FLAGS: readonly string[] = [
-  "--force",
-  "--yes",
-  "--dry-run",
-  "--project-skill",
-  "--user-skill",
-];
+const ADD_BOOLEAN_FLAGS: readonly string[] = ["--force", "--yes", "--dry-run"];
 
 const ADD_VALUE_FLAGS: readonly string[] = ["--scope", "--namespace", "--name", "--workflow"];
 
@@ -49,10 +43,6 @@ export function parseAddCommandArgs(argv: readonly string[]): AddCommandArgs {
     ...(flags.name === undefined ? {} : { name: flags.name }),
     workflow: flags.workflow,
     force: flags.force === "true",
-    projectSkill: flags["project-skill"] === "true",
-    userSkill: flags["user-skill"] === "true",
-    projectSkillExplicit: flags["project-skill"] === "true",
-    userSkillExplicit: flags["user-skill"] === "true",
     yes: flags.yes === "true",
     dryRun: flags["dry-run"] === "true",
   };

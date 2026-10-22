@@ -4,6 +4,10 @@ export type {
 } from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
 export { launchInteractiveAgentTarget } from "./agent-execution/interactive-agent/launch-interactive-agent-target.js";
 export {
+  type AgentHeartbeat,
+  startAgentHeartbeat,
+} from "./agent-execution/working-agent/agent-heartbeat.js";
+export {
   isTransientSpawnExitCode,
   isTransientWorkingAgentFailure,
 } from "./agent-execution/working-agent/failures/transient-spawn-failures.js";

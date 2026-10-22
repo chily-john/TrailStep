@@ -31,7 +31,6 @@ import {
 import { loadDirectWorkflowExports } from "../../workflow-resolution/direct-file-resolver.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
 import { WorkflowResolutionError } from "../../workflow-resolution/workflow-resolution-error.js";
-import type { WorkflowSkillMetadata } from "../../workflow-skills/workflow-skill-content.js";
 
 import type {
   AddRegistryTarget,
@@ -381,7 +380,7 @@ async function listBundleAddWorkflowCandidates(
         selectionName: workflowName,
         sourceKind: "bundle",
         targetRef: `${source}#${workflowName}`,
-        workflow: bundleWorkflow.workflow as WorkflowSkillMetadata,
+        workflow: bundleWorkflow.workflow,
         bundleSpecifier: specifier,
         bundleExportName: bundleWorkflow.workflowRef.exportName,
       });
@@ -414,7 +413,7 @@ async function listDirectAddWorkflowCandidates(
       directWorkflowExports.workflows.length === 1 && directWorkflowExports.exportName === undefined
         ? source
         : `${source}#${entry.name}`,
-    workflow: entry.workflow as WorkflowSkillMetadata,
+    workflow: entry.workflow,
   }));
 }
 

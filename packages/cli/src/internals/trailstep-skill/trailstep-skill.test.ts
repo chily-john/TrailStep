@@ -71,7 +71,7 @@ describe("packaged TrailStep skill content", () => {
       "workflow-level `agents`",
       "step-level `agent`",
       "pass/fail",
-      "generated workflow skills",
+      "TrailStep MCP server",
       "./workflows/review.ts#review",
       "project/review",
       "@acme/workflows#review",

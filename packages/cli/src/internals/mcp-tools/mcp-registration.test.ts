@@ -1,11 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
 import type { TrailStepCliIo, TrailStepCliPrompts } from "../command-framework/command.types.js";
+import { appendGitignoreEntry, PI_MCP_GITIGNORE_ENTRY } from "./gitignore-append.js";
 import {
   buildAddMcpSpawnRequest,
   buildTrailStepMcpServerCommand,
@@ -29,6 +29,7 @@ const GLOBAL_SERVER_COMMAND = {
 
 const ADD_MCP_ENTRY = "/abs/node_modules/add-mcp/bin.js";
 const NODE_BINARY = "/abs/node";
+const CLI_ENTRY = "/abs/cli.js";
 
 function captureRunner(): {
   requests: McpRegistrationSpawnRequest[];
@@ -298,6 +299,54 @@ describe("offerMcpRegistration headless", () => {
     expect(outcome.manualCommand.endsWith("--gitignore")).toBe(true);
     expect(lines).toContain(outcome.manualCommand);
   });
+
+  it("performs the pi direct write in headless mode instead of only printing the manual command", async () => {
+    await mkdir(join(projectDir, ".pi"), { recursive: true });
+
+    const capture = captureRunner();
+    const { lines, io } = recordingIo();
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      assumeYes: true,
+      addMcpEntryPath: ADD_MCP_ENTRY,
+      nodeBinaryPath: NODE_BINARY,
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(outcome.status).toBe("registered");
+    expect(outcome.piWriteStatus).toBe("registered");
+    expect(capture.requests).toHaveLength(0);
+    expect(
+      lines.some((line) => line.includes("Registering the TrailStep MCP server directly with pi:")),
+    ).toBe(true);
+    expect(lines.some((line) => line.includes(join(projectDir, ".pi", "mcp.json")))).toBe(true);
+    expect(lines).toContain(outcome.manualCommand);
+    const parsed = JSON.parse(await readFile(join(projectDir, ".pi", "mcp.json"), "utf8")) as {
+      mcpServers: Record<string, { exposure?: string }>;
+    };
+    expect(parsed.mcpServers.trailstep?.exposure).toBe("codemode");
+  });
+
+  it("reports failed when the headless pi write cannot complete", async () => {
+    await writeFile(join(projectDir, ".pi"), "not a directory", "utf8");
+
+    const capture = captureRunner();
+    const { lines, io } = recordingIo();
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      assumeYes: true,
+      addMcpEntryPath: ADD_MCP_ENTRY,
+      nodeBinaryPath: NODE_BINARY,
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.piWriteStatus).toBe("failed");
+    expect(lines.some((line) => line.includes("pi mcp add trailstep"))).toBe(true);
+    expect(capture.requests).toHaveLength(0);
+  });
 });
 
 describe("offerMcpRegistration prompt flow", () => {
@@ -453,6 +502,71 @@ describe("offerMcpRegistration prompt flow", () => {
     expect(lines.some((line) => line.includes("already listed"))).toBe(true);
     const gitignoreContent = await readFile(gitignorePath, "utf8");
     expect(gitignoreContent).toBe("node_modules\n.mcp.json\n");
+  });
+
+  it("appends the pi gitignore entry when local pi-only registration is accepted", async () => {
+    await mkdir(join(projectDir, ".pi"), { recursive: true });
+    const gitignorePath = join(projectDir, ".gitignore");
+    const { io } = recordingIo();
+
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      scope: "local",
+      prompts: promptsAnswering([], [true, true]),
+      addMcpEntryPath: ADD_MCP_ENTRY,
+      nodeBinaryPath: NODE_BINARY,
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(outcome.status).toBe("registered");
+    expect(await readFile(gitignorePath, "utf8")).toBe(`${PI_MCP_GITIGNORE_ENTRY}\n`);
+  });
+
+  it("declines local pi-only registration without appending the gitignore entry", async () => {
+    await mkdir(join(projectDir, ".pi"), { recursive: true });
+    const gitignorePath = join(projectDir, ".gitignore");
+    const { io } = recordingIo();
+
+    const outcome = await offerMcpRegistration({
+      projectDir,
+      io,
+      scope: "local",
+      prompts: promptsAnswering([], [false]),
+      addMcpEntryPath: ADD_MCP_ENTRY,
+      nodeBinaryPath: NODE_BINARY,
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(outcome.status).toBe("declined");
+    await expect(readFile(gitignorePath, "utf8")).rejects.toThrow();
+  });
+});
+
+describe("appendGitignoreEntry", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    projectDir = await mkdtemp(join(tmpdir(), "trst-mcp-registration-"));
+  });
+
+  afterEach(async () => {
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  });
+
+  it("creates the gitignore file and appends the pi entry when missing", async () => {
+    const gitignorePath = join(projectDir, ".gitignore");
+    await appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY);
+    expect(await readFile(gitignorePath, "utf8")).toBe(`${PI_MCP_GITIGNORE_ENTRY}\n`);
+  });
+
+  it("appends after a missing trailing newline and stays idempotent", async () => {
+    const gitignorePath = join(projectDir, ".gitignore");
+    await writeFile(gitignorePath, "node_modules", "utf8");
+    await appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY);
+    expect(await readFile(gitignorePath, "utf8")).toBe(`node_modules\n${PI_MCP_GITIGNORE_ENTRY}\n`);
+    await appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY);
+    expect(await readFile(gitignorePath, "utf8")).toBe(`node_modules\n${PI_MCP_GITIGNORE_ENTRY}\n`);
   });
 });
 

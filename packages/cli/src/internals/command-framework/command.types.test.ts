@@ -35,9 +35,7 @@ describe("usageText", () => {
     }
   });
 
-  it("documents workflow skill distribution flags, add dry-run, init scope, agents management, and update confirmation", () => {
-    expect(usageText).toContain("--project-skill");
-    expect(usageText).toContain("--user-skill");
+  it("documents add dry-run, init scope, agents management, and update confirmation", () => {
     expect(usageText).toContain("--dry-run");
     expect(usageText).toContain(
       "trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]",

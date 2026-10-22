@@ -3,7 +3,6 @@ import { CliUsageError } from "../../command-framework/command.types.js";
 import { workflowPackageInstallRootForScope } from "../../workflow-packages/install-root.js";
 import { parseWorkflowPackageRef } from "../../workflow-packages/package-ref.js";
 import type { WorkflowRegistryScope } from "../../workflow-registry/workflow-registry.js";
-import { workflowSkillName } from "../../workflow-skills/workflow-skill-content.js";
 
 import type { AddCommandArgs, AddRegistrationPlan } from "./add-command.types.js";
 import {
@@ -48,7 +47,6 @@ export async function runPackageAddDryRun(
     context.io.writeLine(
       "Workflow discovery: skipped because dry-run will not install packages. Run without --dry-run to discover workflows and register them.",
     );
-    reportDryRunUndiscoveredSkillPlan(args, context);
     return 0;
   }
 
@@ -93,16 +91,6 @@ export async function runPackageAddDryRun(
   return 0;
 }
 
-function reportDryRunUndiscoveredSkillPlan(args: AddCommandArgs, context: CliCommandContext): void {
-  if (!args.projectSkill && !args.userSkill) {
-    return;
-  }
-
-  context.io.writeLine(
-    "Skills: requested skill writes/distribution would be planned after workflows are discovered; no skill files or distribution commands were run.",
-  );
-}
-
 function reportDryRunRegistrationPlan(
   registrationPlan: Extract<AddRegistrationPlan, { readonly status: "ready" }>,
   scope: WorkflowRegistryScope,
@@ -116,21 +104,6 @@ function reportDryRunRegistrationPlan(
     context.io.writeLine(
       `Would register ${registrationPlan.namespace}/${registration.name} -> ${registration.registryTarget.targetRef} in ${scope} config.`,
     );
-  }
-
-  if (registrationPlan.resolvedArgs.projectSkill || registrationPlan.resolvedArgs.userSkill) {
-    for (const registration of registrationPlan.successfulRegistrations) {
-      const skillName = workflowSkillName(registrationPlan.namespace, registration.name);
-      context.io.writeLine(
-        `Would write workflow skill ${skillName} for ${registrationPlan.namespace}/${registration.name}.`,
-      );
-      if (registrationPlan.resolvedArgs.projectSkill) {
-        context.io.writeLine(`Would distribute workflow skill ${skillName} to project skills.`);
-      }
-      if (registrationPlan.resolvedArgs.userSkill) {
-        context.io.writeLine(`Would distribute workflow skill ${skillName} to user skills.`);
-      }
-    }
   }
 
   if (

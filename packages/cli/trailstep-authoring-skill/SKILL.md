@@ -5,7 +5,7 @@ description: Use when building, reviewing, or architecting TrailStep workflows.
 
 # TrailStep authoring skill
 
-Use this skill when authoring durable typed TrailStep workflows, generated workflow skills, or reusable workflow packages.
+Use this skill when authoring durable typed TrailStep workflows or reusable workflow packages.
 
 ## Preferred workflow shape
 
@@ -72,9 +72,9 @@ Local style may use direct `step(...)` helpers or the builder form. For new work
 - Do not hide failure state in prose; make pass/fail booleans, summaries, and required improvements part of the output shape.
 - Keep each step narrow: planning, implementation, validation, and review should usually be separate steps with separate prompts and outputs.
 
-## Generated workflow skills
+## Workflow skill metadata
 
-The optional workflow `skill` block customizes generated agent skill metadata:
+The optional workflow `skill` block customizes agent skill metadata for packaged workflow skills:
 
 ```ts
 export const summarize = defineWorkflow({
@@ -90,7 +90,7 @@ export const summarize = defineWorkflow({
 });
 ```
 
-TrailStep appends generated CLI usage, input-file, and schema instructions when creating workflow skills. Raw skill markdown that starts with YAML frontmatter keeps that frontmatter exactly; raw markdown without frontmatter is wrapped in generated `name`/`description` frontmatter before the custom body.
+TrailStep does not generate per-workflow skills anymore; workflow source keeps the optional `skill` metadata for packaged skill consumers. For agent workflow discovery, use the TrailStep MCP server (`trst_*` tools).
 
 ## Packaging reusable workflows
 

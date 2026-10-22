@@ -41,7 +41,7 @@ flowchart TD
 - **Loops, not just chains:** implement → review → next story, with plan review and story routing built in.
 - **Parallel when it helps:** fan out independent explore / implement / review delegates to isolated git worktrees, then continue the main flow (see [Parallel sub-agents](#parallel-sub-agents-in-one-minute)).
 - **Provider-agnostic:** works with Pi, Claude Code, and pluggable providers — no lock-in.
-- **Agent-native:** `trailstep add` publishes workflows as agent skills / slash commands so agents know when and how to run them.
+- **Agent-native:** `trailstep add` publishes workflows through the TrailStep MCP server and packaged skills so agents know when and how to run them.
 - **Observable:** local run artifacts and a dashboard for every step, delegate, and review.
 
 ### Without TrailStep vs. with TrailStep
@@ -52,7 +52,7 @@ flowchart TD
 | Free-text notes between stages | Typed, validated JSON handoffs between steps |
 | Restart from scratch on failure | Failed or interrupted runs resume with `trailstep retry` / `trailstep continue` |
 | Loops and parallel work improvised per chat | Loops and parallel delegates are part of the workflow |
-| Agents driven from outside the system | Registered workflows generate skills so agents know when and how to call them |
+| Agents driven from outside the system | Registered workflows expose MCP tools so agents know when and how to call them |
 
 > Example in this repo: `grill-it-away` interviews you until the request is clear, then `take-it-away` plans, slices stories, implements and reviews story-by-story (in loops, with parallel delegates where useful), and opens a PR — all resumable. See [From tiny workflows to workflow systems](#from-tiny-workflows-to-workflow-systems).
 
@@ -85,7 +85,7 @@ Add the public reusable workflow package through the same interactive TUI:
 trailstep add @trailstep/create-flows@latest
 ```
 
-Choose **project** scope, select the workflows you want (or **Select all**), and add project skills when prompted. After that, supported coding agents can discover and run the generated workflow skills. In agents that expose skills as slash commands, this lets you invoke workflows from the agent UI instead of manually typing CLI commands.
+Choose **project** scope, select the workflows you want (or **Select all**), and install the TrailStep usage skill. After that, supported agents can discover and run the workflows through the TrailStep MCP server tools (`trst_*`) or installed skills. In agents that expose MCP tools, this lets you invoke workflows from the agent UI instead of manually typing CLI commands.
 
 TrailStep can register workflows from:
 
@@ -109,7 +109,7 @@ Use this version for CI, bootstrap scripts, or terminals where prompts are unava
 
 ```bash
 trailstep init --scope project --install-skill
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --yes
 trailstep workflows
 trailstep project/grill-it-away
 trailstep project/take-it-away --input-file feature-request.json
@@ -135,7 +135,7 @@ Package providers may include hooks that execute provider package code, so they 
 TrailStep writes config at one of three scopes:
 
 - **local**: private to this checkout/machine; good for personal overrides.
-- **project**: shared project config; good for team workflow registrations and project skills.
+- **project**: shared project config; good for team workflow registrations and shared workflow defaults.
 - **global**: user-wide config; good for personal defaults and workflows you use everywhere.
 
 Rule of thumb: use `--scope project` when setting up a repo for a team, `--scope local` for private project choices, and `--scope global` for personal cross-project defaults.
@@ -193,13 +193,13 @@ trailstep add ./workflows/feature-summary.workflow.ts
 trailstep feature-summary --input '{"request":"Add CSV export to reports."}'
 ```
 
-The add command prompts for scope, name, and skill generation. If you choose project scope, `trailstep feature-summary` resolves to the project workflow registration.
+The add command prompts for scope and name. If you choose project scope, `trailstep feature-summary` resolves to the project workflow registration.
 
 <details>
 <summary>Scriptable local workflow setup</summary>
 
 ```bash
-trailstep add ./workflows/feature-summary.workflow.ts --scope project --project-skill --yes
+trailstep add ./workflows/feature-summary.workflow.ts --scope project --yes
 trailstep feature-summary --input '{"request":"Add CSV export to reports."}'
 ```
 
@@ -280,7 +280,7 @@ The TrailStep documentation is canonical in OpenViking (`viking://resources/trai
 
 - [Getting started (canonical copy in OpenViking)](viking://resources/trailstep/docs/getting-started/getting-started.md)
 - [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
-- [Generated skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
+- [Workflow skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
 - [Scopes and config (canonical copy in OpenViking)](viking://resources/trailstep/docs/scopes-and-config/scopes-and-config.md)
 - [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
 - [Architecture (canonical copy in OpenViking)](viking://resources/trailstep/docs/architecture/architecture.md)

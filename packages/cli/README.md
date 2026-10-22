@@ -32,14 +32,14 @@ trailstep workflows
 trailstep project/grill-it-away
 ```
 
-Use the interactive prompts to choose project scope, configure your agent/provider, install the TrailStep usage skill, select workflows, and generate project skills. Generated skills let supported coding agents discover and invoke workflows from the agent UI.
+Use the interactive prompts to choose project scope, configure your agent/provider, install the TrailStep usage skill, and select workflows. Registered workflows let supported coding agents discover and invoke workflows from the agent UI through the installed skills and MCP integrations.
 
 <details>
 <summary>Scriptable setup</summary>
 
 ```bash
 trailstep init --scope project --install-skill
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --yes
 trailstep workflows
 ```
 
@@ -122,7 +122,7 @@ trailstep <agent-or-provider>
 trailstep open [agent-or-provider]
 trailstep init [--scope <local|project|global>] [--install-skill | --no-install-skill]
 trailstep agents
-trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--workflow <workflow>] [--project-skill] [--user-skill] [--yes] [--dry-run]
+trailstep add <workflow-file-bundle-or-package> [--scope <local|project|global>] [--namespace <namespace>] [--name <name>] [--workflow <workflow>] [--force] [--yes] [--dry-run]
 trailstep workflows
 trailstep <workflow-ref> [workflowRunName] [--input '<json>' | --input-file <path|->]
 trailstep watch <runNameOrRunDir> [--jsonl]
@@ -184,9 +184,9 @@ Use direct refs while developing, registered refs for stable project/user workfl
 `trailstep add` can install and register workflows from npm packages or explicit GitHub specs:
 
 ```bash
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --dry-run
-trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --project-skill --yes
-trailstep add github:acme/trailstep-workflows --scope project --workflow review --project-skill --yes
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --dry-run
+trailstep add @trailstep/create-flows@latest --scope project --workflow "*" --yes
+trailstep add github:acme/trailstep-workflows --scope project --workflow review --yes
 ```
 
 TrailStep detects the target package manager from lockfiles or the `packageManager` field and defaults to `npm` only when neither is present.

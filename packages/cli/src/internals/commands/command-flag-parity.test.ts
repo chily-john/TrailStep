@@ -22,7 +22,6 @@ describe("command flag parsing parity", () => {
           "--force",
           "--yes",
           "--dry-run",
-          "--project-skill",
           "--scope",
           "project",
           "--namespace",
@@ -39,10 +38,6 @@ describe("command flag parsing parity", () => {
         name: "review",
         workflow: "review",
         force: true,
-        projectSkill: true,
-        userSkill: false,
-        projectSkillExplicit: true,
-        userSkillExplicit: false,
         yes: true,
         dryRun: true,
       });

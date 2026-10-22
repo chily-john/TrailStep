@@ -21,7 +21,6 @@ import {
 } from "../../workflow-registry/workflow-registry.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { warnIfGeneratedSkillDirectoryExists } from "../../workflow-skills/generated-skill-warning.js";
-import type { WorkflowSkillMetadata } from "../../workflow-skills/workflow-skill-content.js";
 
 type WorkflowsCommandArgs = Record<string, never>;
 
@@ -228,7 +227,7 @@ async function describeWorkflow(
       cwd: context.cwd,
       homeDir: context.homeDir,
     });
-    const description = (resolved?.workflow as WorkflowSkillMetadata | undefined)?.description;
+    const description = resolved?.workflow?.description;
     return description ?? "(no description)";
   } catch {
     return "(no description)";

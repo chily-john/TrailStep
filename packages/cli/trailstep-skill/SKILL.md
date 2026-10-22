@@ -13,7 +13,7 @@ Use TrailStep to install, discover, run, continue, retry, and observe durable ty
 - Update TrailStep and refresh tracked packaged skills with `trailstep update`; use `trailstep update --project` only when intentionally updating project authoring/runtime packages.
 - Configure agent targets with `trailstep agents` or `trailstep agents set <name> --provider <provider> --scope <project|global>`.
 - List registered workflows with `trailstep workflows`.
-- Add reusable workflow packages with `trailstep add <package-or-ref>`; request generated workflow skills with `--project-skill` or `--user-skill` when supported agents should discover those workflows from their agent UI.
+- Add reusable workflow packages with `trailstep add <package-or-ref>`; installed workflows become discoverable by supported agents through the TrailStep MCP server (`trst_*` tools) rather than generated per-workflow skills.
 - Run a workflow with inline JSON: `trailstep <workflow-ref> --input '{"request":"..."}'`.
 - Pipe one-shot JSON on stdin: `printf '%s\n' '{"request":"..."}' | trailstep <workflow-ref> --input-file -`.
 - Run a workflow with a reusable JSON input file: `trailstep <workflow-ref> --input-file .trailstep/inputs/input.json`.
@@ -34,12 +34,11 @@ TrailStep accepts these workflow reference forms:
 
 Use direct refs for local files, registered refs for named project or user workflows, and bundle refs for exported workflows from installed packages.
 
-## Inputs and generated skills
+## Inputs and workflow skills
 
 - Workflow inputs should be JSON object values, not raw prose or arrays.
 - Prefer `--input-file -` for one-shot agent-generated JSON; use a named `--input-file` for large context and reproducible runs.
-- Generated workflow skills are separate from the packaged TrailStep usage/authoring skills. They are created by `trailstep add` for specific installed workflows and should describe when an agent should invoke that workflow.
-- Use project skills for team-shared repository workflows and user skills for personal/global workflows.
+- Per-workflow agent discovery is provided by the TrailStep MCP server (`trst_*` tools) and packaged skills; there are no per-workflow generated skills.
 
 ## MCP server
 

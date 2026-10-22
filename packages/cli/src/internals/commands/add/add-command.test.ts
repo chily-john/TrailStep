@@ -14,7 +14,7 @@ const workflowSource = [
   "export default { id: 'review', inputShape: schema, start: (input) => ({ kind: 'done', output: input }) };",
 ].join("\n");
 
-const describedNoInputWorkflowSource = [
+const _describedNoInputWorkflowSource = [
   "export default {",
   "  id: 'review',",
   "  description: 'Review the active change set.',",
@@ -50,22 +50,9 @@ function filterMcpOfferLines(lines: readonly string[]): string[] {
 }
 
 describe("addCommand", () => {
-  it("accepts project and user skill flags when parsing add arguments", () => {
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "acme",
-      "--name",
-      "review",
-      "--project-skill",
-      "--user-skill",
-    ]);
-
-    expect(
-      command.parseArgs([
+  it("rejects the removed --project-skill and --user-skill flags as unknown options", () => {
+    expect(() =>
+      resolveCommand([
         "add",
         "./workflows/review.mjs",
         "--scope",
@@ -75,16 +62,26 @@ describe("addCommand", () => {
         "--name",
         "review",
         "--project-skill",
+      ]).parseArgs([
+        "add",
+        "./workflows/review.mjs",
+        "--scope",
+        "project",
+        "--namespace",
+        "acme",
+        "--name",
+        "review",
+        "--project-skill",
+      ]),
+    ).toThrow("Unknown option for trailstep add: --project-skill");
+
+    expect(() =>
+      resolveCommand(["add", "./workflows/review.mjs", "--user-skill"]).parseArgs([
+        "add",
+        "./workflows/review.mjs",
         "--user-skill",
       ]),
-    ).toMatchObject({
-      source: "./workflows/review.mjs",
-      scope: "project",
-      namespace: "acme",
-      name: "review",
-      projectSkill: true,
-      userSkill: true,
-    });
+    ).toThrow("Unknown option for trailstep add: --user-skill");
   });
 
   it("plans a fresh package add dry-run without installing or writing files", async ({ task }) => {
@@ -241,14 +238,6 @@ describe("addCommand", () => {
               expect(choices).toEqual(["local", "project", "global"]);
               return "project";
             }
-            if (prompt === "Add to project skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
-            if (prompt === "Add to user skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -264,8 +253,6 @@ describe("addCommand", () => {
     expect(exitCode).toBe(0);
     expect(selectPrompts).toEqual([
       "Where should this workflow be registered? (local = just you on this repo, project = shared with your team, global = global across all your projects)",
-      "Add to project skills?",
-      "Add to user skills?",
     ]);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
@@ -521,378 +508,7 @@ describe("addCommand", () => {
     });
   });
 
-  it("uses direct workflow metadata when generating a project workflow skill", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), describedNoInputWorkflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-    ]);
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
-      "utf8",
-    );
-    expect(skillSource).toContain('description: "[project] Review the active change set."');
-    expect(skillSource).toContain("trailstep project/review");
-    expect(skillSource).not.toContain("--input-file");
-    expect(skillSource).not.toContain("sessionFile");
-  });
-
-  it("generates a project workflow skill source after registering a direct workflow with --project-skill", async ({
-    task,
-  }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-    ]);
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
-      workflows: { project: { review: "./workflows/review.mjs" } },
-    });
-    const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
-      "utf8",
-    );
-    expect(skillSource).toContain("name: trst-review");
-    expect(skillSource).toContain("description:");
-    expect(skillSource).toContain("trailstep project/review");
-  });
-
-  it("warns and returns success when skills CLI cannot be resolved", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-    ]);
-    const errors: string[] = [];
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-        skillsCliResolver: async () => {
-          throw new Error("Cannot find module 'skills/package.json'");
-        },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
-      workflows: { project: { review: "./workflows/review.mjs" } },
-    });
-    expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill trst-review: Could not resolve skills CLI.",
-    );
-  });
-
-  it("warns and returns success when skills CLI exits non-zero", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-    ]);
-    const errors: string[] = [];
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
-        skillsCliProcessRunner: async () => ({ exitCode: 3 }),
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
-      workflows: { project: { review: "./workflows/review.mjs" } },
-    });
-    expect(errors).toContain(
-      "Warning: registered project/review but could not distribute project workflow skill trst-review: skills CLI exited with code 3.",
-    );
-  });
-
-  it("warns for global skill pointing at project-scoped registration", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--user-skill",
-    ]);
-    const errors: string[] = [];
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--user-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
-        skillsCliProcessRunner: async () => ({ exitCode: 0 }),
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(errors.some((line) => line.includes("only works from this project"))).toBe(true);
-  });
-
-  it("attempts project and user skill distribution independently", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const calls: string[][] = [];
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-      "--user-skill",
-    ]);
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-        "--user-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-        skillsCliResolver: async () => "/repo/node_modules/skills/dist/index.js",
-        skillsCliProcessRunner: async (_command, args) => {
-          calls.push([...args]);
-          return { exitCode: calls.length === 1 ? 1 : 0 };
-        },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(calls).toEqual([
-      [
-        "/repo/node_modules/skills/dist/index.js",
-        "add",
-        join(cwd, ".trailstep", "skills", "trst-review"),
-        "--agent",
-        "*",
-        "-y",
-      ],
-      [
-        "/repo/node_modules/skills/dist/index.js",
-        "add",
-        join(cwd, ".trailstep", "skills", "trst-review"),
-        "--agent",
-        "*",
-        "-y",
-        "-g",
-      ],
-    ]);
-  });
-
-  it("keeps direct workflow registration successful when project skill writing fails", async ({
-    task,
-  }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await mkdir(join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"), {
-      recursive: true,
-    });
-    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
-
-    const command = resolveCommand([
-      "add",
-      "./workflows/review.mjs",
-      "--scope",
-      "project",
-      "--namespace",
-      "project",
-      "--name",
-      "review",
-      "--project-skill",
-    ]);
-    const errors: string[] = [];
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows/review.mjs",
-        "--scope",
-        "project",
-        "--namespace",
-        "project",
-        "--name",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
-      workflows: { project: { review: "./workflows/review.mjs" } },
-    });
-    expect(errors).toEqual([
-      "Warning: registered project/review but could not write project workflow skill trst-review.",
-    ]);
-  });
-
-  it("prompts for project and user skill choices in interactive add when no skill flags are provided", async ({
-    task,
-  }) => {
+  it("does not prompt for optional skill choices in interactive add", async ({ task }) => {
     const cwd = join(
       "node_modules",
       ".tmp-trailstep-add-command-tests",
@@ -915,14 +531,6 @@ describe("addCommand", () => {
               expect(choices).toEqual(["local", "project", "global"]);
               return "project";
             }
-            if (prompt === "Add to project skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "yes";
-            }
-            if (prompt === "Add to user skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -941,15 +549,13 @@ describe("addCommand", () => {
     expect(exitCode).toBe(0);
     expect(prompts).toEqual([
       "Where should this workflow be registered? (local = just you on this repo, project = shared with your team, global = global across all your projects)",
-      "Add to project skills?",
-      "Add to user skills?",
     ]);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
     });
   });
 
-  it("prompts for skill choices in interactive add when registration details are provided", async ({
+  it("does not prompt for optional skill choices when registration details are provided", async ({
     task,
   }) => {
     const cwd = join(
@@ -986,16 +592,8 @@ describe("addCommand", () => {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
-          select: async (prompt, choices) => {
+          select: async (prompt, _choices) => {
             if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
-            if (prompt === "Add to project skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "yes";
-            }
-            if (prompt === "Add to user skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -1012,7 +610,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(prompts).toEqual(["Add to project skills?", "Add to user skills?"]);
+    expect(prompts).toEqual([]);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { acme: { review: "./workflows/review.mjs" } },
     });
@@ -1066,19 +664,13 @@ describe("addCommand", () => {
         prompts: {
           select: async (prompt, choices) => {
             if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
-            if (prompt === "Configure workflow role reviewer (medium) — Review code") {
+            if (prompt.startsWith("Configure workflow role reviewer")) {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
               return "Use named agent";
             }
             if (prompt === "Named agent for workflow role reviewer") {
               expect(choices).toContain("reviewerAgent");
               return "reviewerAgent";
-            }
-            if (prompt === "Add to project skills?") {
-              return "no";
-            }
-            if (prompt === "Add to user skills?") {
-              return "no";
             }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
@@ -1093,12 +685,8 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(prompts).toEqual([
-      "Add to project skills?",
-      "Add to user skills?",
-      "Configure workflow role reviewer (medium) — Review code",
-      "Named agent for workflow role reviewer",
-    ]);
+    expect(prompts[0]?.startsWith("Configure workflow role reviewer")).toBe(true);
+    expect(prompts[1]).toBe("Named agent for workflow role reviewer");
     expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
       customProviders: TEST_CUSTOM_PROVIDERS,
       agents: {
@@ -1157,9 +745,6 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (medium) — Review code") {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
@@ -1244,9 +829,6 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (
               prompt === "acme/alpha already exists in project config. What should TrailStep do?"
             ) {
@@ -1338,9 +920,6 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (!prompt.startsWith("Register the TrailStep MCP server")) prompts.push(prompt);
             if (prompt === "Configure workflow role reviewer (small) — Review code") {
               expect(choices).toEqual(["Use named agent", "Create new agent", "Skip"]);
@@ -1416,12 +995,10 @@ describe("addCommand", () => {
       ]) as never,
       {
         cwd,
+        homeDir: join(cwd, "home"),
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -1613,11 +1190,7 @@ describe("addCommand", () => {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
-          select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
+          select: async (prompt, _choices) => {
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -1757,209 +1330,6 @@ describe("addCommand", () => {
     });
   });
 
-  it("keeps bundle registration successful when post-registration skill metadata loading fails", async ({
-    task,
-  }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    const packageDir = join(cwd, "local-workflow-package");
-    await mkdir(packageDir, { recursive: true });
-    await writeJson(join(packageDir, "package.json"), {
-      name: "local-workflow-package",
-      type: "module",
-      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
-    });
-    await writeFile(
-      join(packageDir, "index.mjs"),
-      [
-        "import { existsSync } from 'node:fs';",
-        "if (existsSync(new URL('../.trailstep/config.json', import.meta.url))) {",
-        "  throw new Error('metadata unavailable after registration');",
-        "}",
-        "export const reviewWorkflow = {",
-        "  id: 'review',",
-        "  description: 'Review metadata available before registration only.',",
-        "  start: () => ({ kind: 'done', output: {} })",
-        "};",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const command = resolveCommand(["add", "./local-workflow-package"]);
-    const errors: string[] = [];
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./local-workflow-package",
-        "--scope",
-        "project",
-        "--namespace",
-        "acme",
-        "--name",
-        "review",
-        "--workflow",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
-      workflows: { acme: { review: "./local-workflow-package#review" } },
-    });
-    expect(errors).toEqual([
-      "Warning: registered acme/review but could not write project workflow skill trst-review.",
-    ]);
-  });
-
-  it("generates workflow skill content from selected local bundle workflow metadata", async ({
-    task,
-  }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    const packageDir = join(cwd, "local-workflow-package");
-    await mkdir(packageDir, { recursive: true });
-    await writeJson(join(packageDir, "package.json"), {
-      name: "local-workflow-package",
-      type: "module",
-      trailstep: {
-        workflows: {
-          review: "./index.mjs#reviewWorkflow",
-          cleanup: "./index.mjs#cleanupWorkflow",
-        },
-      },
-    });
-    await writeFile(
-      join(packageDir, "index.mjs"),
-      [
-        "export const reviewWorkflow = {",
-        "  id: 'review',",
-        "  description: 'Review a local bundle change set.',",
-        "  inputShape: { changeId: 'string', risk: 'number' },",
-        "  start: (input) => ({ kind: 'done', output: input })",
-        "};",
-        "export const cleanupWorkflow = { id: 'cleanup', start: () => ({ kind: 'done', output: {} }) };",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const command = resolveCommand(["add", "./local-workflow-package"]);
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./local-workflow-package",
-        "--scope",
-        "project",
-        "--namespace",
-        "acme",
-        "--name",
-        "review",
-        "--workflow",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-        skillsCliResolver: async () => {
-          throw new Error("Could not resolve skills CLI.");
-        },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
-      "utf8",
-    );
-    expect(skillSource).toContain('description: "[acme] Review a local bundle change set."');
-    expect(skillSource).toContain('"changeId"');
-    expect(skillSource).toContain('"risk"');
-    expect(skillSource).toContain(
-      "trailstep acme/review --input-file .trailstep/inputs/trst-review-input.json",
-    );
-    expect(skillSource).toContain("Registered workflow source: `./local-workflow-package#review`");
-    expect(skillSource).not.toContain('Run the TrailStep workflow "acme/review".');
-  });
-
-  it("generates workflow skill content from selected installed bundle workflow metadata", async ({
-    task,
-  }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
-    await mkdir(packageDir, { recursive: true });
-    await writeJson(join(cwd, "package.json"), { type: "module" });
-    await writeJson(join(packageDir, "package.json"), {
-      name: "@acme/workflows",
-      type: "module",
-      exports: { "./package.json": "./package.json" },
-      trailstep: { workflows: { review: "./index.mjs#reviewWorkflow" } },
-    });
-    await writeFile(
-      join(packageDir, "index.mjs"),
-      [
-        "export const reviewWorkflow = {",
-        "  id: 'review',",
-        "  description: 'Review an installed bundle package.',",
-        "  inputShape: { ticket: 'string' },",
-        "  start: (input) => ({ kind: 'done', output: input })",
-        "};",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const command = resolveCommand(["add", "@acme/workflows"]);
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "@acme/workflows",
-        "--scope",
-        "project",
-        "--namespace",
-        "acme",
-        "--name",
-        "review",
-        "--workflow",
-        "review",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-        skillsCliResolver: async () => {
-          throw new Error("Could not resolve skills CLI.");
-        },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    const skillSource = await readFile(
-      join(cwd, ".trailstep", "skills", "trst-review", "SKILL.md"),
-      "utf8",
-    );
-    expect(skillSource).toContain('description: "[acme] Review an installed bundle package."');
-    expect(skillSource).toContain('"ticket"');
-    expect(skillSource).toContain(
-      "trailstep acme/review --input-file .trailstep/inputs/trst-review-input.json",
-    );
-    expect(skillSource).toContain("Registered workflow source: `@acme/workflows#review`");
-    expect(skillSource).not.toContain('Run the TrailStep workflow "acme/review".');
-  });
-
   it("adds only the selected workflow from a bundle manifest", async ({ task }) => {
     const cwd = join(
       "node_modules",
@@ -2058,9 +1428,6 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -2127,15 +1494,7 @@ describe("addCommand", () => {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
-          select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
-            if (prompt === "Add to user skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
+          select: async (prompt, _choices) => {
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -2200,11 +1559,7 @@ describe("addCommand", () => {
         cwd,
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
-          select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              expect(choices).toEqual(["yes", "no"]);
-              return "no";
-            }
+          select: async (prompt, _choices) => {
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -2265,9 +1620,6 @@ describe("addCommand", () => {
         io: { writeLine: () => undefined, writeError: () => undefined },
         prompts: {
           select: async (prompt) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -2346,7 +1698,7 @@ describe("addCommand", () => {
         },
       },
     });
-    expect(lines).toContain("Summary: registered 2, skipped conflicts 0, skill warnings 0.");
+    expect(lines).toContain("Summary: registered 2, skipped conflicts 0.");
   });
 
   it("registers a comma-separated direct barrel subset in source order", async ({ task }) => {
@@ -2529,54 +1881,6 @@ describe("addCommand", () => {
     );
   });
 
-  it("generates one project skill per successfully registered workflow", async ({ task }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    await mkdir(join(cwd, "workflows"), { recursive: true });
-    await writeJson(join(cwd, "package.json"), { type: "module" });
-    await writeFile(
-      join(cwd, "workflows", "index.ts"),
-      [
-        "export const alpha = { id: 'alpha', description: 'Alpha flow.', start: () => ({ kind: 'done', output: {} }) };",
-        "export const beta = { id: 'beta', description: 'Beta flow.', start: () => ({ kind: 'done', output: {} }) };",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const command = resolveCommand(["add", "./workflows"]);
-    const exitCode = await command.run(
-      command.parseArgs([
-        "add",
-        "./workflows",
-        "--scope",
-        "project",
-        "--namespace",
-        "acme",
-        "--workflow",
-        "*",
-        "--project-skill",
-      ]) as never,
-      {
-        cwd,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-        skillsCliResolver: async () => {
-          throw new Error("Could not resolve skills CLI.");
-        },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    expect(
-      await readFile(join(cwd, ".trailstep", "skills", "trst-alpha", "SKILL.md"), "utf8"),
-    ).toContain("trailstep acme/alpha");
-    expect(
-      await readFile(join(cwd, ".trailstep", "skills", "trst-beta", "SKILL.md"), "utf8"),
-    ).toContain("trailstep acme/beta");
-  });
-
   it("prints a bulk registration summary", async ({ task }) => {
     const cwd = join(
       "node_modules",
@@ -2618,7 +1922,7 @@ describe("addCommand", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
+    expect(lines).toContain("Summary: registered 1, skipped conflicts 1.");
   });
 
   it("rolls back a fresh package install when package discovery fails", async ({ task }) => {
@@ -2983,66 +2287,7 @@ describe("addCommand", () => {
       workflowName: "release",
       exportName: "releaseWorkflow",
     });
-    // Headless adds without skill flags make no skill choice, so nothing is persisted
-    // and `trailstep update` falls back to legacy inference for untracked workflows.
-    expect(config.workflowMetadata?.project?.review).not.toHaveProperty("skillTargets");
-    expect(config.workflowMetadata?.project?.release).not.toHaveProperty("skillTargets");
     expect(promptCalls).toEqual([]);
-  });
-
-  it("persists the chosen skill targets in workflow metadata when adding with skill flags", async ({
-    task,
-  }) => {
-    const cwd = join(
-      "node_modules",
-      ".tmp-trailstep-add-command-tests",
-      `${task.id}-${randomUUID()}`,
-    );
-    const homeDir = join(cwd, "home");
-    const packageDir = join(cwd, "node_modules", "@acme", "workflows");
-
-    const command = resolveCommand(["add", "@acme/workflows@latest"]);
-    const exitCode = await command.run(
-      command.parseArgs(["add", "@acme/workflows@latest", "--yes", "--project-skill"]) as never,
-      {
-        cwd,
-        homeDir,
-        io: { writeLine: () => undefined, writeError: () => undefined },
-        skillsCliResolver: async () => "skills.js",
-        skillsCliProcessRunner: async () => ({ exitCode: 0 }),
-        packageCommandRunner: async () => {
-          await mkdir(packageDir, { recursive: true });
-          await writeJson(join(packageDir, "package.json"), {
-            name: "@acme/workflows",
-            version: "1.2.3",
-            type: "module",
-            exports: { "./package.json": "./package.json" },
-            trailstep: {
-              workflows: {
-                review: "./index.mjs#reviewWorkflow",
-                release: "./index.mjs#releaseWorkflow",
-              },
-            },
-          });
-          await writeFile(
-            join(packageDir, "index.mjs"),
-            [
-              "export const reviewWorkflow = { id: 'review', start: () => ({ kind: 'done', output: {} }) };",
-              "export const releaseWorkflow = { id: 'release', start: () => ({ kind: 'done', output: {} }) };",
-            ].join("\n"),
-            "utf8",
-          );
-          return { exitCode: 0 };
-        },
-      },
-    );
-
-    expect(exitCode).toBe(0);
-    const config = (await readJson(join(cwd, ".trailstep", "config.json"))) as {
-      workflowMetadata?: Record<string, Record<string, unknown>>;
-    };
-    expect(config.workflowMetadata?.project?.review).toMatchObject({ skillTargets: ["project"] });
-    expect(config.workflowMetadata?.project?.release).toMatchObject({ skillTargets: ["project"] });
   });
 
   it("headless package add fails on registration conflicts", async ({ task }) => {
@@ -3138,9 +2383,6 @@ describe("addCommand", () => {
         io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
         prompts: {
           select: async (prompt, choices) => {
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (
               prompt ===
               "project/review already exists in project config. What should TrailStep do?"
@@ -3232,7 +2474,7 @@ describe("addCommand", () => {
     expect(errors).toContain(
       "Warning: skipped project/review because it already exists in project config. Use --force to replace it.",
     );
-    expect(lines).toContain("Summary: registered 1, skipped conflicts 1, skill warnings 0.");
+    expect(lines).toContain("Summary: registered 1, skipped conflicts 1.");
   });
 
   it("cleans up a fresh package install when conflict resolution cancels add", async ({ task }) => {
@@ -3433,7 +2675,7 @@ describe("addCommand", () => {
         "Warning: skipped project/release because it already exists in project config. Use --force to replace it.",
       ]),
     );
-    expect(lines).toContain("Summary: registered 0, skipped conflicts 2, skill warnings 0.");
+    expect(lines).toContain("Summary: registered 0, skipped conflicts 2.");
     expect([...lines, ...errors].join("\n")).toMatch(
       /Cleanup: rolled back package install for @acme\/workflows in project scope\./,
     );
@@ -3697,9 +2939,6 @@ describe("addCommand", () => {
               expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
               return "Reuse installed package";
             }
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
-            }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";
             }
@@ -3780,9 +3019,6 @@ describe("addCommand", () => {
             ) {
               expect(choices).toEqual(["Reuse installed package", "Reinstall/upgrade", "Cancel"]);
               return "Reinstall/upgrade";
-            }
-            if (prompt === "Add to project skills?" || prompt === "Add to user skills?") {
-              return "no";
             }
             if (prompt.startsWith("Register the TrailStep MCP server")) {
               return "no";

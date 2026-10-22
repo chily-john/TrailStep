@@ -113,7 +113,7 @@ export const summarizeRequestStep = step({ id: "summarize-request" })
   .do((output) => done(output));
 ```
 
-The optional `skill` block customizes generated agent skill metadata. TrailStep still appends generated CLI usage, input-file, and schema instructions when creating the skill. Raw skill markdown that starts with YAML frontmatter keeps that frontmatter exactly; raw markdown without frontmatter is wrapped in generated `name`/`description` frontmatter before the custom body.
+The optional `skill` block customizes agent skill metadata for packaged workflow skills; TrailStep does not generate per-workflow skills anymore. For agent workflow discovery, use the TrailStep MCP server (`trst_*` tools) and the packaged skills.
 
 Run direct refs while developing:
 
@@ -124,7 +124,7 @@ trailstep ./workflows/feature-summary.workflow.ts#featureSummary --input '{"requ
 Register stable refs when the workflow should be shared:
 
 ```bash
-trailstep add ./workflows/feature-summary.workflow.ts#featureSummary --scope project --name feature-summary --project-skill
+trailstep add ./workflows/feature-summary.workflow.ts#featureSummary --scope project --name feature-summary
 trailstep project/feature-summary --input '{"request":"Add CSV export."}'
 ```
 
@@ -160,6 +160,6 @@ declare module "*.md?raw" {
 ## More docs
 
 - [Authoring workflows (canonical copy in OpenViking)](viking://resources/trailstep/docs/authoring-workflows/)
-- [Generated skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
+- [Workflow skills (canonical copy in OpenViking)](viking://resources/trailstep/docs/generated-skills/generated-skills.md)
 - [CLI reference (canonical copy in OpenViking)](viking://resources/trailstep/docs/cli-reference/)
 - [Documentation index in the repository](../../docs/README.md)

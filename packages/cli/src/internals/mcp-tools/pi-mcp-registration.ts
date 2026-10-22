@@ -110,7 +110,7 @@ export function resolvePiUserAgentDir(env?: Readonly<Record<string, string | und
   return join(homedir(), ".pi", "agent");
 }
 
-export type PiMcpWriteStatus = "registered" | "existing" | "failed";
+export type PiMcpWriteStatus = "registered" | "updated" | "existing" | "failed";
 
 export interface PiMcpWriteRequest {
   readonly projectDir: string;
@@ -158,14 +158,32 @@ export async function writePiMcpServerEntry(request: PiMcpWriteRequest): Promise
   const document = loaded.document;
   const servers = document.mcpServers ?? {};
   const existing = servers[request.serverName];
-  if (existing !== undefined && !isSameServerLaunch(existing, entry)) {
-    // Never clobber a differently-configured server entry.
-    return {
-      status: "existing",
-      configPath,
-      serverName: request.serverName,
-      reason: `a differently-configured "${request.serverName}" server is already registered`,
-    };
+  if (existing !== undefined) {
+    const sameLaunch = isSameServerLaunch(existing, entry);
+    if (!sameLaunch) {
+      // Never clobber a differently-configured server entry.
+      return {
+        status: "existing",
+        configPath,
+        serverName: request.serverName,
+        reason: `a differently-configured "${request.serverName}" server is already registered`,
+      };
+    }
+    if (!piEntriesEqual(existing, entry)) {
+      // Same launch with a differing exposure / toolExposure: update in place.
+      document.mcpServers = { ...servers, [request.serverName]: entry };
+      try {
+        await writeJsonAtomically(configPath, document);
+      } catch (error) {
+        return {
+          status: "failed",
+          configPath,
+          serverName: request.serverName,
+          reason: `could not write ${configPath}: ${describeError(error)}`,
+        };
+      }
+      return { status: "updated", configPath, serverName: request.serverName };
+    }
   }
 
   document.mcpServers = { ...servers, [request.serverName]: entry };
@@ -255,15 +273,68 @@ function isSameServerLaunch(existing: unknown, entry: PiMcpServerEntry): boolean
   if (typeof existing !== "object" || existing === null || Array.isArray(existing)) {
     return false;
   }
-  const record = existing as { command?: unknown; args?: unknown };
-  if (record.command !== entry.command) {
+  const record = existing as { command?: unknown; args?: unknown; env?: unknown };
+  if (typeof record.command !== "string") {
     return false;
   }
-  const existingArgs = Array.isArray(record.args) ? record.args : [];
+  const existingArgs = Array.isArray(record.args)
+    ? record.args.filter((arg) => typeof arg === "string")
+    : [];
+  const existingEnv =
+    typeof record.env === "object" && record.env !== null && !Array.isArray(record.env)
+      ? (record.env as Record<string, string>)
+      : undefined;
+  const existingKey = serverLaunchKey(record.command, existingArgs, existingEnv);
+  const entryKey = serverLaunchKey(entry.command, entry.args, entry.env);
   return (
-    existingArgs.length === entry.args.length &&
-    existingArgs.every((arg, index) => arg === entry.args[index])
+    existingKey.entry === entryKey.entry &&
+    JSON.stringify(existingKey.serverArgs) === JSON.stringify(entryKey.serverArgs)
   );
+}
+
+/**
+ * Canonical launch identity of a pi MCP server entry: the resolved CLI entry
+ * path plus the server args that follow it. A bare `trailstep` shim entry is
+ * resolved through its `TRAILSTEP_CLI_ENTRY` env value; a bare shim without an
+ * entry is compared on its forwarded args alone.
+ */
+function serverLaunchKey(
+  command: string,
+  args: readonly string[],
+  env?: Record<string, string>,
+): { entry: string | undefined; serverArgs: string[] } {
+  const shimEntry = command === "trailstep" ? env?.TRAILSTEP_CLI_ENTRY : undefined;
+  if (shimEntry !== undefined) {
+    return { entry: shimEntry, serverArgs: [...args] };
+  }
+  if (command === "trailstep") {
+    return { entry: undefined, serverArgs: [...args] };
+  }
+  return { entry: args[0], serverArgs: args.slice(1) };
+}
+
+function piEntriesEqual(existing: unknown, entry: PiMcpServerEntry): boolean {
+  if (typeof existing !== "object" || existing === null || Array.isArray(existing)) {
+    return false;
+  }
+  const record = existing as { exposure?: unknown; toolExposure?: unknown };
+  if (record.exposure !== entry.exposure) {
+    return false;
+  }
+  const existingTools =
+    typeof record.toolExposure === "object" &&
+    record.toolExposure !== null &&
+    !Array.isArray(record.toolExposure)
+      ? (record.toolExposure as Record<string, string>)
+      : {};
+  const entryTools = entry.toolExposure;
+  const toolNames = new Set([...Object.keys(existingTools), ...Object.keys(entryTools)]);
+  for (const toolName of toolNames) {
+    if (existingTools[toolName] !== entryTools[toolName]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**

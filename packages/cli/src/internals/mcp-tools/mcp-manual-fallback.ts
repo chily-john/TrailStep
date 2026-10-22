@@ -19,15 +19,23 @@ export function reportPiRegistration(
     );
     return;
   }
+  if (result.status === "updated") {
+    io.writeLine(
+      `Updated the TrailStep MCP server (${result.serverName}) entry in ${result.configPath}.`,
+    );
+    return;
+  }
+  // `existing` and `failed` both fall through to the manual guidance: a refused
+  // entry needs the operator's attention, and a failed write needs the command.
   if (result.status === "existing") {
     io.writeError(
       `Warning: ${result.reason ?? "a server entry is already registered"} in ${result.configPath}; leaving it unchanged.`,
     );
-    return;
+  } else {
+    io.writeError(
+      `Warning: could not update pi's MCP configuration in ${result.configPath}: ${result.reason ?? "unknown error"}`,
+    );
   }
-  io.writeError(
-    `Warning: could not update pi's MCP configuration in ${result.configPath}: ${result.reason ?? "unknown error"}`,
-  );
   io.writeLine("Register the TrailStep MCP server with pi manually by running this command:");
   io.writeLine(piManualCommand);
 }

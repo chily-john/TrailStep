@@ -10,7 +10,6 @@ import type {
   WorkflowPackageSourceType,
   WorkflowRegistryContext,
   WorkflowRegistryScope,
-  WorkflowSkillInstallTarget,
 } from "./workflow-registry.types.js";
 
 export type {
@@ -19,7 +18,6 @@ export type {
   WorkflowPackageSourceType,
   WorkflowRegistryContext,
   WorkflowRegistryScope,
-  WorkflowSkillInstallTarget,
 } from "./workflow-registry.types.js";
 
 export function configPathForScope(
@@ -406,19 +404,8 @@ function isWorkflowPackageRegistryMetadata(
     typeof value.exportName === "string" &&
     isOptionalString(value.resolvedVersion) &&
     isOptionalString(value.githubRef) &&
-    isOptionalWorkflowPackageInstallOwnership(value.installOwnership) &&
-    isOptionalWorkflowSkillInstallTargets(value.skillTargets)
+    isOptionalWorkflowPackageInstallOwnership(value.installOwnership)
   );
-}
-
-function isOptionalWorkflowSkillInstallTargets(
-  value: unknown,
-): value is readonly WorkflowSkillInstallTarget[] | undefined {
-  return value === undefined || (Array.isArray(value) && value.every(isWorkflowSkillInstallTarget));
-}
-
-function isWorkflowSkillInstallTarget(value: unknown): value is WorkflowSkillInstallTarget {
-  return value === "project" || value === "user";
 }
 
 function isWorkflowPackageSourceType(value: unknown): value is WorkflowPackageSourceType {

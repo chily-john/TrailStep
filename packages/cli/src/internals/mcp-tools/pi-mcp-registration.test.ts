@@ -216,6 +216,123 @@ describe("pi mcp registration", () => {
     expect(second).toBe(first);
   });
 
+  it("updates the entry in place when the launch matches but the exposure differs", async () => {
+    const configPath = join(projectDir, ".pi", "mcp.json");
+    await mkdir(join(projectDir, ".pi"), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          trailstep: {
+            command: NODE_BINARY,
+            args: [CLI_ENTRY, "mcp", "--project", projectDir],
+            env: { TRAILSTEP_CLI_ENTRY: CLI_ENTRY },
+            exposure: "direct",
+            toolExposure: { trst_run_workflow: "direct" },
+            description: "legacy",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await writePiMcpServerEntry({
+      projectDir,
+      scope: "project",
+      serverName: mcpServerNameForScope("project"),
+      serverCommand: {
+        command: NODE_BINARY,
+        args: [CLI_ENTRY, "mcp", "--project", projectDir],
+      },
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(result.status).toBe("updated");
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as {
+      mcpServers: Record<string, { exposure?: string; toolExposure?: Record<string, string> }>;
+    };
+    expect(parsed.mcpServers.trailstep?.exposure).toBe("codemode");
+    expect(parsed.mcpServers.trailstep?.toolExposure?.trst_run_workflow).toBe("direct");
+  });
+
+  it("treats a bare trailstep shim entry with TRAILSTEP_CLI_ENTRY as the same launch", async () => {
+    const configPath = join(projectDir, ".pi", "mcp.json");
+    await mkdir(join(projectDir, ".pi"), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          trailstep: {
+            command: "trailstep",
+            args: ["mcp", "--project", projectDir],
+            env: { TRAILSTEP_CLI_ENTRY: CLI_ENTRY },
+            exposure: "codemode",
+            toolExposure: {
+              trst_run_workflow: "direct",
+              trst_watch: "direct",
+              trst_answer: "direct",
+              trst_resume: "direct",
+            },
+            description: PI_MCP_SERVER_DESCRIPTION,
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await writePiMcpServerEntry({
+      projectDir,
+      scope: "project",
+      serverName: mcpServerNameForScope("project"),
+      serverCommand: {
+        command: NODE_BINARY,
+        args: [CLI_ENTRY, "mcp", "--project", projectDir],
+      },
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(result.status).toBe("registered");
+  });
+
+  it("refuses when the shim entry resolves to a different CLI entry", async () => {
+    const configPath = join(projectDir, ".pi", "mcp.json");
+    await mkdir(join(projectDir, ".pi"), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          trailstep: {
+            command: "trailstep",
+            args: ["mcp", "--project", projectDir],
+            env: { TRAILSTEP_CLI_ENTRY: "/other/cli.js" },
+            exposure: "codemode",
+            toolExposure: {
+              trst_run_workflow: "direct",
+              trst_watch: "direct",
+              trst_answer: "direct",
+              trst_resume: "direct",
+            },
+            description: PI_MCP_SERVER_DESCRIPTION,
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await writePiMcpServerEntry({
+      projectDir,
+      scope: "project",
+      serverName: mcpServerNameForScope("project"),
+      serverCommand: {
+        command: NODE_BINARY,
+        args: [CLI_ENTRY, "mcp", "--project", projectDir],
+      },
+      cliEntryPath: CLI_ENTRY,
+    });
+
+    expect(result.status).toBe("existing");
+  });
+
   it("does not clobber an existing entry with a different command and reports it", async () => {
     const configPath = join(projectDir, ".pi", "mcp.json");
     await mkdir(join(projectDir, ".pi"), { recursive: true });
@@ -324,6 +441,7 @@ describe("offerMcpRegistration with pi detected", () => {
     });
 
     expect(outcome.status).toBe("registered");
+    expect(outcome.piWriteStatus).toBe("registered");
     expect(outcome.agentTargets).toContain("pi");
     expect(capture.requests).toHaveLength(1);
     const args = capture.requests[0]?.args ?? [];
@@ -349,6 +467,7 @@ describe("offerMcpRegistration with pi detected", () => {
     });
 
     expect(outcome.status).toBe("registered");
+    expect(outcome.piWriteStatus).toBe("registered");
     expect(capture.requests).toHaveLength(0);
     expect(outcome.manualCommand).toContain("pi mcp add trailstep");
     const parsed = JSON.parse(await readFile(join(projectDir, ".pi", "mcp.json"), "utf8")) as {
@@ -357,7 +476,7 @@ describe("offerMcpRegistration with pi detected", () => {
     expect(parsed.mcpServers.trailstep?.exposure).toBe("codemode");
   });
 
-  it("still reports registered when the pi write fails", async () => {
+  it("does not report registered when the pi write fails and prints the manual command", async () => {
     // A file named `.pi` blocks the `.pi` directory creation, so the pi
     // config write fails while pi is still detected as a target.
     await writeFile(join(projectDir, ".pi"), "not a directory", "utf8");
@@ -375,8 +494,10 @@ describe("offerMcpRegistration with pi detected", () => {
       cliEntryPath: CLI_ENTRY,
     });
 
-    expect(outcome.status).toBe("registered");
+    expect(outcome.status).toBe("failed");
+    expect(outcome.piWriteStatus).toBe("failed");
     expect(lines.some((line) => line.includes("Warning:"))).toBe(true);
     expect(lines.some((line) => line.includes("pi mcp add trailstep"))).toBe(true);
+    expect(capture.requests).toHaveLength(0);
   });
 });

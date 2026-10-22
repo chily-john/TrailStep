@@ -19,6 +19,7 @@ import {
   runAgentStep,
 } from "../adapter-agent/run-adapter-agent-step/run-adapter-agent-step.js";
 import { runInteractiveAgentCommand } from "../interactive-agent/run-interactive-agent-command.js";
+import { startAgentHeartbeat } from "../working-agent/agent-heartbeat.js";
 import { runWorkingAgentCommand } from "../working-agent/run-working-agent-command.js";
 
 /**
@@ -124,8 +125,17 @@ export async function dispatchAgentStep(options: {
     return interactiveResult.output;
   }
 
-  return options.trailstepConfig && agentMode === "working"
-    ? await runWorkingAgentCommand({
+  const heartbeat = startAgentHeartbeat({
+    emit: options.emit,
+    runId: options.runId,
+    workflowId: options.workflowId,
+    stepId: config.id,
+    describe: () => `Agent step ${config.id}`,
+  });
+
+  try {
+    if (options.trailstepConfig && agentMode === "working") {
+      return await runWorkingAgentCommand({
         config: options.trailstepConfig,
         workflowId: options.workflowId,
         roleName: resolvedRole.roleName,
@@ -155,24 +165,29 @@ export async function dispatchAgentStep(options: {
         signal: options.signal,
         emit: options.emit,
         runId: options.runId,
-      })
-    : await runAgentStep({
-        step: agentStep,
-        input: config.input,
-        runDir: options.runDir,
-        stepIndex: options.stepIndex,
-        onToolCall: async (toolCall) => {
-          await options.emit(
-            createEvent({
-              runId: options.runId,
-              workflowId: options.workflowId,
-              stepId: config.id,
-              type: "agent.toolCall",
-              payload: { ...toolCall },
-            }),
-          );
-        },
       });
+    }
+
+    return await runAgentStep({
+      step: agentStep,
+      input: config.input,
+      runDir: options.runDir,
+      stepIndex: options.stepIndex,
+      onToolCall: async (toolCall) => {
+        await options.emit(
+          createEvent({
+            runId: options.runId,
+            workflowId: options.workflowId,
+            stepId: config.id,
+            type: "agent.toolCall",
+            payload: { ...toolCall },
+          }),
+        );
+      },
+    });
+  } finally {
+    heartbeat.stop();
+  }
 }
 
 /**

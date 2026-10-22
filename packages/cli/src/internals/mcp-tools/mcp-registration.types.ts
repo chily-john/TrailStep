@@ -1,4 +1,5 @@
 import type { TrailStepCliIo, TrailStepCliPrompts } from "../command-framework/command.types.js";
+import type { PiMcpWriteStatus } from "./pi-mcp-registration.js";
 
 /** Where the MCP server registration is written. */
 export type McpRegistrationScope = "project" | "local" | "global";
@@ -55,6 +56,8 @@ export interface OfferMcpRegistrationOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly nodeBinaryPath?: string;
   readonly cliEntryPath?: string;
+  /** User home base used for global-scope agent detection. */
+  readonly homeDir?: string;
 }
 
 export interface McpRegistrationOutcome {
@@ -67,4 +70,6 @@ export interface McpRegistrationOutcome {
   readonly piManualCommand?: string;
   /** add-mcp manual command for the remaining (non-pi) agents, when any. */
   readonly addMcpManualCommand?: string;
+  /** pi direct-write outcome for the resolved scope: registered | updated | existing | failed. */
+  readonly piWriteStatus?: PiMcpWriteStatus;
 }

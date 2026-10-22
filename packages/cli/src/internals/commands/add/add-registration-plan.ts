@@ -5,7 +5,6 @@ import {
   assertNamespaceMatchesScope,
   findExistingRegistrationScope,
   type WorkflowRegistryScope,
-  type WorkflowSkillInstallTarget,
 } from "../../workflow-registry/workflow-registry.js";
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
 
@@ -16,7 +15,6 @@ import type {
   AddRegistryTarget,
   PreparedAddSource,
   RegistrationConflict,
-  ResolvedSkillArgs,
 } from "./add-command.types.js";
 import {
   attachPackageMetadataToRegistryTargets,
@@ -114,49 +112,13 @@ export async function buildAddRegistrationPlan({
     successfulRegistrations.push(registration);
   }
 
-  const resolvedArgs =
-    successfulRegistrations.length === 0
-      ? { projectSkill: false, userSkill: false }
-      : args.dryRun
-        ? { projectSkill: args.projectSkill, userSkill: args.userSkill }
-        : await resolveSkillArgs(args, context.prompts);
-
-  // Persist the chosen skill target(s) per registration so `trailstep update` can later
-  // honor them for generated skills of untracked workflows. Only registrations whose
-  // user made an explicit/prompted choice are marked; others stay legacy/unmarked.
-  const recordedSkillTargets = resolvedArgs.skillTargets;
-  const markedRegistrations =
-    recordedSkillTargets === undefined
-      ? successfulRegistrations
-      : successfulRegistrations.map((registration) =>
-          withPersistedSkillTargets(registration, recordedSkillTargets),
-        );
-
   return {
     status: "ready",
     namespace,
     registrations,
     registrationConflicts,
-    successfulRegistrations: markedRegistrations,
+    successfulRegistrations,
     skippedConflicts,
-    resolvedArgs,
-  };
-}
-
-function withPersistedSkillTargets(
-  registration: AddRegistration,
-  skillTargets: readonly WorkflowSkillInstallTarget[],
-): AddRegistration {
-  const metadata = registration.registryTarget.metadata;
-  if (metadata === undefined) {
-    return registration;
-  }
-  return {
-    ...registration,
-    registryTarget: {
-      ...registration.registryTarget,
-      metadata: { ...metadata, skillTargets: [...skillTargets] },
-    },
   };
 }
 
@@ -312,50 +274,4 @@ function deriveDefaultWorkflowName(registryTarget: AddRegistryTarget): string {
     );
   }
   return id;
-}
-
-export async function resolveSkillArgs(
-  args: AddCommandArgs,
-  prompts: CliCommandContext["prompts"],
-): Promise<ResolvedSkillArgs> {
-  const promptSkillChoices =
-    !args.yes && prompts !== undefined && !args.projectSkillExplicit && !args.userSkillExplicit;
-
-  if (promptSkillChoices) {
-    const projectSkill = await promptYesNo(
-      "Add to project skills?",
-      prompts,
-      "trailstep add requires --project-skill.",
-    );
-    const userSkill = await promptYesNo(
-      "Add to user skills?",
-      prompts,
-      "trailstep add requires --user-skill.",
-    );
-    return { projectSkill, userSkill, skillTargets: skillTargetsFor(projectSkill, userSkill) };
-  }
-
-  if (args.projectSkillExplicit || args.userSkillExplicit) {
-    return {
-      projectSkill: args.projectSkill,
-      userSkill: args.userSkill,
-      skillTargets: skillTargetsFor(args.projectSkill, args.userSkill),
-    };
-  }
-
-  return { projectSkill: args.projectSkill, userSkill: args.userSkill };
-}
-
-function skillTargetsFor(
-  projectSkill: boolean,
-  userSkill: boolean,
-): readonly WorkflowSkillInstallTarget[] {
-  const targets: WorkflowSkillInstallTarget[] = [];
-  if (projectSkill) {
-    targets.push("project");
-  }
-  if (userSkill) {
-    targets.push("user");
-  }
-  return targets;
 }

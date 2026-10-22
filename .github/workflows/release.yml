@@ -54,4 +54,15 @@ jobs:
           publish-script: pnpm exec changeset publish
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
+          # setup-node writes a .npmrc that points npm at this token, so
+          # `changeset publish` (which shells out to npm) can authenticate.
+          #
+          # The token must be able to publish the @trailstep scope AND must be
+          # allowed to publish directly. npm is restricting 2FA-bypass tokens
+          # for direct publishing; a publish attempt with one fails with an
+          # opaque "404 Not Found - PUT .../package" even though the account
+          # owns the package. Use a granular access token scoped to
+          # @trailstep with read-write and 2FA bypass, or switch this workflow
+          # to npm trusted publishing (OIDC) - the job already requests
+          # id-token: write for it.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

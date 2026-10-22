@@ -1,15 +1,26 @@
 {
   "name": "@trailstep/mcp",
   "version": "0.2.2",
-  "description": "TrailStep MCP server package.",
+  "description": "Model Context Protocol server for TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/chily-john/trailstep.git"
   },
+  "bugs": {
+    "url": "https://github.com/chily-john/trailstep/issues"
+  },
+  "homepage": "https://github.com/chily-john/trailstep#readme",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "README.md",

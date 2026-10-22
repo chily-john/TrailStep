@@ -1,5 +1,102 @@
 # @trailstep/sub-agents
 
+## 0.3.1
+
+### Patch Changes
+
+- 28e6560: Agents now load the project's context files by default, and the user can
+  control the whole execution (hygiene) block from the TrailStep config.
+  
+  `@trailstep/core` changes the default execution block from
+  `contextFiles: "project-only"` to `contextFiles: true`. `"project-only"` was
+  misleading on every provider CLI that has no project-only flag: `pi
+  --no-context-files` disables AGENTS.md/CLAUDE.md discovery entirely, so the
+  value that claimed to restrict context to the project actually removed it. An
+  agent with an execution block now loads the project's context files unless it
+  opts out, and the value stays available for providers that do offer a
+  project-only flag.
+  
+  `@trailstep/core` also adds `settings.execution` to the TrailStep config, both
+  globally (`settings.execution`) and per workflow
+  (`workflows.<id>.settings.execution`). The block has the same shape as
+  `AgentExecutionConfig` (`tools`, `skills`, `mcp`, `extensions`, `contextFiles`)
+  and is merged field by field with the agent role's own block: step execution >
+  per-workflow config > global config > role, per field. A config block that
+  names only `contextFiles` therefore changes only that field and leaves the
+  role's other fields alone; an explicit `false` or `[]` overrides a
+  lower-precedence value. An invalid config block fails fast with a
+  config-scoped diagnostic before any provider process is spawned, and no block
+  anywhere still means "render no hygiene args at all".
+  
+  `@trailstep/sub-agents` no longer pins `contextFiles` in the delegate's lean
+  execution block, so a delegate turn inherits the framework default and reads
+  the repository's own `AGENTS.md` / `CLAUDE.md` instead of disabling context
+  discovery. The rest of the lean block is unchanged: `--no-skills`, `--no-mcp`
+  and `--no-extensions` are still rendered, and all tools stay available.
+  
+  Behavior is otherwise preserved.
+- 337eab6: Coerce stringified workflow input scalars and enrich the MCP tool descriptions.
+  
+  `@trailstep/core`: workflow input is now coerced against the workflow's own
+  input schema before validation. A string that unambiguously matches the
+  declared scalar type becomes that type -- a plain decimal becomes a `number`
+  or `integer`, and exactly `true` / `false` becomes a `boolean` -- including in
+  nested object properties and array items. Ambiguous strings (`"abc"`,
+  `"25abc"`, `"1e5"`, `" 25 "`, `"yes"`) and schemas without a declared type are
+  left untouched, so a genuinely invalid input still fails with the same
+  `validation_failed` diagnostics. The coercion is opt-in at the workflow-input
+  call site; the shared `jsonSchema()` / `assert()` validators used for agent
+  step outputs and documents are unchanged. The coerced value is what the run
+  persists, so a replayed or resumed run validates the same value.
+  
+  `@trailstep/mcp`: the `trst_run_workflow` description now says that a
+  per-workflow tool (for example `trst_delegate` or `trst_take-it-away`) should
+  be preferred when one exists, and the `trst_watch` description now says that
+  the byte-offset cursor is persisted per run, that an unknown run id returns an
+  error result instead of waiting, and how it pairs with `trst_run_workflow` and
+  `trst_answer`. The server also sends `instructions` on initialize pointing at
+  the `trailstep://instructions` resource.
+  
+  `@trailstep/sub-agents`: the delegate workflow descriptions (and the
+  `delegateParallel` description) now say what the workflow does, what `mode`
+  selects, that `maxTurns` bounds the number of turns, and that a delegate which
+  needs a decision returns a question answered with `trst_answer` and continued
+  with `trst_resume`. The generated per-workflow tool JSON takes its description
+  from the workflow description, so the live tools pick this up. The shipped
+  delegate skill files are built from `skillDescription` / `skillFocus` and are
+  unchanged.
+  
+  `@trailstep/cli`: the pi MCP server description now points at the
+  `trailstep://instructions` resource that documents the run -> watch -> answer
+  -> resume loop.
+  
+  Behavior is otherwise preserved.
+- 51d35f5: Share the remaining duplicated helpers.
+  
+  `@trailstep/authoring`: exports the canonical `nonEmptyOptional` and
+  `nonEmptyOrDefault` string helpers (`packages/authoring/src/strings.ts`) so that
+  workflow packages share one "trim, then drop empty" definition.
+  
+  `@trailstep/cli`: the six per-command `parseFlags` copies (`add`, `agents`,
+  `init`, `mcp`, `providers`, `remove`) now share one shape-driven parser
+  (`packages/cli/src/internals/command-framework/flags.ts`). Each command keeps
+  parsing exactly what it parsed before — same accepted flags, same error
+  messages, same empty-value and missing-value handling — and the shared
+  `agent_targets_unavailable` guard now lives in one place
+  (`packages/cli/src/internals/agent-config/agent-targets-error.ts`) used by both
+  the `add` and `agents` commands.
+  
+  `@trailstep/create-flows`, `@trailstep/sub-agents`: the duplicated
+  `nonEmptyOptional` helper is imported from `@trailstep/authoring`, and the
+  worktree input subschema is declared once
+  (`delegateWorktreeInputShape` in `packages/sub-agents/src/delegate/schema.ts`)
+  and reused by the delegate and delegate-parallel input shapes.
+  
+  This is a behavior-preserving refactor: no public workflow shape, CLI flag
+  behavior, or runtime behavior changed.
+- Updated dependencies [51d35f5]
+  - @trailstep/authoring@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

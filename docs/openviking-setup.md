@@ -11,17 +11,40 @@ of git — only this doc and `ov.conf.example` are committed.
 
 ## Model choices
 
-Both models run through one OpenRouter key:
+The setup is **fully free**: embeddings run locally, the VLM runs on OpenRouter
+free models.
 
-- **Embedding:** `qwen/qwen3-embedding-8b`, `dimension: 4096`. This is what
-  the vectors are built with — if you change it, delete the workspace data and
-  re-index.
-- **VLM (recommended):** `qwen/qwen2.5-vl-72b-instruct`. The VLM only writes
-  short L0 abstracts (~256 chars) and L1 directory overviews (~4000 chars), so
-  pick cheap, fast, and vision-capable (diagrams/screenshots) over big
-  reasoning models. It keeps you on the same Qwen/OpenRouter billing.
-  - Cheaper fallback on the same provider: `qwen/qwen2.5-vl-7b-instruct`.
-  - Non-Qwen alternative: `openai/gpt-4o-mini` via OpenRouter.
+- **Embedding (local, Ollama):** `qwen3-embedding:0.6b`, `dimension: 1024`.
+  Costs nothing, no rate limit, and is materially better on code than the
+  smaller `nomic-embed-text` (768). Pull it once:
+  ```bash
+  ollama pull qwen3-embedding:0.6b
+  ```
+  The vectors are built with this model — if you change the model **or the
+  dimension**, the vector collection has to be rebuilt (see
+  *Rebuilding after a model change*).
+
+  `embedding.text_source` is set to `summary_first`: files are vectorised from
+  their generated L0 abstract, not their raw bytes. On CPU that is the
+  difference between ~50 embeddings/minute and ~2 — a full-file 4k-token
+  embedding costs 20-120s on a laptop CPU, a summary costs well under a
+  second. It also matches what the index is searched by.
+- **VLM (OpenRouter free):** `nvidia/nemotron-3.5-super-vl:free` is the
+  primary. The VLM only writes short L0 abstracts (~256 chars) and L1
+  directory overviews (~4000 chars), so a cheap vision-capable model is
+  enough.
+  Free models are rate limited **per day** (1000 requests/day for a funded
+  account), so `vlm.credentials` chains several free models in priority
+  order. OpenViking fails over to the next credential on 429/5xx and fails
+  back after `failback_timeout_seconds`:
+  1. `nvidia/nemotron-3.5-super-vl:free` — primary
+  2. `openrouter/free` — auto-router onto whichever free model has capacity
+  3. `minimax/minimax-m3.1-flash:free` — separate daily pool
+  4. `google/gemma-4-26b-a4b-it:free` — Google's pool (often exhausted)
+
+  Each `credentials[]` entry must repeat `api_key`, `api_base` and
+  `extra_headers` — credential entries do **not** inherit them from the
+  parent `vlm` block.
 
 ## First-time setup
 
@@ -38,9 +61,12 @@ Prereqs: Python 3.10+, Node.js 22.19+, the `pi` agent.
    ```powershell
    mkdir ~/.openviking -ErrorAction SilentlyContinue
    cp ov.conf.example ~/.openviking/ov.conf
-   # edit ~/.openviking/ov.conf, replace your-openrouter-api-key (both spots)
+   # edit ~/.openviking/ov.conf, replace your-openrouter-api-key (all spots)
    ```
    Or run `openviking-server init` and enter the values interactively.
+   Set `storage.workspace` to an **absolute** path: it is resolved relative
+   to the server's working directory, and a relative value silently creates
+   a second, empty workspace when the server is started from elsewhere.
 4. Validate, then start:
    ```powershell
    openviking-server doctor
@@ -49,6 +75,8 @@ Prereqs: Python 3.10+, Node.js 22.19+, the `pi` agent.
    Health check: `curl http://localhost:1933/health` and
    `curl http://localhost:1933/ready`. Studio: `http://127.0.0.1:1933/studio`.
    Default bind is localhost-only with no auth — fine for single-machine use.
+   `openviking-server` reads `ov.conf` once at startup and does not watch
+   it: **restart the server after every config change**.
 5. Install the `pi` extension. On macOS/Linux, use the unified installer
    (idempotent):
    ```bash
@@ -104,20 +132,92 @@ Prereqs: Python 3.10+, Node.js 22.19+, the `pi` agent.
 7. Verify in `pi`: footer shows `OV ✓`, `/viking` prints the session mapping
    and registered tool count.
 
+## Rebuilding after a model change
+
+Changing the embedding model or its dimension makes the stored vectors
+unusable. The server then refuses to start with:
+
+```
+EmbeddingRebuildRequiredError: Existing collection dimension 4096 differs from 1024
+```
+
+Rebuild the **vector collection only**:
+
+```bash
+# 1. stop the server
+# 2. delete the vectors, keep the content tree
+rm -rf <workspace>/vectordb/context
+# 3. start the server again (it recreates the collection at the new dimension)
+# 4. re-embed + regenerate summaries
+curl -X POST http://127.0.0.1:1933/api/v1/content/reindex \
+  -H "Content-Type: application/json" \
+  -d '{"uri":"viking://resources/trailstep","mode":"semantic_and_vectors","force":true,"recursive":true,"wait":false}'
+```
+
+`mode` is `vectors_only` (re-embed, no VLM calls, free) or
+`semantic_and_vectors` (also regenerates L0 abstracts and L1 overviews —
+this is what costs VLM quota). `force: true` redoes work that already
+exists.
+
+> **Never delete `<workspace>/viking`.** That tree holds the file contents
+> *and* the canonical documentation, which exists nowhere else. Only
+> `vectordb/context` is rebuildable.
+
+The reindex runs in the background and survives a server restart — the task
+id comes back from the API and can be polled at
+`GET /api/v1/tasks/<task_id>`. Watch it with:
+
+```bash
+ov observer queue    # per-queue pending / in-progress / requeued / errors
+ov observer models   # per-model call counts and token usage
+```
+
+## Throughput notes (CPU-only machines)
+
+The local embedder is the throughput bottleneck on a laptop CPU. Two levers
+matter, and both are already applied in `ov.conf.example`:
+
+- `embedding.text_source: "summary_first"` — embed the generated L0
+  abstract instead of the file's raw bytes. A 4k-token file costs 20-120s to
+  embed on CPU; a summary costs well under a second. This is a ~30x
+  difference on a full re-index and it also matches what the index is
+  searched by.
+- Ollama's own parallelism. Ollama serialises embedding requests unless
+  `OLLAMA_NUM_PARALLEL` is raised, and it batches concurrent requests into
+  one forward pass:
+
+  ```bash
+  setx OLLAMA_NUM_PARALLEL 8
+  setx OLLAMA_MAX_LOADED_MODELS 1
+  # restart ollama afterwards
+  ```
+
+  With 8 parallel requests the wall time for a batch is only ~1.2x the time
+  of a single request. On Windows the tray app spawns the server, so the
+  variables must be set *before* the app starts; the app inherits them.
+
+While a bulk re-index runs, `ov find` can hit its request timeout because the
+query embedding queues behind the embedding batch. Give the `pi` extension
+more headroom with `OPENVIKING_TIMEOUT_MS=120000` in the environment.
+
 ## New machine quick-start
 
 1. `python -m pip install --upgrade openviking`
-2. Copy `ov.conf.example` to `~/.openviking/ov.conf`, set the OpenRouter key.
-3. `openviking-server doctor` → `openviking-server`
-4. Re-run the installer from step 5 above.
-5. Re-index the checkout (step 6). Vectors rebuild from source — nothing to
+2. `ollama pull qwen3-embedding:0.6b`
+3. Copy `ov.conf.example` to `~/.openviking/ov.conf`, set the OpenRouter key.
+4. `openviking-server doctor` → `openviking-server`
+5. Re-run the installer from step 5 above.
+6. Re-index the checkout (step 6). Vectors rebuild from source — nothing to
    copy over.
 
 ## Notes
 
-- `~/.openviking/ov.conf` and `~/.openviking/data/` are yours alone: never
-  commit them. `storage.workspace` uses a local backend, so each machine
-  rebuilds its own index.
+- `~/.openviking/ov.conf` and the workspace data are yours alone: never
+  commit them. The workspace uses a local backend, so each machine rebuilds
+  its own index.
+- OpenRouter free models reset their daily budget at 00:00 UTC. A big
+  reindex can exhaust it; the failover chain keeps working through the
+  other pools, and the reindex is resumable after the reset.
 - If you later turn on server auth, `pi` needs a **user/admin** key for
   `/mcp` — a root key gets 403 there. See `ovcli.conf`.
 - Full server reference: `https://docs.openviking.ai/en/guides/01-configuration`.

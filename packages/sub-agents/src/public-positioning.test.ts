@@ -53,14 +53,20 @@ describe("public package positioning", () => {
     expect(packageJson.trailstep?.recommendedConfig).toMatchObject({
       agents: {
         generalist: [
+          { provider: "pi", model: "openrouter/minimax/minimax-m3.1-flash:free" },
           { provider: "pi", model: "openrouter/meta/muse-spark-1.3" },
           { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
         ],
         explorer: [
+          { provider: "pi", model: "openrouter/minimax/minimax-m3.1-flash:free", thinking: "low" },
           { provider: "pi", model: "openrouter/deepseek/deepseek-v4-flash-0731", thinking: "low" },
         ],
-        "quick-implementor": [{ provider: "pi", model: "openrouter/z-ai/glm-5.3-flash" }],
+        "quick-implementor": [
+          { provider: "pi", model: "openrouter/minimax/minimax-m3.1-flash:free" },
+          { provider: "pi", model: "openrouter/z-ai/glm-5.3-flash" },
+        ],
         "smart-implementor": [
+          { provider: "pi", model: "openrouter/minimax/minimax-m3.1-flash:free" },
           { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-pro" },
           { provider: "pi", model: "openrouter/xiaomi/mimo-v2.6-flash" },
           { provider: "pi", model: "openrouter/google/gemini-2.5-flash" },

@@ -1,7 +1,8 @@
 {
-  "_comment": "TrailStep OpenViking example (OpenRouter + Qwen). Copy to ~/.openviking/ov.conf and replace your-openrouter-api-key. Never commit a filled-in ov.conf.",
+  "_comment": "TrailStep OpenViking example (local embeddings + free OpenRouter VLM). Copy to ~/.openviking/ov.conf and replace your-openrouter-api-key. Never commit a filled-in ov.conf.",
+  "_comment_workspace": "storage.workspace is resolved relative to the server's working directory. Use an absolute path (as below) or always start the server from the repo root.",
   "storage": {
-    "workspace": "./data",
+    "workspace": "C:/Users/cjohnson_xtivia/Desktop/TrailStep/data",
     "vectordb": {
       "name": "context",
       "backend": "local"
@@ -11,28 +12,82 @@
     }
   },
   "embedding": {
+    "max_concurrent": 8,
+    "max_retries": 3,
+    "text_source": "summary_first",
+    "max_input_tokens": 1024,
     "dense": {
-      "provider": "openai",
-      "api_base": "https://openrouter.ai/api/v1",
-      "api_key": "your-openrouter-api-key",
-      "model": "qwen/qwen3-embedding-8b",
-      "dimension": 4096,
-      "extra_body": {
-        "provider": {
-          "sort": "latency"
-        }
-      }
+      "provider": "ollama",
+      "api_key": "ollama",
+      "api_base": "http://localhost:11434/v1",
+      "model": "qwen3-embedding:0.6b",
+      "dimension": 1024
     }
   },
   "vlm": {
     "provider": "openai",
     "api_base": "https://openrouter.ai/api/v1",
     "api_key": "your-openrouter-api-key",
-    "model": "qwen/qwen2.5-vl-72b-instruct",
+    "model": "nvidia/nemotron-3.5-super-vl:free",
+    "max_concurrent": 10,
+    "max_retries": 3,
+    "timeout": 300,
+    "max_tokens": 4096,
     "extra_headers": {
       "HTTP-Referer": "https://github.com/chily-john/trailstep",
       "X-Title": "TrailStep OpenViking"
-    }
+    },
+    "credentials": [
+      {
+        "id": "nemotron-free",
+        "provider": "openai",
+        "model": "nvidia/nemotron-3.5-super-vl:free",
+        "api_key": "your-openrouter-api-key",
+        "api_base": "https://openrouter.ai/api/v1",
+        "extra_headers": {
+          "HTTP-Referer": "https://github.com/chily-john/trailstep",
+          "X-Title": "TrailStep OpenViking"
+        },
+        "extra_request_body": {
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          }
+        }
+      },
+      {
+        "id": "openrouter-free",
+        "provider": "openai",
+        "model": "openrouter/free",
+        "api_key": "your-openrouter-api-key",
+        "api_base": "https://openrouter.ai/api/v1",
+        "extra_headers": {
+          "HTTP-Referer": "https://github.com/chily-john/trailstep",
+          "X-Title": "TrailStep OpenViking"
+        }
+      },
+      {
+        "id": "minimax-free",
+        "provider": "openai",
+        "model": "minimax/minimax-m3.1-flash:free",
+        "api_key": "your-openrouter-api-key",
+        "api_base": "https://openrouter.ai/api/v1",
+        "extra_headers": {
+          "HTTP-Referer": "https://github.com/chily-john/trailstep",
+          "X-Title": "TrailStep OpenViking"
+        }
+      },
+      {
+        "id": "gemma-4-free",
+        "provider": "openai",
+        "model": "google/gemma-4-26b-a4b-it:free",
+        "api_key": "your-openrouter-api-key",
+        "api_base": "https://openrouter.ai/api/v1",
+        "extra_headers": {
+          "HTTP-Referer": "https://github.com/chily-john/trailstep",
+          "X-Title": "TrailStep OpenViking"
+        }
+      }
+    ]
   },
   "server": {
     "host": "127.0.0.1",

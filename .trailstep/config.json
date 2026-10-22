@@ -397,7 +397,8 @@
       "source": {
         "type": "local-package",
         "packageName": "@trailstep/provider-pi",
-        "spec": "./packages/provider-pi"
+        "spec": "./packages/provider-pi",
+        "resolvedVersion": "0.3.0"
       },
       "manifest": {
         "schemaVersion": 1,
@@ -418,8 +419,23 @@
             "--thinking",
             "{{thinking}}",
             "{{/thinking}}",
+            "{{tools}}",
+            "{{skills}}",
+            "{{mcpArgs}}",
+            "{{extensionsArgs}}",
+            "{{contextFilesArgs}}",
             "@{{promptFile}}"
           ],
+          "prompt": {
+            "kind": "prompt-file",
+            "reference": "at-prefixed-argument"
+          },
+          "output": {
+            "style": "stdout-jsonl-transcript",
+            "parsing": {
+              "resultField": "message"
+            }
+          },
           "followUp": {
             "supported": true,
             "sessionIdFlag": "--session-id",
@@ -435,20 +451,15 @@
               "--thinking",
               "{{thinking}}",
               "{{/thinking}}",
+              "{{tools}}",
+              "{{skills}}",
+              "{{mcpArgs}}",
+              "{{extensionsArgs}}",
+              "{{contextFilesArgs}}",
               "--session",
               "{{sessionId}}",
               "@{{promptFile}}"
             ]
-          },
-          "prompt": {
-            "kind": "prompt-file",
-            "reference": "at-prefixed-argument"
-          },
-          "output": {
-            "style": "stdout-jsonl-transcript",
-            "parsing": {
-              "resultField": "message"
-            }
           }
         },
         "interactive": {
@@ -468,10 +479,22 @@
             "max"
           ]
         },
-        "hooks": {
-          "extractOutput": {
-            "supported": true,
-            "source": "manual-recovery"
+        "hygiene": {
+          "tools": {
+            "flag": "--tools"
+          },
+          "skills": {
+            "flag": "--skill",
+            "disableFlag": "--no-skills"
+          },
+          "mcp": {
+            "disableFlag": "--no-mcp"
+          },
+          "extensions": {
+            "disableFlag": "--no-extensions"
+          },
+          "contextFiles": {
+            "disableFlag": "--no-context-files"
           }
         }
       }

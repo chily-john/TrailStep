@@ -122,6 +122,15 @@ delegate-turn -> question: ask-parent -> delegate-turn
 
 The delegate keeps continuity only inside one TrailStep run; separate runs do not share memory. Memory is durable only in `.trailstep/runs/<runName>/state.json` for the active run.
 
+## Delegate execution context
+
+Every delegate turn runs with a lean execution context: all tools, no skills, no
+MCP, no extensions, and the project's context files loaded — so the delegate
+reads the repository's own `AGENTS.md` / `CLAUDE.md` instructions. The block is
+configurable per project: set `settings.execution` (globally) or
+`workflows.<id>.settings.execution` (per workflow) in the TrailStep config to
+override individual fields, for example to turn skills or MCP back on.
+
 ## Managed worktrees
 
 `cwd` and `worktree.enabled` are mutually exclusive execution-location strategies:

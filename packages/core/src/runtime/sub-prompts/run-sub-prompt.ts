@@ -1,5 +1,4 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 
 import { runAgentStep } from "../../agent-execution/adapter-agent/run-adapter-agent-step/run-adapter-agent-step.js";
 import {
@@ -17,7 +16,10 @@ import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import { createEvent } from "../events/create-run-event.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
-import { resolveSubPromptArtifactPaths } from "./sub-prompt-artifacts.js";
+import {
+  resolveSubPromptAgentFiles,
+  resolveSubPromptArtifactPaths,
+} from "./sub-prompt-artifacts.js";
 import {
   emitSubPromptFailed,
   maxSubPromptsGuardError,
@@ -169,16 +171,12 @@ export async function runSubPrompt<
             runner: context.workingAgentProcessRunner,
             providerWorkingRunner: context.providerWorkingRunner,
             stepIndex: ordinal,
-            files: {
-              stepDir: artifactPaths.subPromptDir,
-              promptFile: artifactPaths.promptFile,
-              outputFile: artifactPaths.outputFile,
-              usageFile: artifactPaths.usageFile,
-              workFile: join(artifactPaths.subPromptDir, "work.txt"),
-              repairPromptFile: join(artifactPaths.subPromptDir, "repair-prompt.md"),
-              attemptsFile: join(artifactPaths.subPromptDir, "attempts.json"),
-              stderrFile: join(artifactPaths.subPromptDir, "stderr.txt"),
-            },
+            files: resolveSubPromptAgentFiles({
+              runDir: context.path,
+              stepDir: parentStep.dir,
+              ordinal,
+              fingerprint,
+            }),
             emit: context.emit,
             runId: context.id,
           })

@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { layeredDirs, load } from "./load-order.js";
+import { layeredMcpToolDirs, loadLayeredMcpToolDefinitions } from "./layered-mcp-loader.js";
 
 // Focused tests for layered MCP config loading. Layered artifacts are written
 // only under per-test tmp directories (the real home/global layer is never
@@ -27,9 +27,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("load-order", () => {
+describe("layered mcp tool loader", () => {
   it("resolves the global layer under os.homedir() (not HOME/USERPROFILE/~ fallbacks)", () => {
-    const dirs = layeredDirs();
+    const dirs = layeredMcpToolDirs();
     expect(dirs).toHaveLength(3);
     expect(dirs[2]).toBe(path.resolve(homedir(), ".trailstep/mcp/"));
     expect(dirs[2]?.startsWith(homedir())).toBe(true);
@@ -37,7 +37,7 @@ describe("load-order", () => {
 
   it("anchors local and project layers to an explicit projectDir, keeping local > project > global", () => {
     const projectDir = tmpRoot();
-    const dirs = layeredDirs({ projectDir });
+    const dirs = layeredMcpToolDirs({ projectDir });
     expect(dirs).toEqual([
       path.resolve(projectDir, ".trailstep/mcp/"),
       path.resolve(projectDir, "project/.trailstep/mcp/"),
@@ -60,10 +60,12 @@ describe("load-order", () => {
       "utf8",
     );
 
-    expect(load({ projectDir, ids: [id] })).toEqual([{ layer: "local" }]);
+    expect(loadLayeredMcpToolDefinitions({ projectDir, ids: [id] })).toEqual([{ layer: "local" }]);
 
     rmSync(path.join(localDir, `${id}.json`));
-    expect(load({ projectDir, ids: [id] })).toEqual([{ layer: "project" }]);
+    expect(loadLayeredMcpToolDefinitions({ projectDir, ids: [id] })).toEqual([
+      { layer: "project" },
+    ]);
   });
 
   it("skips malformed JSON with a stderr warning and keeps loading the rest", () => {
@@ -73,7 +75,7 @@ describe("load-order", () => {
     writeFileSync(path.join(dir, "good.json"), JSON.stringify({ ok: true }), "utf8");
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const items = load({ dir });
+    const items = loadLayeredMcpToolDefinitions({ dir });
 
     expect(items).toEqual([{ ok: true }]);
     expect(errorSpy).toHaveBeenCalled();

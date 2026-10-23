@@ -9,6 +9,7 @@ import {
   done,
   type Event,
   type PlainObject,
+  parallel,
   runWorkflow,
   step,
   type Workflow,
@@ -213,6 +214,110 @@ describe("replayToWaitingStep branch scope", () => {
       throw new Error("expected wrong scoped stepIndex to fail");
     }
     expect(result.failure.code).toBe("resume_step_id_drift");
+  });
+
+  it("resolves the branch waiting step node from a root parallel start continuation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-scoped-parallel-wait-"));
+
+    const answeredWaitStep = step({ id: "answered-parallel-wait" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve answered parallel branch?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const quickStep = step({ id: "answered-parallel-quick" }).do(() => done({ value: "quick" }));
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "answered-parallel-workflow",
+      start() {
+        return parallel([answeredWaitStep({}), quickStep({})]);
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "answered-parallel",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    const result = await replayToWaitingStep({
+      workflow,
+      events: await readRunEvents(waiting.runDir),
+      runDir: waiting.runDir,
+      branchId: "answered-parallel-wait-1",
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.branchId).toBe("answered-parallel-wait-1");
+    expect(result.resumedStepId).toBe("answered-parallel-wait");
+    expect(result.stepIndex).toBe(1);
+  });
+
+  it("resolves the branch waiting step node from a root continuation array of invoked branches", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-scoped-array-wait-"));
+
+    const answeredWaitStep = step({ id: "answered-array-wait" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve answered array branch?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const quickStep = step({ id: "answered-array-quick" }).do(() => done({ value: "quick" }));
+    const AnsweredWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "answered-array-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return answeredWaitStep({});
+      },
+    });
+    const QuickWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "answered-quick-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return quickStep({});
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "answered-array-parent-workflow",
+      start() {
+        return [
+          AnsweredWorkflow({}, { branchId: "answered-array-branch" }),
+          QuickWorkflow({}, { branchId: "answered-array-quick-branch" }),
+        ];
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "answered-array",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    const result = await replayToWaitingStep({
+      workflow,
+      events: await readRunEvents(waiting.runDir),
+      runDir: waiting.runDir,
+      branchId: "answered-array-branch",
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error(result.failure.message);
+    }
+    expect(result.branchId).toBe("answered-array-branch");
+    expect(result.resumedStepId).toBe("answered-array-wait");
   });
 });
 

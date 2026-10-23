@@ -1,7 +1,7 @@
 import type { StepNode } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import { isPlainObject } from "../../json/guards.js";
+import { readPlainPayload } from "../../runtime/events/read-plain-payload.js";
 import { replayCompletedSteps } from "../resume/replay-completed-steps/replay-completed-steps.js";
 import type { Event, RunWorkflowOptions } from "./run-workflow.types.js";
 
@@ -114,11 +114,6 @@ export async function replayToCancelledStep<
     retriedStepId: cancelledStepId,
     sourceCancellationEventId: cancelledEvent.id,
   };
-}
-
-function readPlainPayload(event: Event, key: string): PlainObject | undefined {
-  const value = event.payload[key];
-  return isPlainObject(value) ? value : undefined;
 }
 
 function retryFailure(code: string, message: string): Failure {

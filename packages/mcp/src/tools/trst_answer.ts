@@ -15,6 +15,7 @@ import { join } from "node:path";
 import {
   type Event,
   findPendingWaitsById,
+  isPlainObject,
   type PlainObject,
   type ResolvedRunDirectory,
   type RunDirectoryContext,
@@ -186,16 +187,4 @@ export async function trstAnswer(options: TrstAnswerOptions): Promise<TrstAnswer
     recommendation: JSON.stringify(options.answer),
     ...(continued === undefined ? {} : { continued }),
   };
-}
-
-/**
- * Strict plain-object check (the answer payload must be a plain JSON object).
- */
-function isPlainObject(value: unknown): value is PlainObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

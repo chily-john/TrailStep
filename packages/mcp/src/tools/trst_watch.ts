@@ -22,8 +22,7 @@ import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import type { Event } from "@trailstep/core";
-import { isPathLike, resolveRunsRoot } from "@trailstep/core";
+import { isPathLike, isPlainObject, readRunEventsSince, resolveRunsRoot } from "@trailstep/core";
 
 export type TrstWatchVerbosity = "brief" | "normal" | "full";
 
@@ -120,7 +119,9 @@ export async function trst_watch(
   // partially written line completes, or malformed lines are consumed), or the
   // real time budget expires. Never a fixed sleep of the whole budget.
   const deadline = Date.now() + timeoutMs;
-  let read = await readEventsSince(eventsFile, startCursor);
+  let read = await readRunEventsSince(eventsFile, startCursor, {
+    report: (message) => console.error(`trst_watch: ${message}`),
+  });
   while (
     read.entries.length === 0 &&
     read.offset === startCursor &&
@@ -131,7 +132,9 @@ export async function trst_watch(
       break;
     }
     await sleep(Math.min(pollIntervalMs, remaining));
-    read = await readEventsSince(eventsFile, startCursor);
+    read = await readRunEventsSince(eventsFile, startCursor, {
+      report: (message) => console.error(`trst_watch: ${message}`),
+    });
   }
 
   const emitted = read.entries.slice(0, lineCap);
@@ -152,70 +155,6 @@ export async function trst_watch(
     state,
     timeoutMs,
     truncated,
-  };
-}
-
-interface EventLineEntry {
-  readonly line: string;
-  readonly event: Event;
-  readonly endOffset: number;
-}
-
-interface EventsReadState {
-  /** Full file text (used for run-state classification). */
-  readonly text: string;
-  /** Byte offset just past the last complete line (or `startCursor` if none). */
-  readonly offset: number;
-  readonly entries: readonly EventLineEntry[];
-}
-
-/**
- * Byte-offset read of complete `events.jsonl` lines, mirroring the CLI
- * `trailstep watch` reader: partial trailing lines are left for the next read
- * and a file that shrank (truncated/recreated) restarts from offset 0.
- */
-async function readEventsSince(eventsFile: string, startCursor: number): Promise<EventsReadState> {
-  const buffer = await readFile(eventsFile);
-  if (buffer.length < startCursor) {
-    return readEventsSince(eventsFile, 0);
-  }
-
-  const text = buffer.toString("utf8");
-  const sliceText = buffer.subarray(startCursor).toString("utf8");
-  const lastLineBreakIndex = sliceText.lastIndexOf("\n");
-  if (lastLineBreakIndex === -1) {
-    return { text, offset: startCursor, entries: [] };
-  }
-
-  const completeText = sliceText.slice(0, lastLineBreakIndex + 1);
-  const entries: EventLineEntry[] = [];
-  let consumedBytes = 0;
-  for (const rawLine of completeText.split("\n")) {
-    const lineBytes = Buffer.byteLength(rawLine, "utf8");
-    const endOffset = startCursor + consumedBytes + lineBytes + 1; // + newline
-    consumedBytes += lineBytes + 1;
-    if (rawLine.trim().length === 0) {
-      continue;
-    }
-    try {
-      entries.push({
-        line: rawLine,
-        event: JSON.parse(rawLine) as Event,
-        endOffset,
-      });
-    } catch (error) {
-      console.error(
-        `trst_watch: skipping malformed events.jsonl line in ${eventsFile}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  return {
-    text,
-    offset: startCursor + Buffer.byteLength(completeText, "utf8"),
-    entries,
   };
 }
 
@@ -296,8 +235,4 @@ function verbosityLineCap(verbosity?: TrstWatchVerbosity): number {
 
 function cursorFileBaseName(runId: string): string {
   return runId.replace(/[^A-Za-z0-9._-]/gu, "_");
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

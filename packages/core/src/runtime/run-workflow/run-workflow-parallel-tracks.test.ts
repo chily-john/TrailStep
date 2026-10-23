@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -66,6 +66,13 @@ function resolveStartedGate(
   index: number,
 ): void {
   gates.get(expectDefinedValue(starts[index]))?.resolve();
+}
+
+/** Latest `wait.started` event for a branch, for answer-file and resumed-source lookups. */
+function latestWaitStartedForBranch(events: readonly Event[], branchId: string): Event | undefined {
+  return events
+    .filter((event) => event.type === "wait.started" && event.payload.branchId === branchId)
+    .at(-1);
 }
 
 describe("runWorkflow parallel tracks", () => {
@@ -2027,7 +2034,7 @@ describe("runWorkflow parallel tracks", () => {
         }),
         expect.objectContaining({
           requestedBranchId: "queued-human-branch",
-          status: "cancelled",
+          status: "queued",
           output: {},
         }),
       ]),
@@ -2150,7 +2157,7 @@ describe("runWorkflow parallel tracks", () => {
     expect(waitEvents[0]?.payload.stepIndex).toBeUndefined();
   });
 
-  it("rejects continue from a waiting parallel track with a clear unsupported error", async () => {
+  it("re-parks in waiting when continue targets a waiting parallel track before an answer lands", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-continue-"));
 
     const waitingStep = step({ id: "parallel-wait-continue-branch" })
@@ -2164,27 +2171,10 @@ describe("runWorkflow parallel tracks", () => {
     const siblingStep = step({ id: "parallel-wait-continue-sibling" }).do(() =>
       done({ value: "sibling" }),
     );
-    const WaitingWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
-      id: "parallel-wait-continue-waiting-workflow",
-      outputShape: { value: "string" },
-      start() {
-        return waitingStep({});
-      },
-    });
-    const SiblingWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
-      id: "parallel-wait-continue-sibling-workflow",
-      outputShape: { value: "string" },
-      start() {
-        return siblingStep({});
-      },
-    });
     const workflow: Workflow<Record<string, never>, PlainObject> = {
       id: "parallel-wait-continue-parent-workflow",
       start() {
-        return [
-          WaitingWorkflow({}, { branchId: "waiting" }),
-          SiblingWorkflow({}, { branchId: "sibling" }),
-        ];
+        return parallel([waitingStep({}), siblingStep({})]);
       },
     };
 
@@ -2199,13 +2189,471 @@ describe("runWorkflow parallel tracks", () => {
     expect(waiting.status).toBe("waiting");
     const continued = await runWorkflow({ workflow, continue: { runDir: waiting.runDir }, cwd });
 
+    expect(continued.status).toBe("waiting");
+    if (continued.status !== "waiting") {
+      throw new Error("expected parallel wait continue to re-park in waiting");
+    }
+    expect(continued.wait).toMatchObject({
+      waitId: "approval",
+      kind: "input",
+      message: "Approve parallel branch continue?",
+    });
+  });
+
+  it("resumes the answered parallel branch on continue after an answer", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-continue-answer-"));
+    const observed: string[] = [];
+
+    const waitingStep = step({ id: "parallel-wait-answered-branch" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve answered parallel branch?",
+        output: { approved: "boolean" },
+      })
+      .do(() => {
+        observed.push("answered-branch-resumed");
+        return done({ value: "approved" });
+      });
+    const siblingStep = step({ id: "parallel-wait-answered-sibling" }).do(() => {
+      observed.push("sibling");
+      return done({ value: "sibling" });
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-wait-answered-workflow",
+      start() {
+        return parallel([waitingStep({}), siblingStep({})]);
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-wait-answered",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    if (waiting.status !== "waiting") {
+      throw new Error("expected waiting result");
+    }
+    expect(waiting.wait).toMatchObject({ waitId: "approval" });
+    await writeFile(
+      join(waiting.runDir, waiting.wait.artifactPaths.answerFile),
+      JSON.stringify({ approved: true }),
+      "utf8",
+    );
+
+    const continued = await runWorkflow({ workflow, continue: { runDir: waiting.runDir }, cwd });
+
+    expect(continued.status).toBe("success");
+    if (continued.status !== "success") {
+      throw new Error(continued.failure.message);
+    }
+    expect(observed).toEqual(["answered-branch-resumed"]);
+
+    // The answered-branch continue reuses the loop replay of the answered
+    // branch instead of replaying it a second time: exactly one workflow.resumed
+    // is emitted, sourced from the branch's waiting step.
+    const resumedEvents = continued.events.filter((event) => event.type === "workflow.resumed");
+    expect(resumedEvents).toHaveLength(1);
+    const sourceWaitStarted = waiting.events.find((event) => event.type === "wait.started");
+    expect(sourceWaitStarted).toBeDefined();
+    expect(resumedEvents[0]).toMatchObject({
+      type: "workflow.resumed",
+      payload: {
+        resumeKind: "wait",
+        resumedFromRunDir: waiting.runDir,
+        resumedStepId: "parallel-wait-answered-branch",
+        sourceWaitEventId: sourceWaitStarted?.id,
+      },
+    });
+  });
+
+  it("continues the answered branch that is not the first waiting branch and keeps the other branch waiting", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-answered-not-first-"));
+    const observed: string[] = [];
+
+    const answeredStep = step({ id: "parallel-not-first-answered" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve the not-first parallel branch?",
+        output: { approved: "boolean" },
+      })
+      .do(() => {
+        observed.push("not-first-answered-resumed");
+        return done({ value: "approved" });
+      });
+    const pendingStep = step({ id: "parallel-not-first-pending" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve the pending parallel branch?",
+        output: { approved: "boolean" },
+      })
+      .do(() => {
+        observed.push("not-first-pending-resumed");
+        return done({ value: "pending" });
+      });
+    const AnsweredWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "parallel-not-first-answered-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return answeredStep({ branchId: "answered-not-first-branch" });
+      },
+    });
+    const PendingWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "parallel-not-first-pending-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return pendingStep({ branchId: "pending-not-first-branch" });
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-not-first-parent-workflow",
+      start() {
+        // The answered branch holds the later slot; the pending branch keeps the
+        // earlier slot, so the answered branch is demonstrably not the first.
+        return [
+          PendingWorkflow({}, { branchId: "pending-not-first-branch" }),
+          AnsweredWorkflow({}, { branchId: "answered-not-first-branch" }),
+        ];
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-wait-not-first",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    if (waiting.status !== "waiting") {
+      throw new Error("expected waiting result");
+    }
+    expect(waiting.wait).toMatchObject({ waitId: "approval" });
+    const answeredWaitStarted = latestWaitStartedForBranch(
+      waiting.events,
+      "answered-not-first-branch",
+    );
+    expect(answeredWaitStarted).toBeDefined();
+    if (answeredWaitStarted === undefined) {
+      throw new Error("expected answered branch wait.started event");
+    }
+    const answeredAnswerFile = (
+      answeredWaitStarted.payload.artifactPaths as { readonly answerFile?: string }
+    ).answerFile;
+    expect(answeredAnswerFile).toBeDefined();
+    if (answeredAnswerFile === undefined) {
+      throw new Error("expected answered branch wait answer file");
+    }
+    await writeFile(
+      join(waiting.runDir, answeredAnswerFile),
+      JSON.stringify({ approved: true }),
+      "utf8",
+    );
+
+    const continued = await runWorkflow({ workflow, continue: { runDir: waiting.runDir }, cwd });
+    // The pending (earlier) branch has no answer yet, so the track re-parks on it.
+    expect(continued.status).toBe("waiting");
+    if (continued.status !== "waiting") {
+      throw new Error("expected the answered branch to resume while the other branch waits");
+    }
+    expect(observed).toEqual(["not-first-answered-resumed"]);
+
+    const resumedEvents = continued.events.filter((event) => event.type === "workflow.resumed");
+    expect(resumedEvents).toHaveLength(1);
+    expect(resumedEvents[0]).toMatchObject({
+      type: "workflow.resumed",
+      payload: {
+        resumeKind: "wait",
+        resumedFromRunDir: waiting.runDir,
+        resumedStepId: "parallel-not-first-answered",
+        sourceWaitEventId: answeredWaitStarted.id,
+      },
+    });
+
+    const pendingBranchState = await readJsonObject(
+      join(waiting.runDir, "branches", "pending-not-first-branch.json"),
+    );
+    expect(pendingBranchState.status).toBe("waiting");
+    const pendingBranchWait = pendingBranchState.wait as {
+      readonly artifactPaths?: { readonly answerFile?: string };
+    };
+    const pendingAnswerFile = pendingBranchWait.artifactPaths?.answerFile;
+    expect(pendingAnswerFile).toBeDefined();
+    if (pendingAnswerFile === undefined) {
+      throw new Error("expected pending branch wait answer file");
+    }
+    await writeFile(
+      join(waiting.runDir, pendingAnswerFile),
+      JSON.stringify({ approved: false }),
+      "utf8",
+    );
+    const finalResult = await runWorkflow({ workflow, continue: { runDir: waiting.runDir }, cwd });
+    expect(finalResult.status).toBe("success");
+    if (finalResult.status !== "success") {
+      throw new Error(finalResult.failure.message);
+    }
+    expect(observed).toEqual(["not-first-answered-resumed", "not-first-pending-resumed"]);
+  });
+
+  it("derives parallel branch ids from sanitized step ids and invoked workflow ids", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-derived-branch-ids-"));
+
+    const branchA = step({ id: "Approve_Feature Beta" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve the mixed-case/punctuated branch?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const branchB = step({ id: "review_feature v2" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Review the mixed-case branch v2?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-derived-branch-id-parent-workflow",
+      start() {
+        return [branchA({}), branchB({})];
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-derived-branch-id",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    const track = await readJsonObject(join(waiting.runDir, "track.json"));
+    const branchIds = track.branches as readonly string[];
+    expect(branchIds).toContain("Approve_Feature-Beta-1");
+    expect(branchIds).toContain("review_feature-v2-1");
+
+    const branchAState = await readJsonObject(
+      join(waiting.runDir, "branches", "Approve_Feature-Beta-1.json"),
+    );
+    const branchAWait = branchAState.wait as {
+      readonly artifactPaths?: { readonly answerFile?: string };
+    };
+    const branchAAnswerFile = branchAWait.artifactPaths?.answerFile;
+    expect(branchAAnswerFile).toBeDefined();
+    if (branchAAnswerFile === undefined) {
+      throw new Error("expected derived branch wait answer file");
+    }
+    await writeFile(
+      join(waiting.runDir, branchAAnswerFile),
+      JSON.stringify({ approved: true }),
+      "utf8",
+    );
+
+    const branchAContinued = await runWorkflow({
+      workflow,
+      continue: { runDir: waiting.runDir },
+      cwd,
+    });
+    expect(branchAContinued.status).toBe("waiting");
+
+    const branchBState = await readJsonObject(
+      join(waiting.runDir, "branches", "review_feature-v2-1.json"),
+    );
+    const branchBWait = branchBState.wait as {
+      readonly artifactPaths?: { readonly answerFile?: string };
+    };
+    const branchBAnswerFile = branchBWait.artifactPaths?.answerFile;
+    expect(branchBAnswerFile).toBeDefined();
+    if (branchBAnswerFile === undefined) {
+      throw new Error("expected derived branch wait answer file");
+    }
+    await writeFile(
+      join(waiting.runDir, branchBAnswerFile),
+      JSON.stringify({ approved: true }),
+      "utf8",
+    );
+    const finalDerivedResult = await runWorkflow({
+      workflow,
+      continue: { runDir: waiting.runDir },
+      cwd,
+    });
+    expect(finalDerivedResult.status).toBe("success");
+    if (finalDerivedResult.status !== "success") {
+      throw new Error(finalDerivedResult.failure.message);
+    }
+  });
+
+  it("re-runs a pending check wait on a parallel branch during continue", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-check-continue-"));
+    let checkCalls = 0;
+    const checkStep = step({ id: "ci" })
+      .wait(
+        async ({ wait }) => {
+          checkCalls += 1;
+          if (checkCalls === 1) {
+            return wait.pending({
+              id: "check-0",
+              message: "Waiting for CI",
+              retryAfterSeconds: 30,
+            });
+          }
+          return wait.done({ status: "passed" });
+        },
+        { output: { status: "string" } },
+      )
+      .do(({ waits }) => done({ status: String(waits["check-0"]?.status ?? "missing") }));
+    const quickStep = step({ id: "parallel-check-quick" }).do(() => done({ status: "quick" }));
+    const CheckWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "parallel-check-workflow",
+      outputShape: { status: "string" },
+      start() {
+        return checkStep({ branchId: "parallel-check-branch" });
+      },
+    });
+    const QuickWorkflow = defineWorkflow<Record<string, never>, PlainObject>({
+      id: "parallel-check-quick-workflow",
+      outputShape: { status: "string" },
+      start() {
+        return quickStep({ branchId: "parallel-check-quick-branch" });
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-check-parent-workflow",
+      start() {
+        return [
+          CheckWorkflow({}, { branchId: "parallel-check-branch" }),
+          QuickWorkflow({}, { branchId: "parallel-check-quick-branch" }),
+        ];
+      },
+    };
+
+    const first = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-check-continue",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+    expect(first.status).toBe("waiting");
+
+    const second = await runWorkflow({ workflow, continue: { runDir: first.runDir }, cwd });
+    expect(second.status).toBe("success");
+    if (second.status !== "success") {
+      throw new Error(second.failure.message);
+    }
+    expect(checkCalls).toBe(2);
+    expect(second.output).toEqual(
+      expect.objectContaining({
+        status: "completed",
+      }),
+    );
+  });
+
+  it("surfaces the answered branch's replay failure instead of silently skipping it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-continue-answer-fail-"));
+
+    const waitingStep = step({ id: "parallel-wait-answer-fail-branch" })
+      .wait({
+        id: "approval",
+        kind: "input",
+        message: "Approve answered parallel branch that fails replay?",
+        output: { approved: "boolean" },
+      })
+      .do(() => done({ value: "approved" }));
+    const siblingStep = step({ id: "parallel-wait-answer-fail-sibling" }).do(() =>
+      done({ value: "sibling" }),
+    );
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-wait-answer-fail-workflow",
+      start() {
+        return [
+          waitingStep({ branchId: "answered-fail-branch" }),
+          siblingStep({ branchId: "answered-fail-sibling" }),
+        ];
+      },
+    };
+
+    const waiting = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-wait-answer-fail",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(waiting.status).toBe("waiting");
+    if (waiting.status !== "waiting") {
+      throw new Error("expected waiting result");
+    }
+    expect(waiting.wait).toMatchObject({ waitId: "approval" });
+    await writeFile(
+      join(waiting.runDir, waiting.wait.artifactPaths.answerFile),
+      JSON.stringify({ approved: true }),
+      "utf8",
+    );
+    // Make the answered branch's branch-scoped replay fail: the wait request
+    // artifact it replays from is gone, which the continue path must surface as
+    // a resume validation failure instead of silently skipping.
+    await unlink(join(waiting.runDir, waiting.wait.artifactPaths.requestFile));
+
+    const continued = await runWorkflow({ workflow, continue: { runDir: waiting.runDir }, cwd });
+
     expect(continued.status).toBe("failure");
     if (continued.status !== "failure") {
       throw new Error("expected parallel wait continue to fail");
     }
     expect(continued.failure).toMatchObject({
-      code: "continue_parallel_track_unsupported",
-      message: expect.stringContaining("Continuing a waiting parallel track is not yet supported"),
+      code: "continue_wait_invalid",
+      message: expect.stringContaining("approval"),
+    });
+  });
+
+  it("fails continue with continue_target_not_waiting when no parallel branch is waiting", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-parallel-wait-continue-completed-"));
+
+    const quickStep = step({ id: "parallel-quick-branch" }).do(() => done({ value: "quick" }));
+    const QuickWorkflow = defineWorkflow<Record<string, never>, { value: string }>({
+      id: "parallel-quick-workflow",
+      outputShape: { value: "string" },
+      start() {
+        return quickStep({});
+      },
+    });
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "parallel-quick-parent-workflow",
+      start() {
+        return [QuickWorkflow({}, { branchId: "quick" })];
+      },
+    };
+
+    const run = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "parallel-quick",
+      cwd,
+      scheduler: { workers: 1 },
+    });
+
+    expect(run.status).toBe("success");
+    const continued = await runWorkflow({ workflow, continue: { runDir: run.runDir }, cwd });
+
+    expect(continued.status).toBe("failure");
+    if (continued.status !== "failure") {
+      throw new Error("expected parallel wait continue to fail");
+    }
+    expect(continued.failure).toMatchObject({
+      code: "continue_target_not_waiting",
+      message: "Continue target has no pending wait.",
     });
   });
 

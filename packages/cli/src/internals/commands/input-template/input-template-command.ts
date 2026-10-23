@@ -1,4 +1,4 @@
-import type { Workflow } from "@trailstep/core";
+import { isPlainObject, type Workflow } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
@@ -99,13 +99,4 @@ function selectSchemaType(schema: Record<string, unknown>): string | undefined {
     return rawType.find((value): value is string => typeof value === "string" && value !== "null");
   }
   return undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

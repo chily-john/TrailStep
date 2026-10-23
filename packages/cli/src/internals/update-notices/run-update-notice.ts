@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { isRecord } from "@trailstep/core";
 import { gt, valid } from "semver";
 
 import type { CliCommandContext } from "../command-framework/command.types.js";
@@ -169,8 +169,4 @@ function isUpdateNoticeSuppressed(context: Pick<CliCommandContext, "env">): bool
     (env.CI !== undefined && env.CI !== "false") ||
     env.NODE_ENV === "test"
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

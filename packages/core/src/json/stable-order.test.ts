@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { load } from "../load-order.js";
+import { loadLayeredMcpToolDefinitions } from "../mcp/layered-mcp-loader.js";
 import { serializeOrdered } from "./ordered-serialize.js";
 
 describe("stable order and load order (red)", () => {
@@ -10,6 +10,6 @@ describe("stable order and load order (red)", () => {
 
   it("loader continues through broken file with stderr warning, does not throw", () => {
     const dir = path.resolve(import.meta.dirname, "../../../../.trailstep/mcp/");
-    expect(() => load({ dir })).not.toThrow();
+    expect(() => loadLayeredMcpToolDefinitions({ dir })).not.toThrow();
   });
 });

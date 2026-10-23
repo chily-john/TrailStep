@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { parseTrailStepConfig, type TrailStepConfig } from "@trailstep/core";
+import { isRecord, parseTrailStepConfig, type TrailStepConfig } from "@trailstep/core";
 
 export class CliConfigError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -277,8 +277,4 @@ function extractDiagnostics(error: unknown): string[] {
 
 function isNodeError(error: unknown): error is { readonly code: string } {
   return isRecord(error) && "code" in error;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

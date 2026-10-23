@@ -3,6 +3,8 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isRecord } from "@trailstep/core";
+
 import type { CliCommandContext } from "../command-framework/command.types.js";
 import {
   configPathForScope,
@@ -317,10 +319,6 @@ async function findCliPackageRoot(startDirectory: string): Promise<string> {
     }
     current = parent;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function isTrailStepCliPackageRoot(directory: string): Promise<boolean> {

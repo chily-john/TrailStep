@@ -5,6 +5,8 @@ import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
+import { isPlainObject } from "../../json/guards.js";
+import { findLatestPendingWait, waitEventBranchId } from "../../runs/wait-events.js";
 import type {
   Event,
   Result,
@@ -31,6 +33,10 @@ import {
   type ReplayToWaitingStepResult,
   replayToWaitingStep,
 } from "../resume/replay-to-waiting-step/replay-to-waiting-step.js";
+import {
+  readWaitArtifactPaths,
+  readWaitId,
+} from "../resume/replay-to-waiting-step/replay-wait-events.js";
 import { replayToRetryFailure } from "../retry/replay-to-retry-failure.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
@@ -266,12 +272,46 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       const hasParallelTrack = await hasSupportedRootParallelTrackRetryMetadata(runDir);
       if (hasParallelTrack) {
         const answeredBranches = await findAnsweredParallelBranches(runDir);
+        let branchesToResume = answeredBranches;
         if (answeredBranches.length === 0) {
-          return failResumeValidation({
-            code: "continue_parallel_track_unsupported",
-            message:
-              "Continuing a waiting parallel track is not yet supported; retry the run or restart the workflow instead.",
-          });
+          const pendingWait = findLatestPendingWait(previousEvents);
+          if (pendingWait === undefined) {
+            return failResumeValidation({
+              code: "continue_target_not_waiting",
+              message: "Continue target has no pending wait.",
+            });
+          }
+
+          // A check wait is self-evaluating: a continue re-runs the pending check
+          // on its branch instead of parking on a human answer artifact that a
+          // check wait never writes. Human (input) waits park answer-less.
+          if (pendingWait.payload.kind === "check") {
+            branchesToResume = [waitEventBranchId(pendingWait)];
+          } else {
+            // The track is still waiting but no branch has an answer yet. Park the
+            // run back on its pending wait instead of failing with a misleading
+            // continue error; the answered-branch resume below is what consumes an
+            // answer, and an answer-less pending wait keeps the run waiting.
+            return {
+              status: "waiting",
+              runId,
+              runDir,
+              wait: {
+                stepId: pendingWait.stepId ?? "",
+                waitId: readWaitId(pendingWait) ?? "",
+                kind: pendingWait.payload.kind === "check" ? "check" : "input",
+                message:
+                  typeof pendingWait.payload.message === "string"
+                    ? pendingWait.payload.message
+                    : "",
+                artifactPaths: readWaitArtifactPaths(pendingWait) ?? {
+                  requestFile: "",
+                  answerFile: "",
+                },
+              },
+              events,
+            } as unknown as Result<TOutput>;
+          }
         }
 
         const persistedInput = readWorkflowStartedInput(previousEvents);
@@ -289,7 +329,11 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
         waitResume = undefined;
 
         branchResumes = {};
-        for (const branchId of answeredBranches) {
+        const answeredBranchReplays = new Map<
+          string,
+          Awaited<ReturnType<typeof replayToWaitingStep>>
+        >();
+        for (const branchId of branchesToResume) {
           const replay = await replayWithoutClobberingStateOnFailure(runDir, () =>
             replayToWaitingStep({
               workflow: options.workflow,
@@ -298,28 +342,35 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
               branchId,
             }),
           );
-          if (replay.status === "success") {
-            branchResumes[branchId] = {
-              stepId: replay.resumedStepId,
-              stepIndex: replay.stepIndex,
-              phaseIndex: replay.phaseIndex,
-              phaseValue: replay.phaseValue,
-              waitOutputs: replay.waitOutputs,
-              seenWaitIds: replay.seenWaitIds,
-              wait: replay.wait,
-            } as import("../continuation/run-continuation/run-continuation.js").ResumeWaitOptions;
+          answeredBranchReplays.set(branchId, replay);
+          if (replay.status === "failure") {
+            // A branch-scoped replay failure must surface as a resume validation
+            // failure instead of being silently skipped for the answered branch.
+            // Mirrors the single-wait (non-parallel) resume failure path below.
+            return failResumeValidation(replay.failure);
           }
+          branchResumes[branchId] = {
+            stepId: replay.resumedStepId,
+            stepIndex: replay.stepIndex,
+            phaseIndex: replay.phaseIndex,
+            phaseValue: replay.phaseValue,
+            waitOutputs: replay.waitOutputs,
+            seenWaitIds: replay.seenWaitIds,
+            wait: replay.wait,
+            // Resume from the resolved waiting-step node so branches whose wait
+            // is not their first step resume from the step they actually reached.
+            startNode: replay.node,
+          } as import("../continuation/run-continuation/run-continuation.js").ResumeWaitOptions;
         }
 
-        const firstReplay = await replayWithoutClobberingStateOnFailure(runDir, () =>
-          replayToWaitingStep({
-            workflow: options.workflow,
-            events: previousEvents,
-            runDir,
-            branchId: answeredBranches[0],
-          }),
-        );
-        if (firstReplay.status === "success") {
+        // Reuse the first answered branch's replay already computed above instead of
+        // replaying the same branch a second time just to emit workflow.resumed.
+        const firstAnsweredBranchId = branchesToResume[0];
+        const firstReplay =
+          firstAnsweredBranchId === undefined
+            ? undefined
+            : answeredBranchReplays.get(firstAnsweredBranchId);
+        if (firstReplay?.status === "success") {
           await emit(
             createEvent({
               runId,
@@ -715,9 +766,7 @@ export async function findAnsweredParallelBranches(runDir: string): Promise<stri
 function readWorkflowStartedInput(events: readonly Event[]): PlainObject | undefined {
   const started = events.find((event) => event.type === "workflow.started");
   const input = started?.payload.input;
-  return typeof input === "object" && input !== null && !Array.isArray(input)
-    ? (input as PlainObject)
-    : undefined;
+  return isPlainObject(input) ? input : undefined;
 }
 
 function readPreviousTerminalWorkflowStatus(

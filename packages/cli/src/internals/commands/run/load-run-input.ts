@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { stdin } from "node:process";
 
-import type { PlainObject } from "@trailstep/core";
+import { isPlainObject, type PlainObject } from "@trailstep/core";
 
 import type { InputSource } from "./run-command.types.js";
 
@@ -72,8 +72,4 @@ function parseJson(json: string, message: string): PlainObject {
   }
 
   throw new CliInputError(`${message} Expected a JSON object.`);
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

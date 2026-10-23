@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@trailstep/core";
+import { isPlainObject, type Workflow } from "@trailstep/core";
 
 import { isWorkflow } from "../workflow-resolution/workflow-validator.js";
 
@@ -178,8 +178,4 @@ function getImportEntryPoint(packageJson: PackageJson): string {
   }
 
   return packageJson.module ?? packageJson.main ?? "./index.js";
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

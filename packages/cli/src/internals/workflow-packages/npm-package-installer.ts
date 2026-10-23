@@ -2,6 +2,8 @@ import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isRecord } from "@trailstep/core";
+
 import type { PackageCommandRunner } from "../command-framework/command.types.js";
 import {
   createPackageAddCommand,
@@ -355,8 +357,4 @@ function hasTrailStepWorkflowManifest(manifest: Record<string, unknown>): boolea
 
 function isNodeError(error: unknown): error is { readonly code: string } {
   return typeof error === "object" && error !== null && "code" in error;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

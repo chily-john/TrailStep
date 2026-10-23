@@ -4,18 +4,15 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import type { Event } from "../runtime/run-workflow/run-workflow.types.js";
+import { deriveWorkflowExportName, generateRunName } from "./generate-run-name.js";
 import {
-  deriveWorkflowExportName,
-  findLatestPendingWait,
-  findPendingWaitsById,
-  generateRunName,
   hasEventsFile,
   isPathLike,
   readEventsForRun,
   resolveRunDirectory,
   resolveRunsRoot,
-  waitEventBranchId,
-} from "./index.js";
+} from "./run-directory.js";
+import { findLatestPendingWait, findPendingWaitsById, waitEventBranchId } from "./wait-events.js";
 
 async function makeRunDir(name: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-"));
@@ -132,6 +129,29 @@ describe("wait event helpers", () => {
       waitEvent("wait.started", { waitId: "w2", answerFile: "answers/b.json" }),
     ];
     expect(findLatestPendingWait(events)?.payload.waitId).toBe("w2");
+  });
+
+  it("finds the latest pending wait scoped to a branch", () => {
+    const events = [
+      waitEvent("wait.started", {
+        waitId: "approval",
+        branchId: "a",
+        answerFile: "answers/a.json",
+      }),
+      waitEvent("wait.started", {
+        waitId: "approval",
+        branchId: "b",
+        answerFile: "answers/b.json",
+      }),
+      waitEvent("wait.satisfied", {
+        waitId: "approval",
+        branchId: "b",
+        answerFile: "answers/b.json",
+      }),
+    ];
+
+    expect(findLatestPendingWait(events, "a")?.payload.branchId).toBe("a");
+    expect(findLatestPendingWait(events, "b")).toBeUndefined();
   });
 
   it("treats events without a branch as the root branch", () => {

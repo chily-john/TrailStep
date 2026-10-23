@@ -4,6 +4,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   clearCancellationMarker,
   type Event,
+  findAnsweredParallelBranches,
+  isPlainObject,
   jsonSchema,
   type PlainObject,
   readCancellationMarker,
@@ -93,34 +95,41 @@ async function continueWaitingRun(
     return 1;
   }
 
-  const pendingWait = findLatestPendingWait(events);
-  if (!pendingWait) {
-    context.io.writeError(`Run is not waiting: ${resolvedRun.runDir}`);
-    return 1;
-  }
-
-  if (!isCheckWait(pendingWait)) {
-    const answerFile = readWaitAnswerFile(pendingWait);
-    if (!answerFile) {
-      context.io.writeError(
-        `Pending wait ${String(pendingWait.payload.waitId ?? "<missing>")} has no answer artifact.`,
-      );
+  const answeredBranches = await findAnsweredParallelBranches(resolvedRun.runDir);
+  // Parallel tracks gate on answered branches (branch-aware), mirroring the
+  // runtime's wait-continue handling: once a branch of a split track has its
+  // answer artifact in place, the run resumes that branch. Runs without an
+  // answered parallel branch keep the single pending-wait gate below.
+  if (answeredBranches.length === 0) {
+    const pendingWait = findLatestPendingWait(events);
+    if (!pendingWait) {
+      context.io.writeError(`Run is not waiting: ${resolvedRun.runDir}`);
       return 1;
     }
 
-    try {
-      await readFile(resolve(resolvedRun.runDir, answerFile), "utf8");
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        context.io.writeLine(
-          `Workflow still waiting: ${basename(resolvedRun.runDir)} (${String(
-            pendingWait.payload.waitId ?? "<missing>",
-          )})`,
+    if (!isCheckWait(pendingWait)) {
+      const answerFile = readWaitAnswerFile(pendingWait);
+      if (!answerFile) {
+        context.io.writeError(
+          `Pending wait ${String(pendingWait.payload.waitId ?? "<missing>")} has no answer artifact.`,
         );
-        context.io.writeLine(`Missing answer: ${answerFile}`);
-        return 0;
+        return 1;
       }
-      throw error;
+
+      try {
+        await readFile(resolve(resolvedRun.runDir, answerFile), "utf8");
+      } catch (error) {
+        if (isNodeError(error) && error.code === "ENOENT") {
+          context.io.writeLine(
+            `Workflow still waiting: ${basename(resolvedRun.runDir)} (${String(
+              pendingWait.payload.waitId ?? "<missing>",
+            )})`,
+          );
+          context.io.writeLine(`Missing answer: ${answerFile}`);
+          return 0;
+        }
+        throw error;
+      }
     }
   }
 
@@ -496,10 +505,6 @@ async function safeWriteJson(path: string, value: unknown): Promise<void> {
   const tempPath = `${path}.${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await rename(tempPath, path);
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

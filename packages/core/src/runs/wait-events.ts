@@ -9,6 +9,7 @@
  * (`run-wait-files.ts`); the MCP package cannot import from the CLI package,
  * so the shared implementation lives in core.
  */
+import { isRecord } from "../json/guards.js";
 import type { Event } from "../runtime/run-workflow/run-workflow.types.js";
 
 /** Branch identity of a wait event; events without a branch belong to the implicit root branch. */
@@ -29,7 +30,7 @@ export function waitEventKey(event: Event): string | undefined {
   // non-parallel runs carry no branchId and belong to the implicit root branch.
   const branchId = waitEventBranchId(event);
   const artifactPaths = event.payload.artifactPaths;
-  if (isRecordLike(artifactPaths) && typeof artifactPaths.answerFile === "string") {
+  if (isRecord(artifactPaths) && typeof artifactPaths.answerFile === "string") {
     return `${branchId}:${artifactPaths.answerFile}`;
   }
 
@@ -64,11 +65,25 @@ export function findPendingWaitsById(events: readonly Event[], waitId: string): 
   return pending;
 }
 
-/** The most recent unresolved wait event, if any. */
-export function findLatestPendingWait(events: readonly Event[]): Event | undefined {
+/**
+ * The most recent unresolved wait event, if any.
+ *
+ * When `branchId` is given (parallel-track scope), only waits that belong to
+ * that branch are considered; events without a branchId belong to the
+ * implicit root branch. Same-id waits on different branches stay distinct
+ * because the wait key embeds the branch identity.
+ */
+export function findLatestPendingWait(
+  events: readonly Event[],
+  branchId?: string,
+): Event | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type !== "wait.started" || typeof event.payload.waitId !== "string") {
+      continue;
+    }
+
+    if (branchId !== undefined && waitEventBranchId(event) !== branchId) {
       continue;
     }
 
@@ -93,7 +108,7 @@ export function findLatestPendingWait(events: readonly Event[]): Event | undefin
 /** The run-relative answer artifact of a wait event, when it has one. */
 export function readWaitAnswerFile(event: Event): string | undefined {
   const artifactPaths = event.payload.artifactPaths;
-  if (!isRecordLike(artifactPaths)) {
+  if (!isRecord(artifactPaths)) {
     return undefined;
   }
 
@@ -103,9 +118,4 @@ export function readWaitAnswerFile(event: Event): string | undefined {
 /** Verbatim question text of a wait (the wait.started payload message). */
 export function readWaitQuestion(event: Event): string | undefined {
   return typeof event.payload.message === "string" ? event.payload.message : undefined;
-}
-
-/** Permissive record check (the payload shape used by run event artifacts). */
-function isRecordLike(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -113,6 +113,34 @@ async function writeCheckWaitingWorkflowFile(cwd: string): Promise<void> {
   );
 }
 
+async function writeParallelWaitingWorkflowFile(cwd: string): Promise<void> {
+  await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  const workflowDir = join(cwd, "workflows");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    join(workflowDir, "parallel-waiting.mjs"),
+    `import { defineWorkflow, done, parallel, step } from '@trailstep/core';
+    const schema = {
+      validate: (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+      diagnostics: () => [],
+      assert: (value) => value,
+    };
+    const branchA = step({ id: 'parallel-branch-a' })
+      .wait({ id: 'approval', kind: 'input', message: 'Approve branch A?', output: { approved: 'boolean' } })
+      .do(() => done({ value: 'branch-a-approved' }));
+    const branchB = step({ id: 'parallel-branch-b' })
+      .wait({ id: 'approval', kind: 'input', message: 'Approve branch B?', output: { approved: 'boolean' } })
+      .do(() => done({ value: 'branch-b-approved' }));
+    export default defineWorkflow({
+      id: 'parallel-waiting-workflow',
+      input: schema,
+      output: schema,
+      start: () => parallel([branchA({}), branchB({})]),
+    });`,
+    "utf8",
+  );
+}
+
 function interactiveProtocol(options: {
   runDir: string;
   stepDir: string;
@@ -854,5 +882,97 @@ describe("continue command", () => {
     await expect(readFile(join(stepDir, "output.json"), "utf8")).rejects.toThrow();
     await expect(readFile(interactiveFile, "utf8")).resolves.toContain('"status": "active"');
     expect(errors.join("\n")).toMatch(/session file.*empty/i);
+  });
+
+  it("resumes an answered parallel track branch through continue", async ({ task }) => {
+    const cwd = join(nodeTmpContinueTestsDir(task.id), "parallel-wait");
+    await writeParallelWaitingWorkflowFile(cwd);
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["./workflows/parallel-waiting.mjs", "parallel-wait", "--input", "{}"],
+        cwd,
+        env: {},
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    const runDir = join(cwd, ".trailstep", "runs", "parallel-wait");
+    const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8"));
+    const branchIds: string[] = track.branches;
+    let waitingBranch: string | undefined;
+    for (const branchId of branchIds) {
+      const branchState = JSON.parse(
+        await readFile(join(runDir, "branches", `${branchId}.json`), "utf8"),
+      );
+      if (branchState.status === "waiting") {
+        waitingBranch = branchId;
+      }
+    }
+    expect(waitingBranch).toBeDefined();
+
+    lines.length = 0;
+    const answerExitCode = await main({
+      argv: [
+        "answer",
+        "parallel-wait",
+        "approval",
+        "--branch",
+        waitingBranch as string,
+        "--json",
+        '{"approved":true}',
+        "--continue",
+      ],
+      cwd,
+      env: {},
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+    });
+
+    expect(answerExitCode).toBe(0);
+    // The continue behind `answer --continue` must resume the answered parallel
+    // branch instead of gating on the latest pending wait's missing answer.
+    expect(lines.join("\n")).not.toMatch(/still waiting|missing answer/i);
+    expect(errors).toEqual([]);
+
+    const eventsText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    const resumedEvents = eventsText
+      .split("\n")
+      .filter((line) => line.includes('"workflow.resumed"'))
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            readonly type: string;
+            readonly payload: { readonly resumedStepId?: string };
+          },
+      );
+    expect(resumedEvents).toHaveLength(1);
+    const resumedEvent = resumedEvents[0];
+    expect(resumedEvent).toBeDefined();
+    expect(resumedEvent?.type).toBe("workflow.resumed");
+    expect(resumedEvent?.payload.resumedStepId).toBeDefined();
+    const answeredStepStarted = resumedEvent?.payload.resumedStepId;
+    const stepStartedEvents = eventsText
+      .split("\n")
+      .filter((line) => line.includes('"step.started"'))
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            readonly type: string;
+            readonly stepId?: string;
+            readonly payload: { readonly branchId?: string };
+          },
+      );
+    const branchStepStarted = stepStartedEvents.find(
+      (event) => event.payload.branchId === waitingBranch,
+    );
+    expect(branchStepStarted).toBeDefined();
+    expect(answeredStepStarted).toBe(branchStepStarted?.stepId);
+
+    const answeredBranchState = JSON.parse(
+      await readFile(join(runDir, "branches", `${waitingBranch}.json`), "utf8"),
+    ) as { readonly status?: string };
+    expect(answeredBranchState.status).toBe("done");
   });
 });

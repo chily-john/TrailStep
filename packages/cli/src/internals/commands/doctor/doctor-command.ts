@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isRecord } from "@trailstep/core";
+
 import {
   type CliCommand,
   type CliCommandContext,
@@ -227,8 +229,4 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 
 function isNodeError(error: unknown): error is { readonly code: string } {
   return isRecord(error) && typeof error.code === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

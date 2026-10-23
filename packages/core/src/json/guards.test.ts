@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-
+import { readPlainPayload } from "../runtime/events/read-plain-payload.js";
+import type { Event } from "../runtime/run-workflow/run-workflow.types.js";
 import { errorMessage, isNodeError, isPlainObject, isRecord } from "./guards.js";
+
+function makeEvent(payload: Record<string, unknown>): Event {
+  return {
+    id: "evt_test_1",
+    runId: "run_test",
+    workflowId: "workflow_test",
+    type: "workflow.started",
+    timestamp: "2026-10-22T00:00:00.000Z",
+    schemaVersion: "v0",
+    payload,
+  };
+}
 
 describe("canonical guards", () => {
   it("isRecord accepts record-like objects and rejects arrays and primitives", () => {
@@ -35,5 +48,21 @@ describe("canonical guards", () => {
     expect(errorMessage("boom")).toBe("boom");
     expect(errorMessage(42)).toBe("42");
     expect(errorMessage(undefined)).toBe("undefined");
+  });
+});
+
+describe("readPlainPayload", () => {
+  it("reads plain-object payload fields off an event", () => {
+    const event = makeEvent({ input: { task: "test" } });
+
+    expect(readPlainPayload(event, "input")).toEqual({ task: "test" });
+  });
+
+  it("returns undefined for missing or non-plain-object payload fields", () => {
+    const event = makeEvent({ input: "not-an-object", output: [1, 2] });
+
+    expect(readPlainPayload(event, "input")).toBeUndefined();
+    expect(readPlainPayload(event, "output")).toBeUndefined();
+    expect(readPlainPayload(event, "missing")).toBeUndefined();
   });
 });

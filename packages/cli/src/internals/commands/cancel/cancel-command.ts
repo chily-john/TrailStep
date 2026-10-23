@@ -8,6 +8,7 @@ import {
   clearCancellationMarker,
   createEvent,
   type Event,
+  isPlainObject,
   readCancellationMarker,
   writeCancellationMarker,
 } from "@trailstep/core";
@@ -255,8 +256,4 @@ async function safeWriteJson(path: string, value: unknown): Promise<void> {
   const tempPath = `${path}.${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await rename(tempPath, path);
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

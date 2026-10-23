@@ -1,4 +1,4 @@
-import type { Event } from "@trailstep/core";
+import { type Event, isPlainObject } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import {
@@ -147,8 +147,4 @@ function formatOutputValue(value: unknown, json: boolean): string {
     return value;
   }
   return JSON.stringify(value, null, 2);
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

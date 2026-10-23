@@ -1,3 +1,4 @@
+import { isRecord } from "@trailstep/core";
 import type { PackageCommandRunner } from "../command-framework/command.types.js";
 import { defaultPackageCommandRunner } from "./package-manager.js";
 
@@ -93,8 +94,4 @@ function normalizePeerDependencies(value: Record<string, unknown>): Record<strin
     }
   }
   return peers;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

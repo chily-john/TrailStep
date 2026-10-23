@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { atomicWriteJson } from "@trailstep/core";
+import { atomicWriteJson, isPlainObject } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { continueCommand } from "../continue/continue-command.js";
@@ -163,13 +163,4 @@ async function loadAnswerJson(args: AnswerCommandArgs, cwd: string): Promise<unk
   }
 
   return answer;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

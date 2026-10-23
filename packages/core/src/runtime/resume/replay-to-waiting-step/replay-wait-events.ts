@@ -1,44 +1,12 @@
 import { join } from "node:path";
 
 import type { Failure } from "../../../contracts/failures/failure.js";
-import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { isPlainObject } from "../../../json/guards.js";
 import type { Event } from "../../../runtime/run-workflow/run-workflow.types.js";
 
-/** Finds the most recent wait that has not been satisfied or failed yet. */
-export function findLatestPendingWait(
-  events: readonly Event[],
-  branchId?: string,
-): Event | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type !== "wait.started") {
-      continue;
-    }
-
-    if (branchId !== undefined && event.payload.branchId !== branchId) {
-      continue;
-    }
-
-    const key = waitEventKey(event);
-    if (!key) {
-      continue;
-    }
-
-    const resolvedLater = events
-      .slice(index + 1)
-      .some(
-        (laterEvent) =>
-          (laterEvent.type === "wait.satisfied" || laterEvent.type === "wait.failed") &&
-          waitEventKey(laterEvent) === key,
-      );
-    if (!resolvedLater) {
-      return event;
-    }
-  }
-
-  return undefined;
-}
+// Single source of truth for pending-wait lookup lives in the shared wait-event
+// helpers; branch scoping is part of that shared implementation.
+export { findLatestPendingWait } from "../../../runs/wait-events.js";
 
 /**
  * Build the event view `replayCompletedSteps` uses for a branch-scoped
@@ -152,23 +120,8 @@ export function readWaitArtifactPaths(
   return { requestFile, answerFile };
 }
 
-export function waitEventKey(event: Event): string | undefined {
-  const artifactPaths = event.payload.artifactPaths;
-  if (isPlainObject(artifactPaths) && typeof artifactPaths.answerFile === "string") {
-    return artifactPaths.answerFile;
-  }
-
-  const waitId = readWaitId(event);
-  return event.stepId && waitId ? `${event.stepId}:${waitId}` : undefined;
-}
-
 export function readWaitId(event: Event): string | undefined {
   return typeof event.payload.waitId === "string" ? event.payload.waitId : undefined;
-}
-
-export function readPlainPayload(event: Event, key: string): PlainObject | undefined {
-  const value = event.payload[key];
-  return isPlainObject(value) ? value : undefined;
 }
 
 export function resumeFailure(code: string, message: string): Failure {

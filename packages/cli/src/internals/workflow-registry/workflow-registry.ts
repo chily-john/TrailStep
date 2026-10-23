@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { isRecord } from "@trailstep/core";
+
 import { CliUsageError } from "../command-framework/command.types.js";
 import { isDirectWorkflowFileReference } from "../workflow-reference/direct-file-reference.js";
 import type {
@@ -494,8 +496,4 @@ export function assertValidRegistrationName(name: string): void {
 
 function isNodeError(error: unknown): error is { readonly code: string } {
   return isRecord(error) && typeof error.code === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

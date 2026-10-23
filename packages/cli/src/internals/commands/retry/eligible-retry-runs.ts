@@ -2,7 +2,12 @@ import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Event, LatestUnresolvedFailure } from "@trailstep/core";
-import { defaultRunsRoot, readRunEvents, selectLatestUnresolvedFailure } from "@trailstep/core";
+import {
+  defaultRunsRoot,
+  isPlainObject,
+  readRunEvents,
+  selectLatestUnresolvedFailure,
+} from "@trailstep/core";
 
 export interface RunSummary {
   readonly runId: string;
@@ -134,15 +139,6 @@ function readFailureMessage(event: Event): string | undefined {
 
   const message = failure.message;
   return typeof message === "string" && message ? message : undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

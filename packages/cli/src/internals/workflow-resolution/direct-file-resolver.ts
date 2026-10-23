@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@trailstep/core";
+import { isPlainObject, type Workflow } from "@trailstep/core";
 import { tsImport } from "tsx/esm/api";
 
 import { CliUsageError } from "../command-framework/command.types.js";
@@ -284,8 +284,4 @@ function normalizeWorkflowModule(workflowModule: Record<string, unknown>): Recor
   }
 
   return workflowModule;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

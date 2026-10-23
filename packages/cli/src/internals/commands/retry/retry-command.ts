@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   clearCancellationMarker,
   type Event,
+  isPlainObject,
   type PlainObject,
   type RunWorkflowTrackRetryOptions,
   readCancellationMarker,
@@ -207,10 +208,6 @@ async function readOriginalInput(runDir: string): Promise<PlainObject> {
     throw new CliUsageError(`Run ${runDir} does not record an object workflow input for --fresh.`);
   }
   return input;
-}
-
-function isPlainObject(value: unknown): value is PlainObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 class NoEligibleRetryRuns extends Error {}

@@ -1,5 +1,9 @@
-import type { RunSummary } from "@trailstep/core";
-import { listRunSummaries, selectRecentFailedRunSummaries } from "@trailstep/core";
+import {
+  isPlainObject,
+  listRunSummaries,
+  type RunSummary,
+  selectRecentFailedRunSummaries,
+} from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { resolveRunsRoot } from "../../runs-root.js";
@@ -120,13 +124,4 @@ function readFailureMessage(failure: unknown): string | undefined {
 
   const message = failure.message;
   return typeof message === "string" && message ? message : undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

@@ -1,3 +1,4 @@
+import { isRecord } from "@trailstep/core";
 import type {
   PackageCommandRunner,
   TrailStepCliIo,
@@ -50,8 +51,4 @@ function toMutableRecord(value: unknown): Record<string, unknown> {
     return {};
   }
   return { ...value };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

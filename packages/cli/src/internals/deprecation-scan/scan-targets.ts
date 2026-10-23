@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
+import { isRecord } from "@trailstep/core";
+
 import {
   discoverWorkflows,
   type InstalledPackageManifest,
@@ -342,8 +344,4 @@ function resolveBundleManifestSourceFile(
 function hasBundleWorkflowManifest(packageJson: Record<string, unknown>): boolean {
   const trailstep = packageJson.trailstep;
   return isRecord(trailstep) && "workflows" in trailstep;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

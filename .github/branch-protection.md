@@ -9,7 +9,7 @@ Recommended `main` requirements:
 - Require review from Code Owners.
 - Dismiss stale approvals when new commits are pushed.
 - Require conversation resolution before merging.
-- Require `Validate workspace` from the CI workflow.
+- Require `Validate workspace (fast lane)` from the CI workflow.
 - Require `Review dependency changes` once dependency review is configured as an enforced gate.
 - Block force pushes.
 - Block branch deletion.

@@ -20,8 +20,13 @@ This root context file contains a map of the codebase. **OpenViking is the canon
 │   ├── mcp/              # TrailStep MCP server (`trst_*` tools over real CLI seams; generated `.trailstep/mcp` tool JSONs)
 │   ├── sub-agents/       # Reusable delegate/sub-agent workflows
 │   ├── trailtest/        # Workflow testing utilities package surface (`@trailstep/trailtest`)
-│   └── dashboard/        # Svelte/Vite local workflow run observability UI
-├── scripts/              # Local release-readiness and artifact hygiene checks
+│   ├── dashboard/        # Svelte/Vite local workflow run observability UI
+│   ├── create-flows/     # Reusable general-purpose workflow packages (`@trailstep/create-flows`: grill-it-away, take-it-away)
+│   ├── provider-claude/  # Claude Code provider adapter package (`@trailstep/provider-claude`)
+│   ├── provider-codex/   # Codex provider adapter package (`@trailstep/provider-codex`)
+│   ├── provider-gemini/  # Gemini provider adapter package (`@trailstep/provider-gemini`)
+│   └── provider-pi/      # Pi provider adapter package (`@trailstep/provider-pi`)
+└── scripts/              # Local release-readiness and artifact hygiene checks
 ├── .github/              # CI, release, dependency review, CODEOWNERS, PR/branch-protection guidance
 └── .changeset/           # Changesets release/versioning configuration
 ```

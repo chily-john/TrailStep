@@ -98,6 +98,108 @@ export async function readRunEvents(runDir: string): Promise<Event[]> {
   return events;
 }
 
+/** One complete event line of a run's `events.jsonl` trail. */
+export interface RunEventLineEntry {
+  /** Raw JSONL line text (without the trailing newline). */
+  readonly line: string;
+  /** Parsed event carried by the line. */
+  readonly event: Event;
+  /** Byte offset just past this line's newline (the next read cursor value). */
+  readonly endOffset: number;
+}
+
+/** Outcome of an incremental read of a run's `events.jsonl` trail. */
+export interface RunEventsReadState {
+  /** Full file text (used for run-state classification). */
+  readonly text: string;
+  /** Byte offset just past the last complete line (or `startCursor` if none). */
+  readonly offset: number;
+  /** Complete, well-formed event lines parsed since `startCursor`. */
+  readonly entries: readonly RunEventLineEntry[];
+}
+
+function isEventLike(value: unknown): value is Event {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly id?: unknown;
+    readonly type?: unknown;
+    readonly timestamp?: unknown;
+    readonly payload?: unknown;
+  };
+
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.type === "string" &&
+    typeof candidate.timestamp === "string" &&
+    typeof candidate.payload === "object" &&
+    candidate.payload !== null
+  );
+}
+
+/**
+ * Reads complete event lines from an `events.jsonl` trail since a byte cursor
+ * (the seam behind watch-style long polling). Partial trailing lines are left
+ * for the next read; a file that shrank (truncated/recreated) restarts from
+ * offset 0. Malformed or non-event lines are reported through `options.report`
+ * and skipped instead of aborting the read.
+ */
+export async function readRunEventsSince(
+  eventsFile: string,
+  startCursor: number,
+  options: { readonly report?: (message: string) => void } = {},
+): Promise<RunEventsReadState> {
+  const buffer = await readFile(eventsFile);
+  if (buffer.length < startCursor) {
+    return readRunEventsSince(eventsFile, 0, options);
+  }
+
+  const text = buffer.toString("utf8");
+  const sliceText = buffer.subarray(startCursor).toString("utf8");
+  const lastLineBreakIndex = sliceText.lastIndexOf("\n");
+  if (lastLineBreakIndex === -1) {
+    return { text, offset: startCursor, entries: [] };
+  }
+
+  const completeText = sliceText.slice(0, lastLineBreakIndex + 1);
+  const entries: RunEventLineEntry[] = [];
+  const report = options.report ?? (() => undefined);
+  let consumedBytes = 0;
+  const lines = completeText.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === undefined) {
+      continue;
+    }
+
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    const endOffset = startCursor + consumedBytes + lineBytes + 1; // + newline
+    consumedBytes += lineBytes + 1;
+    if (line.trim().length === 0) {
+      continue;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (!isEventLike(parsed)) {
+        report(`Unexpected event shape in ${eventsFile}: line ${index + 1}. Skipping line.`);
+        continue;
+      }
+      entries.push({ line, event: parsed as Event, endOffset });
+    } catch {
+      report(`Unable to parse event JSONL in ${eventsFile}: line ${index + 1}. Skipping line.`);
+    }
+  }
+
+  return {
+    text,
+    offset: startCursor + Buffer.byteLength(completeText, "utf8"),
+    entries,
+  };
+}
+
 export async function persistEvents(runDir: string, events: readonly Event[]): Promise<void> {
   const jsonl = events.map((event) => JSON.stringify(event)).join("\n");
   await writeFile(join(runDir, "events.jsonl"), `${jsonl}\n`, "utf8");

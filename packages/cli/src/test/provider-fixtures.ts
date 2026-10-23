@@ -1,3 +1,5 @@
+import { isRecord } from "@trailstep/core";
+
 export const TEST_CUSTOM_PROVIDERS = {
   claude: {
     binary: "claude",
@@ -36,8 +38,4 @@ export function withTestCustomProviders<T extends Record<string, unknown>>(confi
       ...(isRecord(config.customProviders) ? config.customProviders : {}),
     },
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

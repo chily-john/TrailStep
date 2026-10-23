@@ -8,6 +8,7 @@ export type {
   ContinuationArray,
   ContinuationResult,
   DeepReadonly,
+  DefinedWorkflow,
   DisplayPhase,
   DoPhase,
   FailNode,
@@ -56,6 +57,7 @@ export type {
   WaitPendingResult,
   WaitPhase,
   Workflow,
+  WorkflowBuilderOptions,
   WorkflowInputApi,
   WorkflowInvocationNode,
   WorkflowInvocationOptions,
@@ -104,8 +106,3 @@ export function defineWorkflow<
   return _defineWorkflow<TInput, TOutput>(options);
 }
 export { nonEmptyOptional, nonEmptyOrDefault } from "./strings.js";
-export { defineWorkflow as defineWorkflowOriginal } from "./workflow-builder/workflow-builder.js";
-export type {
-  DefinedWorkflow,
-  WorkflowBuilderOptions,
-} from "./workflow-builder/workflow-builder.types.js";

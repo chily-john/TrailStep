@@ -13,6 +13,8 @@
  * workflow input is validated.
  */
 
+import { isPlainObject } from "../../json/guards.js";
+
 /** Plain decimal only: optional sign, digits, optional fraction. */
 const PLAIN_DECIMAL = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
 
@@ -111,7 +113,7 @@ function coerceBoolean(value: unknown): unknown {
 }
 
 function coerceObject(value: unknown, schema: Record<string, unknown>): unknown {
-  if (!isPlainObjectValue(value)) {
+  if (!isPlainObject(value)) {
     return value;
   }
 
@@ -166,8 +168,4 @@ function asSchemaObject(value: unknown): Record<string, unknown> | undefined {
   }
 
   return value as Record<string, unknown>;
-}
-
-function isPlainObjectValue(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

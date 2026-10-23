@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { parseTrailStepProviderManifest, type TrailStepProviderManifest } from "@trailstep/core";
+import {
+  isRecord,
+  parseTrailStepProviderManifest,
+  type TrailStepProviderManifest,
+} from "@trailstep/core";
 import { CliUsageError } from "../command-framework/command.types.js";
 
 export interface LoadedProviderPackageDefinition {
@@ -64,8 +68,4 @@ async function readPackageJson(packageRoot: string): Promise<Record<string, unkn
     await readFile(resolve(packageRoot, "package.json"), "utf8"),
   ) as unknown;
   return isRecord(parsed) ? parsed : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,3 +1,4 @@
+import { isRecord } from "@trailstep/core";
 import { CliUsageError } from "../command-framework/command.types.js";
 
 export function readAgentEntryItems(value: unknown): readonly Record<string, unknown>[] {
@@ -54,8 +55,4 @@ function assertItemIndex(index: number, length: number): void {
   if (!Number.isInteger(index) || index < 0 || index >= length) {
     throw new CliUsageError(`Agent item index ${index} is out of range.`);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

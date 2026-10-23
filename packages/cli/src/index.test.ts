@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { isRecord } from "@trailstep/core";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { main } from "./index.js";
@@ -13,10 +14,6 @@ async function writeJson(path: string, value: unknown): Promise<void> {
       ? withTestCustomProviders(value)
       : value;
   await writeFile(path, `${JSON.stringify(valueToWrite, null, 2)}\n`, "utf8");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const MAIN_TEST_ROOT = join("node_modules", ".tmp-trailstep-main-tests");

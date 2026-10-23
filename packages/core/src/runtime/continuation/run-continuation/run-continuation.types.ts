@@ -49,6 +49,12 @@ export interface ResumeWaitOptions {
   readonly waitOutputs: Readonly<Record<string, PlainObject>>;
   readonly seenWaitIds: readonly string[];
   readonly wait: ResumedWaitDetails;
+  /**
+   * Resolved continuation node to resume from (for branch-scoped waits this is
+   * the waiting step node resolved out of the parallel start tree). When absent,
+   * the caller resumes from the node it would otherwise run from.
+   */
+  readonly startNode?: ContinuationResult;
 }
 
 type WaitKind = "input" | "check";

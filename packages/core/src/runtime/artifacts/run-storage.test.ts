@@ -4,12 +4,14 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { Event } from "../../contracts/events/event.types.js";
 import {
   appendEvent,
   atomicWriteJson,
   createRunDirectory,
   readJsonStateArtifact,
   readRunEvents,
+  readRunEventsSince,
   readRunState,
   writeJsonStateArtifact,
   writeRunState,
@@ -193,4 +195,69 @@ describe("run storage", () => {
     await expect(readJsonStateArtifact(target)).resolves.toEqual({ round: 1 });
     expect((await readdir(dir)).filter((file) => file.includes(".tmp"))).toEqual([]);
   });
+
+  it("readRunEventsSince returns complete event lines and advances the cursor", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const eventsFile = join(cwd, "events.jsonl");
+    const firstEvent = makeEvent("workflow.started");
+    const secondEvent = makeEvent("step.started");
+    const expectedContents = `${JSON.stringify(firstEvent)}\n${JSON.stringify(secondEvent)}\n`;
+    await writeFile(eventsFile, expectedContents, "utf8");
+
+    const first = await readRunEventsSince(eventsFile, 0);
+    expect(first.entries.map((entry) => entry.event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+    ]);
+    expect(first.offset).toBe(Buffer.byteLength(expectedContents, "utf8"));
+
+    const second = await readRunEventsSince(eventsFile, first.offset);
+    expect(second.entries).toEqual([]);
+    expect(second.offset).toBe(first.offset);
+  });
+
+  it("readRunEventsSince leaves a partial trailing line for the next read", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const eventsFile = join(cwd, "events.jsonl");
+    const firstEvent = makeEvent("workflow.started");
+    await writeFile(eventsFile, `${JSON.stringify(firstEvent)}\n{"partial"`, "utf8");
+
+    const read = await readRunEventsSince(eventsFile, 0);
+    expect(read.entries.map((entry) => entry.event.type)).toEqual(["workflow.started"]);
+    expect(read.offset).toBe(Buffer.byteLength(`${JSON.stringify(firstEvent)}\n`, "utf8"));
+  });
+
+  it("readRunEventsSince reports and skips malformed or non-event lines", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const eventsFile = join(cwd, "events.jsonl");
+    await writeFile(
+      eventsFile,
+      `${JSON.stringify(makeEvent("workflow.started"))}\n${JSON.stringify({ hello: "world" })}\n{not json}\n${JSON.stringify(makeEvent("step.started"))}\n`,
+      "utf8",
+    );
+
+    const errors: string[] = [];
+    const read = await readRunEventsSince(eventsFile, 0, {
+      report: (message) => errors.push(message),
+    });
+
+    expect(read.entries.map((entry) => entry.event.type)).toEqual([
+      "workflow.started",
+      "step.started",
+    ]);
+    expect(errors.join("\n")).toContain("Unexpected event shape");
+    expect(errors.join("\n")).toContain("Unable to parse event JSONL");
+  });
 });
+
+function makeEvent(type: Event["type"]): Event {
+  return {
+    id: `evt_${type}`,
+    runId: "run-storage-test",
+    workflowId: "workflow-storage-test",
+    type,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    schemaVersion: "v0",
+    payload: {},
+  };
+}

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   findPendingWaitsById,
   isPathLike,
+  isPlainObject,
   type ResolvedRunDirectory,
   resolveRunDirectory as resolveRunDirectoryCore,
 } from "@trailstep/core";
@@ -12,6 +13,7 @@ import { CliUsageError } from "../command-framework/command.types.js";
 
 export type { ResolvedRunDirectory } from "@trailstep/core";
 export {
+  findAnsweredParallelBranches,
   findLatestPendingWait,
   findPendingWaitsById,
   isPathLike,
@@ -89,10 +91,6 @@ async function hasArchivedRunManifest(runsRoot: string, runId: string): Promise<
   } catch {
     return false;
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

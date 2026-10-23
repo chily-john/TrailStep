@@ -27,7 +27,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { load, parseMcpConfig, validateStructural } from "@trailstep/core";
+import { isRecord, load, parseMcpConfig, validateStructural } from "@trailstep/core";
 
 export interface PerWorkflowToolDefinition {
   readonly name: string;
@@ -376,8 +376,4 @@ function readRawJsonRecord(filePath: string, label: string): Record<string, unkn
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

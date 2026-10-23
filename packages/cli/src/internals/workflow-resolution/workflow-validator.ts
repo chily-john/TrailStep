@@ -1,4 +1,4 @@
-import type { Workflow } from "@trailstep/core";
+import { isPlainObject, type Workflow } from "@trailstep/core";
 
 export function isWorkflow(value: unknown): value is Workflow {
   if (!isWorkflowLikeObject(value)) {
@@ -44,8 +44,4 @@ function isWorkflowLikeObject(value: unknown): value is Workflow & Record<string
     value !== null &&
     !Array.isArray(value)
   );
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

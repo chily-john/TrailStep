@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { isRecord } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 import { TEST_CUSTOM_PROVIDERS, withTestCustomProviders } from "../../../test/provider-fixtures.js";
 import type { TrailStepCliPrompts } from "../../command-framework/command.types.js";
@@ -41,10 +42,6 @@ function stripTestCustomProviders(value: unknown): unknown {
     stripped.customProviders = customProviders;
   }
   return stripped;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function scriptedPrompts(

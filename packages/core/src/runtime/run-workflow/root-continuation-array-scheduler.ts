@@ -153,7 +153,9 @@ export async function runRootContinuationArrayScheduler(
   });
 
   if (runtime.terminalResult !== undefined) {
-    await cancelQueuedAndPreventableBranches(runtime, runtime.terminalBranchId);
+    if (runtime.terminalResult.status !== "waiting") {
+      await cancelQueuedAndPreventableBranches(runtime, runtime.terminalBranchId);
+    }
     await Promise.all(branches.map((branch) => persistBranch(options.runDir, branch)));
     await persistTrack(
       options,

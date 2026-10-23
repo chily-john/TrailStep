@@ -4,6 +4,7 @@ import type { StepNode } from "../../../authoring/step/continuation.types.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { errorMessage, isPlainObject } from "../../../json/guards.js";
+import { readPlainPayload } from "../../../runtime/events/read-plain-payload.js";
 import type {
   Event,
   RunWorkflowOptions,
@@ -15,7 +16,6 @@ import {
   branchScopedReplayEvents,
   findLatestPendingWait,
   findStepStartedIndex,
-  readPlainPayload,
   readStepIndex,
   readWaitArtifactPaths,
   readWaitId,
@@ -24,6 +24,7 @@ import {
   stepStartedOrdinalBefore,
 } from "./replay-wait-events.js";
 import { replayWaitingStepPrefix } from "./replay-waiting-step-prefix.js";
+import { resolveBranchNode } from "./resolve-branch-node.js";
 
 export interface ReplayToWaitingStepResult {
   readonly status: "success";
@@ -164,6 +165,14 @@ export async function replayToWaitingStep<
     };
   }
 
+  const resolvedBranchNode =
+    scopeBranchId === undefined
+      ? undefined
+      : resolveBranchNode({
+          workflow: options.workflow,
+          input,
+          branchId: scopeBranchId,
+        });
   const replaySourceEvents = options.events.slice(0, targetStepStartedIndex);
   const replay = await replayCompletedSteps({
     workflow: options.workflow,
@@ -174,6 +183,7 @@ export async function replayToWaitingStep<
     input,
     targetStepId: pendingWait.stepId,
     runDir: options.runDir,
+    ...(resolvedBranchNode === undefined ? {} : { startNode: resolvedBranchNode }),
   });
   if (replay.status === "failure") {
     return replay;

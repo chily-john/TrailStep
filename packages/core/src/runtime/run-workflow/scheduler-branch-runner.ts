@@ -119,7 +119,11 @@ export async function terminalizeTrack(
     runtime.terminalResult = result;
     runtime.terminalBranchId = terminal?.branchId;
     runtime.terminalKind = terminal?.kind;
-    await cancelQueuedAndPreventableBranches(runtime, terminal?.branchId);
+    // A branch parking into `waiting` is not a track terminal outcome: sibling
+    // branches must stay queued so they can park (or finish) on their own.
+    if (terminal?.kind !== "waiting") {
+      await cancelQueuedAndPreventableBranches(runtime, terminal?.branchId);
+    }
   }
 }
 
@@ -160,9 +164,12 @@ export async function runBranch(
   branch.updatedAt = new Date().toISOString();
   await persistBranch(options.runDir, branch);
 
+  const resumeWait = options.waitResumeBranches?.[branch.branchId];
+  const resumeNode = resumeWait?.startNode ?? node;
+
   const branchResult = await runWithBranchState(runtime, branch.branchId, async () =>
     runContinuation({
-      node,
+      node: resumeNode,
       runId: options.runId,
       workflowId: options.workflowId,
       emit: async (event) => {
@@ -198,15 +205,15 @@ export async function runBranch(
       workingAgentProcessRunner: options.workingAgentProcessRunner,
       providerWorkingRunner: options.providerWorkingRunner,
       processRunner: options.processRunner,
-      ...(options.waitResumeBranches?.[branch.branchId] === undefined
-        ? {}
-        : { resumeWait: options.waitResumeBranches[branch.branchId] }),
+      ...(resumeWait === undefined ? {} : { resumeWait }),
     }),
   );
 
   branch.updatedAt = new Date().toISOString();
   const branchResultWasSplit = branchResult.status === "split";
-  if (runtime.terminalResult !== undefined) {
+  const trackAlreadyTerminal =
+    runtime.terminalResult !== undefined && runtime.terminalResult.status !== "waiting";
+  if (trackAlreadyTerminal) {
     if (!isBranchTerminalStatus(branch.status)) {
       branch.status = "cancelled";
       branch.updatedAt = new Date().toISOString();

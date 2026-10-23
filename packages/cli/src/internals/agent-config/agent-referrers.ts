@@ -1,3 +1,4 @@
+import { isRecord } from "@trailstep/core";
 import { CliUsageError } from "../command-framework/command.types.js";
 import {
   configPathForScope,
@@ -161,8 +162,4 @@ function renameRefsInValue(
   }
 
   return { value: changed ? renamed : value, changed };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

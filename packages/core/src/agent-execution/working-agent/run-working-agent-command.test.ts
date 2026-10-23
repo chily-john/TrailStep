@@ -22,7 +22,6 @@ import { createRunContext } from "../../runtime/run-context/create-run-context.j
 import { runContextStorage } from "../../runtime/run-context/run-context-storage.js";
 import { withStepContext } from "../../runtime/run-context/with-step-context.js";
 import { readWorkingAgentOutput } from "./output/read-working-agent-output.js";
-import { buildProviderWorkingPrompt } from "./prompts/build-provider-working-prompt.js";
 import { buildWorkingAgentPrompt } from "./prompts/build-working-agent-prompt.js";
 import { runWorkingAgentCommand } from "./run-working-agent-command.js";
 
@@ -1133,31 +1132,6 @@ describe("raw-text capture mode", () => {
       expect(prompt).toContain("write exactly one JSON object");
       expect(prompt).toContain('"summary"');
       expect(prompt).toContain("Summarize the PR.");
-      expect(prompt).not.toContain("document content");
-    });
-  });
-
-  describe("buildProviderWorkingPrompt", () => {
-    it("swaps in document-writing instructions when captureMode is raw-text", () => {
-      const prompt = buildProviderWorkingPrompt({
-        prompt: "Write the changelog.",
-        outputSchema: { type: "string" },
-        captureMode: "raw-text",
-      });
-
-      expect(prompt).toContain("Print the document content directly");
-      expect(prompt).toContain("Do not write output to a file.");
-      expect(prompt).not.toContain("JSON object");
-    });
-
-    it("keeps the JSON-envelope instructions completely unchanged when captureMode is absent (regression)", () => {
-      const prompt = buildProviderWorkingPrompt({
-        prompt: "Summarize the PR.",
-        outputSchema: { type: "object", properties: { summary: { type: "string" } } },
-      });
-
-      expect(prompt).toContain("Respond with exactly one JSON object");
-      expect(prompt).toContain('"summary"');
       expect(prompt).not.toContain("document content");
     });
   });

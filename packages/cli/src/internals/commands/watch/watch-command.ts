@@ -1,10 +1,9 @@
 import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import type { Event } from "@trailstep/core";
-
+import { type Event, readRunEventsSince } from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { createTerminalEventLogger } from "../run/terminal-event-logger.js";
@@ -15,11 +14,6 @@ interface WatchCommandArgs {
   readonly outputMode: "human" | "json" | "jsonl";
   readonly follow: boolean;
   readonly since: "beginning";
-}
-
-interface EventReadState {
-  readonly offset: number;
-  readonly events: readonly Event[];
 }
 
 const watchPollIntervalMs = 50;
@@ -98,13 +92,14 @@ export const watchCommand: CliCommand<WatchCommandArgs> = {
     let offset = 0;
 
     while (true) {
-      const readState = await readEventsSince(eventsFile, offset, (message) =>
-        context.io.writeError(message),
-      );
+      const readState = await readRunEventsSince(eventsFile, offset, {
+        report: (message) => context.io.writeError(message),
+      });
       offset = readState.offset;
-      observedEvents.push(...readState.events);
+      const events = readState.entries.map((entry) => entry.event);
+      observedEvents.push(...events);
 
-      for (const event of readState.events) {
+      for (const event of events) {
         writeEvent(event);
       }
 
@@ -126,89 +121,6 @@ function createWatchEventWriter(
   }
 
   return createTerminalEventLogger(context.io);
-}
-
-async function readEventsSince(
-  eventsFile: string,
-  offset: number,
-  report: (message: string) => void,
-): Promise<EventReadState> {
-  const buffer = await readFile(eventsFile);
-  if (buffer.length < offset) {
-    return readEventsSince(eventsFile, 0, report);
-  }
-
-  const text = buffer.subarray(offset).toString("utf8");
-  const lastLineBreakIndex = text.lastIndexOf("\n");
-  if (lastLineBreakIndex === -1) {
-    return { offset, events: [] };
-  }
-
-  const completeText = text.slice(0, lastLineBreakIndex + 1);
-  const events = parseCompleteEventLines(completeText, eventsFile, report);
-  return {
-    offset: offset + Buffer.byteLength(completeText, "utf8"),
-    events,
-  };
-}
-
-/**
- * Parses the complete lines of an event trail.
- *
- * A malformed or torn line is reported and skipped instead of aborting the
- * watch: a single corrupt line must not take down the whole watcher.
- */
-function parseCompleteEventLines(
-  completeText: string,
-  eventsFile: string,
-  report: (message: string) => void,
-): readonly Event[] {
-  const events: Event[] = [];
-  const lines = completeText.split("\n");
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (!line) {
-      continue;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      report(`Unable to parse event JSONL in ${eventsFile}: line ${index + 1}. Skipping line.`);
-      continue;
-    }
-
-    if (!isEventLike(parsed)) {
-      report(`Unexpected event shape in ${eventsFile}: line ${index + 1}. Skipping line.`);
-      continue;
-    }
-
-    events.push(parsed);
-  }
-
-  return events;
-}
-
-function isEventLike(value: unknown): value is Event {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const candidate = value as {
-    readonly id?: unknown;
-    readonly type?: unknown;
-    readonly timestamp?: unknown;
-    readonly payload?: unknown;
-  };
-
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.type === "string" &&
-    typeof candidate.timestamp === "string" &&
-    typeof candidate.payload === "object" &&
-    candidate.payload !== null
-  );
 }
 
 function shouldStopWatching(events: readonly Event[]): boolean {

@@ -7,7 +7,7 @@ import {
 } from "../../../authoring/step/step-node.js";
 import type { Failure } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
-import { isPlainObject } from "../../../json/guards.js";
+import { readPlainPayload } from "../../../runtime/events/read-plain-payload.js";
 import type {
   Event,
   RunWorkflowOptions,
@@ -34,11 +34,18 @@ export async function replayCompletedSteps<
   readonly input: PlainObject;
   readonly targetStepId: string;
   readonly runDir: string;
+  /**
+   * Optional pre-resolved start continuation. When given (e.g. a branch-scoped
+   * wait resume that already resolved the branch's node out of a parallel start
+   * tree), it is replayed from instead of recomputing `workflow.start(input)`.
+   */
+  readonly startNode?: ContinuationResult;
 }): Promise<
   | { readonly status: "success"; readonly node: StepNode }
   | { readonly status: "failure"; readonly failure: Failure }
 > {
-  let node: ContinuationResult = options.workflow.start(options.input as TInput);
+  let node: ContinuationResult =
+    options.startNode ?? options.workflow.start(options.input as TInput);
   const completedAttempts = pairCompletedStepAttempts(options.events);
 
   for (const attempt of completedAttempts) {
@@ -370,11 +377,6 @@ function withWaitsDoContext(
       return Reflect.getOwnPropertyDescriptor(target, property);
     },
   });
-}
-
-function readPlainPayload(event: Event, key: string): PlainObject | undefined {
-  const value = event.payload[key];
-  return isPlainObject(value) ? value : undefined;
 }
 
 function replayFailure(code: string, message: string): Failure {

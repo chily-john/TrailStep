@@ -257,12 +257,14 @@ export {
   waitEventBranchId,
   waitEventKey,
 } from "./runs/wait-events.js";
+export type { RunEventLineEntry, RunEventsReadState } from "./runtime/artifacts/run-storage.js";
 export {
   appendEvent,
   atomicWriteJson,
   defaultRunsRoot,
   readGlobalState,
   readRunEvents,
+  readRunEventsSince,
   readRunState,
   TRAILSTEP_DIR_NAME,
   writeGlobalState,
@@ -278,6 +280,7 @@ export {
   writeCancellationMarker,
 } from "./runtime/cancellation/cancellation.js";
 export { createEvent } from "./runtime/events/create-run-event.js";
+export { readPlainPayload } from "./runtime/events/read-plain-payload.js";
 export type {
   ExecutionPolicyConfigSource,
   ResolveExecutionPolicyOptions,
@@ -309,7 +312,10 @@ export {
   spawnRetryDelayMs,
   validateSpawnRetryPolicy,
 } from "./runtime/retry/spawn-retry-policy.js";
-export { runWorkflow } from "./runtime/run-workflow/run-workflow.js";
+export {
+  findAnsweredParallelBranches,
+  runWorkflow,
+} from "./runtime/run-workflow/run-workflow.js";
 export type {
   Event,
   InteractiveProcessRequest,

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isRecord } from "@trailstep/core";
+
 import { maxSatisfying, prerelease, satisfies, valid } from "semver";
 
 import type { PackageCommandRunner } from "../../command-framework/command.types.js";
@@ -248,8 +250,4 @@ function readCurrentTrailStepRanges(packageJson: Record<string, unknown>) {
     }
   }
   return entries;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

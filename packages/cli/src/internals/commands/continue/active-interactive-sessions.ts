@@ -2,6 +2,8 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 
+import { isPlainObject } from "@trailstep/core";
+
 export interface ActiveInteractiveSessionSummary {
   readonly interactiveFile: string;
   readonly label: string;
@@ -90,10 +92,6 @@ function formatSessionLabel(
 function inferRunId(cwd: string, interactiveFile: string): string {
   const parts = relative(join(cwd, ".trailstep", "runs"), interactiveFile).split(/[\\/]/u);
   return parts[0] ?? "unknown";
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

@@ -1,5 +1,4 @@
-import type { PlainObject, Workflow } from "@trailstep/core";
-import { normalizeShape } from "@trailstep/core";
+import { isPlainObject, normalizeShape, type PlainObject, type Workflow } from "@trailstep/core";
 import { CliInputError } from "./load-run-input.js";
 import type { InputOverride } from "./run-command.types.js";
 
@@ -160,13 +159,4 @@ function parseJsonValue(rawValue: string, message: string): unknown {
   } catch (error) {
     throw new CliInputError(message, { cause: error });
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
 }

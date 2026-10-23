@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Workflow } from "@trailstep/core";
+import { isPlainObject, type Workflow } from "@trailstep/core";
 
 import type { BundleWorkflowReference } from "../workflow-reference/workflow-reference.types.js";
 import { listDirectWorkflowExports } from "./direct-file-resolver.js";
@@ -459,8 +459,4 @@ export function parseManifestTarget(
   }
 
   return { modulePath, exportName: target.slice(separatorIndex + 1) };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

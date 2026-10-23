@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 
+import { isRecord } from "@trailstep/core";
+
 /**
  * Shared `trailstep.recommendedConfig` handling: reading a package's recommendation
  * plan from its package.json and additively merging it into a raw TrailStep config.
@@ -135,8 +137,4 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 
 function isNodeError(error: unknown): error is { readonly code: string } {
   return isRecord(error) && typeof error.code === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

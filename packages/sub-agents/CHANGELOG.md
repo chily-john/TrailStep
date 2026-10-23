@@ -1,5 +1,13 @@
 # @trailstep/sub-agents
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [cf75cb1]
+- Updated dependencies [6ba4d32]
+  - @trailstep/authoring@0.4.2
+
 ## 0.3.2
 
 ### Patch Changes

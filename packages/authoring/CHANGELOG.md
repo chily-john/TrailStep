@@ -1,5 +1,30 @@
 # @trailstep/authoring
 
+## 0.4.2
+
+### Patch Changes
+
+- cf75cb1: Enable durable continue and retry for answered parallel-track waits.
+  
+  - `runWorkflow` continue on a run whose root start is a parallel track now resolves answered parallel branches via persisted branch answers (`findAnsweredParallelBranches`, now exported from `@trailstep/core`); with no answered branch yet it re-parks on the pending wait instead of failing, and with an answered branch it resumes that branch through branch-scoped replay.
+  - Check waits are self-evaluating: a continue with no answered branch but a pending `check` wait resumes that branch so the check re-runs, while input waits park answer-less on the pending wait.
+  - Branch-scoped wait resumes resolve the waiting step node out of the workflow start continuation tree (parallel nodes, continuation arrays, derived branch ids, invoked-workflow branches) and replay from that node (`ResumeWaitOptions.startNode`, `replayCompletedSteps({ startNode })`); the first answered branch replay is reused for the `workflow.resumed` emit instead of replaying twice, and a branch-scoped replay failure surfaces as resume validation instead of being silently skipped.
+  - A branch parking into `waiting` no longer cancels its sibling branches on the same track (parallel-track and root-continuation-array schedulers), so multiple branches can hold durable waits concurrently.
+  - `findLatestPendingWait` is branch-aware (`findLatestPendingWait(events, branchId)`); events without a branch belong to the implicit root branch.
+  - `trailstep continue` (and `answer --continue`) gates on answered parallel branches first, mirroring the runtime: once a split-track branch has its answer artifact, continue resumes it instead of gating on the latest pending wait's missing answer.
+  
+  Also removes the deprecated `@trailstep/authoring` `defineWorkflowOriginal` re-export shim (the authoring package now re-exports `defineWorkflow` from `@trailstep/core` directly).
+- 6ba4d32: Refresh the packaged TrailStep usage and authoring skills with the latest verified CLI, runtime, retry, execution, and MCP behavior, and replace dead OpenViking context-store doc links in the shipped npm READMEs with repository links.
+  
+  - The packaged `trailstep` usage skill now covers the run lifecycle (`continue`, `answer` with `--branch`/`--continue`, `retry`, `cancel` with `--clear`), automatic retries (`retry.maxAttempts` default 2, `retry.retryOn` default `"transient"`), execution settings (`settings.execution` global/per-workflow, field-by-field merge, `contextFiles` default `true`), and the current MCP server contracts (non-blocking `trst_run_workflow`, per-workflow tool exposure via `mcp.perWorkflowTools`, `trst_watch` runs-root handling, `trst_answer`/`trst_resume`).
+  - The packaged authoring skill now documents retry configuration and the durable parallel fan-out/join (`parallel(...)` + `.post(...)`, aggregate `{ status, branches }`, `failurePolicy`), and keeps the workflow-authored `skill` guidance aligned with the hard-removed generated-skills feature.
+  - Shipped npm READMEs no longer link to the canonical OpenViking context-store doc URIs (which are not resolvable from npm installs); they link to the corresponding repository files instead.
+  
+  No changes to workflow authoring APIs or persisted event schemas.
+- Updated dependencies [cf75cb1]
+- Updated dependencies [cf75cb1]
+  - @trailstep/core@0.8.0
+
 ## 0.4.1
 
 ### Patch Changes

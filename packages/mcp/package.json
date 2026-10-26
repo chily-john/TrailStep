@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@trailstep/trailtest": "workspace:*",
-    "@types/node": "^26.2.0"
+    "@types/node": "^26.6.5"
   },
   "peerDependencies": {
     "@trailstep/core": "*"

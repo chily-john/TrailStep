@@ -38,13 +38,13 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@trailstep/core": "workspace:*",
-    "add-mcp": "^2.4.1"
+    "add-mcp": "^2.6.0"
   },
   "devDependencies": {
     "@trailstep/trailtest": "workspace:*",
-    "@types/node": "^26.2.0"
+    "@types/node": "^26.6.5"
   },
   "peerDependencies": {
     "@trailstep/core": "*"

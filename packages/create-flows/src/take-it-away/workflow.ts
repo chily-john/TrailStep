@@ -9,7 +9,7 @@ export type { TakeItAwayInput } from "../shared/input-schema.js";
 export const takeItAway = defineWorkflow({
   id: "take-it-away",
   description:
-    "Turns an already-organic conversation/feature request into a reviewed implementation plan, then implements it story by story.",
+    "Turns an already-organic conversation/feature request into a reviewed implementation plan, then implements it story by story. `conversation` is required and must be the full raw transcript of the conversation or feature request (not a summary); `autoCommit` defaults to true; `pullRequest` defaults to enabled (base `main`, remote `origin`, draft false) with optional title/body; and `planningCheckpoint` defaults to disabled.",
   inputShape: takeItAwayInput,
   outputShape: takeItAwayOutput,
   agents: featureImplementationAgents,

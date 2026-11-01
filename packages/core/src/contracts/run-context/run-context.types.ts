@@ -87,6 +87,7 @@ export interface RunContextEvent<TPayload extends PlainObject = PlainObject> {
     | "agent.sessionResumed"
     | "agent.targetSelected"
     | "agent.attemptFailed"
+    | "agent.stalled"
     | "workflow.completed";
   readonly timestamp: string;
   readonly schemaVersion: "v0";

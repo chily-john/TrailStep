@@ -5,6 +5,7 @@ import {
   extractEnvelopeText,
 } from "../../../../cli-provider-runtime/envelopes/envelope.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
+import { extractJsonObject } from "../../../../json/extract-json-object.js";
 import { errorMessage, isRecord } from "../../../../json/guards.js";
 import type { TrailStepProviderOutputManifest } from "../../../../providers/provider-manifest.js";
 
@@ -71,27 +72,4 @@ async function writeEnvelopeOutput(options: {
       },
     });
   }
-}
-
-function extractJsonObject(stdout: string): Record<string, unknown> | undefined {
-  const trimmed = stdout.trim();
-  const candidates = [trimmed];
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      if (isRecord(parsed)) {
-        return parsed;
-      }
-    } catch {
-      // Try the next candidate.
-    }
-  }
-
-  return undefined;
 }

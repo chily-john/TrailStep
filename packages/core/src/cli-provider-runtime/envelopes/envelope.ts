@@ -1,4 +1,5 @@
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { extractJsonObject } from "../../json/extract-json-object.js";
 import { isPlainObject } from "../../json/guards.js";
 
 /**
@@ -111,6 +112,8 @@ export function extractEnvelopeOutput(rawStdout: string, options: EnvelopeOption
  * message-shaped `resultField` with a `content` block array, and plain text —
  * but never throws on non-JSON text; the raw text is always the answer.
  */
+// Deliberately NOT using extractJsonObject: this path returns the agent's answer verbatim
+// (raw-text capture mode). Extracting JSON here would silently discard a plain-text document.
 export function extractEnvelopeText(rawStdout: string, options: EnvelopeOptions): string {
   const text = rawStdout.trim();
   if (!text) {
@@ -262,23 +265,12 @@ function extractTextFromContentBlocks(value: PlainObject): string | undefined {
 }
 
 function parseObjectFromText(text: string): PlainObject {
-  const parsed = parseJson(text.trim());
-  if (isPlainObject(parsed)) {
-    return parsed;
+  const extracted = extractJsonObject(text);
+  if (extracted !== undefined) {
+    return extracted;
   }
 
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error(`Provider response did not contain a JSON object: ${text}`);
-  }
-
-  const extracted = parseJson(text.slice(firstBrace, lastBrace + 1));
-  if (!isPlainObject(extracted)) {
-    throw new Error("Provider response JSON was not an object.");
-  }
-
-  return extracted;
+  throw new Error(`Provider response did not contain a JSON object: ${text}`);
 }
 
 function parseEnvelopeObject(rawStdout: string): PlainObject | undefined {

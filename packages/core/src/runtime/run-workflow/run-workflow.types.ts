@@ -1,3 +1,4 @@
+import type { AgentProgressTracker } from "../../agent-execution/working-agent/liveness/agent-progress-tracker.js";
 import type { TrailStepConfig } from "../../agent-targeting/targeting.types.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
@@ -26,6 +27,8 @@ export interface WorkingAgentProcessRequest {
   readonly outputFile: string;
   readonly model?: string;
   readonly signal?: AbortSignal;
+  /** Optional live liveness probe the spawn primitive updates as the child runs. */
+  readonly progress?: AgentProgressTracker;
 }
 
 export interface WorkingAgentProcessResult {

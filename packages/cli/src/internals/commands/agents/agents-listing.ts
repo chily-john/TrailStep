@@ -4,7 +4,12 @@ import { findAgentReferrers } from "../../agent-config/agent-referrers.js";
 import { isAgentTargetsUnavailableError } from "../../agent-config/agent-targets-error.js";
 import type { CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
-import { loadTrailStepProjectConfig } from "../../config/config.js";
+import {
+  loadTrailStepProjectConfig,
+  mergeConfigScopes,
+  writeConfigScopeErrors,
+} from "../../config/config.js";
+import { resolveProjectRoot } from "../../project-root/project-root.js";
 import {
   configPathForScope,
   listRegisteredWorkflowEntries,
@@ -30,15 +35,40 @@ export async function explainAgent(
   args: Extract<AgentCommandArgs, { readonly action: "explain" }>,
   context: CliCommandContext,
 ): Promise<number> {
-  const configPath = configPathForScope(args.scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const agents = toMutableRecord(config.agents);
+  // Without `--scope`, explain what the runtime resolves: the merged config across all scopes.
+  // With `--scope`, keep the older single-file report so existing scripts see the same output.
+  const scopes: readonly WorkflowRegistryScope[] =
+    args.scope === undefined ? ["global", "project", "local"] : [args.scope];
+  const scopeConfigs: Record<string, unknown>[] = [];
+  const configuredIn: WorkflowRegistryScope[] = [];
+  for (const scope of scopes) {
+    const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
+    scopeConfigs.push(config);
+    if (args.name in toMutableRecord(config.agents)) {
+      configuredIn.push(scope);
+    }
+  }
+  const agents = toMutableRecord(mergeConfigScopes(scopeConfigs).agents);
   if (!(args.name in agents)) {
-    throw new CliUsageError(`Agent ${args.name} does not exist in ${args.scope} config.`);
+    throw new CliUsageError(
+      args.scope === undefined
+        ? `Agent ${args.name} does not exist in global, project, or local config.`
+        : `Agent ${args.name} does not exist in ${args.scope} config.`,
+    );
   }
 
-  context.io.writeLine(`Agent ${args.name} (${args.scope})`);
-  context.io.writeLine(`Config path: ${configPath}`);
+  context.io.writeLine(
+    args.scope === undefined
+      ? `Agent ${args.name} (merged: ${configuredIn.length === 0 ? "none" : configuredIn.join(", ")})`
+      : `Agent ${args.name} (${args.scope})`,
+  );
+  if (args.scope === undefined) {
+    for (const scope of scopes) {
+      context.io.writeLine(`Config path (${scope}): ${configPathForScope(scope, context)}`);
+    }
+  } else {
+    context.io.writeLine(`Config path: ${configPathForScope(args.scope, context)}`);
+  }
   context.io.writeLine(`Entry: ${JSON.stringify(agents[args.name])}`);
   context.io.writeLine("Resolved targets:");
   const resolvedLines = explainAgentEntry(agents[args.name], agents, new Set([args.name]));
@@ -66,9 +96,16 @@ export async function explainWorkflow(
   args: Extract<AgentCommandArgs, { readonly action: "explain-workflow" }>,
   context: CliCommandContext,
 ): Promise<number> {
+  // Both halves of the report read the project root: the display has to describe the same config
+  // the runtime resolves, or it becomes another surface that can disagree with it.
+  const projectRoot = await resolveProjectRoot({ cwd: context.cwd, env: context.env });
   let resolved: ResolvedWorkflowReference | undefined;
   try {
-    resolved = await resolveWorkflowReference(args.workflowRef, context);
+    resolved = await resolveWorkflowReference(args.workflowRef, {
+      cwd: context.cwd,
+      projectRoot,
+      homeDir: context.homeDir,
+    });
   } catch (error) {
     if (error instanceof WorkflowResolutionError) {
       throw new CliUsageError(error.message);
@@ -90,8 +127,16 @@ export async function explainWorkflow(
     return 0;
   }
 
-  const rawConfig = await readMergedRawRoleConfig(context);
-  const loadedConfig = await loadTrailStepProjectConfig(context.cwd, { homeDir: context.homeDir });
+  const rawScopes = await readRawScopeConfigs(context, projectRoot);
+  // The configured entries come from the raw scopes (refs stay unexpanded), but the merge has
+  // to be the runtime's merge. A third, deeper hand-rolled merge here is what let this display
+  // list roles the runtime would never see.
+  const mergedRaw = mergeConfigScopes(rawScopes.map((entry) => entry.config));
+  const rawConfig = rawRoleConfigFor(mergedRaw);
+  const loadedConfig = await loadTrailStepProjectConfig(projectRoot, {
+    homeDir: context.homeDir,
+  });
+  writeConfigScopeErrors(context.io, loadedConfig.configErrors);
 
   context.io.writeLine("Agent roles:");
   for (const roleName of roleNames) {
@@ -116,6 +161,11 @@ export async function explainWorkflow(
       });
     }
 
+    context.io.writeLine("    Sources:");
+    for (const line of explainWorkflowRoleSources(rawScopes, workflowId, roleName, role.size)) {
+      context.io.writeLine(`      ${line}`);
+    }
+
     context.io.writeLine("    Final targets:");
     const finalLines = explainWorkflowRoleFinalTargets(
       loadedConfig.trailstepConfig,
@@ -134,43 +184,100 @@ export async function explainWorkflow(
   return 0;
 }
 
+interface RawScopeConfig {
+  readonly scope: WorkflowRegistryScope;
+  readonly config: Record<string, unknown>;
+}
+
 /**
- * Reads raw scope configs with local > project > global precedence so configured
- * entries can be shown with refs intact before core expands them.
+ * Reads every scope config raw and independently so configured entries can be shown with refs
+ * intact before core expands them.
  */
-async function readMergedRawRoleConfig(context: CliCommandContext): Promise<MergedRawRoleConfig> {
-  const scopeConfigs = await Promise.all(
-    (["global", "project", "local"] as const).map((scope) =>
-      readRawTrailStepConfigFile(configPathForScope(scope, context)),
-    ),
+async function readRawScopeConfigs(
+  context: CliCommandContext,
+  projectRoot: string,
+): Promise<readonly RawScopeConfig[]> {
+  const scopes = ["global", "project", "local"] as const;
+  return await Promise.all(
+    scopes.map(async (scope) => ({
+      scope,
+      config: await readRawTrailStepConfigFile(
+        configPathForScope(scope, { cwd: projectRoot, homeDir: context.homeDir }),
+      ),
+    })),
+  );
+}
+
+function rawRoleConfigFor(mergedRaw: Readonly<Record<string, unknown>>): MergedRawRoleConfig {
+  return {
+    agents: toMutableRecord(mergedRaw.agents),
+    workflowRoleEntry(workflowId: string, roleName: string): unknown {
+      const workflow = toMutableRecord(toMutableRecord(mergedRaw.workflows)[workflowId]);
+      return toMutableRecord(workflow.agents)[roleName];
+    },
+  };
+}
+
+const CONFIG_PATH_LABELS: Readonly<Record<WorkflowRegistryScope, string>> = {
+  global: "~/.trailstep/config.json",
+  project: ".trailstep/config.json",
+  local: ".trailstep/config-local.json",
+};
+
+const SOURCE_SCOPE_ORDER: readonly WorkflowRegistryScope[] = ["project", "local", "global"];
+
+/**
+ * Names which scope supplied (or did not supply) an agent entry for one workflow role.
+ *
+ * This is the block that makes a scope-precedence bug visible: before it existed, a display that
+ * disagreed with the runtime looked exactly like a display that agreed.
+ */
+function explainWorkflowRoleSources(
+  scopes: readonly RawScopeConfig[],
+  workflowId: string,
+  roleName: string,
+  roleSize: string,
+): readonly string[] {
+  const pathWidth = Math.max(
+    ...SOURCE_SCOPE_ORDER.map((scope) => CONFIG_PATH_LABELS[scope].length),
   );
 
-  let agents: Record<string, unknown> = {};
-  const workflowBuckets: Record<string, Record<string, unknown>> = {};
-  for (const config of scopeConfigs) {
-    agents = { ...agents, ...toMutableRecord(config.agents) };
-    for (const [workflowKey, workflowValue] of Object.entries(toMutableRecord(config.workflows))) {
-      if (!isRecord(workflowValue)) {
-        continue;
-      }
-      const existingBucket = toMutableRecord(workflowBuckets[workflowKey]);
-      workflowBuckets[workflowKey] = {
-        ...existingBucket,
-        ...workflowValue,
-        agents: {
-          ...toMutableRecord(existingBucket.agents),
-          ...toMutableRecord(workflowValue.agents),
-        },
-      };
+  return SOURCE_SCOPE_ORDER.map((scope) => {
+    const config = scopes.find((entry) => entry.scope === scope)?.config ?? {};
+    const keys = configuredRoleKeys(config, workflowId, roleName, roleSize);
+    const label = `${scope.padEnd(9)}${CONFIG_PATH_LABELS[scope].padEnd(pathWidth)}`;
+    return keys.length === 0
+      ? `${label}   (no agent for this role)`
+      : `${label}   ${keys.join(", ")}`;
+  });
+}
+
+function configuredRoleKeys(
+  config: Readonly<Record<string, unknown>>,
+  workflowId: string,
+  roleName: string,
+  roleSize: string,
+): readonly string[] {
+  const keys: string[] = [];
+  const workflowRole = toMutableRecord(
+    toMutableRecord(toMutableRecord(config.workflows)[workflowId]).agents,
+  )[roleName];
+  if (hasAgentEntry(workflowRole)) {
+    keys.push(`workflows.${workflowId}.agents.${roleName}`);
+  }
+
+  const agents = toMutableRecord(config.agents);
+  for (const key of new Set([roleName, roleSize, "default"])) {
+    if (hasAgentEntry(agents[key])) {
+      keys.push(`agents.${key}`);
     }
   }
 
-  return {
-    agents,
-    workflowRoleEntry(workflowId: string, roleName: string): unknown {
-      return toMutableRecord(toMutableRecord(workflowBuckets[workflowId]).agents)[roleName];
-    },
-  };
+  return keys;
+}
+
+function hasAgentEntry(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
 }
 
 function explainWorkflowRoleConfigured(

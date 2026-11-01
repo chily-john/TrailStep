@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -568,6 +568,57 @@ describe("appendGitignoreEntry", () => {
     await appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY);
     expect(await readFile(gitignorePath, "utf8")).toBe(`node_modules\n${PI_MCP_GITIGNORE_ENTRY}\n`);
   });
+
+  it("does not duplicate an entry that is already listed without a trailing newline", async () => {
+    const gitignorePath = join(projectDir, ".gitignore");
+    await writeFile(gitignorePath, `node_modules\n${PI_MCP_GITIGNORE_ENTRY}`, "utf8");
+
+    await appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY);
+
+    expect(await readFile(gitignorePath, "utf8")).toBe(`node_modules\n${PI_MCP_GITIGNORE_ENTRY}`);
+  });
+
+  it("preserves unrelated existing content when appending", async () => {
+    const gitignorePath = join(projectDir, ".gitignore");
+    await writeFile(gitignorePath, "node_modules\ndist\n", "utf8");
+
+    await appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY);
+
+    expect(await readFile(gitignorePath, "utf8")).toBe(
+      `node_modules\ndist\n${PI_MCP_GITIGNORE_ENTRY}\n`,
+    );
+  });
+
+  it("throws instead of replacing anything when the target path is a directory", async () => {
+    const gitignorePath = join(projectDir, ".gitignore");
+    await mkdir(gitignorePath, { recursive: true });
+
+    await expect(appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY)).rejects.toThrow(
+      /Could not read/u,
+    );
+
+    const stillDirectory = await stat(gitignorePath);
+    expect(stillDirectory.isDirectory()).toBe(true);
+    await expect(readdir(projectDir)).resolves.toEqual([".gitignore"]);
+  });
+
+  it.skipIf(process.platform !== "win32")(
+    "throws and leaves the original bytes intact when the file is read-only",
+    async () => {
+      const gitignorePath = join(projectDir, ".gitignore");
+      const original = "node_modules\ndist\n";
+      await writeFile(gitignorePath, original, "utf8");
+      await chmod(gitignorePath, 0o444);
+
+      try {
+        await expect(appendGitignoreEntry(gitignorePath, PI_MCP_GITIGNORE_ENTRY)).rejects.toThrow();
+        await expect(readFile(gitignorePath, "utf8")).resolves.toBe(original);
+        await expect(readdir(projectDir)).resolves.toEqual([".gitignore"]);
+      } finally {
+        await chmod(gitignorePath, 0o644).catch(() => undefined);
+      }
+    },
+  );
 });
 
 describe("offerMcpRegistration manual fallback re-render", () => {

@@ -23,14 +23,28 @@ export type RetryOnMode = "transient" | "always";
  * - `agent_provider_failed` — the provider process failed while running.
  * - `agent_provider_spawn_error` — the provider process could not be spawned.
  * - `agent_provider_timeout` — the provider process timed out.
+ * - `agent_output_invalid_json`, `agent_output_unreadable`,
+ *   `agent_provider_output_invalid`, `interactive_output_invalid`,
+ *   `interactive_output_incomplete` — provider output that is truncated, missing,
+ *   or unparseable is frequently a RACE (the provider was killed mid-write, two
+ *   attempts wrote the same file, a writer had not flushed yet) rather than a
+ *   deterministic schema violation. A genuine schema violation still fails the
+ *   step on the retry, because the model produces the same bad shape again — so
+ *   retrying costs one dispatch and buys the common transient case. These are
+ *   distinct from `validation_failed`, which stays permanent.
  *
  * Everything else is permanent, including (but not limited to):
- * `validation_failed`, `agent_output_invalid_json`, `invalid_continuation`,
+ * `validation_failed`, `invalid_continuation`,
  * `unsupported_continuation`, `missing_agent_config`,
  * `agent_targets_unavailable`, `agent_provider_interactive_unsupported`,
- * `review_rejected`, `agent_target_exhausted`, `step_execution_failed`,
- * `branch_failed`, `concurrent_branch_failed`, `step_attempts_exhausted`,
- * `run_name_invalid`, and every `resume_*` / `retry_*` code.
+ * `review_rejected`, `agent_target_exhausted`, `agent_target_failed`,
+ * `step_execution_failed`, `branch_failed`, `concurrent_branch_failed`,
+ * `step_attempts_exhausted`, `max_steps_exceeded`, `run_name_invalid`, and
+ * every `resume_*` / `retry_*` code.
+ *
+ * `validation_failed` and `agent_target_exhausted` are deliberately permanent:
+ * the first is a deterministic contract violation that retrying cannot fix, and
+ * the second means every configured target was already tried.
  *
  * A failure may also opt in explicitly by setting `retryable: true` (or
  * `details.retryable === true`), regardless of its code.
@@ -41,6 +55,17 @@ export const TRANSIENT_FAILURE_CODES: readonly string[] = [
   "agent_provider_failed",
   "agent_provider_spawn_error",
   "agent_provider_timeout",
+  // Provider output that is truncated, missing, or unparseable is frequently a RACE (the
+  // provider was killed mid-write, two attempts wrote the same file, a writer had not flushed
+  // yet) rather than a deterministic schema violation. A genuine schema violation still fails
+  // the step on the retry, because the model produces the same bad shape again — so retrying
+  // costs one dispatch and buys the common transient case. Note these are distinct from
+  // `validation_failed`, which stays permanent.
+  "agent_output_invalid_json",
+  "agent_output_unreadable",
+  "agent_provider_output_invalid",
+  "interactive_output_invalid",
+  "interactive_output_incomplete",
 ];
 
 const TRANSIENT_FAILURE_CODE_SET: ReadonlySet<string> = new Set(TRANSIENT_FAILURE_CODES);

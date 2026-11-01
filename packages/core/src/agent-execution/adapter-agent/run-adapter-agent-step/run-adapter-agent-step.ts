@@ -54,19 +54,25 @@ export async function runAgentStep<
 >(options: RunAgentStepOptions<TInput, TOutput>): Promise<PlainObject> {
   const model = resolveAgentRequirements(options.step.requirements);
   const adapter = resolveAgentAdapter(options.step.adapter);
-  let submittedOutput: PlainObject | undefined;
+  // One slot per round: a slow first round can no longer write the output the second round
+  // is supposed to produce, which previously made the result depend on adapter timing.
+  const roundOutputs: Array<PlainObject | undefined> = [undefined, undefined];
+  // One controller per step so a configured timeout can ask the adapter to stop.
+  const controller = new AbortController();
 
-  const tools: AgentTool<TOutput>[] = [
-    createSubmitOutputTool(options.step.output, async (output) => {
-      options.step.output.assert(output, `agent step ${options.step.id} submit_output`);
-      submittedOutput = output;
-      await options.onToolCall?.({
-        name: "submit_output",
-        input: output,
-        output: { accepted: true },
-      });
-    }),
-  ];
+  function createToolsForRound(roundIndex: number): AgentTool<TOutput>[] {
+    return [
+      createSubmitOutputTool(options.step.output, async (output) => {
+        options.step.output.assert(output, `agent step ${options.step.id} submit_output`);
+        roundOutputs[roundIndex] = output;
+        await options.onToolCall?.({
+          name: "submit_output",
+          input: output,
+          output: { accepted: true },
+        });
+      }),
+    ];
+  }
 
   const prompt = renderAgentPrompt(options.step.prompt, options.input);
   const outputPrompt = buildOutputPrompt(options.step.output as Schema<PlainObject>);
@@ -77,13 +83,15 @@ export async function runAgentStep<
     adapter,
     {
       messages: [{ role: "user", content: prompt }],
-      tools,
+      tools: createToolsForRound(0),
       requirements: options.step.requirements,
       model,
       step: options.step,
       input: options.input,
+      signal: controller.signal,
     },
     adapterTimeoutMs,
+    controller,
   );
 
   // Round 2: Output prompt (reprompt same session for structured output)
@@ -94,14 +102,20 @@ export async function runAgentStep<
         { role: "user", content: prompt },
         { role: "user", content: outputPrompt },
       ],
-      tools,
+      tools: createToolsForRound(1),
       requirements: options.step.requirements,
       model,
       step: options.step,
       input: options.input,
+      signal: controller.signal,
     },
     adapterTimeoutMs,
+    controller,
   );
+
+  // The structured-output round wins; round 1 stays a valid fallback for adapters that
+  // already submit during the work round.
+  let submittedOutput: PlainObject | undefined = roundOutputs[1] ?? roundOutputs[0];
 
   if (submittedOutput === undefined) {
     // Multi-round prompting fallback: adapter session may have finished
@@ -140,17 +154,32 @@ async function runAdapterWithTimeout<
 >(
   adapter: AgentAdapter<TInput, TOutput>,
   request: Parameters<AgentAdapter<TInput, TOutput>>[0],
-  timeoutMs?: number,
+  timeoutMs: number | undefined,
+  controller: AbortController,
 ): Promise<void> {
   if (timeoutMs === undefined) {
     return adapter(request);
   }
-  return Promise.race([
-    adapter(request),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("adapter_timeout")), timeoutMs),
-    ),
-  ]);
+
+  let clearTimeoutHandle: (() => void) | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      // Abort before rejecting so a cooperative adapter stops instead of continuing to run
+      // (and to mutate shared state) after the step already failed.
+      controller.abort();
+      reject(new Error("adapter_timeout"));
+    }, timeoutMs);
+    // Unref so a timer whose race already settled never holds the event loop.
+    timer.unref?.();
+    clearTimeoutHandle = () => clearTimeout(timer);
+  });
+
+  try {
+    const result = await Promise.race([adapter(request), timeoutPromise]);
+    return result;
+  } finally {
+    clearTimeoutHandle?.();
+  }
 }
 
 export function renderAgentPrompt<TInput extends PlainObject>(

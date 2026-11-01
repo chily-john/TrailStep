@@ -16,7 +16,7 @@ import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { readCancellationMarker } from "../../cancellation/cancellation.js";
 import { createEvent } from "../../events/create-run-event.js";
 import { withStepContext } from "../../run-context/with-step-context.js";
-import type { TimeoutPolicy } from "../../timeout/timeout-policy.js";
+import type { StallPolicy, TimeoutPolicy } from "../../timeout/timeout-policy.js";
 import { resolveStepOutputSchema } from "../resolve-step-output-schema/resolve-step-output-schema.js";
 import { continuationFailure, unsupportedContinuationFailure } from "./continuation-failures.js";
 import { resolveDisplayPayload } from "./display-phase.js";
@@ -44,6 +44,7 @@ export interface StepAttemptContext {
   readonly currentWorkflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly trailstepConfig: TrailStepConfig | undefined;
   readonly timeoutPolicy: TimeoutPolicy;
+  readonly stallPolicy: StallPolicy;
   readonly maxSubPrompts: unknown;
   readonly hasPrompt: boolean;
   readonly attempt: number;
@@ -68,6 +69,7 @@ export async function runStepAttempt(context: StepAttemptContext): Promise<StepA
   const trailstepConfig = context.trailstepConfig;
   const stepIndex = context.stepIndex;
   const timeoutPolicy = context.timeoutPolicy;
+  const stallPolicy = context.stallPolicy;
 
   const stepCwd = await resolveStepExecutionCwd({
     stepId: config.id,
@@ -177,6 +179,9 @@ export async function runStepAttempt(context: StepAttemptContext): Promise<StepA
                 providerWorkingRunner: options.providerWorkingRunner,
                 processRunner: options.processRunner,
                 stepIndex,
+                ...(stallPolicy.stallTimeoutMs === undefined
+                  ? {}
+                  : { stallTimeoutMs: stallPolicy.stallTimeoutMs }),
                 signal,
               });
               throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);

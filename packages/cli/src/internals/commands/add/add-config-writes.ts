@@ -1,6 +1,5 @@
 import { join, resolve } from "node:path";
 
-import type { ConfiguredCustomProvider } from "../../agent-config/configure-target-flow.js";
 import type { CliCommandContext } from "../../command-framework/command.types.js";
 import {
   mergeRecommendedConfig,
@@ -16,7 +15,6 @@ import {
 import { isDirectWorkflowFileReference } from "../../workflow-resolution/workflow-resolution.js";
 
 import type { PreparedAddSource } from "./add-command.types.js";
-import { toMutableRecord } from "./record-utils.js";
 
 export async function applyRecommendedConfigForPreparedSource(
   preparedSource: Extract<PreparedAddSource, { readonly status: "ready" }>,
@@ -99,41 +97,4 @@ function packageJsonPathForPreparedSource(
     ...preparedSource.source.split("/"),
     "package.json",
   );
-}
-
-export async function writeNamedAgent(
-  scope: WorkflowRegistryScope,
-  name: string,
-  entry: readonly Record<string, unknown>[],
-  context: CliCommandContext,
-  customProvider?: ConfiguredCustomProvider,
-): Promise<void> {
-  const configPath = configPathForScope(scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const agents = toMutableRecord(config.agents);
-  agents[name] = entry;
-  if (customProvider === undefined) {
-    await writeRawTrailStepConfigFile(configPath, { ...config, agents });
-    return;
-  }
-  const customProviders = toMutableRecord(config.customProviders);
-  customProviders[customProvider.name] = { ...customProvider.config };
-  await writeRawTrailStepConfigFile(configPath, { ...config, customProviders, agents });
-}
-
-export async function writeWorkflowRoleMapping(
-  scope: WorkflowRegistryScope,
-  workflowId: string,
-  roleName: string,
-  entry: readonly Record<string, unknown>[],
-  context: CliCommandContext,
-): Promise<void> {
-  const configPath = configPathForScope(scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const workflows = toMutableRecord(config.workflows);
-  const workflowConfig = toMutableRecord(workflows[workflowId]);
-  const workflowAgents = toMutableRecord(workflowConfig.agents);
-  workflowAgents[roleName] = entry;
-  workflows[workflowId] = { ...workflowConfig, agents: workflowAgents };
-  await writeRawTrailStepConfigFile(configPath, { ...config, workflows });
 }

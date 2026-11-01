@@ -252,7 +252,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(selectPrompts).toEqual([
-      "Where should this workflow be registered? (local = just you on this repo, project = shared with your team, global = global across all your projects)",
+      "Where should this workflow be registered? (local = just you on this repo [default], project = shared with your team, global = across all your projects)",
     ]);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
@@ -548,7 +548,7 @@ describe("addCommand", () => {
 
     expect(exitCode).toBe(0);
     expect(prompts).toEqual([
-      "Where should this workflow be registered? (local = just you on this repo, project = shared with your team, global = global across all your projects)",
+      "Where should this workflow be registered? (local = just you on this repo [default], project = shared with your team, global = across all your projects)",
     ]);
     expect(await readJson(resolve(cwd, ".trailstep", "config.json"))).toEqual({
       workflows: { project: { review: "./workflows/review.mjs" } },
@@ -1281,6 +1281,59 @@ describe("addCommand", () => {
       "Registered acme/review -> ./workflows/review.mjs in local config.",
       "Generated MCP tool JSON for acme/review.",
     ]);
+  });
+
+  it("defaults headless --yes adds without --scope to the local config", async ({ task }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const exitCode = await main({
+      argv: ["add", "./workflows/review.mjs", "--yes"],
+      cwd,
+      homeDir: join(cwd, "home"),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config-local.json"))).toEqual({
+      workflows: { project: { review: "./workflows/review.mjs" } },
+    });
+    // The shared config must stay untouched: a headless/agent run may not commit for the team.
+    await expect(stat(join(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("writes the project config for headless --yes adds that pass --scope project", async ({
+    task,
+  }) => {
+    const cwd = join(
+      "node_modules",
+      ".tmp-trailstep-add-command-tests",
+      `${task.id}-${randomUUID()}`,
+    );
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource, "utf8");
+
+    const exitCode = await main({
+      argv: ["add", "./workflows/review.mjs", "--scope", "project", "--yes"],
+      cwd,
+      homeDir: join(cwd, "home"),
+      io: { writeLine: () => undefined, writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(await readJson(join(cwd, ".trailstep", "config.json"))).toEqual({
+      workflows: { project: { review: "./workflows/review.mjs" } },
+    });
+    await expect(stat(join(cwd, ".trailstep", "config-local.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("preserves existing workflow config objects while adding string registrations", async ({
@@ -2095,7 +2148,7 @@ describe("addCommand", () => {
     const errors: string[] = [];
     const command = resolveCommand(["add", "@acme/workflows"]);
     const exitCode = await command.run(
-      command.parseArgs(["add", "@acme/workflows", "--yes"]) as never,
+      command.parseArgs(["add", "@acme/workflows", "--scope", "project", "--yes"]) as never,
       {
         cwd,
         io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
@@ -2188,7 +2241,7 @@ describe("addCommand", () => {
     expect(config.workflows?.review?.agents).toEqual({ reviewer: [{ ref: "reviewerAgent" }] });
   });
 
-  it("headless package add defaults to project and registers all discovered workflows", async ({
+  it("headless package add defaults to local and registers all discovered workflows", async ({
     task,
   }) => {
     const cwd = join(
@@ -2258,7 +2311,7 @@ describe("addCommand", () => {
     expect(installRequests).toEqual([
       { command: "npm", args: expect.arrayContaining(["@acme/workflows@latest"]), cwd },
     ]);
-    const config = (await readJson(resolve(cwd, ".trailstep", "config.json"))) as {
+    const config = (await readJson(resolve(cwd, ".trailstep", "config-local.json"))) as {
       workflows?: Record<string, Record<string, unknown>>;
       workflowMetadata?: Record<string, Record<string, unknown>>;
     };
@@ -2272,7 +2325,7 @@ describe("addCommand", () => {
       packageName: "@acme/workflows",
       requestedSpec: "@acme/workflows@latest",
       requestedRange: "latest",
-      installScope: "project",
+      installScope: "local",
       targetRef: "@acme/workflows#review",
       workflowName: "review",
       exportName: "reviewWorkflow",
@@ -2282,10 +2335,13 @@ describe("addCommand", () => {
       packageName: "@acme/workflows",
       requestedSpec: "@acme/workflows@latest",
       requestedRange: "latest",
-      installScope: "project",
+      installScope: "local",
       targetRef: "@acme/workflows#release",
       workflowName: "release",
       exportName: "releaseWorkflow",
+    });
+    await expect(stat(resolve(cwd, ".trailstep", "config.json"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
     expect(promptCalls).toEqual([]);
   });

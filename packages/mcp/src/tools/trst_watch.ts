@@ -13,6 +13,12 @@
  * `.trailstep/mcp/.cursor/<runId>.json` so reconnects reuse where they left
  * off; an explicit `params.cursor` overrides the persisted value.
  *
+ * Run state is classified from the run's **parsed events** plus its run lock
+ * (never from a regex over raw file text, which could match event-shaped text
+ * embedded in agent output). `crashed` is the state that makes an orchestrating
+ * agent stop waiting: there is no terminal event and no live process holds the
+ * run, so nothing will ever append one.
+ *
  * Test seams (`cwd` / `runDir` / `cursorDir` / `timeoutMs` / `pollIntervalMs`)
  * keep every artifact in caller-provided directories — tests never write the
  * repo's own `.trailstep/mcp`.
@@ -22,11 +28,20 @@ import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { isPathLike, isPlainObject, readRunEventsSince, resolveRunsRoot } from "@trailstep/core";
+import {
+  type Event,
+  isPathLike,
+  isPlainObject,
+  isRunLockLive,
+  readRunEvents,
+  readRunEventsSince,
+  readRunLock,
+  resolveRunsRoot,
+} from "@trailstep/core";
 
 export type TrstWatchVerbosity = "brief" | "normal" | "full";
 
-export type TrstWatchRunState = "started" | "in-progress" | "terminal";
+export type TrstWatchRunState = "started" | "in-progress" | "terminal" | "crashed";
 
 export interface TrstWatchParams {
   /** Run name or run id to observe. */
@@ -60,6 +75,11 @@ export interface TrstWatchResult {
   readonly lines: readonly string[];
   /** Byte offset into `events.jsonl` after the last emitted line; persisted. */
   readonly cursor: number;
+  /**
+   * `started` (no events yet), `in-progress` (a live process holds the run lock, or the run is
+   * parked on a durable wait), `terminal` (workflow.completed|failed|cancelled), `crashed` (no
+   * terminal event and no live lock holder — stop waiting).
+   */
   readonly state: TrstWatchRunState;
   /** Long-poll budget that was actually used, in ms. */
   readonly timeoutMs: number;
@@ -74,7 +94,14 @@ const defaultPollIntervalMs = 50;
 const minLineCap = 50;
 const maxLineCap = 200;
 
-const terminalEventPattern = /"type"\s*:\s*"workflow\.(?:completed|failed|cancelled)"/u;
+/**
+ * The event types that end a run. Anything else leaves it open.
+ */
+const terminalEventTypes: readonly Event["type"][] = [
+  "workflow.completed",
+  "workflow.failed",
+  "workflow.cancelled",
+];
 
 /**
  * Watch a run's events since the current (or explicit) cursor.
@@ -97,6 +124,7 @@ export async function trst_watch(
   const cwd = options.cwd ?? process.cwd();
   const runsRoot = resolveRunsRoot({ cwd, env: options.env ?? process.env });
   const eventsFile = resolveEventsFile(cwd, runsRoot, runId, options.runDir);
+  const runDir = path.dirname(eventsFile);
   await requireEventsFile(eventsFile, runId);
 
   const cursorDir = options.cursorDir ?? path.join(cwd, ".trailstep", "mcp", ".cursor");
@@ -117,16 +145,23 @@ export async function trst_watch(
 
   // Long-poll: keep polling the file until new complete lines arrive (or a
   // partially written line completes, or malformed lines are consumed), or the
-  // real time budget expires. Never a fixed sleep of the whole budget.
+  // run settles (terminal / crashed), or the real time budget expires. Never a
+  // fixed sleep of the whole budget.
+  //
+  // One full parse of the trail is enough to know whether the run is already
+  // finished or already dead; every poll after it is a cheap stat (see
+  // readRunEventsSince) plus one tiny `run.lock` read, so a long run's watch no
+  // longer re-reads and re-decodes the whole trail every 50 ms.
   const deadline = Date.now() + timeoutMs;
+  let observed = await readTrail(runDir);
   let read = await readRunEventsSince(eventsFile, startCursor, {
     report: (message) => console.error(`trst_watch: ${message}`),
   });
-  while (
-    read.entries.length === 0 &&
-    read.offset === startCursor &&
-    !terminalEventPattern.test(read.text)
-  ) {
+  while (read.entries.length === 0 && read.offset === startCursor) {
+    const state = await classifyRunState({ runDir, events: observed });
+    if (state === "terminal" || state === "crashed") {
+      break;
+    }
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       break;
@@ -136,13 +171,16 @@ export async function trst_watch(
       report: (message) => console.error(`trst_watch: ${message}`),
     });
   }
+  if (read.entries.length > 0) {
+    observed = [...observed, ...read.entries.map((entry) => entry.event)];
+  }
 
   const emitted = read.entries.slice(0, lineCap);
   const truncated = read.entries.length > emitted.length;
   // Cursor advances only through emitted lines so capped-out events remain
   // fetchable on the next call.
   const cursor = emitted.at(-1)?.endOffset ?? read.offset;
-  const state = stateFromText(read.text);
+  const state = await classifyRunState({ runDir, events: observed });
   const lines = emitted.map((entry) => entry.line);
 
   await persistCursor(cursorFile, runId, cursor);
@@ -220,12 +258,53 @@ async function requireEventsFile(eventsFile: string, runId: string): Promise<voi
   }
 }
 
-function stateFromText(text: string): TrstWatchRunState {
-  if (terminalEventPattern.test(text)) {
-    return "terminal";
+/**
+ * Classify a run from its parsed events plus its lock.
+ *
+ * `crashed` is the state the previous string-scanning implementation could not express: the
+ * trail has no terminal event, but no live process holds the run either, so nothing will ever
+ * append one. Without it an orchestrating agent waits forever on a dead run.
+ */
+async function classifyRunState(options: {
+  readonly runDir: string;
+  readonly events: readonly Event[];
+}): Promise<TrstWatchRunState> {
+  for (let index = options.events.length - 1; index >= 0; index -= 1) {
+    const type = options.events[index]?.type;
+    if (type !== undefined && terminalEventTypes.includes(type)) {
+      return "terminal";
+    }
   }
-  const completeText = text.slice(0, text.lastIndexOf("\n") + 1);
-  return completeText.trim().length > 0 ? "in-progress" : "started";
+
+  if (options.events.length === 0) {
+    return "started";
+  }
+
+  const lock = await readRunLock(options.runDir);
+  if (lock !== undefined && isRunLockLive(lock)) {
+    return "in-progress";
+  }
+
+  // A run parked on a durable wait has no process by design; the answer/continue is the
+  // operator's move, and the run is not crashed.
+  if (options.events.at(-1)?.type === "wait.started") {
+    return "in-progress";
+  }
+
+  // No terminal event, no live lock: nothing is driving this run.
+  return "crashed";
+}
+
+/**
+ * Full parse of the run's trail, tolerating a trail that vanished or cannot be read: a watch
+ * must not fail merely because the state could not be classified.
+ */
+async function readTrail(runDir: string): Promise<readonly Event[]> {
+  try {
+    return await readRunEvents(runDir);
+  } catch {
+    return [];
+  }
 }
 
 function verbosityLineCap(verbosity?: TrstWatchVerbosity): number {

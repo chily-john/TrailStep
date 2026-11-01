@@ -13,7 +13,8 @@ import {
 } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
-import { loadTrailStepConfig } from "../../config/config.js";
+import { loadTrailStepProjectConfig, writeConfigScopeErrors } from "../../config/config.js";
+import { resolveProjectRoot } from "../../project-root/project-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
 import { CliInputError } from "../run/load-run-input.js";
 import { createTerminalEventLogger } from "../run/terminal-event-logger.js";
@@ -80,7 +81,13 @@ async function continueWaitingRun(
   runNameOrRunDir: string,
   context: CliCommandContext,
 ): Promise<number> {
-  const resolvedRun = await resolveRunDirectory(runNameOrRunDir, context);
+  // Config, the workflow registry and run artifacts are project-root concerns; the agents keep
+  // running in the invocation directory.
+  const projectRoot = await resolveProjectRoot({ cwd: context.cwd, env: context.env });
+  const resolvedRun = await resolveRunDirectory(runNameOrRunDir, {
+    cwd: projectRoot,
+    env: context.env,
+  });
   // Continuing a cancelled run consumes its pending cancellation: the marker is
   // cleared here (and again defensively inside runWorkflow) so the run resumes
   // from where it stopped instead of staying permanently bricked.
@@ -142,9 +149,14 @@ async function continueWaitingRun(
     return 1;
   }
 
-  const trailstepConfig = await loadTrailStepConfig(context.cwd, { homeDir: context.homeDir });
+  const projectConfig = await loadTrailStepProjectConfig(projectRoot, {
+    homeDir: context.homeDir,
+  });
+  writeConfigScopeErrors(context.io, projectConfig.configErrors);
+  const trailstepConfig = projectConfig.trailstepConfig;
   const resolvedWorkflow = await resolveWorkflowReference(workflowRef, {
     cwd: context.cwd,
+    projectRoot,
     homeDir: context.homeDir,
   });
   if (!resolvedWorkflow) {
@@ -161,6 +173,8 @@ async function continueWaitingRun(
   };
   const result = await runWorkflow({
     workflow: resolvedWorkflow.workflow,
+    // `projectCwd` is where prompts and artifacts resolve; `cwd` is where agents run.
+    projectCwd: projectRoot,
     cwd: context.cwd,
     eventSink,
     ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),

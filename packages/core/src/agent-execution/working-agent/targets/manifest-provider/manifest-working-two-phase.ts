@@ -22,6 +22,7 @@ import type {
 import { renderCustomProviderArgs } from "../../../custom-provider/render-custom-provider-args.js";
 import type { WorkingAgentFiles } from "../../artifacts/resolve-step-agent-files.js";
 import { appendStderrArtifact } from "../../attempts/attempt-log.js";
+import type { AgentProgressTracker } from "../../liveness/agent-progress-tracker.js";
 import { readWorkingAgentOutput } from "../../output/read-working-agent-output.js";
 import { defaultManifestWorkingArgs } from "./manifest-working-args.js";
 import { writeCapturedStdoutOutput } from "./manifest-working-output.js";
@@ -57,6 +58,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
     readonly renderedPrompt: string;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
+    readonly progress?: AgentProgressTracker;
     readonly emit: (event: Event) => Promise<void>;
     readonly runId: string;
     readonly workflowId: string;
@@ -179,6 +181,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
     runner: options.runner,
     signal: options.signal,
     timeoutMs: phase1BudgetMs,
+    ...(options.progress === undefined ? {} : { progress: options.progress }),
   });
 
   if (phase1Result.exitCode !== 0) {
@@ -302,6 +305,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       model: context.model,
       captureStdout,
       spawnRetry,
+      ...(options.progress === undefined ? {} : { progress: options.progress }),
       emit: options.emit,
       runId: options.runId,
       workflowId: options.workflowId,

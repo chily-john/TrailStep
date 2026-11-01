@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { isPlainObject, type Workflow } from "@trailstep/core";
+import { isPlainObject, isRecord, type Workflow } from "@trailstep/core";
 
 import { isWorkflow } from "../workflow-resolution/workflow-validator.js";
 
@@ -40,7 +40,7 @@ export async function discoverWorkflows(
   options: DiscoverWorkflowsOptions = {},
 ): Promise<DiscoveredWorkflow[]> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const consumerPackageJson = await readPackageJson(join(cwd, "package.json"));
+  const consumerPackageJson = await readConsumerPackageJson(join(cwd, "package.json"));
   const dependencyNames = Object.keys({
     ...consumerPackageJson.dependencies,
     ...consumerPackageJson.devDependencies,
@@ -77,6 +77,23 @@ export async function discoverWorkflows(
 
 async function readPackageJson(path: string): Promise<PackageJson> {
   return JSON.parse(await readFile(path, "utf8")) as PackageJson;
+}
+
+/**
+ * A directory without a `package.json` simply has no package-discovered workflows.
+ *
+ * Reading it strictly turned a missing/ignored config file into an unrelated ENOENT crash while
+ * resolving the workflow ref (now reachable because unreadable scope configs are non-fatal).
+ */
+async function readConsumerPackageJson(path: string): Promise<PackageJson> {
+  try {
+    return await readPackageJson(path);
+  } catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
 }
 
 export async function resolveInstalledPackageManifest(

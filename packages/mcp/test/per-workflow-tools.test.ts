@@ -111,6 +111,43 @@ afterAll(async () => {
 });
 
 describe("per-workflow MCP tools", () => {
+  it("passes through additionalProperties and property-level descriptions from the tool JSON inputSchema", async () => {
+    const projectDir = createTmpProject();
+    writeToolJson(
+      projectDir,
+      "trst_demo.json",
+      validToolPayload({
+        inputSchema: {
+          type: "object",
+          properties: { target: { type: "string", description: "The deployment target." } },
+          required: ["target"],
+          additionalProperties: false,
+        },
+      }),
+    );
+    writeProjectConfig(projectDir, "config.json", {
+      workflows: { flows: { demo: "./flows/demo.mjs" } },
+    });
+
+    const client = await connectedClient(projectDir);
+    const listed = await client.listTools();
+    const tool = listed.tools.find((candidate) => candidate.name === "trst_demo");
+    expect(tool).toBeDefined();
+
+    const schema = tool?.inputSchema as {
+      type: string;
+      properties: Record<string, Record<string, unknown>>;
+      required?: string[];
+      additionalProperties?: boolean;
+    };
+    expect(schema.type).toBe("object");
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(["target"]);
+    expect(schema.properties).toEqual({
+      target: { type: "string", description: "The deployment target." },
+    });
+  });
+
   it("e2e: generateMcpToolJson output is listed as a per-workflow tool with params", async () => {
     const projectDir = createTmpProject();
     await generateMcpToolJson(
@@ -225,20 +262,36 @@ describe("per-workflow MCP tools", () => {
     });
 
     // Stub CLI entry: records the spawned argv instead of running a workflow,
-    // then materializes the run directory so run_workflowTool's bounded
-    // start-verification can confirm the run actually exists.
+    // then materializes the run directory (with the run's first event, like the
+    // real CLI) so run_workflowTool's bounded start-verification can confirm the
+    // run actually exists and report the directory that materialized.
     const stubPath = path.join(projectDir, "stub-cli.mjs");
     const argvLogPath = path.join(projectDir, "spawned-argv.jsonl");
     fs.writeFileSync(
       stubPath,
-      'import { appendFileSync, mkdirSync } from "node:fs";\n' +
+      'import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";\n' +
         'import { join, resolve } from "node:path";\n' +
         'appendFileSync(process.env.MCP_TEST_ARGV_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");\n' +
         "const configuredRoot = process.env.TRAILSTEP_RUNS_ROOT;\n" +
         "const runsRoot = configuredRoot\n" +
         "  ? resolve(process.cwd(), configuredRoot)\n" +
         '  : join(process.cwd(), ".trailstep", "runs");\n' +
-        "mkdirSync(join(runsRoot, process.argv[3]), { recursive: true });\n",
+        "const runName = process.argv[3];\n" +
+        "const runDir = join(runsRoot, runName);\n" +
+        "mkdirSync(runDir, { recursive: true });\n" +
+        "writeFileSync(\n" +
+        '  join(runDir, "events.jsonl"),\n' +
+        "  JSON.stringify({\n" +
+        '    id: "evt-stub-started",\n' +
+        "    runId: runName,\n" +
+        '    workflowId: "review",\n' +
+        '    type: "workflow.started",\n' +
+        "    timestamp: new Date().toISOString(),\n" +
+        '    schemaVersion: "v0",\n' +
+        "    payload: { input: {} },\n" +
+        '  }) + "\\n",\n' +
+        '  "utf8",\n' +
+        ");\n",
       "utf8",
     );
 

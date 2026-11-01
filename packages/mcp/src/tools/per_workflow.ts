@@ -38,6 +38,7 @@ export interface PerWorkflowToolDefinition {
     readonly type: "object";
     readonly properties: Record<string, unknown>;
     readonly required?: readonly string[];
+    readonly additionalProperties?: boolean;
   };
 }
 
@@ -349,6 +350,9 @@ function parseToolInputSchema(
     type: "object",
     properties,
     ...(required === undefined ? {} : { required: required as readonly string[] }),
+    ...(typeof value.additionalProperties === "boolean"
+      ? { additionalProperties: value.additionalProperties }
+      : {}),
   };
 }
 

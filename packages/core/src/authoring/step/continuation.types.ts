@@ -51,6 +51,8 @@ export interface StepConfig {
    */
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
+  /** Opt-in. Reports a stall when the step's agent produces no output for this long. */
+  readonly stallTimeout?: TimeoutPolicyInput;
 }
 
 /**
@@ -304,6 +306,7 @@ export interface ContinuationStepConfig<
   readonly cwd?: StepCwdInput<TInput>;
   readonly retry?: RetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
+  readonly stallTimeout?: TimeoutPolicyInput;
 }
 
 export type StepErrorContinuation = {

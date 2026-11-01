@@ -61,6 +61,27 @@ describe("runs root resolution", () => {
       resolveRunsRoot({ cwd: "/tmp/project", env: { TRAILSTEP_RUNS_ROOT: "custom/runs" } }),
     ).toBe(resolve("/tmp/project", "custom", "runs"));
   });
+
+  it("anchors exactly on the supplied project root", () => {
+    const projectRoot = join(tmpdir(), "trailstep-runs-root-pinned");
+
+    expect(resolveRunsRoot({ cwd: projectRoot, env: {} })).toBe(
+      join(projectRoot, ".trailstep", "runs"),
+    );
+  });
+
+  it("does not walk the filesystem looking for a project root", async () => {
+    // Root discovery is the caller's job (CLI `resolveProjectRoot`): core must keep anchoring on
+    // the directory it is given, even when an ancestor carries a `.trailstep` directory.
+    const projectRoot = await mkdtemp(join(tmpdir(), "trailstep-runs-no-walk-"));
+    const invocationDir = join(projectRoot, "packages", "sub");
+    await mkdir(join(projectRoot, ".trailstep", "runs"), { recursive: true });
+    await mkdir(invocationDir, { recursive: true });
+
+    expect(resolveRunsRoot({ cwd: invocationDir, env: {} })).toBe(
+      join(invocationDir, ".trailstep", "runs"),
+    );
+  });
 });
 
 describe("run directory resolution", () => {

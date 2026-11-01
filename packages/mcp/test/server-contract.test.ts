@@ -74,12 +74,29 @@ describe("MCP server contract", () => {
     expect(descriptions.trst_watch).toContain("Observe a TrailStep run");
     expect(descriptions.trst_watch).toContain("persisted per run");
     expect(descriptions.trst_watch).toContain("trst_answer");
+    expect(descriptions.trst_watch).toContain("Required: runId");
+    expect(descriptions.trst_watch).toContain("verbosity");
+    expect(descriptions.trst_watch).toContain("25 s");
+    expect(descriptions.trst_watch).toContain("crashed");
+    expect(descriptions.trst_watch).toContain("no live process holds the run");
+    expect(descriptions.trst_answer).toContain("Required: runId");
+    expect(descriptions.trst_answer).toContain("Required: runId and waitId");
+    expect(descriptions.trst_answer).toContain("plain JSON object");
+    expect(descriptions.trst_answer).toContain("continueAfterAnswer");
+    expect(descriptions.trst_resume).toContain("Required: runId");
+    expect(descriptions.trst_resume).toContain("status");
+    expect(descriptions.trst_resume).toContain("in the background");
+    expect(descriptions.trst_resume).toContain("trst_watch");
   });
 
   it("sends server instructions that point at the instructions resource", async () => {
     const client = await connectedClient(tmpProject("mcp-contract-"));
     const instructions = client.getInstructions();
     expect(instructions).toContain(INSTRUCTIONS_RESOURCE_URI);
+    expect(instructions).toContain("trst_run_workflow");
+    expect(instructions).toContain("trst_watch");
+    expect(instructions).toContain("trst_answer");
+    expect(instructions).toContain("trst_resume");
   });
 
   it("trst_run_workflow rejects a missing workflow without spawning", async () => {
@@ -128,11 +145,82 @@ describe("MCP server contract", () => {
       name: "trst_answer",
       arguments: { runId: "no-such-run", waitId: "wait-1", answer: { decision: "yes" } },
     });
-    expect(call.isError).not.toBe(true);
+    // An unanswered / unresolvable wait is a failure: the answer never
+    // persisted, so the tool result must surface it as an isError result
+    // (consistent with the run_workflow status:"failed" convention).
+    expect(call.isError).toBe(true);
     const payload = JSON.parse(firstText(call)) as { persisted?: unknown; error?: unknown };
     expect(payload.persisted).toBe(false);
     expect(typeof payload.error).toBe("string");
   });
+
+  it("trst_answer surfaces a failed continue as an isError result, not plain success", async () => {
+    const projectDir = tmpProject("mcp-contract-");
+    const runDir = path.join(projectDir, ".trailstep", "runs", "waiting-run");
+    fs.mkdirSync(runDir, { recursive: true });
+    const line = (type: string, payload: Record<string, unknown>): string =>
+      JSON.stringify({
+        id: `evt-${type}`,
+        runId: "waiting-run",
+        workflowId: "wf",
+        type,
+        timestamp: new Date(0).toISOString(),
+        schemaVersion: "v0",
+        payload,
+      });
+    fs.writeFileSync(
+      path.join(runDir, "events.jsonl"),
+      `${[
+        line("workflow.started", { workflowRef: "./wf.mjs#w" }),
+        line("wait.started", {
+          waitId: "wait-1",
+          kind: "input",
+          message: "Need a value",
+          artifactPaths: {
+            requestFile: "waits/wait-1.request.json",
+            answerFile: "waits/wait-1.answer.json",
+          },
+        }),
+      ].join("\n")}\n`,
+      "utf8",
+    );
+
+    // A continue that dies before producing events: the answer persisted, but the
+    // run is not moving, so reporting success would leave the calling agent
+    // watching a run that can never progress.
+    const failingCli = path.join(projectDir, "failing-continue.mjs");
+    fs.writeFileSync(failingCli, "process.exit(7);\n", "utf8");
+
+    const savedCliEntry = process.env.TRAILSTEP_CLI_ENTRY;
+    process.env.TRAILSTEP_CLI_ENTRY = failingCli;
+    try {
+      const client = await connectedClient(projectDir);
+      const call = await client.callTool({
+        name: "trst_answer",
+        arguments: {
+          runId: "waiting-run",
+          waitId: "wait-1",
+          answer: { decision: "yes" },
+          continueAfterAnswer: true,
+        },
+      });
+
+      expect(call.isError).toBe(true);
+      const payload = JSON.parse(firstText(call)) as {
+        persisted?: unknown;
+        continued?: { resumed?: unknown; error?: unknown };
+      };
+      expect(payload.persisted).toBe(true);
+      expect(payload.continued?.resumed).toBe(false);
+      expect(typeof payload.continued?.error).toBe("string");
+    } finally {
+      if (savedCliEntry === undefined) {
+        delete process.env.TRAILSTEP_CLI_ENTRY;
+      } else {
+        process.env.TRAILSTEP_CLI_ENTRY = savedCliEntry;
+      }
+    }
+  }, 20_000);
 
   it("trst_resume dispatches to the real adapter and reports unresolved runs", async () => {
     const client = await connectedClient(tmpProject("mcp-contract-"));
@@ -140,7 +228,10 @@ describe("MCP server contract", () => {
       name: "trst_resume",
       arguments: { runId: "no-such-run" },
     });
-    expect(call.isError).not.toBe(true);
+    // A run that could not be resolved / continued is a failure: the resume
+    // did not succeed, so the tool result must surface it as an isError result
+    // (consistent with the run_workflow status:"failed" convention).
+    expect(call.isError).toBe(true);
     const payload = JSON.parse(firstText(call)) as { resumed?: unknown; error?: unknown };
     expect(payload.resumed).toBe(false);
     expect(typeof payload.error).toBe("string");
@@ -205,6 +296,11 @@ describe("MCP server contract", () => {
     // `trailstep add`), it must carry the same snippets.
     expect(INSTRUCTIONS_FALLBACK).toContain("Embedded generic snippet");
     expect(INSTRUCTIONS_FALLBACK).toContain("Embedded static snippet");
+    expect(INSTRUCTIONS_FALLBACK).toContain("trst_run_workflow");
+    expect(INSTRUCTIONS_FALLBACK).toContain("trst_watch");
+    expect(INSTRUCTIONS_FALLBACK).toContain("trst_answer");
+    expect(INSTRUCTIONS_FALLBACK).toContain("trst_resume");
+    expect(INSTRUCTIONS_FALLBACK).toContain("trst_list");
     expect(INSTRUCTIONS_FALLBACK).toContain('"watch": "trst_watch"');
     expect(INSTRUCTIONS_FALLBACK).toContain('"answer": "trst_answer"');
     expect(INSTRUCTIONS_FALLBACK).toContain('"resume": "trst_resume"');

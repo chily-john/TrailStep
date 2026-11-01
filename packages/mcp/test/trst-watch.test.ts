@@ -57,6 +57,42 @@ function appendLines(sandbox: TmpSandbox, lines: readonly string[]): void {
   writeFileSync(sandbox.eventsFile, `${lines.join("\n")}\n`, "utf8");
 }
 
+/**
+ * Writes a run lock held by a LIVE pid (this test process). Without one, a trail with no
+ * terminal event is classified `crashed`: nothing is driving the run. Mirroring reality (a
+ * running continue holds the lock) is what keeps an in-progress fixture in-progress.
+ */
+function writeLiveLock(sandbox: TmpSandbox): void {
+  writeFileSync(
+    path.join(sandbox.runDir, "run.lock"),
+    JSON.stringify({
+      schemaVersion: 1,
+      runId: path.basename(sandbox.runDir),
+      pid: process.pid,
+      startedAt: new Date(0).toISOString(),
+      lastHeartbeatAt: new Date(0).toISOString(),
+      nonce: "test-live-lock",
+    }),
+    "utf8",
+  );
+}
+
+/** Writes a run lock whose holder pid does not exist: a dead run's leftovers. */
+function writeDeadLock(sandbox: TmpSandbox): void {
+  writeFileSync(
+    path.join(sandbox.runDir, "run.lock"),
+    JSON.stringify({
+      schemaVersion: 1,
+      runId: path.basename(sandbox.runDir),
+      pid: 2_147_483_646,
+      startedAt: new Date(0).toISOString(),
+      lastHeartbeatAt: new Date(0).toISOString(),
+      nonce: "test-dead-lock",
+    }),
+    "utf8",
+  );
+}
+
 function appendMoreLines(sandbox: TmpSandbox, lines: readonly string[]): void {
   writeFileSync(sandbox.eventsFile, `${lines.join("\n")}\n`, { encoding: "utf8", flag: "a" });
 }
@@ -83,6 +119,8 @@ describe("trst_watch", () => {
       `${lines.join("\n")}\n${eventLine("step.completed", 3)}`,
       "utf8",
     );
+
+    writeLiveLock(sandbox);
 
     const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
 
@@ -146,6 +184,9 @@ describe("trst_watch", () => {
   it("long-poll waits out its real budget when there is nothing new", async () => {
     const sandbox = createSandbox();
     appendLines(sandbox, [eventLine("workflow.started", 1)]);
+    // A live lock keeps the run in-progress, so the watch waits out its budget
+    // instead of returning early with `crashed`.
+    writeLiveLock(sandbox);
     const first = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
     expect(first.lines).toHaveLength(1);
 
@@ -164,6 +205,7 @@ describe("trst_watch", () => {
   it("long-poll returns early once new events appear mid-poll", async () => {
     const sandbox = createSandbox();
     appendLines(sandbox, [eventLine("workflow.started", 1)]);
+    writeLiveLock(sandbox);
     await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
 
     setTimeout(() => {
@@ -235,7 +277,9 @@ describe("trst_watch", () => {
     mkdirSync(runDir, { recursive: true });
     const eventsFile = path.join(runDir, "events.jsonl");
     writeFileSync(eventsFile, `${eventLine("workflow.started", 1)}\n`, "utf8");
-    sandboxes.push({ root, runDir, cursorDir, eventsFile });
+    const envSandbox = { root, runDir, cursorDir, eventsFile };
+    sandboxes.push(envSandbox);
+    writeLiveLock(envSandbox);
 
     const base = { cwd: root, cursorDir, timeoutMs: 250, pollIntervalMs: 5 };
 
@@ -260,5 +304,102 @@ describe("trst_watch", () => {
       /run not found/u,
     );
     await expect(trst_watch({}, quickOptions(sandbox))).rejects.toThrow(/runId/u);
+  });
+});
+
+describe("trst_watch run state (parsed events + run lock, never a regex over raw text)", () => {
+  it("reports terminal for a run with a terminal event and no lock", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("workflow.completed", 2)]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    expect(result.state).toBe("terminal");
+  });
+
+  it("reports in-progress for a live lock and no terminal event", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeLiveLock(sandbox);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    expect(result.state).toBe("in-progress");
+  });
+
+  it("reports crashed when events exist, there is no lock, and nothing is terminal", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+
+    const first = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+    expect(first.state).toBe("crashed");
+
+    // With the persisted cursor at the end there is nothing new to emit; the
+    // crash check must end the long-poll instead of waiting out the budget.
+    const startedAt = Date.now();
+    const second = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+    expect(second.state).toBe("crashed");
+    expect(second.lines).toEqual([]);
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+  });
+
+  it("reports crashed when the run lock is held by a dead pid", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeDeadLock(sandbox);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    expect(result.state).toBe("crashed");
+  });
+
+  it("reports in-progress for a run parked on a durable wait with no lock", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("wait.started", 2)]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 250));
+
+    // Parked on a wait: the answer/continue is the operator's move, not a crash.
+    expect(result.state).toBe("in-progress");
+    expect(result.lines).toHaveLength(2);
+  });
+
+  it("does not report terminal for event-shaped text embedded in a display payload", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("step.started", 2),
+      JSON.stringify({
+        id: "evt-3",
+        runId: "run-1",
+        workflowId: "wf",
+        type: "step.display",
+        timestamp: new Date(0).toISOString(),
+        schemaVersion: "v0",
+        payload: { text: 'agent said: {"type":"workflow.completed","payload":{}}' },
+      }),
+    ]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    // A naive text scan would have matched the embedded fragment and stopped
+    // watching a run that is still going (here: dead, which is the real state).
+    expect(result.state).not.toBe("terminal");
+    expect(result.state).toBe("crashed");
+  });
+
+  it("long-polls within its budget without spinning when nothing new appears", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1)]);
+    writeLiveLock(sandbox);
+    await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    const startedAt = Date.now();
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 400));
+    const elapsed = Date.now() - startedAt;
+
+    expect(result.lines).toEqual([]);
+    expect(elapsed).toBeGreaterThanOrEqual(350);
+    expect(elapsed).toBeLessThan(400 + 2000);
   });
 });

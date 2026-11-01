@@ -64,7 +64,13 @@ export function resolveConfiguredRunsRoot(context: RunDirectoryContext): string 
   return resolve(context.cwd, configured);
 }
 
-/** The runs root: the `TRAILSTEP_RUNS_ROOT` override or `<cwd>/.trailstep/runs`. */
+/**
+ * Runs root for a project. `cwd` is expected to be the PROJECT ROOT, not the invocation
+ * directory — callers resolve it with `resolveProjectRoot` (CLI) before calling this.
+ *
+ * Core deliberately does not walk the filesystem here: this is called on hot paths such as run
+ * lookups, and core must stay usable as a library.
+ */
 export function resolveRunsRoot(context: RunDirectoryContext): string {
   return resolveConfiguredRunsRoot(context) ?? join(context.cwd, TRAILSTEP_DIR_NAME, "runs");
 }

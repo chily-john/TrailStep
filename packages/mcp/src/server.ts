@@ -49,6 +49,7 @@ export interface McpToolDefinition {
     readonly type: "object";
     readonly properties: Record<string, unknown>;
     readonly required?: readonly string[];
+    readonly additionalProperties?: boolean;
   };
 }
 
@@ -84,7 +85,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_watch",
     description:
-      "Observe a TrailStep run's event stream since a byte-offset cursor (persisted across calls) with long-polling. The byte-offset cursor is persisted per run, so repeated calls continue where the last one stopped. An unknown or unreadable run id returns an error result instead of waiting. Use it together with trst_run_workflow to follow a run and trst_answer to answer a question the run is waiting on.",
+      "Observe a TrailStep run's event stream since a byte-offset cursor (persisted per run, so repeated calls continue where the last one stopped; an explicit cursor overrides it) with long-polling. Use it together with trst_run_workflow to follow a run and trst_answer to answer a question the run is waiting on. Required: runId (the run name or run id to observe). Optional: cursor (byte offset into events.jsonl to resume from; overrides the persisted cursor) and verbosity (brief = 50 emitted lines, normal = 100, full = 200). The watch long-polls up to ~25 s (20-30 s bounds) when no new events are available and returns early once events appear; it reports the run state (started / in-progress / terminal / crashed), terminal once a workflow.completed|failed|cancelled event appears, and when terminal you should stop watching. crashed means the trail has no terminal event and no live process holds the run, so nothing will ever append one — stop waiting on it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -111,7 +112,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_answer",
     description:
-      "Answer a pending TrailStep wait by persisting the answer into the run's real wait answer file (optionally continuing the run).",
+      "Answer a pending TrailStep wait by persisting the answer into the run's real wait answer file (optionally continuing the run). Required: runId and waitId identify the pending wait; answer must be a plain JSON object persisted verbatim as the recommendation. Optional: branchId disambiguates same-id waits pending on parallel branches; continueAfterAnswer runs the same continue path trst_resume uses after persisting.",
     inputSchema: {
       type: "object",
       properties: {
@@ -144,7 +145,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_resume",
     description:
-      "Continue a waiting TrailStep run via the real `trailstep continue` path and report the continue status.",
+      "Start (or continue) a run's `continue` in the background and return as soon as it has begun. Does not wait for the run to finish — follow it with `trst_watch`. Required: runId. The result reports the continue status (completed / waiting / cancelled / failed / running) derived from the run's event trail, background: true while the continue is still executing, and an error when the continue did not start.",
     inputSchema: {
       type: "object",
       properties: {
@@ -177,7 +178,7 @@ const SERVER_INFO = { name: "trailstep-mcp", version: "0.1.0" } as const;
  * the same mapping in detail.
  */
 export const SERVER_INSTRUCTIONS =
-  "TrailStep MCP server: start a workflow with trst_run_workflow (or a per-workflow trst_* tool), follow it with trst_watch, answer a question the run is waiting on with trst_answer, and continue the run with trst_resume. The trailstep://instructions resource describes this run -> watch -> answer -> resume loop.";
+  "TrailStep workflow runs use a run -> watch -> answer -> resume loop: start a run with trst_run_workflow (or a per-workflow trst_* tool), follow it with trst_watch (required runId; verbosity brief/normal/full; long-polls ~25 s; reports started / in-progress / terminal / crashed — stop waiting on terminal or crashed), answer a pending wait with trst_answer (required runId + waitId + plain JSON object answer; branchId/continueAfterAnswer optional), and continue a waiting run with trst_resume (required runId; starts the continue in the background and reports status — follow it with trst_watch). The trailstep://instructions resource describes this loop in detail.";
 
 export const PROJECT_RESOURCE_URI = "trailstep://project";
 export const INSTRUCTIONS_RESOURCE_URI = "trailstep://instructions";
@@ -232,7 +233,12 @@ export const INSTRUCTIONS_FALLBACK = `# TrailStep MCP Instructions
 
 ## Embedded generic snippet
 
-Usage of \`trst_watch\`, \`trst_answer\`, and \`trst_resume\` for observing and interacting with a running workflow.
+Actionable guidance for the generic TrailStep MCP toolkit (\`trst_run_workflow\`, \`trst_watch\`, \`trst_answer\`, \`trst_resume\`, and \`trst_list\`):
+
+- Start a run with \`trst_run_workflow\` (or the per-workflow \`trst_<id>\` tool for a workflow that has one; \`trst_list\` lists the available per-workflow tools).
+- Watch it with \`trst_watch\`: required \`runId\`; optional \`cursor\` (byte offset, overrides the persisted cursor) and \`verbosity\` (brief 50 / normal 100 / full 200 emitted lines); long-polls ~25 s; reports \`started\` / \`in-progress\` / \`terminal\` / \`crashed\`. \`crashed\` means the trail has no terminal event and no live process holds the run, so stop waiting.
+- Answer a pending wait with \`trst_answer\`: required \`runId\` + \`waitId\` + \`answer\` (plain JSON object); optional \`branchId\` and \`continueAfterAnswer\`.
+- Resume a waiting run with \`trst_resume\`: required \`runId\`; starts the continue in the background and returns once it has begun, then reports the continue \`status\` (completed / waiting / cancelled / failed / running) — follow it with \`trst_watch\`.
 
 ## Embedded static snippet
 
@@ -266,6 +272,9 @@ export function createServer(options: CreateServerOptions = {}): Server {
         type: "object" as const,
         properties: tool.inputSchema.properties,
         ...(tool.inputSchema.required ? { required: [...tool.inputSchema.required] } : {}),
+        ...(tool.inputSchema.additionalProperties === undefined
+          ? {}
+          : { additionalProperties: tool.inputSchema.additionalProperties }),
       },
     })),
   }));
@@ -280,9 +289,10 @@ export function createServer(options: CreateServerOptions = {}): Server {
       };
     } catch (error) {
       if (error instanceof ToolReportError) {
-        // Structured failure payload (e.g. run_workflow status "failed"):
-        // an isError result whose text is the JSON payload, so callers can
-        // parse {runId, runDir, status, error} while still seeing the failure.
+        // Structured failure payload (e.g. run_workflow status "failed", an
+        // unanswered wait, or a failed continue): an isError result whose text
+        // is the JSON payload, so callers can parse the failure fields while
+        // still seeing the failure.
         return {
           content: [{ type: "text" as const, text: JSON.stringify(error.payload) }],
           isError: true,
@@ -441,7 +451,7 @@ async function dispatchTool(
       if (typeof args.answer !== "object" || args.answer === null || Array.isArray(args.answer)) {
         throw new Error("`answer` must be a JSON object.");
       }
-      return await trstAnswer({
+      const result = await trstAnswer({
         runId,
         waitId,
         answer: args.answer as Record<string, unknown>,
@@ -451,13 +461,34 @@ async function dispatchTool(
         ...(args.continueAfterAnswer === true ? { continueAfterAnswer: true } : {}),
         cwd,
       });
+      const continueFailed = result.continued !== undefined && result.continued.resumed === false;
+      if (result.persisted === false || result.error !== undefined || continueFailed) {
+        // The answer never persisted (or failed outright), or it persisted but
+        // the continue did not start: surface the failure as an isError tool
+        // result instead of plain content, consistent with the run_workflow
+        // status:"failed" convention. A persisted answer whose continue failed
+        // is NOT success — reporting success makes the calling agent watch a run
+        // that will never progress.
+        throw new ToolReportError(result);
+      }
+      return result;
     }
     case "trst_resume": {
       const runId = readOptionalString(args.runId);
       if (runId === undefined) {
         throw new Error("`runId` must be a non-empty string.");
       }
-      return await trstResume({ runId, cwd });
+      const result = await trstResume({ runId, cwd });
+      // A backgrounded continue is success: trst_resume no longer waits for the
+      // run to finish. Follow it with trst_watch; a run that is no longer making
+      // progress reports `crashed`.
+      if (result.resumed === false || result.error !== undefined) {
+        // The continue did not run or failed: surface the failure as an isError
+        // tool result instead of plain content, consistent with the run_workflow
+        // status:"failed" convention.
+        throw new ToolReportError(result);
+      }
+      return result;
     }
     case "trst_list": {
       return await trstList({

@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 
 import type { Workflow } from "@trailstep/core";
 
-import { loadTrailStepProjectConfig, loadTrailStepUserWorkflowRegistry } from "../config/config.js";
+import { loadTrailStepProjectConfig } from "../config/config.js";
 import { discoverWorkflows } from "../discovery/discovery.js";
 import { workflowPackageInstallRootForMetadata } from "../workflow-packages/install-root.js";
 import { isDirectWorkflowFileReference } from "../workflow-reference/direct-file-reference.js";
@@ -28,6 +28,14 @@ export { isDirectWorkflowFileReference } from "../workflow-reference/direct-file
 
 export interface ResolveWorkflowReferenceOptions {
   readonly cwd: string;
+  /**
+   * Project root used to read config and the workflow registry.
+   *
+   * Defaults to `cwd`. It is a separate input because the invocation directory and the config
+   * root are not the same thing: a relative `./workflow.mjs` ref must resolve against `cwd`,
+   * while `project`/`global` registrations live at the project root.
+   */
+  readonly projectRoot?: string;
   readonly homeDir?: string;
 }
 
@@ -122,17 +130,18 @@ async function resolveRegisteredWorkflowReference(
   }
 
   const homeDir = options.homeDir ?? homedir();
-  const { workflowRegistry: projectRegistry } = await loadTrailStepProjectConfig(options.cwd, {
-    homeDir,
-  });
-  const userRegistry = await loadTrailStepUserWorkflowRegistry(homeDir);
+  const projectRoot = options.projectRoot ?? options.cwd;
+  // One loader, one merge: project scope resolves local > project, and the user registry is
+  // global. Two separate loaders previously meant two different notions of "the registry".
+  const { workflowRegistry: projectRegistry, globalWorkflowRegistry: userRegistry } =
+    await loadTrailStepProjectConfig(projectRoot, { homeDir });
   const registeredRef = parseRegisteredWorkflowRef(rawRef);
 
   if (registeredRef) {
     const match = await findNamespacedRegistryTarget(registeredRef, {
       projectRegistry,
       userRegistry,
-      cwd: options.cwd,
+      cwd: projectRoot,
       homeDir,
     });
 
@@ -152,7 +161,7 @@ async function resolveRegisteredWorkflowReference(
   const match = await findUnqualifiedRegistryTarget(rawRef, {
     projectRegistry,
     userRegistry,
-    cwd: options.cwd,
+    cwd: projectRoot,
     homeDir,
   });
 

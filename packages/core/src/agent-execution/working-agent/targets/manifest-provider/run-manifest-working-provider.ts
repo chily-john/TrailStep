@@ -24,6 +24,7 @@ import type {
 import { renderCustomProviderArgs } from "../../../custom-provider/render-custom-provider-args.js";
 import type { WorkingAgentFiles } from "../../artifacts/resolve-step-agent-files.js";
 import { appendStderrArtifact } from "../../attempts/attempt-log.js";
+import type { AgentProgressTracker } from "../../liveness/agent-progress-tracker.js";
 import { readWorkingAgentOutput } from "../../output/read-working-agent-output.js";
 import { defaultManifestWorkingArgs, optionalNonEmptyString } from "./manifest-working-args.js";
 import { writeCapturedStdoutOutput } from "./manifest-working-output.js";
@@ -42,6 +43,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
   readonly spawnRetry?: SpawnRetryPolicy;
+  readonly progress?: AgentProgressTracker;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
@@ -174,6 +176,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     runner: options.runner,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
+    ...(options.progress === undefined ? {} : { progress: options.progress }),
   });
 
   if (result.exitCode !== 0) {

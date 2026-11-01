@@ -14,9 +14,11 @@ import type {
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
 } from "../../../../runtime/run-workflow/run-workflow.types.js";
+import { withBoundedSettlement } from "../../../child-process/child-process-termination.js";
 import type { WorkingAgentFiles } from "../../artifacts/resolve-step-agent-files.js";
 import { appendAttemptLog, appendStderrArtifact } from "../../attempts/attempt-log.js";
 import { isTransientSpawnExitCode } from "../../failures/transient-spawn-failures.js";
+import type { AgentProgressTracker } from "../../liveness/agent-progress-tracker.js";
 import { spawnWorkingAgentProcess } from "../custom-provider/spawn-working-agent-process.js";
 
 const STDERR_TAIL_LIMIT = 2000;
@@ -43,6 +45,7 @@ export async function spawnFormatWithTransientRetry(options: {
   readonly model?: string;
   readonly captureStdout: boolean;
   readonly spawnRetry: SpawnRetryPolicy;
+  readonly progress?: AgentProgressTracker;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
@@ -97,6 +100,7 @@ export async function spawnFormatWithTransientRetry(options: {
       runner: options.runner,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
+      ...(options.progress === undefined ? {} : { progress: options.progress }),
     });
     if (result.exitCode === 0) {
       return result;
@@ -198,6 +202,7 @@ export async function spawnManifestPhase(options: {
   readonly runner?: WorkingAgentProcessRunner;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  readonly progress?: AgentProgressTracker;
 }): Promise<WorkingAgentProcessResult> {
   // npm-installed provider CLIs (e.g. pi) are .cmd shims on Windows and cannot
   // be spawned by bare name with shell:false; resolve to the Node entrypoint
@@ -220,6 +225,7 @@ export async function spawnManifestPhase(options: {
     options.signal?.addEventListener("abort", onCallerAbort, { once: true });
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let spawnPromiseSettled: Promise<void> | undefined;
   try {
     const spawnPromise = (options.runner ?? spawnWorkingAgentProcess)({
       command: executable.command,
@@ -231,7 +237,14 @@ export async function spawnManifestPhase(options: {
       outputFile: options.outputFile,
       ...(options.model === undefined ? {} : { model: options.model }),
       signal: controller.signal,
+      ...(options.progress === undefined ? {} : { progress: options.progress }),
     });
+    // Observes the spawn promise without changing what the caller awaits, so the timeout
+    // branch below can wait for the child to actually die before it throws.
+    spawnPromiseSettled = Promise.resolve(spawnPromise).then(
+      () => undefined,
+      () => undefined,
+    );
     if (options.timeoutMs === undefined) {
       return await spawnPromise;
     }
@@ -247,6 +260,11 @@ export async function spawnManifestPhase(options: {
     ]);
   } catch (error) {
     if (timedOut || (error instanceof Error && error.message === "working_agent_timeout")) {
+      // The race rejected on our timer, not on the child's exit. Give termination a bounded
+      // moment to complete so the retry starts with a dead predecessor.
+      if (spawnPromiseSettled !== undefined) {
+        await withBoundedSettlement(spawnPromiseSettled, options.timeoutMs);
+      }
       throw new TrailStepFailureError({
         code: "agent_provider_timeout",
         message: `Working agent step ${options.stepId} target '${options.provider}' timed out after ${options.timeoutMs}ms in ${options.phase} phase.`,

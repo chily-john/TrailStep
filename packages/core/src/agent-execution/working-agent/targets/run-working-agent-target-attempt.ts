@@ -13,6 +13,7 @@ import type {
   WorkingAgentProcessRunner,
 } from "../../../runtime/run-workflow/run-workflow.types.js";
 import type { WorkingAgentFiles } from "../artifacts/resolve-step-agent-files.js";
+import type { AgentProgressTracker } from "../liveness/agent-progress-tracker.js";
 import { runCustomWorkingProvider } from "./custom-provider/run-custom-working-provider.js";
 import { runManifestWorkingProvider } from "./manifest-provider/run-manifest-working-provider.js";
 
@@ -33,9 +34,13 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
   readonly spawnRetry: SpawnRetryPolicy;
+  readonly progress?: AgentProgressTracker;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
 }): Promise<TOutput> {
+  // The previous attempt is terminated before this point (see spawn-working-agent-process:
+  // close only resolves after the child has exited), so removing the artifacts here cannot
+  // delete a file an orphaned agent is about to write.
   await rm(options.files.outputFile, { force: true });
   await rm(options.files.usageFile, { force: true });
 
@@ -55,6 +60,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       signal: options.signal,
       timeoutMs: options.timeoutMs,
       spawnRetry: options.spawnRetry,
+      progress: options.progress,
       emit: options.emit,
       runId: options.runId,
       workflowId: options.workflowId,
@@ -71,6 +77,7 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
     files: options.files,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
+    progress: options.progress,
     emit: options.emit,
     runId: options.runId,
     workflowId: options.workflowId,

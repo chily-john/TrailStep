@@ -38,5 +38,10 @@ export function parseSettings(
     delete settings.timeout;
   }
 
+  if (value.stallTimeout !== undefined && typeof value.stallTimeout !== "number") {
+    diagnostics.push(`${path}.stallTimeout must be a number when present.`);
+    delete settings.stallTimeout;
+  }
+
   return settings;
 }

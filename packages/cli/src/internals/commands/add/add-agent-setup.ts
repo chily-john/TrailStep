@@ -5,15 +5,15 @@ import type { CliCommandContext } from "../../command-framework/command.types.js
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { loadTrailStepProjectConfig } from "../../config/config.js";
 import { OFFICIAL_PROVIDER_IDS } from "../../providers/official-providers.js";
+import type { WorkflowRegistryScope } from "../../workflow-registry/workflow-registry.js";
 import {
-  configPathForScope,
-  readRawTrailStepConfigFile,
-  type WorkflowRegistryScope,
-} from "../../workflow-registry/workflow-registry.js";
+  listNamedAgentChoices,
+  writeNamedAgent,
+  writeWorkflowRole,
+} from "../agents/agents-config.js";
 
 import type { AddRegistration } from "./add-command.types.js";
-import { writeNamedAgent, writeWorkflowRoleMapping } from "./add-config-writes.js";
-import { isRecord, toMutableRecord } from "./record-utils.js";
+import { isRecord } from "./record-utils.js";
 
 const PROVIDER_CHOICES = [...OFFICIAL_PROVIDER_IDS].sort();
 
@@ -62,7 +62,18 @@ export async function promptForUncoveredWorkflowRolesForRegistrations(
       continue;
     }
     for (const workflowId of workflowIds) {
-      await writeWorkflowRoleMapping(options.scope, workflowId, group.roleName, entry, context);
+      await writeWorkflowRole(
+        options.scope,
+        {
+          kind: "workflow-role",
+          workflowId,
+          roleName: group.roleName,
+          label: `workflow ${workflowId} ${group.roleName}`,
+          state: "dash",
+        },
+        entry,
+        context,
+      );
     }
   }
 }
@@ -189,15 +200,4 @@ function workflowRolePrompt(options: PromptForWorkflowRoleMappingOptions): strin
   ]
     .filter((part): part is string => part !== undefined)
     .join(" ");
-}
-
-async function listNamedAgentChoices(context: CliCommandContext): Promise<readonly string[]> {
-  const names = new Set<string>();
-  for (const scope of ["local", "project", "global"] as const) {
-    const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
-    for (const name of Object.keys(toMutableRecord(config.agents))) {
-      names.add(name);
-    }
-  }
-  return [...names].sort();
 }

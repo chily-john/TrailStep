@@ -1258,6 +1258,34 @@ describe("agentsCommand", () => {
     expect(output).toContain("workflows.release.agents.reviewer");
   });
 
+  it("explains the merged effective agent config without requiring --scope", async ({ task }) => {
+    const cwd = tmpDir(task);
+    const homeDir = join(cwd, "home");
+    await writeJson(resolve(homeDir, ".trailstep", "config.json"), {
+      agents: { reviewer: [{ provider: "claude", model: "opus" }] },
+    });
+    await writeJson(resolve(cwd, ".trailstep", "config-local.json"), {
+      agents: { reviewer: [{ provider: "claude", model: "sonnet" }] },
+    });
+    const lines: string[] = [];
+    const command = resolveCommand(["agents", "explain", "reviewer"]);
+
+    const exitCode = await command.run(
+      command.parseArgs(["agents", "explain", "reviewer"]) as never,
+      {
+        cwd,
+        homeDir,
+        io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("Agent reviewer (merged: global, local)");
+    // Local wins the merge, so the explained entry is the effective one the runtime resolves.
+    expect(output).toContain('Entry: [{"provider":"claude","model":"sonnet"}]');
+  });
+
   it("explains workflow routing with configured targets/refs and final resolved targets", async ({
     task,
   }) => {

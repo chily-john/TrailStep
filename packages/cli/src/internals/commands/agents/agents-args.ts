@@ -112,13 +112,20 @@ function parseExplainArgs(argv: readonly string[]): AgentCommandArgs {
   if (name.includes("/")) {
     return { action: "explain-workflow", workflowRef: name };
   }
+  // `--scope` stays accepted (and is honoured when present) so existing scripts keep working,
+  // but it is no longer required: `explain` reports the merged effective config across global,
+  // project and local, which is what the runtime actually resolves.
+  const scope =
+    flags.scope === undefined
+      ? undefined
+      : parseRequiredScope(
+          flags.scope,
+          "trailstep agents explain requires --scope <local|project|global>.",
+        );
   return {
     action: "explain",
     name,
-    scope: parseRequiredScope(
-      flags.scope,
-      "trailstep agents explain requires --scope <local|project|global>.",
-    ),
+    ...(scope === undefined ? {} : { scope }),
   };
 }
 

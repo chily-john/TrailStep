@@ -9,8 +9,8 @@ import { CliUsageError } from "../../command-framework/command.types.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
+  updateRawTrailStepConfigFile,
   type WorkflowRegistryScope,
-  writeRawTrailStepConfigFile,
 } from "../../workflow-registry/workflow-registry.js";
 
 import type {
@@ -27,18 +27,19 @@ export async function setAgent(
   context: CliCommandContext,
 ): Promise<number> {
   const configPath = configPathForScope(args.scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const agents = toMutableRecord(config.agents);
-  agents[args.name] = [
-    {
-      provider: args.provider,
-      ...(args.model === undefined ? {} : { model: args.model }),
-      ...(args.thinking === undefined || args.thinking === "none"
-        ? {}
-        : { thinking: args.thinking }),
-    },
-  ];
-  await writeRawTrailStepConfigFile(configPath, { ...config, agents });
+  await updateRawTrailStepConfigFile(configPath, (config) => {
+    const agents = toMutableRecord(config.agents);
+    agents[args.name] = [
+      {
+        provider: args.provider,
+        ...(args.model === undefined ? {} : { model: args.model }),
+        ...(args.thinking === undefined || args.thinking === "none"
+          ? {}
+          : { thinking: args.thinking }),
+      },
+    ];
+    return { ...config, agents };
+  });
   context.io.writeLine(`Wrote agent ${args.name} to ${configPath}.`);
   return 0;
 }
@@ -50,10 +51,11 @@ export async function deleteAgent(
   await blockDeleteWhenAgentReferrersExist(args.name, context);
 
   const configPath = configPathForScope(args.scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const agents = toMutableRecord(config.agents);
-  delete agents[args.name];
-  await writeRawTrailStepConfigFile(configPath, { ...config, agents });
+  await updateRawTrailStepConfigFile(configPath, (config) => {
+    const agents = toMutableRecord(config.agents);
+    delete agents[args.name];
+    return { ...config, agents };
+  });
   context.io.writeLine(`Deleted agent ${args.name} from ${configPath}.`);
   return 0;
 }
@@ -63,21 +65,38 @@ export async function renameAgent(
   context: CliCommandContext,
 ): Promise<number> {
   const configPath = configPathForScope(args.scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const agents = toMutableRecord(config.agents);
-  if (!(args.oldName in agents)) {
+  const existing = await readRawTrailStepConfigFile(configPath);
+  const existingAgents = toMutableRecord(existing.agents);
+  if (!(args.oldName in existingAgents)) {
     throw new CliUsageError(`Agent ${args.oldName} does not exist in ${args.scope} config.`);
   }
-  if (args.newName in agents) {
+  if (args.newName in existingAgents) {
     throw new CliUsageError(`Agent ${args.newName} already exists in ${args.scope} config.`);
   }
 
-  const renamedAgents = { ...agents };
-  const entry = renamedAgents[args.oldName];
-  delete renamedAgents[args.oldName];
-  renamedAgents[args.newName] = entry;
-  await writeRawTrailStepConfigFile(configPath, { ...config, agents: renamedAgents });
+  // Rename references FIRST. If a reference cannot be updated, the agent is still addressable
+  // under its old name because the config was never touched. Doing this after the config write
+  // left the config pointing at a name that no longer resolved (and this order relies on
+  // `renameAgentRefs` being idempotent, which it is: it only rewrites `ref` values equal to
+  // oldName).
   await renameAgentRefs(args.oldName, args.newName, context);
+
+  // Re-read inside the update: `renameAgentRefs` may have rewritten refs in THIS file, and
+  // applying the pre-refs snapshot would revert them.
+  await updateRawTrailStepConfigFile(configPath, (config) => {
+    const agents = toMutableRecord(config.agents);
+    if (!(args.oldName in agents)) {
+      throw new CliUsageError(`Agent ${args.oldName} does not exist in ${args.scope} config.`);
+    }
+    if (args.newName in agents) {
+      throw new CliUsageError(`Agent ${args.newName} already exists in ${args.scope} config.`);
+    }
+    const renamedAgents = { ...agents };
+    const entry = renamedAgents[args.oldName];
+    delete renamedAgents[args.oldName];
+    renamedAgents[args.newName] = entry;
+    return { ...config, agents: renamedAgents };
+  });
   context.io.writeLine(`Renamed agent ${args.oldName} to ${args.newName}.`);
   return 0;
 }
@@ -90,13 +109,11 @@ export async function writeNamedAgent(
   customProviders?: ConfiguredCustomProvider | readonly ConfiguredCustomProvider[],
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const agents = toMutableRecord(config.agents);
-  agents[name] = entry;
-  await writeRawTrailStepConfigFile(
-    configPath,
-    withConfiguredCustomProviders({ ...config, agents }, customProviders),
-  );
+  await updateRawTrailStepConfigFile(configPath, (config) => {
+    const agents = toMutableRecord(config.agents);
+    agents[name] = entry;
+    return withConfiguredCustomProviders({ ...config, agents }, customProviders);
+  });
   context.io.writeLine(`Wrote agent ${name} to ${configPath}.`);
 }
 
@@ -108,16 +125,14 @@ export async function writeWorkflowRole(
   customProviders?: ConfiguredCustomProvider | readonly ConfiguredCustomProvider[],
 ): Promise<void> {
   const configPath = configPathForScope(scope, context);
-  const config = await readRawTrailStepConfigFile(configPath);
-  const workflows = toMutableRecord(config.workflows);
-  const workflowConfig = toMutableRecord(workflows[row.workflowId]);
-  const workflowAgents = toMutableRecord(workflowConfig.agents);
-  workflowAgents[row.roleName] = entry;
-  workflows[row.workflowId] = { ...workflowConfig, agents: workflowAgents };
-  await writeRawTrailStepConfigFile(
-    configPath,
-    withConfiguredCustomProviders({ ...config, workflows }, customProviders),
-  );
+  await updateRawTrailStepConfigFile(configPath, (config) => {
+    const workflows = toMutableRecord(config.workflows);
+    const workflowConfig = toMutableRecord(workflows[row.workflowId]);
+    const workflowAgents = toMutableRecord(workflowConfig.agents);
+    workflowAgents[row.roleName] = entry;
+    workflows[row.workflowId] = { ...workflowConfig, agents: workflowAgents };
+    return withConfiguredCustomProviders({ ...config, workflows }, customProviders);
+  });
   context.io.writeLine(`Wrote workflow ${row.workflowId} role ${row.roleName} to ${configPath}.`);
 }
 
@@ -161,31 +176,34 @@ export async function findNamedAgentScope(
   throw new CliUsageError(`Agent ${name} does not exist in any config scope.`);
 }
 
+type ReservedAgentName = (typeof RESERVED_AGENT_NAMES)[number];
+
 export async function listNamedAgentChoices(
   context: CliCommandContext,
 ): Promise<readonly string[]> {
-  const names = new Set<string>(RESERVED_AGENT_NAMES);
+  const configured = new Set<string>();
   for (const scope of ["local", "project", "global"] as const) {
     const config = await readRawTrailStepConfigFile(configPathForScope(scope, context));
     for (const name of Object.keys(toMutableRecord(config.agents))) {
-      names.add(name);
+      configured.add(name);
     }
   }
-  return [...names].sort((left, right) => {
-    const leftReserved = RESERVED_AGENT_NAMES.includes(
-      left as (typeof RESERVED_AGENT_NAMES)[number],
-    );
-    const rightReserved = RESERVED_AGENT_NAMES.includes(
-      right as (typeof RESERVED_AGENT_NAMES)[number],
-    );
+
+  // A reserved size name is only a real choice when some scope actually configures it;
+  // offering `tiny`/`xl` unconditionally led the picker into "does not exist in any config
+  // scope". Reserved names that ARE configured still sort first so the built-ins stay familiar.
+  const names = [...configured];
+  return names.sort((left, right) => {
+    const leftReserved = RESERVED_AGENT_NAMES.includes(left as ReservedAgentName);
+    const rightReserved = RESERVED_AGENT_NAMES.includes(right as ReservedAgentName);
     if (leftReserved && rightReserved) {
       return (
-        RESERVED_AGENT_NAMES.indexOf(left as (typeof RESERVED_AGENT_NAMES)[number]) -
-        RESERVED_AGENT_NAMES.indexOf(right as (typeof RESERVED_AGENT_NAMES)[number])
+        RESERVED_AGENT_NAMES.indexOf(left as ReservedAgentName) -
+        RESERVED_AGENT_NAMES.indexOf(right as ReservedAgentName)
       );
     }
-    if (leftReserved) return 1;
-    if (rightReserved) return -1;
+    if (leftReserved) return -1;
+    if (rightReserved) return 1;
     return left.localeCompare(right);
   });
 }

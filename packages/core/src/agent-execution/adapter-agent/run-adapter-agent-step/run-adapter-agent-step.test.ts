@@ -7,6 +7,7 @@ import {
   type AgentAdapter,
   done,
   jsonSchema,
+  type PlainObject,
   parseTrailStepConfig,
   promptTemplate,
   runWorkflow,
@@ -14,6 +15,7 @@ import {
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../../index.js";
+import { runAgentStep } from "./run-adapter-agent-step.js";
 
 describe("agent steps", () => {
   it("core source does not expose provider SDK adapter registry exports", async () => {
@@ -736,5 +738,96 @@ describe("promptTemplate prompt source", () => {
     expect(result.output.status).toContain("failed: step_execution_failed");
     expect(result.output.status).toMatch(/ENOENT|no such file/i);
     expect(result.output.status).toContain("missing.md");
+  });
+});
+
+describe("runAgentStep output rounds", () => {
+  const answerSchema = jsonSchema<{ answer: string }>({
+    type: "object",
+    properties: { answer: { type: "string" } },
+    required: ["answer"],
+    additionalProperties: false,
+  });
+
+  function answerStep(adapter: AgentAdapter<PlainObject, { answer: string }>) {
+    return {
+      id: "rounds",
+      output: answerSchema,
+      prompt: "Do the work.",
+      requirements: { size: "small" as const, name: "helper" },
+      adapter,
+    };
+  }
+
+  it("does not let a stale first-round submit_output overwrite the second round's output", async () => {
+    let round = 0;
+    let submitFromRoundOne: (() => Promise<void>) | undefined;
+
+    const output = await runAgentStep({
+      step: answerStep(async (request) => {
+        round += 1;
+        const submit = request.tools.find((tool) => tool.name === "submit_output");
+        if (round === 1) {
+          // Round 1 keeps its tool and never submits inline.
+          submitFromRoundOne = async () => {
+            await submit?.call({ answer: "stale-round-1" });
+          };
+          return;
+        }
+        await submit?.call({ answer: "fresh-round-2" });
+        // The slow first round now writes *after* the second round already produced its
+        // own structured output: the second round's slot must still win.
+        await submitFromRoundOne?.();
+      }),
+      input: {},
+    });
+
+    expect(output).toEqual({ answer: "fresh-round-2" });
+  });
+
+  it("fails with agent_output_missing when no round submits", async () => {
+    let submitFromRoundOne: (() => Promise<void>) | undefined;
+    let round = 0;
+
+    await expect(
+      runAgentStep({
+        step: answerStep(async (request) => {
+          round += 1;
+          const submit = request.tools.find((tool) => tool.name === "submit_output");
+          submitFromRoundOne = async () => {
+            await submit?.call({ answer: "too-late" });
+          };
+        }),
+        input: {},
+      }),
+    ).rejects.toMatchObject({ failure: { code: "agent_output_missing" } });
+
+    expect(round).toBe(2);
+    // A submit_output that lands after the step settled cannot resurrect it.
+    await submitFromRoundOne?.();
+  });
+
+  it("aborts the adapter signal when a configured adapter timeout fires", async () => {
+    const signals: AbortSignal[] = [];
+
+    await expect(
+      runAgentStep({
+        step: {
+          ...answerStep(async (request) => {
+            if (request.signal !== undefined) {
+              signals.push(request.signal);
+            }
+            // Outlives the timeout without submitting: only the adapter timeout can end
+            // this round, and a cooperative adapter must be told to stop.
+            await new Promise<void>((resolve) => setTimeout(resolve, 200));
+          }),
+          timeout: 25,
+        },
+        input: {},
+      }),
+    ).rejects.toThrow("adapter_timeout");
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
   });
 });

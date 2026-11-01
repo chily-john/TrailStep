@@ -2,12 +2,14 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import type { Event } from "@trailstep/core";
 import { afterAll, describe, expect, it } from "vitest";
 
 import {
   type ContinueRunnerOptions,
   resolveCliEntry,
-  spawnContinue,
+  statusFromEvents,
   trstResume,
 } from "../src/tools/trst_resume.js";
 
@@ -19,21 +21,43 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-async function writeStartedRun(runDir: string): Promise<void> {
+function eventLine(type: Event["type"], index: number): string {
+  return JSON.stringify({
+    id: `evt-${index}-${type}`,
+    runId: "run-test",
+    workflowId: "wf-test",
+    type,
+    timestamp: new Date().toISOString(),
+    schemaVersion: "v0",
+    payload: {},
+  });
+}
+
+/** Writes the given event types (starting at `workflow.started`) as the run's trail. */
+async function writeRunEvents(
+  runDir: string,
+  ...extraTypes: readonly Event["type"][]
+): Promise<void> {
   await mkdir(runDir, { recursive: true });
-  await writeFile(
-    join(runDir, "events.jsonl"),
-    `${JSON.stringify({
-      id: "evt-start",
-      runId: "run-test",
-      workflowId: "wf-test",
-      type: "workflow.started",
-      timestamp: new Date().toISOString(),
-      schemaVersion: "v0",
-      payload: { workflowRef: "./wf.ts#w" },
-    })}\n`,
-    "utf8",
-  );
+  const types: readonly Event["type"][] = ["workflow.started", ...extraTypes];
+  const lines = types.map((type, index) => eventLine(type, index + 1));
+  await writeFile(join(runDir, "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
+}
+
+async function writeStartedRun(runDir: string): Promise<void> {
+  await writeRunEvents(runDir);
+}
+
+async function waitForFile(path: string, timeoutMs = 10_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await readFile(path, "utf8");
+    } catch {
+      await sleep(25);
+    }
+  }
+  throw new Error(`file never appeared: ${path}`);
 }
 
 afterAll(async () => {
@@ -45,12 +69,12 @@ afterAll(async () => {
 describe("trst_resume delegates to the real continue path", () => {
   it("invokes the CLI continue command with the resolved run dir", async () => {
     const runDir = await makeTempDir("trst-resume-basic");
-    await writeStartedRun(runDir);
+    await writeRunEvents(runDir, "workflow.completed");
 
     const calls: ContinueRunnerOptions[] = [];
     const runner = async (options: ContinueRunnerOptions) => {
       calls.push(options);
-      return { exitCode: 0, stdout: "Workflow completed: wf-test at x\n", stderr: "" };
+      return { exitCode: 0, stdout: "", stderr: "" };
     };
 
     const result = await trstResume({ runId: runDir, runner });
@@ -65,21 +89,18 @@ describe("trst_resume delegates to the real continue path", () => {
     });
   });
 
-  it("maps the waiting continue output to status waiting", async () => {
+  it("reports status waiting for a run parked on a durable wait", async () => {
     const runDir = await makeTempDir("trst-resume-waiting");
-    await writeStartedRun(runDir);
+    await writeRunEvents(runDir, "wait.started");
 
     const result = await trstResume({
       runId: runDir,
-      runner: async () => ({
-        exitCode: 0,
-        stdout: "Workflow still waiting: run (wait-1)\nMissing answer: waits/a.json\n",
-        stderr: "",
-      }),
+      runner: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
     });
 
     expect(result.resumed).toBe(true);
     expect(result.status).toBe("waiting");
+    expect(result.background).toBeUndefined();
   });
 
   it("maps a failed continue exit to resumed false with the CLI error text", async () => {
@@ -100,17 +121,13 @@ describe("trst_resume delegates to the real continue path", () => {
     expect(result.error).toBe("Run is not waiting: x");
   });
 
-  it("maps cancelled continue output to status cancelled", async () => {
+  it("reports status cancelled for a cancelled run", async () => {
     const runDir = await makeTempDir("trst-resume-cancelled");
-    await writeStartedRun(runDir);
+    await writeRunEvents(runDir, "workflow.cancelled");
 
     const result = await trstResume({
       runId: runDir,
-      runner: async () => ({
-        exitCode: 0,
-        stdout: "Workflow cancelled: run\n",
-        stderr: "",
-      }),
+      runner: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
     });
 
     expect(result.resumed).toBe(true);
@@ -119,7 +136,7 @@ describe("trst_resume delegates to the real continue path", () => {
 
   it("passes the caller env through to the continue runner", async () => {
     const runDir = await makeTempDir("trst-resume-env-thread");
-    await writeStartedRun(runDir);
+    await writeRunEvents(runDir, "workflow.completed");
 
     const calls: ContinueRunnerOptions[] = [];
     const env = { TRAILSTEP_RUNS_ROOT: "custom-runs", TRST_THREAD_CHECK: "bar" };
@@ -128,7 +145,7 @@ describe("trst_resume delegates to the real continue path", () => {
       env,
       runner: async (options) => {
         calls.push(options);
-        return { exitCode: 0, stdout: "Workflow completed: wf-test at x\n", stderr: "" };
+        return { exitCode: 0, stdout: "", stderr: "" };
       },
     });
 
@@ -185,16 +202,108 @@ describe("trst_resume delegates to the real continue path", () => {
   });
 });
 
-describe("spawnContinue merges caller env over process.env", () => {
-  it("passes TRAILSTEP_* overrides and the underlying process.env into the spawned CLI", async () => {
-    const dir = await makeTempDir("trst-spawn-env");
-    const scriptPath = join(dir, "fake-cli.cjs");
-    const dumpPath = join(dir, "env-dump.json");
+describe("trst_resume starts the continue detached and returns in bounded time", () => {
+  it("returns while the continue is still running instead of awaiting it", async () => {
+    const dir = await makeTempDir("trst-resume-detached");
+    const runDir = join(dir, "run");
+    await writeStartedRun(runDir);
+    // Boots, then sits doing nothing observable — exactly like a continue that is
+    // loading modules and discovering workflows. It dies on its own so the child
+    // does not outlive the test run.
+    const fakeCli = join(dir, "slow-cli.mjs");
+    await writeFile(fakeCli, "setTimeout(() => process.exit(0), 3000);\n", "utf8");
+
+    const startedAt = Date.now();
+    const result = await trstResume({
+      runId: runDir,
+      env: { TRAILSTEP_CLI_ENTRY: fakeCli },
+      verifyStartTimeoutMs: 300,
+    });
+    const elapsed = Date.now() - startedAt;
+
+    // The regression test for the blocking bug: the call resolves in the
+    // verification window, not after the multi-minute continue.
+    expect(elapsed).toBeLessThan(5000);
+    expect(result.resumed).toBe(true);
+    expect(result.status).toBe("running");
+    expect(result.background).toBe(true);
+    expect(result.error).toBeUndefined();
+  }, 20_000);
+
+  it("reports failed when the continue exits non-zero before producing events", async () => {
+    const dir = await makeTempDir("trst-resume-detached-fail");
+    const runDir = join(dir, "run");
+    await writeStartedRun(runDir);
+    const fakeCli = join(dir, "failing-cli.mjs");
+    await writeFile(fakeCli, "process.exit(7);\n", "utf8");
+
+    const result = await trstResume({
+      runId: runDir,
+      env: { TRAILSTEP_CLI_ENTRY: fakeCli },
+      verifyStartTimeoutMs: 10_000,
+    });
+
+    expect(result.resumed).toBe(false);
+    expect(result.status).toBe("failed");
+    expect(result.error).toBeTruthy();
+    expect(result.error).toContain("code 7");
+  }, 20_000);
+
+  it("returns started once the continue takes the run lock", async () => {
+    const dir = await makeTempDir("trst-resume-detached-lock");
+    const runDir = join(dir, "run");
+    await writeStartedRun(runDir);
+    const fakeCli = join(dir, "lock-cli.mjs");
+    // The continue re-enters core, which takes run.lock before appending events.
+    await writeFile(
+      fakeCli,
+      [
+        'import { writeFile } from "node:fs/promises";',
+        'import { join } from "node:path";',
+        "const runDir = process.argv[3];",
+        "await writeFile(",
+        '  join(runDir, "run.lock"),',
+        "  JSON.stringify({",
+        "    schemaVersion: 1,",
+        '    runId: "run",',
+        "    pid: process.pid,",
+        "    startedAt: new Date().toISOString(),",
+        "    lastHeartbeatAt: new Date().toISOString(),",
+        '    nonce: "fake-continue",',
+        "  }),",
+        '  "utf8",',
+        ");",
+        "setTimeout(() => process.exit(0), 2000);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const startedAt = Date.now();
+    const result = await trstResume({
+      runId: runDir,
+      env: { TRAILSTEP_CLI_ENTRY: fakeCli },
+      verifyStartTimeoutMs: 10_000,
+    });
+    const elapsed = Date.now() - startedAt;
+
+    expect(result.resumed).toBe(true);
+    // Lock evidence ends the verification instead of waiting out the budget.
+    expect(elapsed).toBeLessThan(9000);
+  }, 20_000);
+
+  it("merges caller env over process.env for the background continue", async () => {
+    const root = await makeTempDir("trst-resume-detached-env");
+    const runsRoot = join(root, "custom-runs");
+    const runDir = join(runsRoot, "env-run");
+    await writeStartedRun(runDir);
+    const scriptPath = join(root, "fake-cli.mjs");
+    const dumpPath = join(root, "env-dump.json");
     await writeFile(
       scriptPath,
       [
-        'const fs = require("node:fs");',
-        "fs.writeFileSync(",
+        'import { writeFileSync } from "node:fs";',
+        "writeFileSync(",
         "  process.env.TRST_TEST_ENV_DUMP,",
         "  JSON.stringify({",
         "    marker: process.env.TRST_TEST_MARKER,",
@@ -203,33 +312,71 @@ describe("spawnContinue merges caller env over process.env", () => {
         "  }),",
         '  "utf8",',
         ");",
+        "process.exit(0);",
         "",
       ].join("\n"),
       "utf8",
     );
 
-    const result = await spawnContinue({
-      cliEntry: scriptPath,
-      runDir: join(dir, "run"),
-      cwd: dir,
+    const result = await trstResume({
+      runId: "env-run",
+      cwd: root,
       env: {
+        TRAILSTEP_CLI_ENTRY: scriptPath,
+        TRAILSTEP_RUNS_ROOT: runsRoot,
         TRST_TEST_ENV_DUMP: dumpPath,
         TRST_TEST_MARKER: "caller",
-        TRAILSTEP_RUNS_ROOT: "custom-runs",
       },
+      verifyStartTimeoutMs: 10_000,
     });
 
-    expect(result.exitCode).toBe(0);
-    const dump = JSON.parse(await readFile(dumpPath, "utf8")) as {
+    expect(result.resumed).toBe(true);
+    expect(result.runDir).toBe(runDir);
+
+    const dump = JSON.parse(await waitForFile(dumpPath)) as {
       marker?: string;
       runsRoot?: string | null;
       hasPath?: boolean;
     };
     // Caller env wins over process.env…
     expect(dump.marker).toBe("caller");
-    expect(dump.runsRoot).toBe("custom-runs");
+    expect(dump.runsRoot).toBe(runsRoot);
     // …while the rest of process.env still reaches the child.
     expect(dump.hasPath).toBe(true);
+  }, 20_000);
+});
+
+describe("statusFromEvents derives the continue status from the trail, never from CLI prose", () => {
+  const event = (type: Event["type"]): Event => ({
+    id: `evt-${type}`,
+    runId: "run-test",
+    workflowId: "wf-test",
+    type,
+    timestamp: new Date(0).toISOString(),
+    schemaVersion: "v0",
+    payload: {},
+  });
+
+  it("maps each terminal event to its status", () => {
+    expect(statusFromEvents([event("workflow.started"), event("workflow.completed")])).toBe(
+      "completed",
+    );
+    expect(statusFromEvents([event("workflow.started"), event("workflow.failed")])).toBe("failed");
+    expect(statusFromEvents([event("workflow.started"), event("workflow.cancelled")])).toBe(
+      "cancelled",
+    );
+  });
+
+  it("maps a trailing wait.started to waiting", () => {
+    expect(statusFromEvents([event("workflow.started"), event("wait.started")])).toBe("waiting");
+  });
+
+  it("maps a mid-run trail to running", () => {
+    expect(statusFromEvents([event("workflow.started"), event("step.started")])).toBe("running");
+  });
+
+  it("maps an empty trail to unknown", () => {
+    expect(statusFromEvents([])).toBe("unknown");
   });
 });
 

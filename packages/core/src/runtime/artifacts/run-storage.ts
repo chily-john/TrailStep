@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Event } from "../../contracts/events/event.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
@@ -53,19 +53,55 @@ export async function createRunDirectory(options: {
   }
 }
 
-export async function appendEvent(runDir: string, event: Event): Promise<void> {
-  await appendFile(join(runDir, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+/**
+ * Serialize appends per events file in-process. Parallel branches, the agent heartbeat and
+ * the CLI cancel command all append to one `events.jsonl`; unserialized `appendFile` calls
+ * can interleave and produce a torn line. Writes to different runs still run concurrently.
+ */
+const pendingAppends = new Map<string, Promise<void>>();
+
+function enqueueAppend(path: string, task: () => Promise<void>): Promise<void> {
+  const previous = pendingAppends.get(path) ?? Promise.resolve();
+  const result = previous.then(task, task);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  pendingAppends.set(path, tail);
+  void tail.then(() => {
+    if (pendingAppends.get(path) === tail) {
+      pendingAppends.delete(path);
+    }
+  });
+  return result;
 }
 
-export async function readRunEvents(runDir: string): Promise<Event[]> {
+export async function appendEvent(runDir: string, event: Event): Promise<void> {
+  const eventsPath = join(runDir, "events.jsonl");
+  await enqueueAppend(eventsPath, async () => {
+    await appendFile(eventsPath, `${JSON.stringify(event)}\n`, "utf8");
+  });
+}
+
+/**
+ * Reads a run's whole `events.jsonl` trail for recovery (resume/continue/retry).
+ * Malformed or non-event-shaped lines are reported through `options.report` and
+ * skipped: a torn line from a crash mid-append must never invalidate the rest
+ * of the trail.
+ */
+export async function readRunEvents(
+  runDir: string,
+  options: { readonly report?: (message: string) => void } = {},
+): Promise<Event[]> {
+  const eventsPath = join(runDir, "events.jsonl");
   let contents: string;
   try {
-    contents = await readFile(join(runDir, "events.jsonl"), "utf8");
+    contents = await readFile(eventsPath, "utf8");
   } catch (error) {
     if (isNodeError(error)) {
       throw new TrailStepFailureError({
         code: "resume_target_not_found",
-        message: `Resume target not found or unreadable: ${join(runDir, "events.jsonl")}.`,
+        message: `Resume target not found or unreadable: ${eventsPath}.`,
         details: { runDir, causeCode: error.code },
       });
     }
@@ -77,22 +113,31 @@ export async function readRunEvents(runDir: string): Promise<Event[]> {
   const lines = rawLines.filter((line, index) => line.length > 0 || index < rawLines.length - 1);
   const events: Event[] = [];
 
+  const report = options.report ?? (() => undefined);
+
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     if (!line) {
       continue;
     }
 
+    let parsed: unknown;
     try {
-      events.push(JSON.parse(line) as Event);
-    } catch (error) {
-      const isTrailingLine = index === lines.length - 1;
-      if (isTrailingLine) {
-        return events;
-      }
-
-      throw error;
+      parsed = JSON.parse(line);
+    } catch {
+      // A torn line (crash or power loss mid-append) must never invalidate the rest of the
+      // trail. Recovery paths replay this file; refusing to read it turns a recoverable
+      // run into a permanently bricked one. Skip and keep going.
+      report(`Unable to parse event JSONL in ${eventsPath}: line ${index + 1}. Skipping line.`);
+      continue;
     }
+
+    if (!isEventLike(parsed)) {
+      report(`Unexpected event shape in ${eventsPath}: line ${index + 1}. Skipping line.`);
+      continue;
+    }
+
+    events.push(parsed);
   }
 
   return events;
@@ -110,7 +155,11 @@ export interface RunEventLineEntry {
 
 /** Outcome of an incremental read of a run's `events.jsonl` trail. */
 export interface RunEventsReadState {
-  /** Full file text (used for run-state classification). */
+  /**
+   * Full file text, or `""` when the trail has not grown since `startCursor` (the no-new-bytes
+   * short-circuit). Callers that need the whole trail must parse it from the run directory
+   * instead of relying on this field.
+   */
   readonly text: string;
   /** Byte offset just past the last complete line (or `startCursor` if none). */
   readonly offset: number;
@@ -151,11 +200,18 @@ export async function readRunEventsSince(
   startCursor: number,
   options: { readonly report?: (message: string) => void } = {},
 ): Promise<RunEventsReadState> {
-  const buffer = await readFile(eventsFile);
-  if (buffer.length < startCursor) {
+  const { size } = await stat(eventsFile);
+  if (size < startCursor) {
+    // The file shrank (truncated or recreated): restart from the beginning.
     return readRunEventsSince(eventsFile, 0, options);
   }
+  if (size === startCursor) {
+    // Nothing new. The caller long-polls every 50 ms; reading and decoding the whole trail on
+    // every poll makes watch O(file size) per poll and it falls permanently behind on long runs.
+    return { text: "", offset: startCursor, entries: [] };
+  }
 
+  const buffer = await readFile(eventsFile);
   const text = buffer.toString("utf8");
   const sliceText = buffer.subarray(startCursor).toString("utf8");
   const lastLineBreakIndex = sliceText.lastIndexOf("\n");
@@ -198,11 +254,6 @@ export async function readRunEventsSince(
     offset: startCursor + Buffer.byteLength(completeText, "utf8"),
     entries,
   };
-}
-
-export async function persistEvents(runDir: string, events: readonly Event[]): Promise<void> {
-  const jsonl = events.map((event) => JSON.stringify(event)).join("\n");
-  await writeFile(join(runDir, "events.jsonl"), `${jsonl}\n`, "utf8");
 }
 
 export async function writeDocumentArtifact(
@@ -393,14 +444,56 @@ async function ensureTrailStepGitignoreForRunsRoot(runsRoot: string): Promise<vo
   await ensureTrailStepGitignore(trailstepRoot);
 }
 
-async function ensureTrailStepGitignore(trailstepRoot: string): Promise<void> {
-  try {
-    await writeFile(join(trailstepRoot, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" });
-  } catch (error) {
-    if (isNodeError(error) && error.code === "EEXIST") {
-      return;
-    }
+/**
+ * Run artifacts and machine-local config are not source. `.trailstep/config.json` IS source:
+ * it holds the team-shared agent and workflow configuration, so it must stay committable.
+ * (The previous blanket `*` ignored it, which silently dropped project config from commits.)
+ */
+export const TRAILSTEP_GITIGNORE_BODY = [
+  "# Generated by TrailStep. Run artifacts and machine-local config are not source.",
+  "# .trailstep/config.json IS meant to be committed; do not ignore it.",
+  "runs/",
+  ".archive/",
+  "sessions/",
+  "worktrees/",
+  "tmp/",
+  "inputs/",
+  "mcp/",
+  "config-local.json",
+  "run.lock",
+  "*.tmp",
+  "",
+].join("\n");
 
-    throw error;
+/** The blanket-ignore body older versions wrote. Replaced in place when found verbatim. */
+const LEGACY_TRAILSTEP_GITIGNORE_BODY = "*\n!.gitignore\n";
+
+async function ensureTrailStepGitignore(trailstepRoot: string): Promise<void> {
+  const gitignorePath = join(trailstepRoot, ".gitignore");
+
+  let existing: string | undefined;
+  try {
+    existing = await readFile(gitignorePath, "utf8");
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  if (existing === undefined) {
+    try {
+      await writeFile(gitignorePath, TRAILSTEP_GITIGNORE_BODY, { flag: "wx" });
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+    return;
+  }
+
+  // Repair only the exact legacy generated body. A hand-edited .gitignore is the user's and
+  // must never be rewritten.
+  if (existing === LEGACY_TRAILSTEP_GITIGNORE_BODY) {
+    await writeFile(gitignorePath, TRAILSTEP_GITIGNORE_BODY, "utf8");
   }
 }

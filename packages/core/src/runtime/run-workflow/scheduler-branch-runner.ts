@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
+import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
 import { readBranchRunState, writeBranchRunState } from "../artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../artifacts/step-artifacts.js";
@@ -37,7 +38,15 @@ import { normalizeParallelOptions } from "./scheduler-worker-pool.js";
 
 export function allocateStepIndex(runtime: SchedulerRuntime, branch: BranchState): number {
   if (runtime.nextStepIndex >= runtime.options.maxSteps) {
-    throw new Error(`workflow exceeded maxSteps guard (${runtime.options.maxSteps})`);
+    throw new TrailStepFailureError({
+      code: "max_steps_exceeded",
+      message: `Workflow exceeded the maxSteps guard (${runtime.options.maxSteps}) at branch ${branch.branchId}.`,
+      details: {
+        maxSteps: runtime.options.maxSteps,
+        branchId: branch.branchId,
+        lastStepId: branch.latestStepId,
+      },
+    });
   }
   runtime.nextStepIndex += 1;
   branch.latestStepIndex = runtime.nextStepIndex;

@@ -40,6 +40,13 @@ export interface AgentAdapterRequest<
   readonly model: AgentModelTarget;
   readonly step: AgentStepRequestConfig<TInput, TOutput>;
   readonly input: TInput;
+  /**
+   * Aborted when the step times out.
+   *
+   * Optional on purpose: adapters written before this field existed keep compiling, and an
+   * adapter that ignores it keeps working (it just cannot stop early).
+   */
+  readonly signal?: AbortSignal;
 }
 
 export type AgentAdapter<

@@ -13,6 +13,11 @@ import {
   type Workflow,
 } from "../../index.js";
 import { appendEvent, createRunDirectory } from "../artifacts/run-storage.js";
+import {
+  isRetryableStepFailure,
+  shouldRetryStepFailure,
+  TRANSIENT_FAILURE_CODES,
+} from "./retryable-failures.js";
 
 function eventTypes(events: readonly Event[]): readonly string[] {
   return events.map((event) => event.type);
@@ -96,6 +101,8 @@ describe("automatic step retry classification", () => {
     expect(attemptFailed?.payload).toMatchObject({
       attempt: 1,
       maxAttempts: 2,
+      // The first dispatch of the step, so amplification is 1 — not 0 and not a per-attempt 1.
+      agentDispatches: 1,
       failure: { code: "agent_provider_unavailable", message: "provider unavailable" },
     });
   });
@@ -255,7 +262,13 @@ describe("automatic step retry classification", () => {
     const attemptFailures = retried.events.filter((event) => event.type === "step.attemptFailed");
     expect(attemptFailures).toHaveLength(2);
     expect(attemptFailures[0]?.payload).toMatchObject({ attempt: 1, maxAttempts: 3 });
-    expect(attemptFailures[1]?.payload).toMatchObject({ attempt: 2, maxAttempts: 3 });
+    // The attempt number is already absolute (persisted failures + in-process attempts), so it
+    // doubles as the cumulative dispatch count across the crash boundary.
+    expect(attemptFailures[1]?.payload).toMatchObject({
+      attempt: 2,
+      maxAttempts: 3,
+      agentDispatches: 2,
+    });
   });
 
   it("never re-executes a non-idempotent do phase", async () => {
@@ -335,5 +348,69 @@ describe("automatic step retry classification", () => {
       "step.completed",
       "workflow.completed",
     ]);
+  });
+});
+
+describe("retryable failure allowlist", () => {
+  it("classifies every transient failure code as retryable", () => {
+    for (const code of TRANSIENT_FAILURE_CODES) {
+      expect(isRetryableStepFailure({ code, message: code })).toBe(true);
+      expect(shouldRetryStepFailure({ code, message: code }, "transient")).toBe(true);
+    }
+  });
+
+  it("pins the exact transient allowlist", () => {
+    // Adding a code here is a product decision: the allowlist must stay narrow enough that a
+    // deterministic failure never burns a second agent dispatch.
+    expect([...TRANSIENT_FAILURE_CODES].sort()).toEqual([
+      "agent_output_invalid_json",
+      "agent_output_unreadable",
+      "agent_provider_failed",
+      "agent_provider_output_invalid",
+      "agent_provider_spawn_error",
+      "agent_provider_timeout",
+      "agent_provider_unavailable",
+      "interactive_output_incomplete",
+      "interactive_output_invalid",
+      "step_timeout",
+    ]);
+  });
+
+  it.each([
+    "validation_failed",
+    "agent_target_exhausted",
+    "invalid_continuation",
+    "missing_agent_config",
+    "max_steps_exceeded",
+  ])("keeps %s permanent under retryOn transient", (code) => {
+    expect(isRetryableStepFailure({ code, message: code })).toBe(false);
+    expect(shouldRetryStepFailure({ code, message: code }, "transient")).toBe(false);
+  });
+
+  it("keeps an unknown failure code permanent", () => {
+    // Pins the allowlist design against a future "just add a default" refactor.
+    expect(isRetryableStepFailure({ code: "some_future_code", message: "unknown" })).toBe(false);
+    expect(
+      shouldRetryStepFailure({ code: "some_future_code", message: "unknown" }, "transient"),
+    ).toBe(false);
+  });
+
+  it("still honors explicit retryable opt-ins", () => {
+    expect(
+      isRetryableStepFailure({ code: "validation_failed", message: "invalid", retryable: true }),
+    ).toBe(true);
+    expect(
+      isRetryableStepFailure({
+        code: "validation_failed",
+        message: "invalid",
+        details: { retryable: true },
+      }),
+    ).toBe(true);
+  });
+
+  it("retries a permanent failure only when retryOn is always", () => {
+    const failure = { code: "validation_failed", message: "invalid" };
+    expect(shouldRetryStepFailure(failure, "always")).toBe(true);
+    expect(shouldRetryStepFailure(failure, "transient")).toBe(false);
   });
 });

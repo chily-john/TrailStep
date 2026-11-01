@@ -13,7 +13,8 @@ import {
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
-import { loadTrailStepConfig } from "../../config/config.js";
+import { loadTrailStepProjectConfig, writeConfigScopeErrors } from "../../config/config.js";
+import { resolveProjectRoot } from "../../project-root/project-root.js";
 import { promptSelect, promptText, promptYesNo } from "../../prompts/prompt-helpers.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
@@ -30,7 +31,10 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
   },
   async run(args: RetryCommandArgs, context: CliCommandContext): Promise<number> {
     const { cwd, io } = context;
-    const runsRoot = resolveRunsRoot(context);
+    // Config, the workflow registry and run artifacts are project-root concerns; the agents keep
+    // running in the invocation directory.
+    const projectRoot = await resolveProjectRoot({ cwd, env: context.env });
+    const runsRoot = resolveRunsRoot({ cwd: projectRoot, env: context.env });
     let retryTarget: {
       readonly workflowId: string;
       readonly workflowRunName: string;
@@ -40,7 +44,7 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
     try {
       retryTarget =
         args.mode === "interactive"
-          ? { ...(await selectInteractiveRetryTarget(context)), fresh: false }
+          ? { ...(await selectInteractiveRetryTarget(context, projectRoot)), fresh: false }
           : {
               workflowId: args.workflowId,
               workflowRunName: args.workflowRunName,
@@ -54,9 +58,14 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
       throw error;
     }
-    const trailstepConfig = await loadTrailStepConfig(cwd, { homeDir: context.homeDir });
+    const projectConfig = await loadTrailStepProjectConfig(projectRoot, {
+      homeDir: context.homeDir,
+    });
+    writeConfigScopeErrors(io, projectConfig.configErrors);
+    const trailstepConfig = projectConfig.trailstepConfig;
     const resolvedWorkflow = await resolveWorkflowReference(retryTarget.workflowId, {
       cwd,
+      projectRoot,
       homeDir: context.homeDir,
     });
 
@@ -75,6 +84,8 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
     const sharedRunOptions = {
       workflow: resolvedWorkflow.workflow,
+      // `projectCwd` is where prompts and artifacts resolve; `cwd` is where agents run.
+      projectCwd: projectRoot,
       cwd,
       eventSink,
       runsRoot,
@@ -135,7 +146,10 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
   },
 };
 
-async function selectInteractiveRetryTarget(context: CliCommandContext): Promise<{
+async function selectInteractiveRetryTarget(
+  context: CliCommandContext,
+  projectRoot: string,
+): Promise<{
   readonly workflowId: string;
   readonly workflowRunName: string;
 }> {
@@ -146,8 +160,8 @@ async function selectInteractiveRetryTarget(context: CliCommandContext): Promise
   }
 
   const eligibleRuns = await listEligibleRetryRuns({
-    cwd: context.cwd,
-    runsRoot: resolveRunsRoot(context),
+    cwd: projectRoot,
+    runsRoot: resolveRunsRoot({ cwd: projectRoot, env: context.env }),
   });
   if (eligibleRuns.length === 0) {
     context.io.writeLine("No eligible failed runs found to retry.");

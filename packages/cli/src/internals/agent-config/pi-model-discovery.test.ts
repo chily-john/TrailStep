@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -36,6 +36,11 @@ describe("parsePiModelDiscoveryOutput", () => {
     const dir = await mkdtemp(join(tmpdir(), "trailstep-pi-discovery-shim-"));
     const binDir = join(dir, "bin");
     await mkdir(binDir, { recursive: true });
+    // The shim's Node entrypoint must exist: `resolveCliCommandForSpawn`
+    // refuses a shim it cannot resolve rather than launching it via cmd.exe.
+    const entrypoint = join(binDir, "node_modules/fake-pi/dist/cli.js");
+    await mkdir(dirname(entrypoint), { recursive: true });
+    await writeFile(entrypoint, "// fake pi entrypoint\n", "utf8");
     await writeFile(
       join(binDir, "pi.cmd"),
       [

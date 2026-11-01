@@ -20,6 +20,10 @@ import {
 } from "../adapter-agent/run-adapter-agent-step/run-adapter-agent-step.js";
 import { runInteractiveAgentCommand } from "../interactive-agent/run-interactive-agent-command.js";
 import { startAgentHeartbeat } from "../working-agent/agent-heartbeat.js";
+import {
+  type AgentLivenessSnapshot,
+  createAgentProgressTracker,
+} from "../working-agent/liveness/agent-progress-tracker.js";
 import { runWorkingAgentCommand } from "../working-agent/run-working-agent-command.js";
 
 /**
@@ -46,6 +50,10 @@ export async function dispatchAgentStep(options: {
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
   readonly stepIndex: number;
+  /** Opt-in. Reports an `agent.stalled` event when the agent produces no output for this long. */
+  readonly stallTimeoutMs?: number;
+  /** Invoked once when the attempt is first observed as stalled. */
+  readonly onAgentStalled?: (snapshot: AgentLivenessSnapshot) => void;
   readonly signal?: AbortSignal;
 }): Promise<PlainObject> {
   const { config, outputSchema } = options;
@@ -125,12 +133,22 @@ export async function dispatchAgentStep(options: {
     return interactiveResult.output;
   }
 
+  const progress = createAgentProgressTracker();
   const heartbeat = startAgentHeartbeat({
     emit: options.emit,
     runId: options.runId,
     workflowId: options.workflowId,
     stepId: config.id,
     describe: () => `Agent step ${config.id}`,
+    tracker: progress,
+    // Only the working path spawns a child process, so a stall is only
+    // meaningful (and only wired to real output) for that mode.
+    ...(agentMode !== "working" || options.stallTimeoutMs === undefined
+      ? {}
+      : { stallTimeoutMs: options.stallTimeoutMs }),
+    onStall: (snapshot) => {
+      options.onAgentStalled?.(snapshot);
+    },
   });
 
   try {
@@ -165,6 +183,7 @@ export async function dispatchAgentStep(options: {
         signal: options.signal,
         emit: options.emit,
         runId: options.runId,
+        progress,
       });
     }
 

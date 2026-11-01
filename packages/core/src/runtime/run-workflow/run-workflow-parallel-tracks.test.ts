@@ -52,6 +52,23 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Resolves with the promise's value, or with `"timed out"` when it does not settle in time.
+ * Used to prove the scheduler cannot hang after a thrown branch instead of hanging the suite.
+ */
+async function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T | "timed out"> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timed out">((resolve) => {
+    timeoutId = setTimeout(() => resolve("timed out"), ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function expectDefinedValue<T>(value: T | undefined): T {
   expect(value).toBeDefined();
   if (value === undefined) {
@@ -1535,6 +1552,118 @@ describe("runWorkflow parallel tracks", () => {
         expect.objectContaining({ status: "cancelled", latestStepIndex: 0 }),
       ]),
     );
+  });
+
+  it("fails the track with branch_failed when a branch throws outside step execution", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-thrown-branch-failure-"));
+    let failFirstStepStart = true;
+
+    const explodingBranch = step({ id: "thrown-terminal-exploding" }).do(() =>
+      done({ value: "unreached" }),
+    );
+    const queuedBranch = step({ id: "thrown-terminal-queued" }).do(() => done({ value: "queued" }));
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "thrown-branch-terminal-workflow",
+      start() {
+        return [explodingBranch(), queuedBranch()];
+      },
+    };
+
+    const settled = await settleWithin(
+      runWorkflow({
+        workflow,
+        input: {},
+        runName: "thrown-branch-terminal",
+        cwd,
+        scheduler: { workers: 1 },
+        eventSink(event) {
+          // Throwing here makes the branch throw from OUTSIDE step execution's own try/catch,
+          // which is the scheduler's worker-failure path rather than the normal step-failure
+          // path. That is the path that used to drop the error on the floor.
+          if (event.type === "step.started" && failFirstStepStart) {
+            failFirstStepStart = false;
+            throw new Error("event sink exploded");
+          }
+        },
+      }),
+      10_000,
+    );
+
+    expect(settled).not.toBe("timed out");
+    if (settled === "timed out") {
+      throw new Error("the scheduler hung after a thrown branch");
+    }
+    expect(settled.status).toBe("failure");
+    if (settled.status !== "failure") {
+      throw new Error("expected the thrown branch to fail the track");
+    }
+    expect(settled.failure).toMatchObject({
+      code: "branch_failed",
+      message: expect.stringContaining("event sink exploded"),
+    });
+
+    const track = await readJsonObject(join(settled.runDir, "track.json"));
+    expect(track).toMatchObject({
+      status: "failed",
+      terminalKind: "failure",
+      failure: expect.objectContaining({
+        code: "branch_failed",
+        message: expect.stringContaining("event sink exploded"),
+      }),
+    });
+
+    const branchIds = track.branches as readonly string[];
+    const branches = await Promise.all(
+      branchIds.map((branchId) =>
+        readJsonObject(join(settled.runDir, "branches", `${branchId}.json`)),
+      ),
+    );
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "failed",
+          failure: expect.objectContaining({ code: "branch_failed" }),
+        }),
+        expect.objectContaining({ status: "cancelled" }),
+      ]),
+    );
+  });
+
+  it("fails with max_steps_exceeded when the scheduler step budget is exhausted", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-max-steps-guard-"));
+    const firstBranch = step({ id: "max-steps-first" }).do(() => done({ value: "first" }));
+    const secondBranch = step({ id: "max-steps-second" }).do(() => done({ value: "second" }));
+    const workflow: Workflow<Record<string, never>, PlainObject> = {
+      id: "max-steps-guard-workflow",
+      start() {
+        return [firstBranch(), secondBranch()];
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "max-steps-guard",
+      cwd,
+      scheduler: { workers: 1 },
+      maxSteps: 1,
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("expected the maxSteps guard to fail the track");
+    }
+    expect(result.failure.code).toBe("max_steps_exceeded");
+    expect(result.failure.details).toMatchObject({
+      maxSteps: 1,
+      branchId: "max-steps-second-1",
+    });
+
+    const track = await readJsonObject(join(result.runDir, "track.json"));
+    expect(track).toMatchObject({
+      status: "failed",
+      failure: expect.objectContaining({ code: "max_steps_exceeded" }),
+    });
   });
 
   it.each([

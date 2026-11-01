@@ -5,7 +5,7 @@ import {
   hasPromptPhase,
   isStepNode,
 } from "../../../authoring/step/step-node.js";
-import type { Failure } from "../../../contracts/failures/failure.js";
+import { type Failure, TrailStepFailureError } from "../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { readPlainPayload } from "../../../runtime/events/read-plain-payload.js";
 import type {
@@ -228,12 +228,26 @@ async function replayStepPhases(
     }
 
     if (nextNode !== undefined) {
-      throw new Error(`step ${stepNode.config.id} has executable phases after a do phase`);
+      throw new TrailStepFailureError({
+        code: "resume_replay_invalid_phase_order",
+        message: `Step ${stepNode.config.id} cannot be replayed: it has executable phases after a do phase.`,
+        details: {
+          stepId: stepNode.config.id,
+          hint: "A do phase must be the last phase of a step. This run cannot be resumed automatically; re-run the workflow.",
+        },
+      });
     }
 
     if (phase.kind === "prompt") {
       if (recordedPromptOutput === undefined || usedRecordedPromptOutput) {
-        throw new Error(`step ${stepNode.config.id} has no recorded output to replay prompt phase`);
+        throw new TrailStepFailureError({
+          code: "resume_replay_missing_step_output",
+          message: `Step ${stepNode.config.id} cannot be replayed: it has no recorded output to replay a prompt phase.`,
+          details: {
+            stepId: stepNode.config.id,
+            hint: "The event trail does not record the agent output this prompt phase produced. Re-run the workflow to regenerate it.",
+          },
+        });
       }
       phaseValue = recordedPromptOutput;
       usedRecordedPromptOutput = true;
@@ -247,7 +261,14 @@ async function replayStepPhases(
   }
 
   if (nextNode === undefined) {
-    throw new Error(`step ${stepNode.config.id} has no do phase`);
+    throw new TrailStepFailureError({
+      code: "resume_replay_missing_do_phase",
+      message: `Step ${stepNode.config.id} cannot be replayed: it has no do phase.`,
+      details: {
+        stepId: stepNode.config.id,
+        hint: "A replayable step needs a do phase to produce its continuation. This run cannot be resumed automatically; re-run the workflow.",
+      },
+    });
   }
 
   return nextNode;

@@ -14,6 +14,8 @@ import type {
   InteractiveProcessResult,
   InteractiveProcessRunner,
 } from "../../runtime/run-workflow/run-workflow.types.js";
+import { terminateChildProcessTree } from "../child-process/child-process-termination.js";
+import { trackLiveChild } from "../child-process/live-children.js";
 import { renderCustomProviderArgs } from "../custom-provider/render-custom-provider-args.js";
 
 export interface LaunchInteractiveAgentTargetOptions {
@@ -200,30 +202,34 @@ const spawnInteractiveProcess: InteractiveProcessRunner = async ({
       stdio: "inherit",
     });
 
-    signal?.addEventListener("abort", () => terminateChildProcessTree(child), { once: true });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ exitCode: code ?? 1 }));
+    const untrack = trackLiveChild(child);
+    let termination: Promise<void> | undefined;
+    const onAbort = (): void => {
+      // Kick off termination once; the completion path awaits the same promise so the
+      // caller never races a live child.
+      termination ??= terminateChildProcessTree(child).catch(() => undefined);
+    };
+    if (signal?.aborted === true) {
+      onAbort();
+    } else {
+      signal?.addEventListener("abort", onAbort, { once: true });
+    }
+
+    child.on("error", (error) => {
+      untrack();
+      signal?.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      void (async () => {
+        untrack();
+        signal?.removeEventListener("abort", onAbort);
+        // Resolve only once an abort-triggered termination has actually finished its child.
+        if (termination !== undefined) {
+          await termination;
+        }
+        resolve({ exitCode: code ?? 1 });
+      })();
+    });
   });
 };
-
-function terminateChildProcessTree(child: ReturnType<typeof spawn>): void {
-  if (!child.pid) {
-    return;
-  }
-
-  if (process.platform === "win32") {
-    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on(
-      "error",
-      () => {
-        child.kill();
-      },
-    );
-    return;
-  }
-
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch {
-    child.kill();
-  }
-}

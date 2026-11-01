@@ -1,3 +1,4 @@
+import { isFailureLikeError } from "../../contracts/failures/failure.js";
 import type { RunContinuationResult } from "../continuation/run-continuation/run-continuation.js";
 import {
   explicitDuplicateBranchIdFailure,
@@ -110,47 +111,62 @@ export async function runRootContinuationArrayScheduler(
 
   let activeWorkers = 0;
 
-  await new Promise<void>((resolve, reject) => {
-    const schedule = (): void => {
-      if (runtime.terminalResult !== undefined || queue.length === 0) {
-        if (activeWorkers === 0) {
-          resolve();
-        }
-        return;
-      }
-
-      while (runtime.terminalResult === undefined && activeWorkers < workers && queue.length > 0) {
-        const queued = shiftRunnableQueuedBranch(queue, runtime.activeByParallelGroup);
-        if (queued === undefined) {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const schedule = (): void => {
+        if (runtime.terminalResult !== undefined || queue.length === 0) {
           if (activeWorkers === 0) {
             resolve();
           }
           return;
         }
-        activeWorkers += 1;
-        incrementActiveParallelGroup(queued.parallelGroupId, runtime.activeByParallelGroup);
 
-        void runBranch(runtime, queued)
-          .then(async (branchResult) => {
-            if (branchResult.status !== "success") {
-              await terminalizeTrack(runtime, branchResult);
+        while (
+          runtime.terminalResult === undefined &&
+          activeWorkers < workers &&
+          queue.length > 0
+        ) {
+          const queued = shiftRunnableQueuedBranch(queue, runtime.activeByParallelGroup);
+          if (queued === undefined) {
+            if (activeWorkers === 0) {
+              resolve();
             }
-          })
-          .then(
-            () => {
+            return;
+          }
+          activeWorkers += 1;
+          incrementActiveParallelGroup(queued.parallelGroupId, runtime.activeByParallelGroup);
+
+          void (async () => {
+            try {
+              const branchResult = await runBranch(runtime, queued);
+              if (branchResult.status !== "success") {
+                await terminalizeTrack(runtime, branchResult);
+              }
+            } catch (error) {
+              // A branch that THROWS (a failed persistBranch, an unexpected runtime bug) must
+              // fail the track, not vanish. The previous shape rejected the outer promise from a
+              // non-awaited chain, which was a no-op once the promise had already resolved.
+              await reportWorkerFailure(runtime, queued, error, reject);
+            } finally {
               activeWorkers -= 1;
               decrementActiveParallelGroup(queued.parallelGroupId, runtime.activeByParallelGroup);
               schedule();
-            },
-            (error: unknown) => {
-              reject(error);
-            },
-          );
-      }
-    };
+            }
+          })();
+        }
+      };
 
-    schedule();
-  });
+      schedule();
+    });
+  } catch (error) {
+    // `reportWorkerFailure` records a terminal track result before it rejects, so the
+    // rejection is a signal rather than the outcome. When a terminal result exists, keep going:
+    // throwing from here would skip `track.json` persistence and replace the structured failure
+    // (e.g. `max_steps_exceeded`) with a generic workflow error.
+    if (runtime.terminalResult === undefined) {
+      throw error;
+    }
+  }
 
   if (runtime.terminalResult !== undefined) {
     if (runtime.terminalResult.status !== "waiting") {
@@ -218,4 +234,50 @@ export async function runRootContinuationArrayScheduler(
       ),
     },
   };
+}
+
+/**
+ * Turns a thrown branch into a terminal track failure and unblocks the scheduler.
+ *
+ * `reject` only has an effect while the outer promise is pending; when a sibling branch already
+ * resolved it, the failure would otherwise be dropped. Recording it on the runtime first makes
+ * the outcome observable either way.
+ */
+async function reportWorkerFailure(
+  runtime: SchedulerRuntime,
+  queued: QueuedBranch,
+  error: unknown,
+  reject: (error: unknown) => void,
+): Promise<void> {
+  const failure: RunContinuationResult & { readonly status: "failure" } = {
+    status: "failure",
+    // An error that already carries a structured failure (the scheduler's own `max_steps_exceeded`
+    // guard, for instance) keeps its code. Collapsing it into `branch_failed` would throw away the
+    // detail an operator needs to act on.
+    failure: isFailureLikeError(error)
+      ? error.failure
+      : {
+          code: "branch_failed",
+          message: `Branch ${queued.branch.branchId} (${queued.source}) threw: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          details: { branchId: queued.branch.branchId, source: queued.source },
+        },
+  };
+
+  queued.branch.status = "failed";
+  queued.branch.failure = failure.failure;
+  queued.branch.updatedAt = new Date().toISOString();
+
+  try {
+    await terminalizeTrack(runtime, failure, {
+      branchId: queued.branch.branchId,
+      kind: "failure",
+    });
+  } catch {
+    // terminalizeTrack persists branch state; if that also fails there is nothing left to do,
+    // and the rejection below still surfaces the original error.
+  }
+
+  reject(error);
 }

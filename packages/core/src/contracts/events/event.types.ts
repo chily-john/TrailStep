@@ -46,6 +46,8 @@ export interface Event<TPayload extends PlainObject = PlainObject> {
     | "agent.sessionResumed"
     | "agent.targetSelected"
     | "agent.attemptFailed"
+    /** The attempt produced no output for the configured `stallTimeout`; reported at most once per attempt. */
+    | "agent.stalled"
     | "workflow.completed";
   readonly timestamp: string;
   readonly schemaVersion: "v0";

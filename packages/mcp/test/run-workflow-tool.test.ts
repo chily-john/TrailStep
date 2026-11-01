@@ -212,6 +212,51 @@ describe("run_workflow start verification (never reports a run that never exists
     expect(result.error).toMatch(/failed to spawn/u);
   });
 
+  it("returns the real suffixed run directory when the generated name is already taken", async () => {
+    const cwd = tmpProject("trailstep-mcp-run-collision-");
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const runName = "review-20260102-030405-aabbccdd";
+    // A stale run from an earlier collision: same base name, different runId.
+    const staleRunDir = join(runsRoot, runName);
+    await mkdir(staleRunDir, { recursive: true });
+    await writeFile(
+      join(staleRunDir, "events.jsonl"),
+      `${JSON.stringify({
+        id: "evt-stale",
+        runId: "review-20250101-000000-deadbeef",
+        workflowId: "review",
+        type: "workflow.started",
+        timestamp: new Date(0).toISOString(),
+        schemaVersion: "v0",
+        payload: { input: {} },
+      })}\n`,
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "workflows"), { recursive: true });
+    await writeFile(join(cwd, "workflows", "review.mjs"), workflowSource(), "utf8");
+
+    const result = await runWorkflowTool({
+      workflowRef: "./workflows/review.mjs",
+      input: { ok: true },
+      cwd,
+      cliEntry,
+      verifyStartTimeoutMs: 20_000,
+      now: () => new Date("2026-01-02T03:04:05.678Z"),
+      randomSuffix: () => "aabbccdd",
+    });
+
+    // core's createRunDirectory appends -2 on a name collision; reporting the
+    // stale directory would mean reporting a run id the CLI never used.
+    expect(result.status).toBe("started");
+    expect(result.runId).toBe(`${runName}-2`);
+    expect(result.runDir).toBe(join(runsRoot, `${runName}-2`));
+    expect(result.runDir).not.toBe(staleRunDir);
+
+    const events = await readFile(join(result.runDir, "events.jsonl"), "utf8");
+    expect(events).toContain("workflow.started");
+  }, 45_000);
+
   it("does not report started while the run directory never appears (bounded budget)", async () => {
     const root = tmpProject("trailstep-mcp-run-no-materialize-");
     const slowCli = join(root, "slow-cli.mjs");

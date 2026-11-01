@@ -2,6 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import nodeProcess from "node:process";
 import { fileURLToPath } from "node:url";
 
 import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
@@ -221,11 +222,36 @@ const scriptBasename =
     .pop() ?? "";
 
 if (invokedScriptPath && metaBasename === scriptBasename && metaBasename === "index.js") {
-  void main().then((exitCode) => {
-    if (process) {
-      process.exitCode = exitCode;
-    }
+  // A run that dies without writing a terminal event leaves every observer reporting
+  // "in progress" forever. These handlers cannot recover the run, but they guarantee the
+  // failure is visible on stderr and the exit code is non-zero, which is what lets an
+  // orchestrating agent stop waiting.
+  nodeProcess.on("unhandledRejection", (reason: unknown) => {
+    nodeProcess.stderr.write(
+      `trailstep: fatal unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`,
+    );
+    nodeProcess.exitCode = 1;
   });
+
+  nodeProcess.on("uncaughtException", (error: Error) => {
+    nodeProcess.stderr.write(
+      `trailstep: fatal uncaught exception: ${error.stack ?? error.message}\n`,
+    );
+    nodeProcess.exit(1);
+  });
+
+  void main()
+    .then((exitCode) => {
+      if (process) {
+        process.exitCode = exitCode;
+      }
+    })
+    .catch((error: unknown) => {
+      // `main()` handles CliUsageError/CliConfigError itself; anything reaching here is a bug.
+      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      nodeProcess.stderr.write(`trailstep: fatal error: ${message}\n`);
+      nodeProcess.exitCode = 1;
+    });
 }
 
 // Story 001 JSON contract + generation helpers now live in

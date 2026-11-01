@@ -1,8 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-import { isRecord } from "@trailstep/core";
+import { atomicWriteJson, isRecord } from "@trailstep/core";
 
 import { CliUsageError } from "../command-framework/command.types.js";
 import { isDirectWorkflowFileReference } from "../workflow-reference/direct-file-reference.js";
@@ -48,12 +48,65 @@ export async function readRawTrailStepConfigFile(path: string): Promise<Record<s
   }
 }
 
+/**
+ * Persist a scope config atomically.
+ *
+ * Every caller is a read-modify-write (`readRawTrailStepConfigFile` → mutate → this). A plain
+ * `writeFile` loses one writer's update when two commands race, and a crash mid-write leaves
+ * truncated JSON that broke every command in the project. `atomicWriteJson` writes a unique tmp
+ * file and renames over the target, so readers never observe a partial file.
+ */
 export async function writeRawTrailStepConfigFile(
   path: string,
   value: Record<string, unknown>,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await atomicWriteJson(path, value);
+}
+
+/**
+ * Per-path queue for read-modify-write sequences.
+ *
+ * `atomicWriteJson` serializes the WRITE and renames atomically, but it takes an already-built
+ * value: two callers that both read before either writes still lose one update, which is exactly
+ * the concurrent `add` / `agents set` race. Enqueueing the whole read-modify-write keeps the two
+ * halves in one ordered section. This is in-process only; cross-process locking is out of scope.
+ */
+const pendingConfigUpdates = new Map<string, Promise<void>>();
+
+function enqueueConfigUpdate<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const previous = pendingConfigUpdates.get(path) ?? Promise.resolve();
+  const result = previous.then(task);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  pendingConfigUpdates.set(path, tail);
+  void tail.then(() => {
+    if (pendingConfigUpdates.get(path) === tail) {
+      pendingConfigUpdates.delete(path);
+    }
+  });
+  return result;
+}
+
+/**
+ * Read, mutate and atomically rewrite one scope config.
+ *
+ * The mutate callback receives the raw config object to modify in place (or replace inside
+ * `apply`). Keeping read and write in one place is what makes concurrent `add` / `agents`
+ * invocations safe: every writer goes through the same serialized atomic path. Throwing from
+ * `mutate` aborts the write, which keeps a validation failure from half-applying a change.
+ */
+export async function updateRawTrailStepConfigFile(
+  path: string,
+  mutate: (config: Record<string, unknown>) => Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return await enqueueConfigUpdate(path, async () => {
+    const current = await readRawTrailStepConfigFile(path);
+    const next = mutate({ ...current });
+    await writeRawTrailStepConfigFile(path, next);
+    return next;
+  });
 }
 
 /**
@@ -196,33 +249,32 @@ export async function writeWorkflowRegistryEntries(
   context: WorkflowRegistryContext,
 ): Promise<void> {
   const path = configPathForScope(scope, context);
-  const config = await readRawTrailStepConfigFile(path);
-  const workflows = toMutableWorkflowRegistry(config.workflows);
-  let workflowMetadata = toMutableWorkflowMetadataRegistry(config.workflowMetadata);
-  let shouldWriteMetadata = isRecord(config.workflowMetadata);
+  await updateRawTrailStepConfigFile(path, (config) => {
+    const workflows = toMutableWorkflowRegistry(config.workflows);
+    let workflowMetadata = toMutableWorkflowMetadataRegistry(config.workflowMetadata);
+    let shouldWriteMetadata = isRecord(config.workflowMetadata);
 
-  for (const entry of entries) {
-    workflows[entry.namespace] = {
-      ...(workflows[entry.namespace] ?? {}),
-      [entry.name]: entry.targetRef,
-    };
+    for (const entry of entries) {
+      workflows[entry.namespace] = {
+        ...(workflows[entry.namespace] ?? {}),
+        [entry.name]: entry.targetRef,
+      };
 
-    workflowMetadata = setWorkflowRegistryMetadataEntry(
+      workflowMetadata = setWorkflowRegistryMetadataEntry(
+        workflowMetadata,
+        entry.namespace,
+        entry.name,
+        entry.metadata,
+      );
+      shouldWriteMetadata ||= entry.metadata !== undefined;
+    }
+
+    return withWorkflowMetadataRegistry(
+      { ...config, workflows },
       workflowMetadata,
-      entry.namespace,
-      entry.name,
-      entry.metadata,
+      shouldWriteMetadata,
     );
-    shouldWriteMetadata ||= entry.metadata !== undefined;
-  }
-
-  const nextConfig = withWorkflowMetadataRegistry(
-    { ...config, workflows },
-    workflowMetadata,
-    shouldWriteMetadata,
-  );
-
-  await writeRawTrailStepConfigFile(path, nextConfig);
+  });
 }
 
 export function deleteWorkflowRegistryEntryFromConfig(

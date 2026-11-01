@@ -2,7 +2,8 @@ import type { Event } from "@trailstep/core";
 import { runWorkflow } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
-import { loadTrailStepConfig } from "../../config/config.js";
+import { loadTrailStepProjectConfig, writeConfigScopeErrors } from "../../config/config.js";
+import { resolveProjectRoot } from "../../project-root/project-root.js";
 import { resolveRunsRoot } from "../../runs-root.js";
 import { maybeWriteRunUpdateNotice } from "../../update-notices/run-update-notice.js";
 import { resolveWorkflowReference } from "../../workflow-resolution/workflow-resolution.js";
@@ -23,9 +24,17 @@ export const runCommand: CliCommand<RunCommandArgs> = {
     const { cwd, io } = context;
     await maybeWriteRunUpdateNotice(context);
     const baseInput = await loadJsonInput(args.input, cwd);
-    const trailstepConfig = await loadTrailStepConfig(cwd, { homeDir: context.homeDir });
+    // The project root decides where config, the workflow registry and run artifacts live.
+    // `cwd` stays the execution directory the agents run in.
+    const projectRoot = await resolveProjectRoot({ cwd, env: context.env });
+    const projectConfig = await loadTrailStepProjectConfig(projectRoot, {
+      homeDir: context.homeDir,
+    });
+    writeConfigScopeErrors(io, projectConfig.configErrors);
+    const trailstepConfig = projectConfig.trailstepConfig;
     const resolvedWorkflow = await resolveWorkflowReference(args.workflowId, {
       cwd,
+      projectRoot,
       homeDir: context.homeDir,
     });
 
@@ -46,8 +55,10 @@ export const runCommand: CliCommand<RunCommandArgs> = {
 
     const sharedRunOptions = {
       workflow: resolvedWorkflow.workflow,
+      // `projectCwd` is where prompts and artifacts resolve; `cwd` is where agents run.
+      projectCwd: projectRoot,
       cwd,
-      runsRoot: resolveRunsRoot(context),
+      runsRoot: resolveRunsRoot({ cwd: projectRoot, env: context.env }),
       eventSink,
       ...(context.processRunner === undefined ? {} : { processRunner: context.processRunner }),
       ...(context.workingAgentProcessRunner === undefined

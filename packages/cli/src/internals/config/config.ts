@@ -11,9 +11,22 @@ export class CliConfigError extends Error {
   }
 }
 
+/** A scope config file that could not be read or parsed. */
+export interface ConfigScopeError {
+  readonly scope: "global" | "project" | "local";
+  readonly path: string;
+  readonly message: string;
+}
+
+export type WorkflowRegistryConfig = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
 export interface TrailStepProjectConfig {
   readonly trailstepConfig: TrailStepConfig | undefined;
-  readonly workflowRegistry: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  readonly workflowRegistry: WorkflowRegistryConfig;
+  /** Registry declared in `~/.trailstep/config.json` only, never merged with project scopes. */
+  readonly globalWorkflowRegistry: WorkflowRegistryConfig;
+  /** Config files that could not be read or parsed. Empty when everything loaded. */
+  readonly configErrors: readonly ConfigScopeError[];
 }
 
 /**
@@ -39,29 +52,31 @@ export async function loadTrailStepProjectConfig(
   options: LoadTrailStepProjectConfigOptions = {},
 ): Promise<TrailStepProjectConfig> {
   const homeDir = options.homeDir ?? homedir();
-  const [user, project, projectLocal] = await Promise.all([
-    readRawScopeConfig(join(homeDir, ".trailstep", "config.json"), {
-      description: "~/.trailstep/config.json",
-    }),
-    readRawScopeConfig(join(cwd, ".trailstep", "config.json"), {
-      description: ".trailstep/config.json",
-    }),
-    readRawScopeConfig(join(cwd, ".trailstep", "config-local.json"), {
-      description: ".trailstep/config-local.json",
-    }),
-  ]);
+  const reads = await readScopeConfigs(cwd, homeDir);
+  const configErrors = collectConfigScopeErrors(reads);
+
+  const user = reads.user.value;
+  const project = reads.project.value;
+  const projectLocal = reads.local.value;
 
   if (user === undefined && project === undefined && projectLocal === undefined) {
-    return { trailstepConfig: undefined, workflowRegistry: {} };
+    return {
+      trailstepConfig: undefined,
+      workflowRegistry: {},
+      globalWorkflowRegistry: {},
+      configErrors,
+    };
   }
 
-  const mergedRunConfig = mergeEffectiveRunConfig(user, project, projectLocal);
-  const mergedProjectRegistryConfig = mergeRawTrailStepConfig(project, projectLocal);
+  const mergedRunConfig = mergeConfigScopes([user, project, projectLocal]);
+  const mergedProjectRegistryConfig = mergeConfigScopes([project, projectLocal]);
 
   try {
     return {
       trailstepConfig: parseTrailStepConfig(toCoreTrailStepConfigValue(mergedRunConfig)),
       workflowRegistry: parseWorkflowRegistry(mergedProjectRegistryConfig),
+      globalWorkflowRegistry: parseWorkflowRegistry(user),
+      configErrors,
     };
   } catch (error) {
     const detail = formatConfigValidationDetail(error);
@@ -70,133 +85,182 @@ export async function loadTrailStepProjectConfig(
 }
 
 /**
- * Merges `.trailstep/config-local.json` over `.trailstep/config.json`.
+ * Deep-merges TrailStep config scopes, lowest precedence first.
  *
- * The merge is shallow at the top level: a key present in the local override (e.g.
- * `customProviders`) replaces the shared value for that key wholesale rather than being
- * deep-merged, keeping precedence easy to reason about.
+ * Every scope config is a partial view of one effective config, so a lower scope's key must
+ * never erase an unrelated key declared higher up. The previous implementation reversed that
+ * for every key except `agents`: a project-level `settings.timeout` deleted a global
+ * `settings.retry`, and a local `workflows.<id>.agents.<role>` deleted every other role for that
+ * workflow in every other scope.
  *
- * `workflows` is the one exception: it merges one level deeper, per namespace bucket,
- * because `project` and `local` scope registrations are meant to coexist. A
- * shallow replace here would make every project-scope registration disappear the moment
- * a local registration exists, since both configs share the same `workflows` key.
+ * Merge rules:
+ * - plain objects merge recursively;
+ * - arrays are replaced wholesale (an agent target list is a unit, never spliced);
+ * - `undefined` never overrides a defined value;
+ * - anything else replaces.
+ *
+ * `null` is a value, not an absence, and replaces. Use it to deliberately clear a lower key.
  */
-function mergeRawTrailStepConfig(base: unknown, local: unknown): unknown {
-  if (!isRecord(base)) {
-    return local ?? base;
+export function mergeConfigScopes(
+  scopes: readonly (unknown | undefined)[],
+): Record<string, unknown> {
+  let merged: Record<string, unknown> = {};
+  for (const scope of scopes) {
+    if (!isRecord(scope)) {
+      continue;
+    }
+    merged = mergeRecords(merged, scope);
   }
-  if (!isRecord(local)) {
-    return base;
-  }
-
-  return { ...base, ...local, workflows: mergeWorkflowsRecord(base.workflows, local.workflows) };
-}
-
-function mergeEffectiveRunConfig(...configs: readonly unknown[]): unknown {
-  return configs.reduce<unknown>(
-    (merged, next) => mergeEffectiveRunConfigPair(merged, next),
-    undefined,
-  );
-}
-
-function mergeEffectiveRunConfigPair(base: unknown, override: unknown): unknown {
-  if (!isRecord(base)) {
-    return override ?? base;
-  }
-  if (!isRecord(override)) {
-    return base;
-  }
-
-  return {
-    ...base,
-    ...override,
-    agents: mergeAgentsRecord(base.agents, override.agents),
-  };
-}
-
-function mergeAgentsRecord(base: unknown, override: unknown): unknown {
-  if (override === undefined) {
-    return base;
-  }
-  if (!isRecord(base)) {
-    return override;
-  }
-  if (!isRecord(override)) {
-    return override;
-  }
-
-  return { ...base, ...override };
-}
-
-function mergeWorkflowsRecord(base: unknown, local: unknown): unknown {
-  if (!isRecord(base)) {
-    return local;
-  }
-  if (!isRecord(local)) {
-    return base;
-  }
-
-  const namespaces = new Set([...Object.keys(base), ...Object.keys(local)]);
-  const merged: Record<string, unknown> = {};
-
-  for (const namespace of namespaces) {
-    const baseBucket = base[namespace];
-    const localBucket = local[namespace];
-
-    merged[namespace] =
-      isRecord(baseBucket) && isRecord(localBucket)
-        ? { ...baseBucket, ...localBucket }
-        : (localBucket ?? baseBucket);
-  }
-
   return merged;
 }
 
-export async function loadTrailStepUserWorkflowRegistry(
-  homeDir = homedir(),
-): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
-  const parsed = await readRawScopeConfig(join(homeDir, ".trailstep", "config.json"), {
-    description: "~/.trailstep/config.json",
-  });
-
-  return parsed === undefined ? {} : parseWorkflowRegistry(parsed);
+function mergeRecords(
+  base: Record<string, unknown>,
+  override: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    if (overrideValue === undefined) {
+      continue;
+    }
+    const baseValue = result[key];
+    result[key] =
+      isRecord(baseValue) && isRecord(overrideValue)
+        ? mergeRecords(baseValue, overrideValue)
+        : overrideValue;
+  }
+  return result;
 }
 
-async function readRawScopeConfig(
-  configPath: string,
-  options: { readonly description: string },
-): Promise<unknown | undefined> {
+/**
+ * Formats one unreadable scope as the stderr line commands print for it.
+ */
+export function formatConfigScopeError(error: ConfigScopeError): string {
+  return `trailstep: ignoring ${error.scope} config at ${error.path}: ${error.message}`;
+}
+
+/**
+ * Surfaces unreadable scope configs once per command invocation.
+ *
+ * A malformed config file is no longer fatal: the remaining scopes still apply. Reporting it
+ * keeps the failure discoverable, because the missing keys show up much later as an unclear
+ * workflow failure.
+ */
+export function writeConfigScopeErrors(
+  io: { writeError: (line: string) => void },
+  errors: readonly ConfigScopeError[],
+): void {
+  for (const error of errors) {
+    io.writeError(formatConfigScopeError(error));
+  }
+}
+
+/**
+ * @deprecated Use `loadTrailStepProjectConfig().globalWorkflowRegistry` instead.
+ */
+export async function loadTrailStepUserWorkflowRegistry(
+  homeDir = homedir(),
+): Promise<WorkflowRegistryConfig> {
+  const user = await readScopeConfig(join(homeDir, ".trailstep", "config.json"));
+  return user.value === undefined ? {} : parseWorkflowRegistry(user.value);
+}
+
+interface ScopeRead {
+  readonly value: unknown | undefined;
+  readonly error?: { readonly path: string; readonly message: string };
+}
+
+interface ScopeReads {
+  readonly user: ScopeRead;
+  readonly project: ScopeRead;
+  readonly local: ScopeRead;
+}
+
+/**
+ * Reads every scope independently, recording failures instead of throwing.
+ *
+ * `Promise.all` over throwing reads meant one typo in `~/.trailstep/config.json` broke every
+ * trailstep command in every project, with no escape hatch.
+ */
+async function readScopeConfigs(cwd: string, homeDir: string): Promise<ScopeReads> {
+  const [user, project, local] = await Promise.all([
+    readScopeConfig(join(homeDir, ".trailstep", "config.json")),
+    readScopeConfig(join(cwd, ".trailstep", "config.json")),
+    readScopeConfig(join(cwd, ".trailstep", "config-local.json")),
+  ]);
+
+  return { user, project, local };
+}
+
+function collectConfigScopeErrors(reads: ScopeReads): readonly ConfigScopeError[] {
+  const errors: ConfigScopeError[] = [];
+  const append = (scope: ConfigScopeError["scope"], read: ScopeRead): void => {
+    if (read.error !== undefined) {
+      errors.push({ scope, path: read.error.path, message: read.error.message });
+    }
+  };
+
+  append("global", reads.user);
+  append("project", reads.project);
+  append("local", reads.local);
+
+  return errors;
+}
+
+async function readScopeConfig(configPath: string): Promise<ScopeRead> {
   let fileContents: string;
 
   try {
     fileContents = await readFile(configPath, "utf8");
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return undefined;
+      return { value: undefined };
     }
 
-    throw new CliConfigError(`Unable to read ${options.description}.`, { cause: error });
+    return { value: undefined, error: { path: configPath, message: formatReadFailure(error) } };
   }
 
   try {
-    return JSON.parse(fileContents) as unknown;
+    return { value: JSON.parse(fileContents) as unknown };
   } catch (error) {
-    throw new CliConfigError(`Invalid ${options.description}: expected valid JSON.`, {
-      cause: error,
-    });
+    const message =
+      error instanceof Error ? `expected valid JSON (${error.message})` : "expected valid JSON";
+    return { value: undefined, error: { path: configPath, message } };
   }
 }
 
-function parseWorkflowRegistry(
-  value: unknown,
-): Readonly<Record<string, Readonly<Record<string, string>>>> {
-  if (!isRecord(value) || !isRecord(value.workflows)) {
+function formatReadFailure(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return `unable to read file (${error.message})`;
+  }
+
+  return "unable to read file";
+}
+
+/**
+ * Parses a registry out of one scope config.
+ *
+ * `workflowRegistry` is the canonical key. For one release we also read the legacy
+ * `workflows` string leaves that `trailstep add` still writes (story 10 moves the writer onto
+ * `workflowRegistry`); that fallback is what keeps `add`/`agents` and the resolver agreeing
+ * while both keys exist.
+ */
+function parseWorkflowRegistry(value: unknown): WorkflowRegistryConfig {
+  if (!isRecord(value)) {
     return {};
   }
 
+  if (isRecord(value.workflowRegistry)) {
+    return parseRegistryBuckets(value.workflowRegistry);
+  }
+
+  return isRecord(value.workflows) ? parseRegistryBuckets(value.workflows) : {};
+}
+
+function parseRegistryBuckets(value: Readonly<Record<string, unknown>>): WorkflowRegistryConfig {
   const registry: Record<string, Record<string, string>> = {};
 
-  for (const [namespace, entries] of Object.entries(value.workflows)) {
+  for (const [namespace, entries] of Object.entries(value)) {
     if (!isRecord(entries)) {
       continue;
     }
@@ -220,34 +284,15 @@ function toCoreTrailStepConfigValue(value: unknown): unknown {
     return value;
   }
 
+  const coreConfig = { ...value };
+  delete coreConfig.workflowRegistry;
+
   return {
-    ...value,
+    ...coreConfig,
     version: value.version ?? 1,
     customProviders: value.customProviders ?? {},
     agents: value.agents ?? {},
-    ...(value.workflows === undefined ? {} : { workflows: stripWorkflowRegistry(value.workflows) }),
   };
-}
-
-function stripWorkflowRegistry(value: unknown): unknown {
-  if (!isRecord(value)) {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([workflowId, workflowConfig]) => {
-      if (!isRecord(workflowConfig)) {
-        return [workflowId, workflowConfig];
-      }
-
-      return [
-        workflowId,
-        Object.fromEntries(
-          Object.entries(workflowConfig).filter((entry) => typeof entry[1] !== "string"),
-        ),
-      ];
-    }),
-  );
 }
 
 function formatConfigValidationDetail(error: unknown): string {

@@ -421,6 +421,9 @@ describe("main", () => {
 
   it("direct workflow file refs still run workflows", async ({ task }) => {
     const cwd = join(MAIN_TEST_ROOT, `${task.id}-bare-direct-workflow`);
+    // Project-root discovery walks up to the nearest `.git`; without a marker this sandbox would
+    // resolve to the TrailStep repo root and write its run artifacts there.
+    await mkdir(join(cwd, ".git"), { recursive: true });
     await mkdir(join(cwd, "workflows"), { recursive: true });
     await writeFile(
       join(cwd, "workflows", "review.mjs"),
@@ -979,6 +982,9 @@ describe("main", () => {
 
   it("runs a discovered continuation workflow", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-main-tests", `${task.id}-run`);
+    // Project-root discovery walks up to the nearest `.git`; without a marker this sandbox would
+    // resolve to the TrailStep repo root and write its run artifacts there.
+    await mkdir(join(cwd, ".git"), { recursive: true });
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
@@ -1088,6 +1094,9 @@ describe("main", () => {
       ".tmp-trailstep-main-tests",
       `${task.id}-missing-config-agent-run`,
     );
+    // Project-root discovery walks up to the nearest `.git`; without this marker the sandbox
+    // would inherit the TrailStep repo config instead of reporting the missing project config.
+    await mkdir(join(cwd, ".git"), { recursive: true });
     const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
     await mkdir(packageDir, { recursive: true });
     await writeJson(join(cwd, "package.json"), {
@@ -1150,7 +1159,8 @@ describe("main", () => {
       }),
     ).resolves.toBe(1);
 
-    expect(errors.join("\n")).toMatch(/invalid \.trailstep\/config\.json/i);
+    // An unreadable scope config is reported and skipped, not fatal (story 09).
+    expect(errors.join("\n")).toMatch(/ignoring project config .*expected valid JSON/i);
   });
 
   it("invalid .trailstep/config.json schema reports a CLI input error", async ({ task }) => {

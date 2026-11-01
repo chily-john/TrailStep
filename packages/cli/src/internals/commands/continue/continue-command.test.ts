@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main } from "../../../index.js";
+import { markProjectRoot } from "../../../test/project-root-fixture.js";
 import type { TrailStepCliPrompts } from "../../command-framework/command.types.js";
 import { continueCommand } from "./continue-command.js";
 
@@ -18,6 +19,7 @@ async function writeWaitingWorkflowFile(
   options: { dynamicWait?: boolean; promptBeforeWait?: boolean } = {},
 ): Promise<void> {
   await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -76,6 +78,7 @@ async function writeWaitingWorkflowFile(
 
 async function writeCheckWaitingWorkflowFile(cwd: string): Promise<void> {
   await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -115,6 +118,7 @@ async function writeCheckWaitingWorkflowFile(cwd: string): Promise<void> {
 
 async function writeParallelWaitingWorkflowFile(cwd: string): Promise<void> {
   await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(

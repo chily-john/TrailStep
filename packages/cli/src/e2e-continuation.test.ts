@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { main } from "./index.js";
+import { markProjectRoot } from "./test/project-root-fixture.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -15,6 +16,7 @@ async function readCliPackageJson(): Promise<{ bin?: Record<string, string> }> {
 }
 
 async function writeDirectWorkflowFile(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   const coreImportUrl = pathToFileURL(resolve("..", "core", "dist", "index.js")).href;
   await mkdir(workflowDir, { recursive: true });
@@ -43,6 +45,7 @@ async function writeDirectWorkflowFile(cwd: string): Promise<void> {
 }
 
 async function writeContinuationWorkflowPackage(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const packageDir = join(cwd, "node_modules", "@acme", "trailstep-continuation-workflows");
   const coreImportUrl = pathToFileURL(resolve("..", "core", "dist", "index.js")).href;
   await mkdir(packageDir, { recursive: true });

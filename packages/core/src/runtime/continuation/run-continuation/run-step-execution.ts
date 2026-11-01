@@ -22,7 +22,11 @@ import { stepExecutionFailure } from "../../failures/step-execution-failure.js";
 import { type RetryPolicyInput, resolveRetryPolicy } from "../../retry/retry-policy.js";
 import { shouldRetryStepFailure } from "../../retry/retryable-failures.js";
 import { readRecordedStepAttempts } from "../../retry/step-attempt-history.js";
-import { resolveTimeoutPolicy, type TimeoutPolicyInput } from "../../timeout/timeout-policy.js";
+import {
+  resolveStallPolicy,
+  resolveTimeoutPolicy,
+  type TimeoutPolicyInput,
+} from "../../timeout/timeout-policy.js";
 import {
   continuationFailure,
   errorMessage,
@@ -78,6 +82,11 @@ export async function runStepExecution(
       context.currentWorkflowTimeout ??
       trailstepConfig?.workflows?.[currentWorkflowId]?.settings?.timeout,
     step: config.timeout,
+  });
+  const stallPolicy = resolveStallPolicy({
+    global: trailstepConfig?.settings?.stallTimeout,
+    workflow: trailstepConfig?.workflows?.[currentWorkflowId]?.settings?.stallTimeout,
+    step: config.stallTimeout,
   });
   const maxSubPrompts =
     firstPromptPhase(phases)?.maxSubPrompts ??
@@ -158,6 +167,7 @@ export async function runStepExecution(
         currentWorkflowAgents: context.currentWorkflowAgents,
         trailstepConfig,
         timeoutPolicy,
+        stallPolicy,
         maxSubPrompts,
         hasPrompt,
         attempt,
@@ -206,6 +216,11 @@ export async function runStepExecution(
               attempt: failedAttempt,
               failure,
               maxAttempts: retryPolicy.maxAttempts,
+              // How many provider dispatches this step has caused in total, so an operator can
+              // see retry amplification instead of inferring it from a pile of agent.* events.
+              // `attempt` is already absolute (persisted failures + this process's attempts), so
+              // it is the cumulative dispatch count for the step.
+              agentDispatches: failedAttempt,
             },
           }),
         );

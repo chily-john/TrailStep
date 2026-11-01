@@ -19,12 +19,14 @@
  * a shell, so the JSON reaches the CLI verbatim on every platform.
  *
  * The generated run name is passed to the CLI as the positional run name, so
- * the spawned run lands in `<runsRoot>/<runName>` and the returned runId/runDir
- * are the real ones the background run writes events.jsonl into.
+ * the spawned run lands under `<runsRoot>`; core's `createRunDirectory` appends
+ * `-2`, `-3`, ... when the name is taken, so the returned runId/runDir are read
+ * back from the directory that actually materialized (never predicted).
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
@@ -147,6 +149,8 @@ export async function runWorkflowTool(
   // an early CLI exit instead.
   const verification = await verifyRunMaterialization(
     child,
+    runsRoot,
+    runName,
     runDir,
     options.verifyStartTimeoutMs ?? defaultVerifyStartTimeoutMs,
   );
@@ -154,21 +158,33 @@ export async function runWorkflowTool(
     return { runId: runName, runDir, status: "failed", error: verification.error };
   }
 
-  return { runId: runName, runDir, status: "started" };
+  // Report the directory the background CLI actually created: a run-name
+  // collision gives the run `<runName>-2`, and the stale `<runName>` directory
+  // belongs to an earlier run.
+  return {
+    runId: basename(verification.runDir),
+    runDir: verification.runDir,
+    status: "started",
+  };
 }
 
-type StartVerification = { readonly ok: true } | { readonly ok: false; readonly error: string };
+type StartVerification =
+  | { readonly ok: true; readonly runDir: string }
+  | { readonly ok: false; readonly error: string };
 
 /**
  * Bounded post-spawn check that the run actually materializes. Reports OK only
- * once `<runDir>` exists; surfaces a spawn error or a background CLI that
- * exits before creating it. Never waits longer than `budgetMs`, preserving the
+ * once a run directory produced by THIS spawn exists (see
+ * `resolveMaterializedRunDir`); surfaces a spawn error or a background CLI that
+ * exits before creating one. Never waits longer than `budgetMs`, preserving the
  * bounded-time contract. The error/exit listeners attached here also keep a
  * late spawn failure from becoming an unhandled `error` event.
  */
 async function verifyRunMaterialization(
   child: ChildProcess,
-  runDir: string,
+  runsRoot: string,
+  runName: string,
+  predictedRunDir: string,
   budgetMs: number,
 ): Promise<StartVerification> {
   let spawnError: Error | undefined;
@@ -193,7 +209,7 @@ async function verifyRunMaterialization(
       const how = exitInfo.code === null ? `signal ${exitInfo.signal}` : `code ${exitInfo.code}`;
       return {
         ok: false,
-        error: `run_workflow: background CLI exited with ${how} before ${runDir} appeared; not reporting status "started".`,
+        error: `run_workflow: background CLI exited with ${how} before ${predictedRunDir} appeared; not reporting status "started".`,
       };
     }
     return undefined;
@@ -201,8 +217,9 @@ async function verifyRunMaterialization(
 
   const deadline = Date.now() + Math.max(0, budgetMs);
   while (Date.now() < deadline) {
-    if (existsSync(runDir)) {
-      return { ok: true };
+    const materialized = await resolveMaterializedRunDir(runsRoot, runName);
+    if (materialized !== undefined) {
+      return { ok: true, runDir: materialized };
     }
     const failure = earlyFailure();
     if (failure !== undefined) {
@@ -211,8 +228,9 @@ async function verifyRunMaterialization(
     await sleep(Math.max(1, Math.min(verifyStartPollIntervalMs, deadline - Date.now())));
   }
 
-  if (existsSync(runDir)) {
-    return { ok: true };
+  const materialized = await resolveMaterializedRunDir(runsRoot, runName);
+  if (materialized !== undefined) {
+    return { ok: true, runDir: materialized };
   }
   const failure = earlyFailure();
   if (failure !== undefined) {
@@ -220,8 +238,61 @@ async function verifyRunMaterialization(
   }
   return {
     ok: false,
-    error: `run_workflow: ${runDir} did not appear within ${budgetMs}ms; not reporting status "started" for a run that never materialized.`,
+    error: `run_workflow: ${predictedRunDir} did not appear within ${budgetMs}ms; not reporting status "started" for a run that never materialized.`,
   };
+}
+
+/**
+ * Resolve the run directory the background CLI actually created.
+ *
+ * `createRunDirectory` appends `-2`, `-3`, ... when the chosen name is taken, so the directory
+ * this tool predicts is not necessarily the one used. Verifying the predicted path could report
+ * `started` for a STALE directory left by an earlier run whose id collided.
+ */
+async function resolveMaterializedRunDir(
+  runsRoot: string,
+  runName: string,
+): Promise<string | undefined> {
+  const exact = join(runsRoot, runName);
+  if (await isNonEmptyRunDir(exact)) {
+    return exact;
+  }
+  for (let suffix = 2; suffix <= 50; suffix += 1) {
+    const candidate = join(runsRoot, `${runName}-${suffix}`);
+    if (await isNonEmptyRunDir(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether `dir` is a run directory written by the run we are verifying: `events.jsonl` exists,
+ * is non-empty, and its first event belongs to the directory's own runId. A stale directory
+ * from an earlier run that merely shares the base name fails that runId check, which is why
+ * the base name alone cannot be trusted here.
+ */
+async function isNonEmptyRunDir(dir: string): Promise<boolean> {
+  try {
+    const contents = await readFile(join(dir, "events.jsonl"), "utf8");
+    const firstLine = contents.split("\n").find((line) => line.trim().length > 0);
+    if (firstLine === undefined) {
+      return false;
+    }
+    const first: unknown = JSON.parse(firstLine);
+    if (typeof first !== "object" || first === null) {
+      return false;
+    }
+    const candidate = first as { readonly type?: unknown; readonly runId?: unknown };
+    if (typeof candidate.runId === "string") {
+      // A run that fails input validation writes workflow.failed first, so the runId — not the
+      // event type — is the reliable identity check.
+      return candidate.runId === basename(dir);
+    }
+    return candidate.type === "workflow.started";
+  } catch {
+    return false;
+  }
 }
 
 function validateWorkflowRef(workflowRef: unknown): string {

@@ -30,6 +30,7 @@ import {
   isTransientWorkingAgentFailure,
   stderrTailFromDetails,
 } from "./failures/transient-spawn-failures.js";
+import type { AgentProgressTracker } from "./liveness/agent-progress-tracker.js";
 import { buildWorkingAgentPrompt } from "./prompts/build-working-agent-prompt.js";
 import { runWorkingAgentTargetAttempt } from "./targets/run-working-agent-target-attempt.js";
 import {
@@ -55,6 +56,9 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   readonly stepIndex: number;
   readonly files?: WorkingAgentFiles;
   readonly signal?: AbortSignal;
+  // Story 05 replaces the signal wiring in this file.
+  /** Optional live liveness probe shared with the attempt heartbeat. */
+  readonly progress?: AgentProgressTracker;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
 }): Promise<TOutput> {

@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { coerceScalarStrings } from "../../authoring/shape/coerce-scalars.js";
 import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
-import type { Failure } from "../../contracts/failures/failure.js";
+import { type Failure, TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 import { isPlainObject } from "../../json/guards.js";
 import { findLatestPendingWait, waitEventBranchId } from "../../runs/wait-events.js";
@@ -40,6 +40,7 @@ import {
 import { replayToRetryFailure } from "../retry/replay-to-retry-failure.js";
 import { createRunContext } from "../run-context/create-run-context.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
+import { acquireRunLock, type RunLock, releaseRunLock } from "../run-lock/run-lock.js";
 import { resolveAndValidateRunCwds } from "./cwd.js";
 import { initializeRun } from "./initialize-run.js";
 import { replayToCancelledStep } from "./replay-to-cancelled-step.js";
@@ -111,12 +112,22 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     ...(isResume || isRetry ? { initialState: {} } : {}),
   });
 
+  const emitBestEffort = async (event: Event): Promise<void> => {
+    try {
+      await emit(event);
+    } catch {
+      // A cancellation or failure must reach the caller even when the trail cannot be
+      // written. Losing the event is bad; replacing the reported outcome with an EBUSY is
+      // worse.
+    }
+  };
+
   const cancelWorkflow = async (cancellation: CancellationMarker): Promise<Result<TOutput>> => {
     // Only the current cancellation cycle counts: a run that was resumed after
     // an earlier cancellation must emit fresh cancel events for this cycle.
     const cycleEvents = eventsSinceLastReopen(events);
     if (!cycleEvents.some((event) => event.type === "workflow.cancelRequested")) {
-      await emit(
+      await emitBestEffort(
         createEvent({
           runId,
           workflowId: options.workflow.id,
@@ -127,7 +138,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     }
 
     if (!cycleEvents.some((event) => event.type === "workflow.cancelled")) {
-      await emit(
+      await emitBestEffort(
         createEvent({
           runId,
           workflowId: options.workflow.id,
@@ -155,7 +166,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   };
 
   const failWorkflow = async (failure: Failure, message?: string): Promise<Result<TOutput>> => {
-    await emit(
+    await emitBestEffort(
       createEvent({
         runId,
         workflowId: options.workflow.id,
@@ -183,6 +194,24 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     events,
   });
 
+  const acquired = await acquireRunLock({ runDir, runId });
+  if (acquired.status === "held") {
+    const failure = workflowFailure(
+      new TrailStepFailureError({
+        code: "run_already_active",
+        message: `Run ${runId} is already being executed by process ${acquired.lock.pid}.`,
+        details: {
+          runDir,
+          holderPid: acquired.lock.pid,
+          holderStartedAt: acquired.lock.startedAt,
+          holderLastHeartbeatAt: acquired.lock.lastHeartbeatAt,
+        },
+      }),
+    );
+    return await failWorkflow(failure);
+  }
+
+  const lock: RunLock = acquired.lock;
   try {
     return await runContextStorage.run(runContext, () => runWorkflowBody());
   } catch (error) {
@@ -191,6 +220,10 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     }
 
     return await failWorkflow(workflowFailure(error));
+  } finally {
+    // Released on EVERY exit path, including `waiting`: a durable wait ends this process and a
+    // later `continue` must be able to acquire the lock again.
+    await releaseRunLock(runDir, lock).catch(() => undefined);
   }
 
   async function runWorkflowBody(): Promise<Result<TOutput>> {

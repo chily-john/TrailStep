@@ -52,6 +52,8 @@ export interface TrailStepSettings {
   /** Backoff retry policy for transient working-agent spawn failures. */
   readonly spawnRetry?: SpawnRetryPolicyInput;
   readonly timeout?: TimeoutPolicyInput;
+  /** Opt-in. Reports a stall when an agent attempt produces no output for this long. */
+  readonly stallTimeout?: TimeoutPolicyInput;
   /**
    * Execution (hygiene) block applied to agent roles that do not define
    * their own block. Merged field by field with the per-workflow block and

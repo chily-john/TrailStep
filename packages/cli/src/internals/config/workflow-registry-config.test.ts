@@ -195,7 +195,7 @@ describe("workflow registry project config", () => {
     });
   });
 
-  it("replaces top-level workflows for run config while keeping registry scopes merged", async ({
+  it("deep-merges run config workflows across scopes while keeping registry scopes merged", async ({
     task,
   }) => {
     const root = join("node_modules", ".tmp-trailstep-workflow-registry-config-tests", task.id);
@@ -252,11 +252,13 @@ describe("workflow registry project config", () => {
         review: "./review.mjs",
       },
     });
-    expect(loaded.trailstepConfig?.workflows?.localWorkflow?.agents?.reviewer).toEqual([
-      { provider: "codex", model: "local-model" },
-    ]);
-    expect(loaded.trailstepConfig?.workflows).not.toHaveProperty("userWorkflow");
-    expect(loaded.trailstepConfig?.workflows).not.toHaveProperty("projectWorkflow");
+    // A lower scope must not erase a whole workflow bucket declared higher up: the previous
+    // shallow merge dropped the global and project roles as soon as local mentioned the key.
+    expect(loaded.trailstepConfig?.workflows).toMatchObject({
+      userWorkflow: { agents: { reviewer: [{ provider: "claude", model: "user-model" }] } },
+      projectWorkflow: { agents: { reviewer: [{ provider: "codex", model: "project-model" }] } },
+      localWorkflow: { agents: { reviewer: [{ provider: "codex", model: "local-model" }] } },
+    });
   });
 
   it("merges config-local.json over config.json, with local winning per top-level key", async ({

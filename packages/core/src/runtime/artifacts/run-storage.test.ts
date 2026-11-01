@@ -13,6 +13,7 @@ import {
   readRunEvents,
   readRunEventsSince,
   readRunState,
+  TRAILSTEP_GITIGNORE_BODY,
   writeJsonStateArtifact,
   writeRunState,
 } from "./run-storage.js";
@@ -72,6 +73,87 @@ describe("run storage", () => {
     ]);
   });
 
+  it("readRunEvents skips a torn middle line and returns the rest", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "torn-middle-run" });
+    const first = makeEvent("workflow.started");
+    const second = makeEvent("step.started");
+    const third = makeEvent("workflow.completed");
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify(first)}\n{"id":"e2","type":"step.sta\n${JSON.stringify(second)}\n${JSON.stringify(third)}\n`,
+      "utf8",
+    );
+
+    const reported: string[] = [];
+    const events = await readRunEvents(runDir, {
+      report: (message) => reported.push(message),
+    });
+
+    expect(events.map((event) => event.id)).toEqual([first.id, second.id, third.id]);
+    expect(reported).toHaveLength(1);
+    expect(reported.join("\n")).toContain("line 2");
+  });
+
+  it("readRunEvents skips a line that parses as JSON but is not event-shaped", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "non-event-line-run" });
+    const first = makeEvent("workflow.started");
+    const second = makeEvent("workflow.completed");
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify(first)}\n{"hello":"world"}\n${JSON.stringify(second)}\n`,
+      "utf8",
+    );
+
+    const reported: string[] = [];
+    const events = await readRunEvents(runDir, {
+      report: (message) => reported.push(message),
+    });
+
+    expect(events.map((event) => event.id)).toEqual([first.id, second.id]);
+    expect(reported.join("\n")).toContain("Unexpected event shape");
+  });
+
+  it("readRunEvents still throws resume_target_not_found when the trail is missing", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const missingRunDir = join(cwd, "missing-run");
+
+    await expect(readRunEvents(missingRunDir)).rejects.toMatchObject({
+      failure: {
+        code: "resume_target_not_found",
+        details: { runDir: missingRunDir, causeCode: "ENOENT" },
+      },
+    });
+  });
+
+  it("readRunEvents works with no options argument", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "no-options-run" });
+    const event = makeEvent("workflow.started");
+    await appendEvent(runDir, event);
+
+    await expect(readRunEvents(runDir)).resolves.toEqual([event]);
+  });
+
+  it("serializes concurrent appendEvent calls into a fully parseable trail", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const { runDir } = await createRunDirectory({ cwd, runName: "concurrent-append-run" });
+    const events = Array.from({ length: 50 }, (_, index) => ({
+      ...makeEvent("step.progress"),
+      id: `evt_concurrent_${index}`,
+      payload: { big: "x".repeat(100_000) },
+    }));
+
+    await Promise.all(events.map((event) => appendEvent(runDir, event)));
+
+    const trail = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(trail.split("\n").filter((line) => line.length > 0)).toHaveLength(50);
+
+    const readBack = await readRunEvents(runDir);
+    expect(readBack.map((event) => event.id)).toEqual(events.map((event) => event.id));
+  });
+
   it("rejects run names that would escape the runs root", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
 
@@ -80,14 +162,42 @@ describe("run storage", () => {
     });
   });
 
-  it("creates a .trailstep/.gitignore file that ignores everything except itself", async () => {
+  it("creates a .trailstep/.gitignore that ignores run artifacts but not the committed config", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
 
     await createRunDirectory({ cwd, runName: "first-run" });
 
     const gitignorePath = join(cwd, ".trailstep", ".gitignore");
     const contents = await readFile(gitignorePath, "utf8");
-    expect(contents).toBe("*\n!.gitignore\n");
+    expect(contents).toBe(TRAILSTEP_GITIGNORE_BODY);
+    expect(contents).toContain("runs/");
+    expect(contents).toContain("config-local.json");
+    expect(contents.split("\n")).not.toContain("*");
+    expect(contents).not.toContain("!config.json");
+  });
+
+  it("repairs the legacy blanket .gitignore body in place", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    const gitignorePath = join(cwd, ".trailstep", ".gitignore");
+    await writeFile(gitignorePath, "*\n!.gitignore\n", "utf8");
+
+    await createRunDirectory({ cwd, runName: "legacy-gitignore-run" });
+
+    await expect(readFile(gitignorePath, "utf8")).resolves.toBe(TRAILSTEP_GITIGNORE_BODY);
+  });
+
+  it("never rewrites a hand-edited .gitignore", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    await mkdir(join(cwd, ".trailstep"), { recursive: true });
+    const gitignorePath = join(cwd, ".trailstep", ".gitignore");
+    // This repo's hand-fixed body: not the legacy generated one, so it is the user's.
+    const handEdited = "*\n!.gitignore\n!config.json\n";
+    await writeFile(gitignorePath, handEdited, "utf8");
+
+    await createRunDirectory({ cwd, runName: "hand-edited-gitignore-run" });
+
+    await expect(readFile(gitignorePath, "utf8")).resolves.toBe(handEdited);
   });
 
   it("does not throw or corrupt the .gitignore file on a second run in the same cwd", async () => {
@@ -103,7 +213,7 @@ describe("run storage", () => {
 
     const secondContents = await readFile(gitignorePath, "utf8");
     expect(secondContents).toBe(firstContents);
-    expect(secondContents).toBe("*\n!.gitignore\n");
+    expect(secondContents).toBe(TRAILSTEP_GITIGNORE_BODY);
   });
 
   it("persists run state as state.json and reads it from a second helper call", async () => {
@@ -214,6 +324,34 @@ describe("run storage", () => {
     const second = await readRunEventsSince(eventsFile, first.offset);
     expect(second.entries).toEqual([]);
     expect(second.offset).toBe(first.offset);
+  });
+
+  it("readRunEventsSince short-circuits when the trail has not grown", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const eventsFile = join(cwd, "events.jsonl");
+    const contents = `${JSON.stringify(makeEvent("workflow.started"))}\n`;
+    await writeFile(eventsFile, contents, "utf8");
+
+    const size = Buffer.byteLength(contents, "utf8");
+    const read = await readRunEventsSince(eventsFile, size);
+
+    // No new bytes: nothing to parse and no full-file text, which is the
+    // observable contract that keeps a 50 ms long-poll off the whole trail.
+    expect(read.entries).toEqual([]);
+    expect(read.offset).toBe(size);
+    expect(read.text).toBe("");
+  });
+
+  it("readRunEventsSince restarts from 0 when the cursor is past the file size", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const eventsFile = join(cwd, "events.jsonl");
+    const contents = `${JSON.stringify(makeEvent("workflow.started"))}\n`;
+    await writeFile(eventsFile, contents, "utf8");
+
+    const read = await readRunEventsSince(eventsFile, 10_000);
+
+    expect(read.entries.map((entry) => entry.event.type)).toEqual(["workflow.started"]);
+    expect(read.offset).toBe(Buffer.byteLength(contents, "utf8"));
   });
 
   it("readRunEventsSince leaves a partial trailing line for the next read", async () => {

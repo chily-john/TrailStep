@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -34,6 +34,11 @@ function stubWindowsPlatform(): void {
 }
 
 async function writeNpmShim(binDir: string): Promise<void> {
+  // The shim's entrypoint must exist: `resolveCliCommandForSpawn` refuses a
+  // shim it cannot resolve rather than launching it through `cmd.exe`.
+  const entrypoint = join(binDir, "node_modules/fake-pi/dist/cli.js");
+  await mkdir(dirname(entrypoint), { recursive: true });
+  await writeFile(entrypoint, "// fake pi entrypoint\n", "utf8");
   await writeFile(
     join(binDir, "pi.cmd"),
     [

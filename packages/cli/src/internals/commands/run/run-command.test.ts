@@ -2,12 +2,14 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main } from "../../../index.js";
+import { markProjectRoot } from "../../../test/project-root-fixture.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 async function writeDirectWorkflowFile(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -33,6 +35,7 @@ async function writeDirectWorkflowFile(cwd: string): Promise<void> {
 }
 
 async function writeInputEchoWorkflowFile(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -87,6 +90,7 @@ async function writeInputEchoWorkflowFile(cwd: string): Promise<void> {
 }
 
 async function writeWaitingWorkflowFile(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -110,6 +114,7 @@ async function writeWaitingWorkflowFile(cwd: string): Promise<void> {
 }
 
 async function writeAmbiguousDirectWorkflowFile(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
@@ -134,6 +139,7 @@ async function writeAmbiguousDirectWorkflowFile(cwd: string): Promise<void> {
 }
 
 async function writeRegisteredProjectWorkflow(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const workflowDir = join(cwd, ".trailstep", "workflows");
   await mkdir(workflowDir, { recursive: true });
   await writeJson(join(cwd, ".trailstep", "config.json"), {
@@ -208,6 +214,7 @@ async function writeConflictingRegisteredWorkflows(cwd: string, homeDir: string)
 }
 
 async function writeBundleWorkflowPackage(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const packageDir = join(cwd, "node_modules", "@acme", "workflows");
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(cwd, "package.json"), {
@@ -301,6 +308,7 @@ async function writeGlobalBundleWorkflowPackage(homeDir: string): Promise<void> 
 }
 
 async function writeWorkflowPackage(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   const packageDir = join(cwd, "node_modules", "@acme", "trailstep-workflows");
   await mkdir(packageDir, { recursive: true });
   await writeJson(join(cwd, "package.json"), {
@@ -519,6 +527,63 @@ describe("run command", () => {
     expect(lines.join("\n")).toContain(runDir);
   });
 
+  it("resolves config, the registry and run artifacts at the project root from a subdirectory", async ({
+    task,
+  }) => {
+    const root = join(
+      "node_modules",
+      ".tmp-trailstep-run-command-tests",
+      `${task.id}-project-root`,
+    );
+    const cwd = join(root, "packages", "sub");
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(root, ".trailstep"), { recursive: true });
+    await mkdir(join(root, ".git"), { recursive: true });
+    await mkdir(join(root, "workflows"), { recursive: true });
+    await writeJson(join(root, "package.json"), { name: "consumer" });
+    await writeFile(
+      join(root, "workflows", "review.mjs"),
+      [
+        "import { done, state, step } from '@trailstep/core';",
+        "export const review = {",
+        "  id: 'review',",
+        "  inputShape: {},",
+        "  start: () => step({ id: 'record' })",
+        "    .do(() => done({ cwd: state.cwd, projectCwd: state.projectCwd }))({}),",
+        "};",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeJson(join(root, ".trailstep", "config.json"), {
+      version: 1,
+      customProviders: {},
+      agents: {},
+      workflows: { project: { review: "./workflows/review.mjs" } },
+    });
+
+    const lines: string[] = [];
+    const exitCode = await main({
+      argv: ["project/review", "subdir-run", "--input", "{}"],
+      cwd,
+      homeDir: join(root, "home"),
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    const runDir = join(root, ".trailstep", "runs", "subdir-run");
+    await expect(stat(runDir)).resolves.toBeDefined();
+    expect(lines.join("\n")).toContain(runDir);
+    // No second `.trailstep` tree in the invocation directory.
+    await expect(stat(join(cwd, ".trailstep"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Only config/run resolution moved: agents still run in the invocation directory.
+    const events = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(events).toContain(JSON.stringify(cwd));
+    expect(events).toContain(JSON.stringify(resolve(root)).slice(1, -1));
+  });
+
   it("fails clearly for a missing directly referenced workflow file", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-run-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -678,6 +743,7 @@ describe("run command", () => {
     const homeDir = join(root, "home");
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
+    await markProjectRoot(cwd);
     await writeGlobalBundleWorkflowPackage(homeDir);
     const lines: string[] = [];
 

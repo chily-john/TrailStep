@@ -33,7 +33,8 @@ export type AgentCommandArgs =
   | {
       readonly action: "explain";
       readonly name: string;
-      readonly scope: WorkflowRegistryScope;
+      /** Omitted means "report the merged effective config across all scopes". */
+      readonly scope?: WorkflowRegistryScope;
     }
   | {
       readonly action: "explain-workflow";

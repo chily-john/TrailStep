@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import {
   listRegisteredWorkflowEntries,
   readRawTrailStepConfigFile,
   toMutableWorkflowRegistry,
+  updateRawTrailStepConfigFile,
   writeRawTrailStepConfigFile,
 } from "./workflow-registry.js";
 
@@ -68,6 +69,69 @@ describe("readRawTrailStepConfigFile / writeRawTrailStepConfigFile", () => {
       workflows: { project: { review: "./review.mjs" } },
     });
     await expect(readFile(path, "utf8")).resolves.toMatch(/\n$/);
+  });
+
+  it("leaves no temporary write file behind on success", async ({ task }) => {
+    const dir = join(tmpDir(task), ".trailstep");
+    const path = join(dir, "config.json");
+    await writeRawTrailStepConfigFile(path, { agents: { default: [{ provider: "claude" }] } });
+
+    await expect(readdir(dir)).resolves.toEqual(["config.json"]);
+  });
+
+  it("writes valid JSON that ends with exactly one newline", async ({ task }) => {
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await writeRawTrailStepConfigFile(path, { workflows: { project: {} } });
+
+    const raw = await readFile(path, "utf8");
+    expect(raw.endsWith("\n")).toBe(true);
+    expect(raw.endsWith("\n\n")).toBe(false);
+    expect(() => JSON.parse(raw) as unknown).not.toThrow();
+  });
+});
+
+describe("updateRawTrailStepConfigFile", () => {
+  it("keeps a pre-existing unrelated key through the update", async ({ task }) => {
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await writeJson(path, { storage: { lifecycle: { compressAfter: "7d" } } });
+
+    await updateRawTrailStepConfigFile(path, (config) => ({ ...config, agents: { x: [] } }));
+
+    await expect(readRawTrailStepConfigFile(path)).resolves.toEqual({
+      storage: { lifecycle: { compressAfter: "7d" } },
+      agents: { x: [] },
+    });
+  });
+
+  it("serializes concurrent read-modify-write updates so neither writer is lost", async ({
+    task,
+  }) => {
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+
+    await Promise.all([
+      updateRawTrailStepConfigFile(path, (config) => ({ ...config, first: true })),
+      updateRawTrailStepConfigFile(path, (config) => ({ ...config, second: true })),
+    ]);
+
+    await expect(readRawTrailStepConfigFile(path)).resolves.toEqual({
+      first: true,
+      second: true,
+    });
+  });
+
+  it("does not write when the mutate callback throws", async ({ task }) => {
+    const path = join(tmpDir(task), ".trailstep", "config.json");
+    await writeJson(path, { agents: { keep: [{ provider: "claude" }] } });
+
+    await expect(
+      updateRawTrailStepConfigFile(path, () => {
+        throw new Error("validation failed");
+      }),
+    ).rejects.toThrow("validation failed");
+
+    await expect(readRawTrailStepConfigFile(path)).resolves.toEqual({
+      agents: { keep: [{ provider: "claude" }] },
+    });
   });
 });
 

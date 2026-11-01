@@ -16,9 +16,18 @@ import { generateMcpToolJsonForRegistration } from "./add-mcp-registration.js";
 import { buildAddRegistrationPlan } from "./add-registration-plan.js";
 import { prepareAddSource, reportPackageAddInstallCleanup } from "./add-source-resolution.js";
 
+/**
+ * Default registration scope when `--scope` is omitted.
+ *
+ * One answer for interactive and headless alike: `local`. An automated/agent invocation must
+ * never silently commit to the team's shared `project` config. Callers who want the shared
+ * config pass `--scope project` explicitly.
+ */
+const DEFAULT_ADD_SCOPE = "local" as const;
+
 const SCOPE_PROMPT_LABEL =
-  "Where should this workflow be registered? (local = just you on this repo, " +
-  "project = shared with your team, global = global across all your projects)";
+  "Where should this workflow be registered? (local = just you on this repo [default], " +
+  "project = shared with your team, global = across all your projects)";
 
 export const addCommand: CliCommand<AddCommandArgs> = {
   name: "add",
@@ -29,7 +38,7 @@ export const addCommand: CliCommand<AddCommandArgs> = {
     const scope =
       args.scope ??
       (args.yes
-        ? "project"
+        ? DEFAULT_ADD_SCOPE
         : await promptSelect(
             SCOPE_PROMPT_LABEL,
             ["local", "project", "global"] as const,

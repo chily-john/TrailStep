@@ -1,6 +1,6 @@
-import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { constants, existsSync, readFileSync } from "node:fs";
+import { access } from "node:fs/promises";
+import { dirname, extname, join, resolve } from "node:path";
 
 const WINDOWS_EXECUTABLE_EXTENSIONS = [".cmd", ".exe", ".bat", ""] as const;
 
@@ -21,11 +21,13 @@ export interface ResolveCliCommandForSpawnOptions {
 }
 
 /**
- * Built-in provider CLIs are commonly npm-installed. On Windows, npm exposes
- * those CLIs as `.cmd` shims, which cannot be launched through Node's
- * `spawn(..., { shell: false })` by their bare command name. Resolve npm shims
- * to their underlying Node entrypoint when possible so provider prompts remain
- * argv values instead of being reinterpreted by a shell.
+ * Built-in provider CLIs are commonly npm- or pnpm-installed. On Windows, both
+ * package managers expose those CLIs as `.cmd` shims, which cannot be launched
+ * through Node's `spawn(..., { shell: false })` by their bare command name.
+ * Resolve readable shims to their underlying Node entrypoint so provider
+ * prompts remain argv values instead of being reinterpreted by a shell. A shim
+ * whose entrypoint cannot be read is refused: handing its argv to `cmd.exe`
+ * would corrupt any prompt containing shell metacharacters.
  */
 export async function resolveCliCommandForSpawn(
   request: CliCommandSpawnRequest,
@@ -41,7 +43,7 @@ export async function resolveCliCommandForSpawn(
   }
 
   if (isWindowsCommandShim(commandPath)) {
-    const nodeScript = await readNpmCmdShimEntrypoint(commandPath);
+    const nodeScript = readCmdShimEntrypoint(commandPath);
     if (nodeScript) {
       return {
         command: options.execPath ?? process.execPath,
@@ -49,10 +51,13 @@ export async function resolveCliCommandForSpawn(
       };
     }
 
-    return {
-      command: "cmd.exe",
-      args: ["/d", "/s", "/c", commandPath, ...request.args],
-    };
+    // A shim we cannot read cannot be launched safely: `cmd.exe /c` re-parses
+    // the argument list, so a prompt containing &, |, <, >, ^, % or ! is
+    // reinterpreted by the shell. Refuse instead of corrupting the prompt.
+    throw new Error(
+      `Cannot launch the Windows shim ${commandPath} without a shell: no Node entrypoint could be read from it. ` +
+        "Install the provider CLI with npm or pnpm, or point the provider's command at a .exe or a .js entrypoint.",
+    );
   }
 
   return { command: commandPath, args: request.args };
@@ -110,20 +115,49 @@ async function firstExistingPath(paths: readonly string[]): Promise<string | und
   return undefined;
 }
 
-async function readNpmCmdShimEntrypoint(commandPath: string): Promise<string | undefined> {
+/**
+ * Extracts the Node entrypoint from an npm- or pnpm-generated `.cmd` shim.
+ *
+ * npm writes   `"%_prog%"  "%dp0%\..\pkg\cli.js" %*`
+ * pnpm writes  `"%~dp0\..\pkg\cli.js" %*`
+ *
+ * Matching the JS path directly (rather than the whole line) tolerates both
+ * generators, the `~` in `%~dp0`, and the differing quoting. A shim we can
+ * read never goes through `cmd.exe`, which would re-parse the prompt's `&`,
+ * `|`, `<`, `>` and `%` characters.
+ */
+function readCmdShimEntrypoint(commandPath: string): string | undefined {
   let shim: string;
   try {
-    shim = await readFile(commandPath, "utf8");
+    shim = readFileSync(commandPath, "utf8");
   } catch {
     return undefined;
   }
 
-  const match = shim.match(/"%dp0%\\?([^"]+?\.js)"\s+%\*/i);
-  if (!match?.[1]) {
+  const match =
+    shim.match(/"%(?:~?dp0|_prog)%?\\?([^"]+?\.(?:js|mjs|cjs))"/i) ??
+    shim.match(/"%_prog%"\s+"([^"]+?\.(?:js|mjs|cjs))"/i);
+  const relative = match?.[1];
+  if (!relative) {
     return undefined;
   }
 
-  return join(dirname(commandPath), match[1].replace(/\\/g, "/"));
+  return resolveShimEntrypoint(dirname(commandPath), relative);
+}
+
+/**
+ * Resolves a shim's embedded entrypoint path.
+ *
+ * pnpm writes a path relative to the shim's own directory (`..` is a real
+ * segment); npm embeds `%dp0%`, which the regex already stripped and which is
+ * also relative to the shim directory. Returning `undefined` when the
+ * entrypoint does not exist lets the caller fail loudly instead of handing
+ * Node a missing file.
+ */
+function resolveShimEntrypoint(shimDir: string, relative: string): string | undefined {
+  const normalized = relative.replace(/\\/g, "/");
+  const candidate = resolve(shimDir, normalized);
+  return existsSync(candidate) ? candidate : undefined;
 }
 
 function isWindowsCommandShim(path: string): boolean {

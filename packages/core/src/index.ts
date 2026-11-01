@@ -198,6 +198,7 @@ export type {
   DeprecationTargetPackage,
 } from "./deprecations/deprecations.types.js";
 export { TRST_KEY_ORDER } from "./json/constants.js";
+export { extractJsonObject } from "./json/extract-json-object.js";
 export { errorMessage, isNodeError, isPlainObject, isRecord } from "./json/guards.js";
 export { serializeOrdered } from "./json/ordered-serialize.js";
 export { validateStructural } from "./json/validate-structural.js";
@@ -312,6 +313,18 @@ export {
   spawnRetryDelayMs,
   validateSpawnRetryPolicy,
 } from "./runtime/retry/spawn-retry-policy.js";
+export {
+  type AcquireRunLockOptions,
+  type AcquireRunLockResult,
+  acquireRunLock,
+  isPidAlive,
+  isRunLockLive,
+  RUN_LOCK_FILE_NAME,
+  type RunLock,
+  readRunLock,
+  releaseRunLock,
+  runLockPath,
+} from "./runtime/run-lock/run-lock.js";
 export {
   findAnsweredParallelBranches,
   runWorkflow,

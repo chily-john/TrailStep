@@ -15,7 +15,9 @@ import type {
   WorkingAgentProcessResult,
   WorkingAgentProcessRunner,
 } from "../../../../runtime/run-workflow/run-workflow.types.js";
+import { withBoundedSettlement } from "../../../child-process/child-process-termination.js";
 import type { WorkingAgentFiles } from "../../artifacts/resolve-step-agent-files.js";
+import type { AgentProgressTracker } from "../../liveness/agent-progress-tracker.js";
 import { readWorkingAgentOutput } from "../../output/read-working-agent-output.js";
 import { buildWorkingAgentArgs } from "./build-working-agent-args.js";
 import { spawnWorkingAgentProcess } from "./spawn-working-agent-process.js";
@@ -30,6 +32,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  readonly progress?: AgentProgressTracker;
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
@@ -98,6 +101,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
     options.signal?.addEventListener("abort", onCallerAbort, { once: true });
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let spawnPromiseSettled: Promise<void> | undefined;
   try {
     // Custom binaries may also be npm .cmd shims on Windows; resolve to the
     // Node entrypoint (no-op on other platforms) so shell:false keeps working.
@@ -115,7 +119,14 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       outputFile: options.files.outputFile,
       ...(options.target.model === undefined ? {} : { model: options.target.model }),
       signal: controller.signal,
+      ...(options.progress === undefined ? {} : { progress: options.progress }),
     });
+    // Observes the spawn promise without changing what the caller awaits, so the timeout
+    // branch below can wait for the child to actually die before it throws.
+    spawnPromiseSettled = Promise.resolve(spawnPromise).then(
+      () => undefined,
+      () => undefined,
+    );
     if (options.timeoutMs === undefined) {
       result = await spawnPromise;
     } else {
@@ -132,6 +143,11 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
     }
   } catch (error) {
     if (timedOut || (error instanceof Error && error.message === "working_agent_timeout")) {
+      // The race rejected on our timer, not on the child's exit. Give termination a bounded
+      // moment to complete so the next target starts with a dead predecessor.
+      if (spawnPromiseSettled !== undefined) {
+        await withBoundedSettlement(spawnPromiseSettled, options.timeoutMs);
+      }
       throw new TrailStepFailureError({
         code: "agent_provider_timeout",
         message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,

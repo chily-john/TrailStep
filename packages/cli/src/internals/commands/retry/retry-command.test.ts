@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
+import { markProjectRoot } from "../../../test/project-root-fixture.js";
 
 async function writeRetryWorkflow(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   await writeFile(
     join(cwd, "workflow.mjs"),
     `import { access } from 'node:fs/promises';
@@ -51,6 +53,7 @@ function parseEvents(jsonl: string): readonly { type: string; payload: Record<st
 }
 
 async function writeWaitingWorkflow(cwd: string): Promise<void> {
+  await markProjectRoot(cwd);
   await mkdir(join(cwd, "workflows"), { recursive: true });
   await writeFile(
     join(cwd, "workflows", "waiting.mjs"),
@@ -91,6 +94,7 @@ describe("retry command", () => {
     const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
     await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     await mkdir(cwd, { recursive: true });
+    await markProjectRoot(cwd);
     const lines: string[] = [];
 
     await expect(

@@ -111,6 +111,18 @@ describe("extractEnvelopeOutput", () => {
     });
   });
 
+  // Regression test: the previous "slice from the first `{` to the last `}`"
+  // logic sliced `{"greeting":"Hello, Ada!"} :}` and threw.
+  it("extracts a JSON object from a result field containing a stray brace", () => {
+    const stdout = JSON.stringify({
+      result: 'Hope that helps! :} {"greeting":"Hello, Ada!"} :}',
+    });
+
+    expect(extractEnvelopeOutput(stdout, { resultField: "result" })).toEqual({
+      greeting: "Hello, Ada!",
+    });
+  });
+
   it("throws on empty stdout", () => {
     expect(() => extractEnvelopeOutput("   ", { resultField: "result" })).toThrow(/empty stdout/);
   });
@@ -218,6 +230,15 @@ describe("extractEnvelopeText", () => {
     expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual(
       '{"greeting":"Hello, Ada!"}',
     );
+  });
+
+  // Guard against a future "finish the refactor" change that routes raw-text
+  // capture through extractJsonObject: the document must survive verbatim.
+  it("returns raw text containing a JSON object unchanged", () => {
+    const document = '# Doc\n\nExample assistant payload:\n\n{"greeting":"Hello, Ada!"}\n\nDone.';
+    const stdout = JSON.stringify({ result: document });
+
+    expect(extractEnvelopeText(stdout, { resultField: "result" })).toEqual(document);
   });
 
   it("falls back to a content field when the result field is absent", () => {

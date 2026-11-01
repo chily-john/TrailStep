@@ -198,7 +198,7 @@ async function verifyRunMaterialization(
     exitInfo = { code, signal };
   });
 
-  const earlyFailure = (): StartVerification | undefined => {
+  const earlyFailure = async (): Promise<StartVerification | undefined> => {
     if (spawnError !== undefined) {
       return {
         ok: false,
@@ -207,6 +207,12 @@ async function verifyRunMaterialization(
     }
     if (exitInfo !== undefined) {
       const how = exitInfo.code === null ? `signal ${exitInfo.signal}` : `code ${exitInfo.code}`;
+      // The exiting CLI may create its run directory in the same tick it exits;
+      // re-check before declaring the run never materialized.
+      const materializedAfterExit = await resolveMaterializedRunDir(runsRoot, runName);
+      if (materializedAfterExit !== undefined) {
+        return { ok: true, runDir: materializedAfterExit };
+      }
       return {
         ok: false,
         error: `run_workflow: background CLI exited with ${how} before ${predictedRunDir} appeared; not reporting status "started".`,
@@ -221,7 +227,7 @@ async function verifyRunMaterialization(
     if (materialized !== undefined) {
       return { ok: true, runDir: materialized };
     }
-    const failure = earlyFailure();
+    const failure = await earlyFailure();
     if (failure !== undefined) {
       return failure;
     }
@@ -232,7 +238,7 @@ async function verifyRunMaterialization(
   if (materialized !== undefined) {
     return { ok: true, runDir: materialized };
   }
-  const failure = earlyFailure();
+  const failure = await earlyFailure();
   if (failure !== undefined) {
     return failure;
   }

@@ -49,10 +49,12 @@ async function writeStubCliEntry(): Promise<string> {
   );
   await writeFile(
     stubPath,
-    'import { mkdirSync } from "node:fs";\n' +
+    'import { mkdirSync, writeFileSync } from "node:fs";\n' +
       'import { join } from "node:path";\n' +
       'const runsRoot = join(process.cwd(), ".trailstep", "runs");\n' +
-      "mkdirSync(join(runsRoot, process.argv[3]), { recursive: true });\n",
+      "const runName = process.argv[3];\n" +
+      "mkdirSync(join(runsRoot, runName), { recursive: true });\n" +
+      'writeFileSync(join(runsRoot, runName, "events.jsonl"), JSON.stringify({ type: "workflow.started", runId: runName }) + String.fromCharCode(10));\n',
   );
   return stubPath;
 }

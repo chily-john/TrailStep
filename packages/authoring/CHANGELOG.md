@@ -1,5 +1,19 @@
 # @trailstep/authoring
 
+## 0.4.3
+
+### Patch Changes
+
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+  - @trailstep/core@0.9.0
+
 ## 0.4.2
 
 ### Patch Changes

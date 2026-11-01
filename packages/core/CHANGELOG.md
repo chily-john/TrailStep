@@ -1,5 +1,65 @@
 # @trailstep/core
 
+## 0.9.0
+
+### Minor Changes
+
+- 167b58e: Add a per-run execution lock and make process death observable.
+  
+  - New `run.lock` artifact (`acquireRunLock` / `releaseRunLock` / `readRunLock` / `isRunLockLive`, exported from `@trailstep/core`) guarantees only one process drives a run directory. Liveness is decided by pid, so a lock left behind by a SIGKILL, OOM or power loss is broken automatically instead of bricking the run. The lock is released on every exit path including `waiting`, so a later `continue` can resume.
+  - `runWorkflow` now fails with `run_already_active` instead of executing a second concurrent driver over the same `events.jsonl`, `state.json` and agent artifacts. This is what previously happened when an MCP client retried a `trst_resume` whose blocking continue had outlived the transport timeout.
+  - `failWorkflow` and `cancelWorkflow` tolerate an event-append failure, so the real failure always reaches the caller instead of being replaced by a persistence error.
+  - The CLI bin now attaches `unhandledRejection` / `uncaughtException` handlers and a `.catch()` on `main()`. Previously an unexpected rejection killed the process silently, leaving the event trail with no terminal event and every observer reporting "in progress" forever.
+- 167b58e: Make agent heartbeats report real liveness and add an opt-in stall timeout.
+  
+  - `step.progress` heartbeats now report wall-clock elapsed time plus `outputBytes`, `msSinceLastOutput`, `pid` and `exited` from a shared `AgentProgressTracker`, instead of a self-incremented counter that looked healthy while a provider CLI was wedged. Existing `data.heartbeat` / `data.elapsedMs` keys are unchanged.
+  - New `agent.stalled` event (emitted at most once per attempt) when a configured `stallTimeout` elapses with no child output and no exit.
+  - New opt-in `stallTimeout` setting, resolvable at global / workflow / step scope with step > workflow > global precedence and validated like `timeout`. There is deliberately no built-in default: existing workflows are unaffected.
+  - The stall timeout only observes and reports in this release. It does not abort the attempt; `onStall` is the hook a future change can wire to termination.
+
+### Patch Changes
+
+- 167b58e: Terminate agent child processes reliably before continuing.
+  
+  - New shared `terminateChildProcessTree` (awaited everywhere it is used) replaces three divergent fire-and-forget copies. On Windows the `taskkill /T /F` child is awaited; on POSIX the process group gets `SIGTERM` and is escalated to `SIGKILL` after a grace period. Previously a timed-out step rejected immediately and the replacement agent could start while the previous one was still running, so both wrote `output.json` and the step failed with an unretryable `agent_output_invalid_json`.
+  - All agent child processes are tracked in a live-children registry and killed from a `process.once("exit")` hook, so a killed or crashed runner no longer orphans agents against an abandoned run directory.
+  - Timeout paths wait (bounded) for the child to exit before throwing, so the caller's next action never races a live process.
+  - `AgentAdapter` requests gain an optional `AbortSignal`, and `submit_output` results are now recorded per round instead of into one shared variable. A slow first round can no longer satisfy the second round's structured-output request. No default adapter timeout is introduced.
+- 167b58e: Make global / project / local config scopes actually compose.
+  
+  - Config scopes now deep-merge with a single `mergeConfigScopes` implementation. Previously only `agents` was deep-merged, so a project `settings.timeout` deleted a global `settings.retry`, and a local `workflows.<id>.agents.<role>` deleted every other role for that workflow in the project and global scopes. Arrays still replace wholesale; `undefined` never overrides; `null` deliberately clears.
+  - `trailstep agents <workflow>` now uses the same merge as the runtime. It previously used a third, deeper merge and would list roles the runtime would never see, which made configuration bugs very hard to diagnose. The output also gains a `Sources:` block naming which scope supplied each configured entry, and a new test asserts the display and `resolveAgentTargets` agree.
+  - One malformed config file no longer breaks every command. A global or project config that cannot be read or parsed is reported through `configErrors` (and on stderr by `run`, `continue` and `retry`) instead of throwing, so the remaining scopes still apply.
+  - The workflow registry is read through the same loader as the rest of the config, instead of a second, independently merged user-registry path. `workflowRegistry` is the canonical key; the legacy `workflows` string leaves that `trailstep add` still writes keep resolving for one release.
+  - New project-root discovery (`resolveProjectRoot`): `TRAILSTEP_PROJECT_ROOT` if set, else the invocation directory when it already has a `.trailstep` directory, else the nearest ancestor with `.git`, else the nearest ancestor with `package.json`, else the invocation directory. `run`, `continue` and `retry` resolve config, the workflow registry and run artifacts at that root while agents keep running in the invocation directory. Running a workflow from a nested directory previously created a second `.trailstep/` tree there and silently ignored the project's config and runs root. **If you have stray `.trailstep/` directories in subdirectories, delete or move them.**
+- 167b58e: Make the run event trail crash-tolerant and stop ignoring project config.
+  
+  - `readRunEvents` now skips and reports malformed or non-event-shaped JSONL lines instead of throwing. A torn line from a crash mid-append previously made a run permanently unresumable, uncontinuable and unretriable; recovery now replays the rest of the trail. Accepts an optional `{ report }` callback.
+  - `appendEvent` serializes appends per `events.jsonl` in-process, so parallel branches, the agent heartbeat and the CLI cancel command can no longer interleave into a torn line.
+  - Removes the unused `persistEvents`, which rewrote the whole trail with a non-atomic `writeFile`.
+  - The generated `.trailstep/.gitignore` now lists run artifacts (`runs/`, `.archive/`, `sessions/`, `worktrees/`, `tmp/`, `inputs/`, `mcp/`, `config-local.json`, `run.lock`, `*.tmp`) instead of a blanket `*`. The previous body ignored `.trailstep/config.json`, so a fresh project silently failed to commit its shared config. A legacy generated file is repaired in place; a hand-edited one is never rewritten.
+- 167b58e: Make MCP tools bounded, truthful, and crash-aware.
+  
+  - `trst_resume` no longer blocks for the whole continue. It spawns `trailstep continue` detached, waits only for bounded evidence that the continue began, and returns `{ resumed: true, status, background: true }`. Previously it awaited a multi-minute continue inside the MCP request, past the client's transport timeout, so a retrying agent started a **second** continue process on the same run directory — the concrete cause of the reported "1 in 5 runs hang" behaviour.
+  - `trst_resume` derives `status` from the run's parsed event trail (`completed` / `waiting` / `cancelled` / `failed` / `running`) instead of substring-matching human-readable CLI output, which degraded silently on any wording change.
+  - `trst_answer` with `continueAfterAnswer: true` now returns an `isError` tool result when the continue failed, instead of a success payload that left the calling agent watching a run that could not progress.
+  - `trst_watch` gains a `crashed` state: no terminal event and no live holder of the run lock means nothing will ever append one, so an orchestrating agent can stop waiting. State is now classified from parsed events and the run lock rather than a regex over raw file text, which could match event-shaped text embedded in agent output. Runs parked on a durable wait correctly remain `in-progress`.
+  - `readRunEventsSince` short-circuits when the trail has not grown. `trst_watch` previously re-read and re-decoded the entire `events.jsonl` every 50 ms, which was ~5 GB of reads per 25 s long-poll on a 10 MB trail and grew linearly with run length.
+  - `trst_run_workflow` resolves the run directory the CLI actually created instead of predicting it, so a run-name collision no longer reports `started` against a stale directory from an earlier run.
+- 167b58e: Harden the parallel scheduler and retry classification.
+  
+  - The continuation-array scheduler no longer swallows a thrown branch. Previously a `persistBranch` or runtime failure rejected a non-awaited promise chain after the outer promise may already have resolved, which could report a track as completed while a branch had actually failed. A thrown branch now produces a `branch_failed` terminal result and still unblocks the scheduler's worker accounting; a thrown error that already carries a structured failure (such as the scheduler's own step-budget guard) keeps that code instead of being flattened.
+  - The `maxSteps` guard throws `TrailStepFailureError` with code `max_steps_exceeded` and structured details instead of a bare `Error` that surfaced as `step_execution_failed`.
+  - `step.attemptFailed` now reports `agentDispatches`, the cumulative number of provider dispatches a step has caused, making retry amplification (step retries × fallback targets × format attempts × spawn retries) visible. No cap is imposed and no retry default changed: the format-phase budget stays at 3 attempts, and measuring amplification before bounding it is deliberate — a cap chosen without data would either be useless or break legitimate long-running retries.
+  - Five output-corruption codes (`agent_output_invalid_json`, `agent_output_unreadable`, `agent_provider_output_invalid`, `interactive_output_invalid`, `interactive_output_incomplete`) are now retryable under the default `retryOn: "transient"`. They are frequently caused by a race (truncated write, competing writer) rather than a deterministic schema violation, and a genuine schema violation still fails on the retry. `validation_failed`, `agent_target_exhausted` and every unknown code remain permanent.
+  - Resume-integrity failures now use structured failure codes (`resume_replay_invalid_phase_order`, `resume_replay_missing_step_output`, `resume_replay_missing_do_phase`) with an actionable `details.hint`, instead of bare developer-facing `Error` messages.
+- 167b58e: Fix Windows provider spawns and make JSON extraction brace-safe.
+  
+  - `resolveCliCommandForSpawn` now reads the Node entrypoint out of pnpm-generated `.cmd` shims (`"%~dp0\..\pkg\cli.js" %*`), not just npm's (`"%dp0%\..\pkg\cli.js" %*`). pnpm shims previously fell through to `cmd.exe /c`, which re-parses the argument list, so any prompt containing `&`, `|`, `<`, `>`, `^`, `%` or `!` was reinterpreted by the shell. The failure was content-dependent and looked intermittent.
+  - A `.cmd` shim whose entrypoint cannot be resolved now throws a clear error instead of silently launching through `cmd.exe`. Provider CLIs must be resolvable to a Node entrypoint; the `--project`/prompt argv is never handed to a shell.
+  - New `extractJsonObject` in `@trailstep/core` extracts the first balanced JSON object using a real scanner that tracks string literals and escapes and tries ```json fenced blocks first. It replaces the previous "slice from the first `{` to the last `}`" logic in both the envelope parser and the manifest output writer, which produced unparseable output whenever model prose contained an extra brace.
+  - `extractEnvelopeText` (raw-text capture mode) continues to return the agent's answer verbatim and deliberately does not use the extractor.
+
 ## 0.8.0
 
 ### Minor Changes

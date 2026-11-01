@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -212,15 +213,33 @@ function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\/?([A-Za-z]:)/u, "/$1");
 }
 
+function resolveInvokedScriptRealPath(invokedScriptPath: string | undefined): string | undefined {
+  if (invokedScriptPath === undefined) {
+    return undefined;
+  }
+  try {
+    return realpathSync(invokedScriptPath);
+  } catch {
+    // Fall back to the invoked path when it cannot be resolved.
+    return invokedScriptPath;
+  }
+}
+
 const invokedScriptPath = process?.argv[1];
+const resolvedInvokedScriptPath = resolveInvokedScriptRealPath(invokedScriptPath);
 const metaPathNormalized = normalizePath(import.meta.url);
 const metaBasename = metaPathNormalized.split("/").pop() ?? "";
 const scriptBasename =
-  normalizePath(invokedScriptPath || "")
+  normalizePath(resolvedInvokedScriptPath || "")
     .split("/")
     .pop() ?? "";
 
-if (invokedScriptPath && metaBasename === scriptBasename && metaBasename === "index.js") {
+if (
+  invokedScriptPath &&
+  resolvedInvokedScriptPath &&
+  metaBasename === scriptBasename &&
+  metaBasename === "index.js"
+) {
   void main().then((exitCode) => {
     if (process) {
       process.exitCode = exitCode;

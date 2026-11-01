@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
 import type {
@@ -54,5 +55,12 @@ export function defaultCliEntryPath(): string | undefined {
   if (typeof entryPath !== "string" || entryPath.trim().length === 0) {
     return undefined;
   }
-  return isAbsolute(entryPath) ? entryPath : resolve(entryPath);
+  const candidatePath = isAbsolute(entryPath) ? entryPath : resolve(entryPath);
+  try {
+    // Bin shims installed globally are commonly symlinks; resolve to the real entry.
+    return realpathSync(candidatePath);
+  } catch {
+    // Fall back to the candidate path when it cannot be resolved.
+    return candidatePath;
+  }
 }

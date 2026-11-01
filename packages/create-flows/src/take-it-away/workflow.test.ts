@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { done, type Event, runWorkflow, step, type Workflow } from "@trailstep/core";
+import {
+  done,
+  type Event,
+  runWorkflow,
+  step,
+  TRAILSTEP_GITIGNORE_BODY,
+  type Workflow,
+} from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { createFeatureDocStep } from "../feature-implementation/create-feature-doc/step.js";
@@ -358,7 +365,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep", "runs", "preflight-replay-run"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -459,7 +466,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep", "runs", "stale-story-run"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -581,7 +588,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -713,7 +720,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -856,7 +863,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -1068,7 +1075,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -1400,7 +1407,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -1640,7 +1647,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -1816,7 +1823,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -1996,7 +2003,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -2230,7 +2237,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -2470,7 +2477,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -2662,7 +2669,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -2946,7 +2953,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -3257,7 +3264,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -3668,7 +3675,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "widget.txt"), "initial widget\n", "utf8");
     await git(cwd, ["add", "widget.txt", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial widget"]);
@@ -3818,7 +3825,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await writeFile(join(cwd, "observability.txt"), "", "utf8");
     await git(cwd, ["add", "README.md", "observability.txt", ".trailstep/.gitignore"]);
@@ -4080,7 +4087,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -4230,7 +4237,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -4364,7 +4371,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -4486,7 +4493,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);
@@ -4662,7 +4669,7 @@ describe("take-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);

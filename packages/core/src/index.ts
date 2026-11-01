@@ -268,6 +268,7 @@ export {
   readRunEventsSince,
   readRunState,
   TRAILSTEP_DIR_NAME,
+  TRAILSTEP_GITIGNORE_BODY,
   writeGlobalState,
   writeRunState,
 } from "./runtime/artifacts/run-storage.js";

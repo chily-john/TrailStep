@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { runWorkflow } from "@trailstep/core";
+import { runWorkflow, TRAILSTEP_GITIGNORE_BODY } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { grillItAway } from "./workflow.js";
@@ -118,7 +118,7 @@ describe("grill-it-away", () => {
     await git(cwd, ["config", "user.email", "trailstep@example.test"]);
     await git(cwd, ["config", "user.name", "TrailStep Test"]);
     await mkdir(join(cwd, ".trailstep"), { recursive: true });
-    await writeFile(join(cwd, ".trailstep", ".gitignore"), "*\n!.gitignore\n", "utf8");
+    await writeFile(join(cwd, ".trailstep", ".gitignore"), TRAILSTEP_GITIGNORE_BODY, "utf8");
     await writeFile(join(cwd, "README.md"), "# test repo\n", "utf8");
     await git(cwd, ["add", "README.md", ".trailstep/.gitignore"]);
     await git(cwd, ["commit", "-m", "initial commit"]);

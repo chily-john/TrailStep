@@ -5,14 +5,14 @@
       {
         "provider": "pi",
         "model": "radius/recursive/flint",
-        "thinking": "medium"
+        "thinking": "low"
       }
     ],
     "generalist": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -28,8 +28,8 @@
     "planner": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -50,7 +50,7 @@
     "explorer": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "model": "radius/recursive/flint",
         "thinking": "low"
       },
       {
@@ -62,8 +62,8 @@
     "quick-implementor": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -74,8 +74,8 @@
     "smart-implementor": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -96,8 +96,8 @@
     "debugger": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -118,8 +118,8 @@
     "reviewer": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -130,8 +130,8 @@
     "expert": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
-        "thinking": "medium"
+        "model": "radius/recursive/flint",
+        "thinking": "low"
       },
       {
         "provider": "pi",
@@ -152,7 +152,7 @@
     "formatter": [
       {
         "provider": "pi",
-        "model": "openrouter/minimax/minimax-m3.1-flash:free",
+        "model": "radius/recursive/flint",
         "thinking": "low"
       },
       {

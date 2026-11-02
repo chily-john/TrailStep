@@ -1,5 +1,45 @@
 # @trailstep/cli
 
+## 0.10.0
+
+### Minor Changes
+
+- 167b58e: Make global / project / local config scopes actually compose.
+  
+  - Config scopes now deep-merge with a single `mergeConfigScopes` implementation. Previously only `agents` was deep-merged, so a project `settings.timeout` deleted a global `settings.retry`, and a local `workflows.<id>.agents.<role>` deleted every other role for that workflow in the project and global scopes. Arrays still replace wholesale; `undefined` never overrides; `null` deliberately clears.
+  - `trailstep agents <workflow>` now uses the same merge as the runtime. It previously used a third, deeper merge and would list roles the runtime would never see, which made configuration bugs very hard to diagnose. The output also gains a `Sources:` block naming which scope supplied each configured entry, and a new test asserts the display and `resolveAgentTargets` agree.
+  - One malformed config file no longer breaks every command. A global or project config that cannot be read or parsed is reported through `configErrors` (and on stderr by `run`, `continue` and `retry`) instead of throwing, so the remaining scopes still apply.
+  - The workflow registry is read through the same loader as the rest of the config, instead of a second, independently merged user-registry path. `workflowRegistry` is the canonical key; the legacy `workflows` string leaves that `trailstep add` still writes keep resolving for one release.
+  - New project-root discovery (`resolveProjectRoot`): `TRAILSTEP_PROJECT_ROOT` if set, else the invocation directory when it already has a `.trailstep` directory, else the nearest ancestor with `.git`, else the nearest ancestor with `package.json`, else the invocation directory. `run`, `continue` and `retry` resolve config, the workflow registry and run artifacts at that root while agents keep running in the invocation directory. Running a workflow from a nested directory previously created a second `.trailstep/` tree there and silently ignored the project's config and runs root. **If you have stray `.trailstep/` directories in subdirectories, delete or move them.**
+- 167b58e: Make config writes crash-safe and align scope defaults.
+  
+  - Scope config files are now written atomically through `atomicWriteJson`, and a new `updateRawTrailStepConfigFile` gives every read-modify-write caller one safe path. Two concurrent `trailstep add` / `trailstep agents set` invocations previously lost one update, and a crash mid-write left truncated JSON.
+  - `appendGitignoreEntry` only treats `ENOENT` as "file is empty". Any other read failure (`EACCES`, `EISDIR`, `EBUSY`, `EPERM`) now throws instead of silently overwriting the user's entire `.gitignore` with a single entry. The append itself is atomic.
+  - The duplicated agent/role writers in `add` and `agents` are collapsed into one implementation, so the two commands can no longer drift.
+  - `trailstep agents rename` no longer half-applies: references are renamed before the config is rewritten, so a failure leaves the agent addressable under its old name.
+  - **Behaviour change:** `trailstep add --yes` without `--scope` now registers in the **local** (gitignored) scope. It previously registered in `project`, which meant an automated or agent-driven invocation silently committed to the team's shared config while an interactive run did not. Pass `--scope project` to share.
+  - `trailstep agents explain` no longer requires `--scope`, since it reports the merged effective config across all scopes.
+  - The named-agent picker only offers reserved size names (`tiny`, `small`, `medium`, `large`, `xl`) that some scope actually configures, instead of leading users into "does not exist in any config scope".
+
+### Patch Changes
+
+- 167b58e: Add a per-run execution lock and make process death observable.
+  
+  - New `run.lock` artifact (`acquireRunLock` / `releaseRunLock` / `readRunLock` / `isRunLockLive`, exported from `@trailstep/core`) guarantees only one process drives a run directory. Liveness is decided by pid, so a lock left behind by a SIGKILL, OOM or power loss is broken automatically instead of bricking the run. The lock is released on every exit path including `waiting`, so a later `continue` can resume.
+  - `runWorkflow` now fails with `run_already_active` instead of executing a second concurrent driver over the same `events.jsonl`, `state.json` and agent artifacts. This is what previously happened when an MCP client retried a `trst_resume` whose blocking continue had outlived the transport timeout.
+  - `failWorkflow` and `cancelWorkflow` tolerate an event-append failure, so the real failure always reaches the caller instead of being replaced by a persistence error.
+  - The CLI bin now attaches `unhandledRejection` / `uncaughtException` handlers and a `.catch()` on `main()`. Previously an unexpected rejection killed the process silently, leaving the event trail with no terminal event and every observer reporting "in progress" forever.
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+- Updated dependencies [167b58e]
+  - @trailstep/core@0.9.0
+  - @trailstep/mcp@0.4.0
+
 ## 0.9.2
 
 ### Patch Changes

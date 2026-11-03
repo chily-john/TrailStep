@@ -14,7 +14,9 @@ describe("spawnWorkingAgentProcess", () => {
   it("captures all of stdout and resolves only after the child closed", async () => {
     const result = await spawnWorkingAgentProcess({
       ...baseRequest,
-      args: ["-e", "process.stdout.write('x'.repeat(200000)); process.exit(0)"],
+      // Use write callback so child waits for stdout to drain before exiting.
+      // Without this, CI (Linux 64KB pipe buffer) truncates the 200KB write.
+      args: ["-e", "process.stdout.write('x'.repeat(200000), () => process.exit(0))"],
       stdio: "pipe",
     });
 

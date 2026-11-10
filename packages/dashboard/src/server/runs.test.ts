@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 
 import { listRuns } from "./runs";
+import { it } from "./test-fixtures";
 
 const workflowCompletedEvent = {
   id: "event-2",
@@ -26,8 +27,7 @@ const workflowStartedEvent = {
 };
 
 describe("dashboard run listing", () => {
-  it("lists local runs with latest status from core readRunEvents", async ({ task }) => {
-    const cwd = join(process.cwd(), ".tmp", task.id);
+  it("lists local runs with latest status from core readRunEvents", async ({ cwd }) => {
     const runDir = join(cwd, ".trailstep", "runs", "run-a");
     await mkdir(runDir, { recursive: true });
     await writeFile(

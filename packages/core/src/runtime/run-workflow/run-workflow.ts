@@ -46,6 +46,7 @@ import { initializeRun } from "./initialize-run.js";
 import { replayToCancelledStep } from "./replay-to-cancelled-step.js";
 import { runRootContinuationArrayScheduler } from "./root-continuation-array-scheduler.js";
 import { parseTrailStepConfigInput } from "./trailstep-config-input.js";
+import { createWorkflowStartedProvenance } from "./workflow-started-provenance.js";
 
 export async function runWorkflow<TInput extends PlainObject, TOutput extends PlainObject>(
   options: RunWorkflowOptions<TInput, TOutput>,
@@ -537,12 +538,16 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       }
     } else {
       workflowInput = assertWorkflowInput(inputSchema, options.input);
+      const provenance = createWorkflowStartedProvenance({ projectCwd, cwd });
       await emit(
         createEvent({
           runId,
           workflowId: options.workflow.id,
           type: "workflow.started",
-          payload: { input: workflowInput },
+          payload: {
+            input: workflowInput,
+            ...(provenance === undefined ? {} : { provenance }),
+          },
         }),
       );
     }

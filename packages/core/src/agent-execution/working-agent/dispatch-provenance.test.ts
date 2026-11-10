@@ -1070,4 +1070,53 @@ describe("A2b dispatch-context provenance: parallel, subprompt, failures", () =>
       expect(provenanceOf(attemptFailed[index] as Event).stepAttempt).toBe(index + 1);
     });
   });
+
+  it("keeps the raw step failure unchanged while provenance carries the spawn link", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-raw-failure-"));
+
+    // A post-spawn provider failure (non-zero exit): the original
+    // TrailStepFailureError (code/retryability/details) must reach the
+    // step.failed projection byte-for-byte, with no spawnEventId in
+    // details — correlation lives only in agent.attemptFailed provenance.
+    const result = await runWorkflow({
+      workflow: promptStepWorkflow("dispatch-provenance-raw-failure-workflow"),
+      input: { task: "raw-failure" },
+      runName: "dispatch-provenance-raw-failure-run",
+      cwd,
+      trailstepConfig: createLegacyCustomConfig(),
+      workingAgentProcessRunner: async () => ({ exitCode: 7 }),
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected provider failure");
+    }
+
+    const spawned = eventsOfType(result, "agent.spawned");
+    expect(spawned).toHaveLength(1);
+
+    const attemptFailed = eventsOfType(result, "agent.attemptFailed");
+    expect(attemptFailed).toHaveLength(1);
+    expect(provenanceOf(attemptFailed[0] as Event)).toMatchObject({
+      spawnEventId: spawned[0]?.id,
+    });
+
+    // The persisted raw failure (step.failed projection == result.failure
+    // via the exhausted-target summary) carries no spawn reference in
+    // details; assert provenance separately from the unchanged failure.
+    const stepFailed = eventsOfType(result, "step.failed");
+    expect(stepFailed).toHaveLength(1);
+    const stepFailure = stepFailed[0]?.payload.failure as
+      | { readonly code?: string; readonly details?: unknown }
+      | undefined;
+    expect(stepFailure?.code).toBe("agent_target_exhausted");
+    expect(JSON.stringify(stepFailure?.details)).not.toContain("spawnEventId");
+    expect(JSON.stringify(result.failure)).not.toContain("spawnEventId");
+    const exhaustedAttempts = (result.failure.details as Record<string, unknown>).attempts as Array<
+      Record<string, unknown>
+    >;
+    expect(exhaustedAttempts).toHaveLength(1);
+    expect(exhaustedAttempts[0]?.details).toMatchObject({ exitCode: 7 });
+    expect(JSON.stringify(exhaustedAttempts[0]?.details)).not.toContain("spawnEventId");
+  });
 });

@@ -5,7 +5,7 @@ import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-p
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import { errorMessage } from "../../../../json/guards.js";
 import {
-  attachSpawnEventId,
+  correlateSpawnEventId,
   dispatchProvenanceFields,
 } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
@@ -126,7 +126,7 @@ export async function spawnFormatWithTransientRetry(options: {
         ...(options.progress === undefined ? {} : { progress: options.progress }),
       });
     } catch (error) {
-      throw attachSpawnEventId(error, spawnEventId);
+      throw correlateSpawnEventId(error, spawnEventId);
     }
     if (result.exitCode === 0) {
       return { result, spawnEventId };
@@ -189,7 +189,7 @@ export async function spawnFormatWithTransientRetry(options: {
     );
 
     if (!canRetry) {
-      throw new TrailStepFailureError({
+      const formatFailure = new TrailStepFailureError({
         code: "agent_provider_failed",
         message,
         details: {
@@ -202,10 +202,10 @@ export async function spawnFormatWithTransientRetry(options: {
           ...(options.model === undefined ? {} : { model: options.model }),
           transient,
           spawnTry,
-          spawnEventId,
           ...(stderrTail === undefined ? {} : { stderrTail }),
         },
       });
+      throw correlateSpawnEventId(formatFailure, spawnEventId);
     }
     await sleep(delayMs ?? 0);
   }

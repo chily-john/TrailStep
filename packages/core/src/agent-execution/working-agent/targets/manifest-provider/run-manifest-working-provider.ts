@@ -12,7 +12,7 @@ import {
   type ProviderHygieneArgs,
 } from "../../../../providers/provider-manifest.js";
 import {
-  attachSpawnEventId,
+  correlateSpawnEventId,
   dispatchProvenanceFields,
 } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
@@ -265,9 +265,12 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       step: options.step,
     });
   } catch (error) {
-    // Link every structured failure from this spawn attempt to its actual
-    // `agent.spawned` event so outer seams can reference it. Cancellation
-    // and other non-structured errors pass through untouched.
-    throw attachSpawnEventId(error, spawnEventId);
+    // Link every post-spawn failure from this attempt to its actual
+    // `agent.spawned` event via the non-mutating side channel, so outer
+    // seams can reference it on `agent.attemptFailed` provenance without
+    // replacing the thrown error or touching failure.details. The exact
+    // thrown value (structured, cancellation, frozen, or primitive)
+    // propagates unchanged.
+    throw correlateSpawnEventId(error, spawnEventId);
   }
 }

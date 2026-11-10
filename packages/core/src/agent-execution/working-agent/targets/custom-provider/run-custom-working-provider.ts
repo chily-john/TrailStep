@@ -11,7 +11,7 @@ import { TrailStepFailureError } from "../../../../contracts/failures/failure.js
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import { errorMessage } from "../../../../json/guards.js";
 import {
-  attachSpawnEventId,
+  correlateSpawnEventId,
   dispatchProvenanceFields,
 } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
@@ -170,32 +170,37 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       if (spawnPromiseSettled !== undefined) {
         await withBoundedSettlement(spawnPromiseSettled, options.timeoutMs);
       }
-      throw new TrailStepFailureError({
-        code: "agent_provider_timeout",
-        message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,
-        details: {
-          target: options.target.provider,
-          ...(options.target.model === undefined ? {} : { model: options.target.model }),
-          timeoutMs: options.timeoutMs,
-          spawnEventId,
-        },
-      });
+      throw correlateSpawnEventId(
+        new TrailStepFailureError({
+          code: "agent_provider_timeout",
+          message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,
+          details: {
+            target: options.target.provider,
+            ...(options.target.model === undefined ? {} : { model: options.target.model }),
+            timeoutMs: options.timeoutMs,
+          },
+        }),
+        spawnEventId,
+      );
     }
     if (controller.signal.aborted) {
       // Caller (workflow timeout/cancellation) aborted the run: preserve
-      // cancellation semantics instead of masking it as a spawn error.
-      throw error;
+      // cancellation semantics instead of masking it as a spawn error, but
+      // still reference the real spawn attempt via the side channel.
+      throw correlateSpawnEventId(error, spawnEventId);
     }
-    throw new TrailStepFailureError({
-      code: "agent_provider_spawn_error",
-      message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
-      details: {
-        target: options.target.provider,
-        ...(options.target.model === undefined ? {} : { model: options.target.model }),
-        cause: errorMessage(error),
-        spawnEventId,
-      },
-    });
+    throw correlateSpawnEventId(
+      new TrailStepFailureError({
+        code: "agent_provider_spawn_error",
+        message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
+        details: {
+          target: options.target.provider,
+          ...(options.target.model === undefined ? {} : { model: options.target.model }),
+          cause: errorMessage(error),
+        },
+      }),
+      spawnEventId,
+    );
   } finally {
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -204,17 +209,19 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   }
 
   if (result.exitCode !== 0) {
-    throw new TrailStepFailureError({
-      code: "agent_provider_failed",
-      message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
-      details: {
-        exitCode: result.exitCode,
-        provider: agentConfig.binary,
-        target: options.target.provider,
-        ...(options.target.model === undefined ? {} : { model: options.target.model }),
-        spawnEventId,
-      },
-    });
+    throw correlateSpawnEventId(
+      new TrailStepFailureError({
+        code: "agent_provider_failed",
+        message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
+        details: {
+          exitCode: result.exitCode,
+          provider: agentConfig.binary,
+          target: options.target.provider,
+          ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        },
+      }),
+      spawnEventId,
+    );
   }
 
   // Emit agent.outputReceived
@@ -245,7 +252,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       step: options.step,
     });
   } catch (error) {
-    throw attachSpawnEventId(error, spawnEventId);
+    throw correlateSpawnEventId(error, spawnEventId);
   }
 }
 

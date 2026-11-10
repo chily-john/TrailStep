@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Event } from "../../contracts/events/event.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import {
-  attachSpawnEventId,
+  correlateSpawnEventId,
   createDispatchProvenance,
   dispatchProvenanceFields,
   mergeDispatchProvenanceContext,
@@ -185,34 +185,114 @@ describe("withDispatchProvenance", () => {
   });
 });
 
-describe("attachSpawnEventId / readSpawnEventId", () => {
-  it("attaches the spawn event ID to structured failure details", () => {
+describe("correlateSpawnEventId / readSpawnEventId", () => {
+  it("correlates by identity without replacing the error or its details", () => {
+    const details = { exitCode: 7 };
+    const failureError = new TrailStepFailureError({
+      code: "agent_provider_failed",
+      message: "boom",
+      details,
+    });
+    const stack = failureError.stack;
+
+    const correlated = correlateSpawnEventId(failureError, "evt_spawn");
+    // Same object, same stack, same details reference — never a replacement.
+    expect(correlated).toBe(failureError);
+    expect(correlated).toBe(failureError);
+    expect((correlated as TrailStepFailureError).failure.details).toBe(details);
+    expect((correlated as TrailStepFailureError).failure.details).toEqual({ exitCode: 7 });
+    expect((correlated as TrailStepFailureError).stack).toBe(stack);
+    expect(readSpawnEventId(correlated)).toBe("evt_spawn");
+  });
+
+  it("preserves non-record details (arrays, strings, null, undefined) by reference", () => {
+    const arrayDetails: unknown = ["keep-me"];
+    const forArray = new TrailStepFailureError({
+      code: "agent_output_invalid",
+      message: "sentinel",
+      details: arrayDetails,
+      retryable: true,
+    });
+    const arrayStack = forArray.stack;
+    expect(correlateSpawnEventId(forArray, "evt_actual")).toBe(forArray);
+    expect(forArray.failure.details).toBe(arrayDetails);
+    expect(forArray.stack).toBe(arrayStack);
+    expect(forArray.failure.retryable).toBe(true);
+    expect(readSpawnEventId(forArray)).toBe("evt_actual");
+    // The raw failure must not gain a spawnEventId anywhere.
+    expect(forArray.failure.details).toEqual(["keep-me"]);
+    expect(JSON.stringify(forArray.failure)).not.toContain("spawnEventId");
+
+    const stringDetails: unknown = "plain-string-details";
+    const forString = new TrailStepFailureError({
+      code: "agent_output_invalid",
+      message: "sentinel",
+      details: stringDetails,
+    });
+    expect(correlateSpawnEventId(forString, "evt_actual")).toBe(forString);
+    expect(forString.failure.details).toBe(stringDetails);
+    expect(readSpawnEventId(forString)).toBe("evt_actual");
+
+    const forNull = new TrailStepFailureError({
+      code: "agent_output_invalid",
+      message: "sentinel",
+      details: null,
+    });
+    expect(correlateSpawnEventId(forNull, "evt_actual")).toBe(forNull);
+    expect(forNull.failure.details).toBeNull();
+    expect(readSpawnEventId(forNull)).toBe("evt_actual");
+
+    const forUndefined = new TrailStepFailureError({
+      code: "agent_output_invalid",
+      message: "sentinel",
+    });
+    expect(correlateSpawnEventId(forUndefined, "evt_actual")).toBe(forUndefined);
+    expect(forUndefined.failure.details).toBeUndefined();
+    expect(readSpawnEventId(forUndefined)).toBe("evt_actual");
+  });
+
+  it("correlates frozen errors without mutating them", () => {
+    const frozen = Object.freeze(
+      new TrailStepFailureError({
+        code: "agent_provider_failed",
+        message: "frozen",
+        details: Object.freeze({ exitCode: 1 }),
+      }),
+    );
+    expect(correlateSpawnEventId(frozen, "evt_frozen")).toBe(frozen);
+    expect(readSpawnEventId(frozen)).toBe("evt_frozen");
+    expect(frozen.failure.details).toEqual({ exitCode: 1 });
+  });
+
+  it("first spawn reference wins on repeated correlation", () => {
     const failureError = new TrailStepFailureError({
       code: "agent_provider_failed",
       message: "boom",
       details: { exitCode: 7 },
     });
-
-    const attached = attachSpawnEventId(failureError, "evt_spawn");
-    expect(readSpawnEventId((attached as typeof failureError).failure.details)).toBe("evt_spawn");
-    expect((attached as typeof failureError).failure.details).toMatchObject({ exitCode: 7 });
+    const first = correlateSpawnEventId(failureError, "evt_first");
+    const second = correlateSpawnEventId(failureError, "evt_second");
+    expect(second).toBe(first);
+    expect(second).toBe(failureError);
+    expect(readSpawnEventId(failureError)).toBe("evt_first");
   });
 
-  it("first spawn reference wins on repeated attachment", () => {
-    const failureError = new TrailStepFailureError({
-      code: "agent_provider_failed",
-      message: "boom",
-      details: { spawnEventId: "evt_first" },
-    });
-    const attached = attachSpawnEventId(failureError, "evt_second");
-    expect(attached).toBe(failureError);
-  });
-
-  it("leaves non-structured errors untouched", () => {
+  it("correlates plain and cancellation-like errors by identity; primitives pass through", () => {
     const cancellationLike = new Error("cancelled");
-    expect(attachSpawnEventId(cancellationLike, "evt_spawn")).toBe(cancellationLike);
-    expect(attachSpawnEventId("string error", "evt_spawn")).toBe("string error");
+    expect(correlateSpawnEventId(cancellationLike, "evt_spawn")).toBe(cancellationLike);
+    expect(readSpawnEventId(cancellationLike)).toBe("evt_spawn");
+    expect(correlateSpawnEventId("string error", "evt_spawn")).toBe("string error");
+    expect(readSpawnEventId("string error")).toBeUndefined();
     expect(readSpawnEventId(undefined)).toBeUndefined();
-    expect(readSpawnEventId({ spawnEventId: 42 })).toBeUndefined();
+    expect(readSpawnEventId({ spawnEventId: "evt_details_only" })).toBeUndefined();
+  });
+
+  it("keeps correlations isolated per error instance (no cross-attempt leakage)", () => {
+    const first = new TrailStepFailureError({ code: "a", message: "first" });
+    const second = new TrailStepFailureError({ code: "b", message: "second" });
+    correlateSpawnEventId(first, "evt_one");
+    correlateSpawnEventId(second, "evt_two");
+    expect(readSpawnEventId(first)).toBe("evt_one");
+    expect(readSpawnEventId(second)).toBe("evt_two");
   });
 });

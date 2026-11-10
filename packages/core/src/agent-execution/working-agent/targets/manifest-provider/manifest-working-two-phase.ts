@@ -15,7 +15,7 @@ import type {
   TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
 import {
-  attachSpawnEventId,
+  correlateSpawnEventId,
   dispatchProvenanceFields,
 } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
@@ -265,9 +265,10 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       }),
     );
   } catch (error) {
-    // Link every structured work-phase failure to its actual `agent.spawned`
-    // event so outer seams can reference it.
-    throw attachSpawnEventId(error, workSpawnEventId);
+    // Link every work-phase failure to its actual `agent.spawned` event via
+    // the non-mutating side channel so outer seams can reference it without
+    // replacing the thrown value or touching failure.details.
+    throw correlateSpawnEventId(error, workSpawnEventId);
   }
 
   // Phase 2: pinned same-session format follow-up.
@@ -414,7 +415,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
     }
   }
 
-  throw new TrailStepFailureError({
+  const exhaustedFailure = new TrailStepFailureError({
     code: "agent_target_failed",
     message: `Working agent step ${step.id} target '${target.provider}' failed output validation after ${MAX_FORMAT_ATTEMPTS} format attempts in session ${sessionId}.`,
     details: {
@@ -423,9 +424,15 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       attempts: MAX_FORMAT_ATTEMPTS,
       validationDiagnostics,
       phase1Tail,
-      // Preserve the last format spawn reference in the failure itself, not
-      // only in the (overwritten) per-attempt usage artifact.
-      ...(lastFormatSpawnEventId === undefined ? {} : { spawnEventId: lastFormatSpawnEventId }),
     },
   });
+  // Preserve the last format spawn reference via the side channel, not in
+  // failure.details (and not only in the overwritten per-attempt usage
+  // artifact), so the outer `agent.attemptFailed` provenance can reference
+  // the actual last format spawn while the raw failure stays unchanged.
+  // Without a real format spawn, no reference is fabricated.
+  if (lastFormatSpawnEventId !== undefined) {
+    correlateSpawnEventId(exhaustedFailure, lastFormatSpawnEventId);
+  }
+  throw exhaustedFailure;
 }

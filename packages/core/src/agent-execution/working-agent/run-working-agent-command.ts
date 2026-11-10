@@ -148,7 +148,11 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
         const stderrTail = stderrTailFromDetails(details);
         const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
         const decision = canRetry ? "retry" : "nextTarget";
-        const spawnEventId = readSpawnEventId(details);
+        // Correlation is read by error identity from the side channel, not
+        // from failure.details: the raw failure (code/retryability/details,
+        // including non-record details) reaches the step.failed projection
+        // unchanged, while this event's provenance references the spawn.
+        const spawnEventId = readSpawnEventId(error);
 
         await appendAttemptLog(files.attemptsFile, {
           timestamp: new Date().toISOString(),

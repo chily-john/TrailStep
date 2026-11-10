@@ -14,6 +14,14 @@
  * This helper is pure and infallible: metadata capture must never fail a
  * productive run. It returns `undefined` when there is nothing meaningful to
  * record, so the emit site can omit the field entirely (legacy shape).
+ *
+ * The recorded strings are the exact validated cwd strings: they are never
+ * trimmed, normalized, resolved, or otherwise reinterpreted here. Trailing or
+ * leading whitespace is legal in directory names, so the recorded value must
+ * match the directory the runtime actually validated and uses. The only
+ * question asked of the inputs mirrors the runtime's own presence test in
+ * `validateDirectoryCwd` (blank-after-trim means absent), but the values
+ * recorded are the original strings unchanged.
  */
 export interface WorkflowStartedProvenance {
   readonly schemaVersion: 1;
@@ -27,14 +35,12 @@ export function createWorkflowStartedProvenance(cwds: {
   readonly projectCwd: string;
   readonly cwd: string;
 }): WorkflowStartedProvenance | undefined {
-  const projectCwd = cwds.projectCwd.trim();
-  const executionCwd = cwds.cwd.trim();
-  if (projectCwd.length === 0) {
+  if (cwds.projectCwd.trim().length === 0) {
     return undefined;
   }
   return {
     schemaVersion: 1,
-    projectCwd,
-    executionCwd: executionCwd.length > 0 ? executionCwd : projectCwd,
+    projectCwd: cwds.projectCwd,
+    executionCwd: cwds.cwd.trim().length > 0 ? cwds.cwd : cwds.projectCwd,
   };
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { done, step } from "../../authoring/authoring.js";
+import { done, state, step } from "../../authoring/authoring.js";
 import type { Workflow } from "../../authoring/workflow/workflow.types.js";
 import { runWorkflow } from "./run-workflow.js";
 import { createWorkflowStartedProvenance } from "./workflow-started-provenance.js";
@@ -31,6 +31,24 @@ describe("createWorkflowStartedProvenance", () => {
       schemaVersion: 1,
       projectCwd: "/repo",
       executionCwd: "/repo",
+    });
+  });
+
+  it("preserves exact whitespace-bearing strings instead of trimming them", () => {
+    expect(
+      createWorkflowStartedProvenance({ projectCwd: "/repo ", cwd: "/repo/ worktree " }),
+    ).toEqual({
+      schemaVersion: 1,
+      projectCwd: "/repo ",
+      executionCwd: "/repo/ worktree ",
+    });
+  });
+
+  it("falls back to the exact project cwd when the execution cwd is whitespace-only", () => {
+    expect(createWorkflowStartedProvenance({ projectCwd: "/repo ", cwd: "   " })).toEqual({
+      schemaVersion: 1,
+      projectCwd: "/repo ",
+      executionCwd: "/repo ",
     });
   });
 });
@@ -173,6 +191,144 @@ describe("workflow.started provenance", () => {
     expect(startedEvents[0]).toEqual(legacyStarted);
     expect(startedEvents[0]?.payload).toEqual({ input: {} });
   });
+
+  // Filesystem directory names may carry leading/trailing whitespace, but
+  // Windows path APIs do not support it; only run these fixtures off win32.
+  const whitespaceOk = process.platform !== "win32";
+
+  it.runIf(whitespaceOk)(
+    "records exact whitespace-bearing cwds on a real run and they match the used paths",
+    async () => {
+      const base = await mkdtemp(join(tmpdir(), "trailstep-core-provenance-ws-"));
+      const projectCwd = await makeDir(base, "repo ");
+      const executionCwd = await makeDir(projectCwd, "worktree ");
+      const workflow: Workflow<
+        Record<string, never>,
+        { executionCwd: string; projectCwd: string }
+      > = {
+        id: "provenance-whitespace",
+        outputShape: { executionCwd: "string", projectCwd: "string" },
+        start() {
+          return step({ id: "observe" }).do(() =>
+            done({ executionCwd: state.executionCwd ?? "", projectCwd: state.projectCwd ?? "" }),
+          )();
+        },
+      };
+
+      const result = await runWorkflow({
+        workflow,
+        input: {},
+        runName: "provenance-whitespace-run",
+        projectCwd,
+        cwd: executionCwd,
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error(result.failure.message);
+      }
+      // The step observed the same exact strings the provenance recorded:
+      // both the project root and the actually-used execution cwd.
+      expect(result.output).toEqual({ executionCwd, projectCwd });
+      const started = result.events.find((event) => event.type === "workflow.started");
+      expect(started?.payload).toEqual({
+        input: {},
+        provenance: { schemaVersion: 1, projectCwd, executionCwd },
+      });
+    },
+  );
+
+  it.runIf(whitespaceOk)(
+    "records the exact project cwd as execution fallback on a real whitespace run",
+    async () => {
+      const base = await mkdtemp(join(tmpdir(), "trailstep-core-provenance-ws-fallback-"));
+      const projectCwd = await makeDir(base, "repo ");
+      const workflow: Workflow<Record<string, never>, { executionCwd: string }> = {
+        id: "provenance-whitespace-fallback",
+        outputShape: { executionCwd: "string" },
+        start() {
+          return step({ id: "observe" }).do(() =>
+            done({ executionCwd: state.executionCwd ?? "" }),
+          )();
+        },
+      };
+
+      const result = await runWorkflow({
+        workflow,
+        input: {},
+        runName: "provenance-whitespace-fallback-run",
+        projectCwd,
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error(result.failure.message);
+      }
+      expect(result.output.executionCwd).toBe(projectCwd);
+      const started = result.events.find((event) => event.type === "workflow.started");
+      expect(started?.payload).toEqual({
+        input: {},
+        provenance: { schemaVersion: 1, projectCwd, executionCwd: projectCwd },
+      });
+    },
+  );
+
+  it.runIf(whitespaceOk)(
+    "keeps the exact whitespace workflow.started unchanged across continue",
+    async () => {
+      const base = await mkdtemp(join(tmpdir(), "trailstep-core-provenance-ws-continue-"));
+      const projectCwd = await makeDir(base, "repo ");
+      const executionCwd = await makeDir(projectCwd, "worktree ");
+      let checks = 0;
+      const workflow: Workflow<{ sha: string }, { status: string }> = {
+        id: "provenance-whitespace-continue",
+        inputShape: { sha: "string" },
+        outputShape: { status: "string" },
+        start(input) {
+          return step({ id: "ci" })
+            .wait(
+              async ({ wait }) => {
+                checks += 1;
+                return checks === 1
+                  ? wait.pending({ id: "ci", message: "Waiting" })
+                  : wait.done({ status: "passed" });
+              },
+              { output: { status: "string" } },
+            )
+            .do(({ waits }) => done({ status: String(waits.ci?.status) }))(input);
+        },
+      };
+
+      const first = await runWorkflow({
+        workflow,
+        input: { sha: "abc" },
+        runName: "provenance-whitespace-continue-run",
+        projectCwd,
+        cwd: executionCwd,
+      });
+      expect(first.status).toBe("waiting");
+      const originalStarted = first.events.find((event) => event.type === "workflow.started");
+      expect(originalStarted?.payload).toEqual({
+        input: { sha: "abc" },
+        provenance: { schemaVersion: 1, projectCwd, executionCwd },
+      });
+
+      if (first.status !== "waiting") {
+        throw new Error("Expected waiting.");
+      }
+      const second = await runWorkflow({
+        workflow,
+        continue: { runDir: first.runDir },
+        projectCwd,
+        cwd: executionCwd,
+      });
+      expect(second.status).toBe("success");
+
+      const startedEvents = second.events.filter((event) => event.type === "workflow.started");
+      expect(startedEvents).toHaveLength(1);
+      expect(startedEvents[0]).toEqual(originalStarted);
+    },
+  );
 
   it("keeps the original workflow.started unchanged across resume", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-provenance-resume-"));

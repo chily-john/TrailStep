@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isRunEvidence,
   isSafeEvidenceArtifactPath,
   parseRunEvidence,
   runEvidenceSchema,
@@ -317,6 +318,116 @@ describe("safe artifact references", () => {
     (eventId.run as Record<string, unknown>).startedEventId = "a/b";
     expect(parseRunEvidence(eventId).status).toBe("malformed");
   });
+
+  it("projects exactly one selector in the sanitized decoder output", () => {
+    const artifact = minimalEvidence();
+    artifact.linkedArtifacts = [
+      {
+        source: {
+          run: sourceRun(),
+          artifactPath: "reviews/k/r1/report.json",
+          digest: "sha256:d1",
+        },
+      },
+    ];
+    const artifactResult = parseRunEvidence(artifact);
+    expect(artifactResult.status).toBe("valid");
+    if (artifactResult.status === "valid") {
+      const source = artifactResult.evidence.linkedArtifacts?.[0]?.source;
+      expect(source).toBeDefined();
+      expect(source?.artifactPath).toBe("reviews/k/r1/report.json");
+      expect(source?.digest).toBe("sha256:d1");
+      expect(source !== undefined && "eventId" in source).toBe(false);
+    }
+    expect(runEvidenceSchema.validate(artifact)).toBe(true);
+
+    const event = minimalEvidence();
+    event.linkedArtifacts = [{ source: { run: sourceRun(), eventId: "evt-original" } }];
+    const eventResult = parseRunEvidence(event);
+    expect(eventResult.status).toBe("valid");
+    if (eventResult.status === "valid") {
+      const source = eventResult.evidence.linkedArtifacts?.[0]?.source;
+      expect(source?.eventId).toBe("evt-original");
+      expect(source?.digest).toBeUndefined();
+      expect(source !== undefined && "artifactPath" in source).toBe(false);
+    }
+    expect(runEvidenceSchema.validate(event)).toBe(true);
+  });
+
+  it("rejects both selectors, neither selector, and malformed-plus-valid selectors", () => {
+    const both = minimalEvidence();
+    both.linkedArtifacts = [
+      {
+        source: {
+          run: sourceRun(),
+          artifactPath: "events.jsonl",
+          eventId: "evt-original",
+        },
+      },
+    ];
+    const bothResult = parseRunEvidence(both);
+    expect(bothResult.status).toBe("malformed");
+    if (bothResult.status === "malformed") {
+      expect(bothResult.diagnostics.length).toBeGreaterThan(0);
+    }
+    expect(runEvidenceSchema.validate(both)).toBe(false);
+    expect(isRunEvidence(both)).toBe(false);
+
+    for (const source of [
+      { run: sourceRun(), artifactPath: "../escape", eventId: "evt-original" },
+      { run: sourceRun(), artifactPath: "events.jsonl", eventId: "../bad" },
+      { run: sourceRun(), artifactPath: 123, eventId: "evt-original" },
+      { run: sourceRun(), artifactPath: "", eventId: "evt-original" },
+      { run: sourceRun(), artifactPath: "events.jsonl", eventId: "" },
+    ]) {
+      const input = minimalEvidence();
+      input.linkedArtifacts = [{ source }];
+      expect(parseRunEvidence(input).status, JSON.stringify(source)).toBe("malformed");
+      expect(runEvidenceSchema.validate(input)).toBe(false);
+    }
+  });
+
+  it("rejects an ambiguous selector nested after a valid artifact", () => {
+    const input = minimalEvidence();
+    input.linkedArtifacts = [
+      { label: "ok", source: { run: sourceRun(), artifactPath: "events.jsonl" } },
+      {
+        source: {
+          run: sourceRun(),
+          artifactPath: "steps/0001/output.json",
+          eventId: "evt-2",
+        },
+      },
+    ];
+    expect(parseRunEvidence(input).status).toBe("malformed");
+    expect(runEvidenceSchema.validate(input)).toBe(false);
+
+    const neitherNested = minimalEvidence();
+    neitherNested.linkedArtifacts = [
+      { source: { run: sourceRun(), artifactPath: "events.jsonl" } },
+      { source: { run: sourceRun() } },
+    ];
+    expect(parseRunEvidence(neitherNested).status).toBe("malformed");
+    expect(runEvidenceSchema.validate(neitherNested)).toBe(false);
+  });
+
+  it("tolerates additive unknown fields on a source reference without projecting them", () => {
+    const input = minimalEvidence();
+    input.linkedArtifacts = [
+      {
+        source: { run: sourceRun(), artifactPath: "events.jsonl", futureSelector: "ignore-me" },
+      },
+    ];
+    const result = parseRunEvidence(input);
+    expect(result.status).toBe("valid");
+    if (result.status === "valid") {
+      const source = result.evidence.linkedArtifacts?.[0]?.source;
+      expect(source?.artifactPath).toBe("events.jsonl");
+      expect(
+        source !== undefined && "futureSelector" in (source as unknown as Record<string, unknown>),
+      ).toBe(false);
+    }
+  });
 });
 
 describe("runEvidenceSchema fixture types", () => {
@@ -327,6 +438,25 @@ describe("runEvidenceSchema fixture types", () => {
       const evidence: RunEvidence = parsed.evidence;
       const source: EvidenceSourceRef = { run: evidence.run, artifactPath: "events.jsonl" };
       expect(source.artifactPath).toBe("events.jsonl");
+    }
+  });
+
+  it("makes both selectors and neither selector unrepresentable", () => {
+    const parsed = parseRunEvidence(minimalEvidence());
+    expect(parsed.status).toBe("valid");
+    if (parsed.status === "valid") {
+      const run = parsed.evidence.run;
+      const artifact: EvidenceSourceRef = { run, artifactPath: "events.jsonl" };
+      const event: EvidenceSourceRef = { run, eventId: "evt-original", digest: "sha256:d1" };
+      expect(artifact.artifactPath).toBe("events.jsonl");
+      expect(event.eventId).toBe("evt-original");
+
+      // @ts-expect-error — both selectors must not be representable
+      const both: EvidenceSourceRef = { run, artifactPath: "events.jsonl", eventId: "evt-1" };
+      // @ts-expect-error — a source reference requires exactly one selector
+      const neither: EvidenceSourceRef = { run };
+      expect(both).toBeDefined();
+      expect(neither).toBeDefined();
     }
   });
 });

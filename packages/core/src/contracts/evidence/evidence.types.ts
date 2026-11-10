@@ -106,16 +106,26 @@ export interface EvidenceExecutionObservation {
 
 /**
  * Safe logical reference to an artifact or event within a run. Exactly one
- * of `artifactPath`/`eventId` is required. `digest` is an optional
+ * of `artifactPath`/`eventId` is required: this union makes both selectors
+ * and neither selector unrepresentable for hand-authored code, while the
+ * runtime schema (`sourceRefSchema`) rejects ambiguous input as `malformed`
+ * instead of silently dropping a selector. `digest` is an optional
  * selected-range digest for detecting changed evidence; whole growing-trail
  * fingerprints must not be used to redefine identity.
  */
-export interface EvidenceSourceRef {
-  readonly run: RunEvidenceRunRef;
-  readonly artifactPath?: string;
-  readonly eventId?: string;
-  readonly digest?: string;
-}
+export type EvidenceSourceRef =
+  | {
+      readonly run: RunEvidenceRunRef;
+      readonly artifactPath: string;
+      readonly eventId?: undefined;
+      readonly digest?: string;
+    }
+  | {
+      readonly run: RunEvidenceRunRef;
+      readonly eventId: string;
+      readonly artifactPath?: undefined;
+      readonly digest?: string;
+    };
 
 /** Generic link to a separately owned artifact, without assessment content. */
 export interface EvidenceLinkedArtifactRef {

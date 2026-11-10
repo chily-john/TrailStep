@@ -124,7 +124,9 @@ const sourceRefSchema = {
     digest: { type: "string", minLength: 1, maxLength: 256, pattern: DIGEST_PATTERN },
   },
   required: ["run"] as const,
-  anyOf: [{ required: ["artifactPath"] }, { required: ["eventId"] }],
+  // Exactly one selector: neither (0 matches) and both (2 matches) both fail
+  // `oneOf`, instead of `anyOf` which silently allowed both selectors.
+  oneOf: [{ required: ["artifactPath"] }, { required: ["eventId"] }],
 };
 const availabilitySchema = {
   type: "object",
@@ -365,13 +367,18 @@ function sanitizeExecution(input: Record<string, unknown>): EvidenceExecutionObs
 }
 
 function sanitizeSourceRef(input: EvidenceSourceRef): EvidenceSourceRef {
-  const source: EvidenceSourceRef = {
-    run: sanitizeRunRef(input.run as unknown as Record<string, unknown>),
-    ...(input.artifactPath !== undefined ? { artifactPath: input.artifactPath } : {}),
-    ...(input.eventId !== undefined ? { eventId: input.eventId } : {}),
-    ...(input.digest !== undefined ? { digest: input.digest } : {}),
-  };
-  return source;
+  const run = sanitizeRunRef(input.run as unknown as Record<string, unknown>);
+  const digest = input.digest !== undefined ? { digest: input.digest } : {};
+  if (input.artifactPath !== undefined) {
+    return { run, artifactPath: input.artifactPath, ...digest };
+  }
+  if (input.eventId !== undefined) {
+    return { run, eventId: input.eventId, ...digest };
+  }
+  // Unreachable in practice: parseRunEvidence only sanitizes after schema
+  // validation, which enforces exactly one selector. Fail loudly rather
+  // than silently dropping a selector if this invariant is ever bypassed.
+  throw new Error("EvidenceSourceRef requires exactly one of artifactPath/eventId");
 }
 
 function sanitizeLinkedArtifact(input: EvidenceLinkedArtifactRef): EvidenceLinkedArtifactRef {

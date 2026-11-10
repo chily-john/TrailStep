@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -euo pipefail                                                                                                                                               
                                                                                                                                                                    
    repo="/c/Users/cjohnson_xtivia/Desktop/TrailStep"                                                                                                               

@@ -50,6 +50,8 @@ export interface StepExecutionContext {
   readonly stepNode: StepNode;
   readonly resumeWait: ResumeWaitOptions | undefined;
   readonly stepIndex: number;
+  /** Durable scheduler branch executing this step, when running under the scheduler (A2b). */
+  readonly branchId?: string;
   readonly currentWorkflowId: string;
   readonly currentWorkflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly currentWorkflowTimeout: TimeoutPolicyInput | undefined;
@@ -163,6 +165,7 @@ export async function runStepExecution(
         stepNode,
         resumeWait,
         stepIndex: context.stepIndex,
+        ...(context.branchId === undefined ? {} : { branchId: context.branchId }),
         currentWorkflowId,
         currentWorkflowAgents: context.currentWorkflowAgents,
         trailstepConfig,

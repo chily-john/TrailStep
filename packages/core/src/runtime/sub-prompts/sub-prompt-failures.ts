@@ -1,3 +1,4 @@
+import type { DispatchProvenance } from "../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import type { Failure } from "../../contracts/failures/failure.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { RunContext } from "../../contracts/run-context/run-context.types.js";
@@ -16,6 +17,8 @@ export async function emitSubPromptFailed(options: {
     readonly outputFile: string;
   };
   readonly failure: Failure;
+  /** A2b provenance (parent step context + ordinal), when the subprompt attempted execution. */
+  readonly provenance?: DispatchProvenance;
 }): Promise<void> {
   await options.context.emit?.(
     createEvent({
@@ -29,6 +32,7 @@ export async function emitSubPromptFailed(options: {
         ...(options.fingerprint === undefined ? {} : { fingerprint: options.fingerprint }),
         ...(options.artifactPaths === undefined ? {} : { artifactPaths: options.artifactPaths }),
         failure: options.failure,
+        ...(options.provenance === undefined ? {} : { provenance: options.provenance }),
       },
     }),
   );

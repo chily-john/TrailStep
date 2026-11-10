@@ -8,10 +8,12 @@ import type {
 } from "../../authoring/step/continuation.types.js";
 import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
 import { TRAILSTEP_DIR_NAME } from "../../runtime/artifacts/run-storage.js";
 import { resolveStepArtifactPaths } from "../../runtime/artifacts/step-artifacts.js";
+import { dispatchProvenanceFields } from "../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
 import type { Event, RunWorkflowOptions } from "../../runtime/run-workflow/run-workflow.types.js";
 import {
@@ -50,6 +52,8 @@ export async function dispatchAgentStep(options: {
   readonly providerWorkingRunner: RunWorkflowOptions["providerWorkingRunner"];
   readonly processRunner: RunWorkflowOptions["processRunner"];
   readonly stepIndex: number;
+  /** Explicit A2b dispatch context (branch/step/attempt/cwd/phase) for provenance on agent events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
   /** Opt-in. Reports an `agent.stalled` event when the agent produces no output for this long. */
   readonly stallTimeoutMs?: number;
   /** Invoked once when the attempt is first observed as stalled. */
@@ -94,7 +98,11 @@ export async function dispatchAgentStep(options: {
         workflowId: options.workflowId,
         stepId: config.id,
         type: "interactive.sessionStarted",
-        payload: { roleName: resolvedRole.roleName, stepIndex: options.stepIndex },
+        payload: {
+          roleName: resolvedRole.roleName,
+          stepIndex: options.stepIndex,
+          ...dispatchProvenanceFields(options.dispatchProvenance),
+        },
       }),
     );
     const artifactPaths = resolveStepArtifactPaths({
@@ -127,6 +135,7 @@ export async function dispatchAgentStep(options: {
           exitCode: interactiveResult.exitCode,
           outputMode: options.interactiveOutputMode,
           stepDir: artifactPaths.runRelativeStepDir,
+          ...dispatchProvenanceFields(options.dispatchProvenance),
         },
       }),
     );
@@ -180,6 +189,9 @@ export async function dispatchAgentStep(options: {
           );
         },
         stepIndex: options.stepIndex,
+        ...(options.dispatchProvenance === undefined
+          ? {}
+          : { dispatchProvenance: options.dispatchProvenance }),
         signal: options.signal,
         emit: options.emit,
         runId: options.runId,
@@ -199,7 +211,10 @@ export async function dispatchAgentStep(options: {
             workflowId: options.workflowId,
             stepId: config.id,
             type: "agent.toolCall",
-            payload: { ...toolCall },
+            payload: {
+              ...toolCall,
+              ...dispatchProvenanceFields(options.dispatchProvenance),
+            },
           }),
         );
       },

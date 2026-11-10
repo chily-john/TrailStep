@@ -173,6 +173,12 @@ export type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
+export type {
+  DispatchProvenance,
+  DispatchProvenanceContext,
+  DispatchProvenanceLayer,
+} from "./contracts/dispatch-provenance/dispatch-provenance.types.js";
+export { DISPATCH_PROVENANCE_SCHEMA_VERSION } from "./contracts/dispatch-provenance/dispatch-provenance.types.js";
 export {
   isRunEvidence,
   isSafeEvidenceArtifactPath,

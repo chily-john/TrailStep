@@ -39,6 +39,13 @@ export interface RunContinuationOptions {
   readonly processRunner?: RunWorkflowOptions["processRunner"];
   readonly resumeWait?: ResumeWaitOptions;
   readonly returnContinuationArrays?: boolean;
+  /**
+   * Durable scheduler branch executing this continuation (A2b). Authoritative
+   * and explicit: set by the branch runner so agent dispatches can record
+   * provenance without inferring branches from event proximity. Absent when a
+   * continuation runs without a scheduler (standalone entry points, tests).
+   */
+  readonly branchId?: string;
 }
 
 export interface ResumeWaitOptions {

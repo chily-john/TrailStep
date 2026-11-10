@@ -6,9 +6,14 @@ import type {
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
 import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
 import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import { errorMessage } from "../../../../json/guards.js";
+import {
+  attachSpawnEventId,
+  dispatchProvenanceFields,
+} from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type {
   Event,
@@ -29,6 +34,12 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly target: TrailStepAgentTarget;
+  /** 1-based position of this target in the fallback chain (A2b). Defaults to 1 for direct/legacy calls. */
+  readonly targetOrdinal?: number;
+  /** 1-based process-level spawn retry for the work phase (A2b). Defaults to 1 for direct/legacy calls. */
+  readonly workSpawnTry?: number;
+  /** Explicit A2b dispatch context for provenance on working-agent events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
@@ -55,22 +66,28 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
     thinking,
   });
 
-  // Emit agent.spawned
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: options.step.id,
-      type: "agent.spawned",
-      payload: {
-        provider: options.target.provider,
-        model: options.target.model,
-        phase: "work",
-        promptFile: options.files.promptFile,
-        outputFile: options.files.outputFile,
-      },
-    }),
-  );
+  const targetOrdinal = options.targetOrdinal ?? 1;
+  const workSpawnTry = options.workSpawnTry ?? 1;
+  const dispatchProvenance = options.dispatchProvenance;
+
+  // Emit agent.spawned and retain the constructed event: its ID is the
+  // actual-attempt anchor referenced by prompt/output/failure events.
+  const spawnedEvent = createEvent({
+    runId: options.runId,
+    workflowId: options.workflowId,
+    stepId: options.step.id,
+    type: "agent.spawned",
+    payload: {
+      provider: options.target.provider,
+      model: options.target.model,
+      phase: "work",
+      promptFile: options.files.promptFile,
+      outputFile: options.files.outputFile,
+      ...dispatchProvenanceFields(dispatchProvenance, { targetOrdinal, workSpawnTry }),
+    },
+  });
+  await options.emit(spawnedEvent);
+  const spawnEventId = spawnedEvent.id;
 
   // Emit agent.promptSent
   await options.emit(
@@ -82,6 +99,11 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
       payload: {
         phase: "work",
         promptFile: options.files.promptFile,
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal,
+          workSpawnTry,
+          spawnEventId,
+        }),
       },
     }),
   );
@@ -155,6 +177,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
           target: options.target.provider,
           ...(options.target.model === undefined ? {} : { model: options.target.model }),
           timeoutMs: options.timeoutMs,
+          spawnEventId,
         },
       });
     }
@@ -170,6 +193,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
         target: options.target.provider,
         ...(options.target.model === undefined ? {} : { model: options.target.model }),
         cause: errorMessage(error),
+        spawnEventId,
       },
     });
   } finally {
@@ -188,6 +212,7 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
         provider: agentConfig.binary,
         target: options.target.provider,
         ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        spawnEventId,
       },
     });
   }
@@ -204,15 +229,24 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
         outputFile: options.files.outputFile,
         outputSize: await outputFileSize(options.files.outputFile),
         valid: true,
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal,
+          workSpawnTry,
+          spawnEventId,
+        }),
       },
     }),
   );
 
-  return readWorkingAgentOutput({
-    stepId: options.step.id,
-    outputFile: options.files.outputFile,
-    step: options.step,
-  });
+  try {
+    return await readWorkingAgentOutput({
+      stepId: options.step.id,
+      outputFile: options.files.outputFile,
+      step: options.step,
+    });
+  } catch (error) {
+    throw attachSpawnEventId(error, spawnEventId);
+  }
 }
 
 /** Best-effort byte size for observability; never masks the main result. */

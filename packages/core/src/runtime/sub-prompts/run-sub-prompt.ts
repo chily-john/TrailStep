@@ -12,8 +12,14 @@ import type {
   SubPromptOptions,
 } from "../../authoring/step/continuation.types.js";
 import type { AgentPrompt } from "../../contracts/agents/agent-adapter.types.js";
+import type { DispatchProvenanceContext } from "../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import {
+  createDispatchProvenance,
+  dispatchProvenanceFields,
+  mergeDispatchProvenanceContext,
+} from "../dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../events/create-run-event.js";
 import { runContextStorage } from "../run-context/run-context-storage.js";
 import {
@@ -78,6 +84,23 @@ export async function runSubPrompt<
 
   const outputSchema = normalizeShape(options.output);
   const ordinal = parentStep.nextSubPromptIndex();
+  // A2b subprompt inheritance: explicit parent-step dispatch context
+  // (branch / allocated step index + artifact identity / runtime attempt /
+  // exact execution cwd), plus the subprompt's own ordinal. The synthetic
+  // step ID and fingerprint/cache semantics below are unchanged.
+  const subPromptDispatchContext: DispatchProvenanceContext = mergeDispatchProvenanceContext(
+    {
+      ...(parentStep.branchId === undefined ? {} : { branchId: parentStep.branchId }),
+      ...(parentStep.stepIndex === undefined ? {} : { stepIndex: parentStep.stepIndex }),
+      ...(parentStep.stepArtifactId === undefined
+        ? {}
+        : { stepArtifactId: parentStep.stepArtifactId }),
+      ...(parentStep.stepAttempt === undefined ? {} : { stepAttempt: parentStep.stepAttempt }),
+      executionCwd: parentStep.executionCwd ?? parentStep.cwd ?? context.cwd,
+    },
+    { parentStepId: parentStep.id, subPromptOrdinal: ordinal },
+  );
+  const subPromptProvenance = createDispatchProvenance(subPromptDispatchContext);
   const maxSubPrompts = resolveMaxSubPrompts(options.maxSubPrompts ?? parentStep.maxSubPrompts);
   if (ordinal > maxSubPrompts) {
     const failureError = maxSubPromptsGuardError(maxSubPrompts);
@@ -86,6 +109,7 @@ export async function runSubPrompt<
       parentStepId: parentStep.id,
       ordinal,
       failure: failureError.failure,
+      ...(subPromptProvenance === undefined ? {} : { provenance: subPromptProvenance }),
     });
     throw failureError;
   }
@@ -134,6 +158,7 @@ export async function runSubPrompt<
         ordinal,
         fingerprint,
         artifactPaths: artifactPaths.runRelative,
+        ...dispatchProvenanceFields(subPromptDispatchContext),
       },
     }),
   );
@@ -179,6 +204,7 @@ export async function runSubPrompt<
             }),
             emit: context.emit,
             runId: context.id,
+            dispatchProvenance: subPromptDispatchContext,
           })
         : await runAgentStep({
             step: agentStep,
@@ -190,7 +216,10 @@ export async function runSubPrompt<
                   workflowId: context.workflowId ?? "",
                   stepId: parentStep.id,
                   type: "agent.toolCall",
-                  payload: { ...toolCall },
+                  payload: {
+                    ...toolCall,
+                    ...dispatchProvenanceFields(subPromptDispatchContext),
+                  },
                 }),
               );
             },
@@ -211,6 +240,7 @@ export async function runSubPrompt<
           fingerprint,
           output,
           artifactPaths: artifactPaths.runRelative,
+          ...dispatchProvenanceFields(subPromptDispatchContext),
         },
       }),
     );
@@ -225,6 +255,7 @@ export async function runSubPrompt<
       fingerprint,
       artifactPaths: artifactPaths.runRelative,
       failure: failureError.failure,
+      ...(subPromptProvenance === undefined ? {} : { provenance: subPromptProvenance }),
     });
     throw failureError;
   }

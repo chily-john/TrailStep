@@ -1,8 +1,13 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import type { TrailStepAgentTarget } from "../../../../agent-targeting/targeting.types.js";
 import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
+import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import { errorMessage } from "../../../../json/guards.js";
+import {
+  attachSpawnEventId,
+  dispatchProvenanceFields,
+} from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import {
   type SpawnRetryPolicy,
@@ -42,6 +47,10 @@ export async function spawnFormatWithTransientRetry(options: {
   readonly timeoutMs?: number;
   readonly attempt: number;
   readonly sessionId: string;
+  /** 1-based position of this target in the fallback chain (A2b). */
+  readonly targetOrdinal: number;
+  /** Explicit A2b dispatch context for provenance on format events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
   readonly model?: string;
   readonly captureStdout: boolean;
   readonly spawnRetry: SpawnRetryPolicy;
@@ -49,27 +58,33 @@ export async function spawnFormatWithTransientRetry(options: {
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
-}): Promise<WorkingAgentProcessResult> {
+}): Promise<{ readonly result: WorkingAgentProcessResult; readonly spawnEventId: string }> {
   const { spawnRetry } = options;
+  const dispatchProvenance = options.dispatchProvenance;
   for (let spawnTry = 1; ; spawnTry += 1) {
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: options.stepId,
-        type: "agent.spawned",
-        payload: {
-          provider: options.target.provider,
-          model: options.model,
-          phase: "format",
-          attempt: options.attempt,
-          spawnTry,
-          sessionId: options.sessionId,
-          promptFile: options.files.repairPromptFile,
-          outputFile: options.files.outputFile,
-        },
-      }),
-    );
+    const spawnedEvent = createEvent({
+      runId: options.runId,
+      workflowId: options.workflowId,
+      stepId: options.stepId,
+      type: "agent.spawned",
+      payload: {
+        provider: options.target.provider,
+        model: options.model,
+        phase: "format",
+        attempt: options.attempt,
+        spawnTry,
+        sessionId: options.sessionId,
+        promptFile: options.files.repairPromptFile,
+        outputFile: options.files.outputFile,
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal: options.targetOrdinal,
+          formatValidationAttempt: options.attempt,
+          formatSpawnTry: spawnTry,
+        }),
+      },
+    });
+    await options.emit(spawnedEvent);
+    const spawnEventId = spawnedEvent.id;
     await options.emit(
       createEvent({
         runId: options.runId,
@@ -82,28 +97,39 @@ export async function spawnFormatWithTransientRetry(options: {
           spawnTry,
           promptFile: options.files.repairPromptFile,
           sessionId: options.sessionId,
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal: options.targetOrdinal,
+            formatValidationAttempt: options.attempt,
+            formatSpawnTry: spawnTry,
+            spawnEventId,
+          }),
         },
       }),
     );
 
-    const result = await spawnManifestPhase({
-      phase: "format",
-      stepId: options.stepId,
-      provider: options.target.provider,
-      command: options.command,
-      args: options.args,
-      cwd: options.cwd,
-      model: options.model,
-      promptFile: options.files.repairPromptFile,
-      outputFile: options.files.outputFile,
-      stdio: options.captureStdout ? "pipe" : "inherit",
-      runner: options.runner,
-      signal: options.signal,
-      timeoutMs: options.timeoutMs,
-      ...(options.progress === undefined ? {} : { progress: options.progress }),
-    });
+    let result: WorkingAgentProcessResult;
+    try {
+      result = await spawnManifestPhase({
+        phase: "format",
+        stepId: options.stepId,
+        provider: options.target.provider,
+        command: options.command,
+        args: options.args,
+        cwd: options.cwd,
+        model: options.model,
+        promptFile: options.files.repairPromptFile,
+        outputFile: options.files.outputFile,
+        stdio: options.captureStdout ? "pipe" : "inherit",
+        runner: options.runner,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        ...(options.progress === undefined ? {} : { progress: options.progress }),
+      });
+    } catch (error) {
+      throw attachSpawnEventId(error, spawnEventId);
+    }
     if (result.exitCode === 0) {
-      return result;
+      return { result, spawnEventId };
     }
 
     const transient = isTransientSpawnExitCode(result.exitCode);
@@ -152,6 +178,12 @@ export async function spawnFormatWithTransientRetry(options: {
           ...(delayMs === undefined ? {} : { delayMs }),
           ...(stderrTail === undefined ? {} : { stderrTail }),
           message,
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal: options.targetOrdinal,
+            formatValidationAttempt: options.attempt,
+            formatSpawnTry: spawnTry,
+            spawnEventId,
+          }),
         },
       }),
     );
@@ -170,6 +202,7 @@ export async function spawnFormatWithTransientRetry(options: {
           ...(options.model === undefined ? {} : { model: options.model }),
           transient,
           spawnTry,
+          spawnEventId,
           ...(stderrTail === undefined ? {} : { stderrTail }),
         },
       });

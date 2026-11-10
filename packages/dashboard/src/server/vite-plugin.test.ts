@@ -1,8 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ViteDevServer } from "vite";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
+import { it } from "./test-fixtures";
 import { trailstepDashboardPlugin } from "./vite-plugin";
 
 const workflowStartedEvent = {
@@ -66,9 +67,8 @@ function installMiddleware(cwd: string) {
 
 describe("TrailStep dashboard Vite plugin", () => {
   it("handles the TrailStep runs API route without retaining the old product route", async ({
-    task,
+    cwd,
   }) => {
-    const cwd = join(process.cwd(), ".tmp", task.id);
     const runDir = join(cwd, ".trailstep", "runs", "run-a");
     await mkdir(runDir, { recursive: true });
     await writeFile(
@@ -94,10 +94,9 @@ describe("TrailStep dashboard Vite plugin", () => {
     expect(legacyNext).toHaveBeenCalled();
   });
 
-  it("handles the TrailStep run event stream route", async ({ task }) => {
+  it("handles the TrailStep run event stream route", async ({ cwd }) => {
     vi.useFakeTimers();
     try {
-      const cwd = join(process.cwd(), ".tmp", task.id);
       const runDir = join(cwd, ".trailstep", "runs", "run-a");
       await mkdir(runDir, { recursive: true });
       await writeFile(

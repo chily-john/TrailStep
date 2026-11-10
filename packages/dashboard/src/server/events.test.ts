@@ -1,20 +1,21 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { readDashboardRunEvents, streamRunEvents } from "./events";
+import { it } from "./test-fixtures";
 
 describe("dashboard event helpers", () => {
-  it("maps resume_target_not_found to an empty event list", async ({ task }) => {
-    const runDir = join(process.cwd(), ".tmp", task.id, ".trailstep", "runs", "missing-events");
+  it("maps resume_target_not_found to an empty event list", async ({ cwd }) => {
+    const runDir = join(cwd, ".trailstep", "runs", "missing-events");
     await mkdir(runDir, { recursive: true });
 
     await expect(readDashboardRunEvents(runDir)).resolves.toEqual([]);
   });
 
-  it("streams project-owned TrailStep SSE event names", async ({ task }) => {
-    const runDir = join(process.cwd(), ".tmp", task.id, ".trailstep", "runs", "run-a");
+  it("streams project-owned TrailStep SSE event names", async ({ cwd }) => {
+    const runDir = join(cwd, ".trailstep", "runs", "run-a");
     await mkdir(runDir, { recursive: true });
     await writeFile(
       join(runDir, "events.jsonl"),

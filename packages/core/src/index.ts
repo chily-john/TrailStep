@@ -173,6 +173,37 @@ export type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
+export {
+  isRunEvidence,
+  isSafeEvidenceArtifactPath,
+  parseRunEvidence,
+  runEvidenceSchema,
+} from "./contracts/evidence/evidence.schema.js";
+export type {
+  EvidenceAvailability,
+  EvidenceAvailabilityReason,
+  EvidenceCoverage,
+  EvidenceDiagnostic,
+  EvidenceDiagnosticCode,
+  EvidenceExecutionObservation,
+  EvidenceExecutionState,
+  EvidenceIdentityQuality,
+  EvidenceLinkedArtifactRef,
+  EvidenceProjectIdentity,
+  EvidenceSourceRef,
+  EvidenceStorageLocation,
+  RunEvidence,
+  RunEvidenceMalformedResult,
+  RunEvidenceParseResult,
+  RunEvidenceRunRef,
+  RunEvidenceUnsupportedVersionResult,
+  RunEvidenceValidResult,
+} from "./contracts/evidence/evidence.types.js";
+export {
+  RUN_EVIDENCE_KIND,
+  RUN_EVIDENCE_PROJECTOR_REVISION,
+  RUN_EVIDENCE_SCHEMA_VERSION,
+} from "./contracts/evidence/evidence.types.js";
 export type { Failure } from "./contracts/failures/failure.js";
 export {
   isFailureLikeError,

@@ -11,10 +11,8 @@ import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.
 import type { DispatchProvenanceContext } from "../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
-import {
-  dispatchProvenanceFields,
-  readSpawnEventId,
-} from "../../runtime/dispatch-provenance/dispatch-provenance.js";
+import { dispatchProvenanceFields } from "../../runtime/dispatch-provenance/dispatch-provenance.js";
+import { createSpawnFailureScope } from "../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
 import {
   resolveSpawnRetryPolicy,
@@ -128,6 +126,10 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
     // before the target is consumed, so a spawn-storm burst cannot burn the
     // whole fallback chain in under a second.
     for (let spawnTry = 1; ; spawnTry += 1) {
+      // Fresh ephemeral failure-correlation root for this dispatch attempt.
+      // A reused error value must never carry an earlier attempt’s spawn
+      // reference, and sibling/concurrent attempts never share a root.
+      const failureScope = createSpawnFailureScope();
       try {
         return await runWorkingAgentTargetAttempt({
           ...options,
@@ -137,6 +139,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
           files,
           timeoutMs,
           spawnRetry,
+          spawnFailureScope: failureScope,
         });
       } catch (error) {
         const transient = isTransientWorkingAgentFailure(error);
@@ -148,11 +151,12 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
         const stderrTail = stderrTailFromDetails(details);
         const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
         const decision = canRetry ? "retry" : "nextTarget";
-        // Correlation is read by error identity from the side channel, not
-        // from failure.details: the raw failure (code/retryability/details,
-        // including non-record details) reaches the step.failed projection
-        // unchanged, while this event's provenance references the spawn.
-        const spawnEventId = readSpawnEventId(error);
+        // Correlation is read by error identity from this attempt’s scope,
+        // not from failure.details: the raw failure (code/retryability/
+        // details, including non-record details) reaches the step.failed
+        // projection unchanged, while this event’s provenance references
+        // the spawn. The read happens before the scope is closed.
+        const spawnEventId = failureScope.read(error);
 
         await appendAttemptLog(files.attemptsFile, {
           timestamp: new Date().toISOString(),
@@ -207,6 +211,8 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
           break;
         }
         await sleep(delayMs ?? 0);
+      } finally {
+        failureScope.close();
       }
     }
   }

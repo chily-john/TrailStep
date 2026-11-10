@@ -119,54 +119,9 @@ export function withDispatchProvenance(
 }
 
 /**
- * Non-mutating side channel carrying the actual `agent.spawned` event ID for
- * a thrown error, keyed by error-object identity.
- *
- * Correlation is deliberately NOT stored in `failure.details`: details are
- * `unknown` diagnostic truth (records, arrays, strings, null, undefined),
- * and diagnostic enrichment must never replace the thrown error, its stack,
- * cause, code, retryability, or details. A `WeakMap` keyed by the exact
- * error instance preserves the original object by reference through every
- * seam, works for frozen errors (it never writes to the error), and drops
- * automatically once the error is garbage-collected. There is no mutable
- * last-dispatch state: each correlation is bound to one error instance, so
- * retries, targets, format attempts, and parallel sibling branches never
- * leak into one another (each attempt throws fresh error instances).
- *
- * Only object/function thrown values can be keyed. Primitive thrown values
- * (`"string"`, numbers, `null`, `undefined`) pass through with no
- * correlation — the same graceful passthrough as before — rather than
- * being wrapped or masked.
+ * Spawn-failure correlation is not a helper in this module. It is carried by
+ * an explicit ephemeral `SpawnFailureScope` (see `spawn-failure-correlation.ts`)
+ * threaded through existing internal option objects. There is deliberately no
+ * module-scoped error registry: a shared or frozen error reused in a later
+ * attempt must never retain an earlier attempt’s spawn reference.
  */
-const spawnEventIdsByError = new WeakMap<object, string>();
-
-/**
- * Records the actual `agent.spawned` event ID for a thrown error in the
- * side channel and returns the SAME error value unchanged (by reference),
- * so call sites can write `throw correlateSpawnEventId(error, spawnEventId)`
- * without altering identity, stack, cause, code, retryability, or details.
- * First correlation wins: a re-correlation of the same error instance is
- * ignored, keeping the innermost dispatch as the anchor.
- */
-export function correlateSpawnEventId(error: unknown, spawnEventId: string): unknown {
-  if ((typeof error === "object" && error !== null) || typeof error === "function") {
-    const key = error as object;
-    if (!spawnEventIdsByError.has(key)) {
-      spawnEventIdsByError.set(key, spawnEventId);
-    }
-  }
-  return error;
-}
-
-/**
- * Reads the `spawnEventId` previously recorded for the exact thrown error
- * via {@link correlateSpawnEventId}, when present. Reads by error identity
- * (never by `failure.details`), so events can reference the actual spawn
- * attempt while the raw failure remains byte-for-byte unchanged.
- */
-export function readSpawnEventId(error: unknown): string | undefined {
-  if ((typeof error === "object" && error !== null) || typeof error === "function") {
-    return spawnEventIdsByError.get(error as object);
-  }
-  return undefined;
-}

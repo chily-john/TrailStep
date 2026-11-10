@@ -10,8 +10,10 @@ import {
   parallel,
   parseTrailStepConfig,
   runWorkflow,
+  type Schema,
   step,
   subPrompt,
+  TrailStepFailureError,
   type Workflow,
   type WorkingAgentProcessRequest,
 } from "../../index.js";
@@ -1118,5 +1120,463 @@ describe("A2b dispatch-context provenance: parallel, subprompt, failures", () =>
     expect(exhaustedAttempts).toHaveLength(1);
     expect(exhaustedAttempts[0]?.details).toMatchObject({ exitCode: 7 });
     expect(JSON.stringify(exhaustedAttempts[0]?.details)).not.toContain("spawnEventId");
+  });
+});
+
+describe("A2b spawn-failure correlation: reused-error isolation", () => {
+  function sharedFrozenOutput(shared: TrailStepFailureError): Schema<{ answer: string }> {
+    return {
+      validate: (value: unknown): value is { answer: string } =>
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as { answer?: unknown }).answer === "string",
+      diagnostics: () => [{ path: "", message: "sentinel" }],
+      assert: () => {
+        throw shared;
+      },
+      jsonSchema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+        additionalProperties: false,
+      },
+      captureMode: "json",
+    };
+  }
+
+  it("isolates a shared frozen validator error across two fallback targets (original blocker)", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-shared-"));
+    const arrayDetails: unknown = ["keep-me"];
+    const sharedFrozen = Object.freeze(
+      new TrailStepFailureError({
+        code: "agent_output_invalid",
+        message: "sentinel",
+        details: arrayDetails,
+        retryable: true,
+      }),
+    );
+    const sharedStack = sharedFrozen.stack;
+    const sharedOutput = sharedFrozenOutput(sharedFrozen);
+
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "dispatch-provenance-shared-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: sharedOutput,
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "shared" },
+      runName: "dispatch-provenance-shared-run",
+      cwd,
+      trailstepConfig: parseTrailStepConfig({
+        version: 1,
+        customProviders: {
+          first: { binary: "first-agent" },
+          second: { binary: "second-agent" },
+        },
+        agents: {
+          medium: [
+            { provider: "first", model: "first-model" },
+            { provider: "second", model: "second-model" },
+          ],
+        },
+      }),
+      workingAgentProcessRunner: async (request) => {
+        await writeFile(request.outputFile, JSON.stringify({}), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    const spawned = eventsOfType(result, "agent.spawned");
+    expect(spawned).toHaveLength(2);
+    expect(spawned[0]?.id).not.toBe(spawned[1]?.id);
+    const attemptFailed = eventsOfType(result, "agent.attemptFailed");
+    expect(attemptFailed).toHaveLength(2);
+    // Each attempt selects its own dispatch, never the earlier target’s.
+    expect(provenanceOf(attemptFailed[0] as Event)).toMatchObject({
+      targetOrdinal: 1,
+      spawnEventId: spawned[0]?.id,
+    });
+    expect(provenanceOf(attemptFailed[1] as Event)).toMatchObject({
+      targetOrdinal: 2,
+      spawnEventId: spawned[1]?.id,
+    });
+    // The shared error itself is untouched: identity, details, stack.
+    expect(sharedFrozen.failure.details).toBe(arrayDetails);
+    expect(sharedFrozen.stack).toBe(sharedStack);
+    if (result.status !== "failure") {
+      throw new Error("Expected shared-validator failure");
+    }
+    expect(JSON.stringify(result.failure)).not.toContain("spawnEventId");
+  });
+
+  it("does not retain an earlier command’s spawn when the same error is reused later", async () => {
+    const arrayDetails: unknown = ["keep-me"];
+    const sharedFrozen = Object.freeze(
+      new TrailStepFailureError({
+        code: "agent_output_invalid",
+        message: "sentinel",
+        details: arrayDetails,
+        retryable: true,
+      }),
+    );
+    const sharedOutput = sharedFrozenOutput(sharedFrozen);
+    const makeWorkflow = (workflowId: string): Workflow<{ task: string }, { answer: string }> => ({
+      id: workflowId,
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: sharedOutput,
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    });
+    const config = parseTrailStepConfig({
+      version: 1,
+      customProviders: { worker: { binary: "worker-agent" } },
+      agents: { medium: [{ provider: "worker", model: "worker-model" }] },
+    });
+    const runner = async (request: WorkingAgentProcessRequest) => {
+      await writeFile(request.outputFile, JSON.stringify({}), "utf8");
+      return { exitCode: 0 };
+    };
+
+    const firstCwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-seq1-"));
+    const first = await runWorkflow({
+      workflow: makeWorkflow("dispatch-provenance-seq1-workflow"),
+      input: { task: "first" },
+      runName: "dispatch-provenance-seq1-run",
+      cwd: firstCwd,
+      trailstepConfig: config,
+      workingAgentProcessRunner: runner,
+    });
+    expect(first.status).toBe("failure");
+    const firstSpawned = eventsOfType(first, "agent.spawned");
+    const firstFailed = eventsOfType(first, "agent.attemptFailed");
+    expect(firstSpawned).toHaveLength(1);
+    expect(firstFailed).toHaveLength(1);
+    expect(provenanceOf(firstFailed[0] as Event)).toMatchObject({
+      spawnEventId: firstSpawned[0]?.id,
+    });
+
+    const secondCwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-seq2-"));
+    const second = await runWorkflow({
+      workflow: makeWorkflow("dispatch-provenance-seq2-workflow"),
+      input: { task: "second" },
+      runName: "dispatch-provenance-seq2-run",
+      cwd: secondCwd,
+      trailstepConfig: config,
+      workingAgentProcessRunner: runner,
+    });
+    expect(second.status).toBe("failure");
+    const secondSpawned = eventsOfType(second, "agent.spawned");
+    const secondFailed = eventsOfType(second, "agent.attemptFailed");
+    expect(secondSpawned).toHaveLength(1);
+    expect(secondFailed).toHaveLength(1);
+    // The later command selects its own spawn, never the earlier command’s.
+    expect(secondSpawned[0]?.id).not.toBe(firstSpawned[0]?.id);
+    expect(provenanceOf(secondFailed[0] as Event)).toMatchObject({
+      spawnEventId: secondSpawned[0]?.id,
+    });
+    expect(provenanceOf(secondFailed[0] as Event).spawnEventId).not.toBe(firstSpawned[0]?.id);
+  });
+
+  it("isolates the same error across barrier-interleaved concurrent branches", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-concurrent-"));
+    const arrayDetails: unknown = ["keep-me"];
+    const sharedFrozen = Object.freeze(
+      new TrailStepFailureError({
+        code: "agent_output_invalid",
+        message: "sentinel",
+        details: arrayDetails,
+      }),
+    );
+    const sharedOutput = sharedFrozenOutput(sharedFrozen);
+
+    // Barrier: both branch runners must enter before either returns, so
+    // the shared validator throws only after both spawns are emitted.
+    let entered = 0;
+    let release: (() => void) | undefined;
+    const bothEntered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const barrier = async (): Promise<void> => {
+      entered += 1;
+      if (entered >= 2) {
+        release?.();
+      }
+      await bothEntered;
+    };
+
+    const reviewStep = (label: string) =>
+      step({ id: "review" })
+        .prompt(`Review ${label}.`, { output: sharedOutput, agent: "reviewer" })
+        .do((output: { answer: string }) => done(output));
+
+    const workflow: Workflow<Record<string, never>, Record<string, unknown>> = {
+      id: "dispatch-provenance-concurrent-workflow",
+      agents: { reviewer: { size: "medium" } },
+      start() {
+        return parallel([reviewStep("alpha")({}), reviewStep("beta")({})]);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: {},
+      runName: "dispatch-provenance-concurrent-run",
+      cwd,
+      trailstepConfig: createLegacyCustomConfig(),
+      scheduler: { workers: 2 },
+      workingAgentProcessRunner: async (request) => {
+        await barrier();
+        await writeFile(request.outputFile, JSON.stringify({}), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    const spawned = eventsOfType(result, "agent.spawned");
+    expect(spawned).toHaveLength(2);
+    expect(new Set(spawned.map((event) => event.id)).size).toBe(2);
+    const attemptFailed = eventsOfType(result, "agent.attemptFailed");
+    expect(attemptFailed).toHaveLength(2);
+    const spawnedIds = new Set(spawned.map((event) => event.id));
+    // Assert against branch-specific captured spawns, not event positions:
+    // each failure references one of the two branch spawns, and each spawn
+    // is referenced exactly once (no cross-branch leakage to a single spawn).
+    const failedSpawnIds = attemptFailed.map((event) => provenanceOf(event).spawnEventId);
+    expect(failedSpawnIds).toHaveLength(2);
+    for (const spawnEventId of failedSpawnIds) {
+      expect(spawnedIds.has(spawnEventId as string)).toBe(true);
+    }
+    expect(new Set(failedSpawnIds).size).toBe(2);
+    expect(sharedFrozen.failure.details).toBe(arrayDetails);
+    if (result.status !== "failure") {
+      throw new Error("Expected concurrent shared-validator failure");
+    }
+    expect(JSON.stringify(result.failure)).not.toContain("spawnEventId");
+  });
+});
+
+describe("A2b spawn-failure correlation: two-phase format with reused errors", () => {
+  function twoPhaseConfig() {
+    return parseTrailStepConfig({
+      version: 1,
+      providers: {
+        "two-phase-agent": {
+          source: { type: "local-manifest", path: "./two-phase-agent.trailstep-provider.json" },
+          manifest: {
+            schemaVersion: 1,
+            id: "two-phase-agent",
+            displayName: "Two Phase Agent",
+            working: {
+              supported: true,
+              command: "two-phase-agent",
+              args: ["--prompt-file", "{{promptFile}}", "--output-file", "{{outputFile}}"],
+              prompt: { kind: "prompt-file" },
+              output: { style: "provider-output-file" },
+              followUp: {
+                supported: true,
+                sessionIdFlag: "--session",
+                resumeArgs: [
+                  "--resume",
+                  "{{sessionId}}",
+                  "--prompt-file",
+                  "{{promptFile}}",
+                  "--output-file",
+                  "{{outputFile}}",
+                ],
+              },
+            },
+            interactive: { supported: false, reason: "No interactive mode" },
+            model: { supported: false },
+            thinking: { supported: false },
+          },
+        },
+      },
+      agents: { medium: [{ provider: "two-phase-agent" }] },
+    });
+  }
+
+  it("discards swallowed shared validator errors so a later format success selects its own spawn", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-shared-format-"));
+    const arrayDetails: unknown = ["keep-me"];
+    const sharedFrozen = Object.freeze(
+      new TrailStepFailureError({
+        code: "agent_output_invalid",
+        message: "sentinel",
+        details: arrayDetails,
+      }),
+    );
+    let assertCalls = 0;
+    const flakyOutput: Schema<{ answer: string }> = {
+      validate: (value: unknown): value is { answer: string } =>
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as { answer?: unknown }).answer === "string",
+      diagnostics: () => [{ path: "", message: "sentinel" }],
+      assert: (value: unknown) => {
+        assertCalls += 1;
+        if (assertCalls <= 2) {
+          throw sharedFrozen;
+        }
+        return value as { answer: string };
+      },
+      jsonSchema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+        additionalProperties: false,
+      },
+      captureMode: "json",
+    };
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "dispatch-provenance-shared-format-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: flakyOutput,
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "two-phase" },
+      runName: "dispatch-provenance-shared-format-run",
+      cwd,
+      trailstepConfig: twoPhaseConfig(),
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.endsWith(join("steps", "0001-review", "work.txt"))) {
+          await writeFile(request.outputFile, "work report", "utf8");
+          return { exitCode: 0 };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "formatted" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") {
+      throw new Error("Expected shared format retry to succeed");
+    }
+    // One work spawn + three format spawns (two swallowed, one successful).
+    const spawned = eventsOfType(result, "agent.spawned");
+    expect(spawned).toHaveLength(4);
+    expect(new Set(spawned.map((event) => event.id)).size).toBe(4);
+    const formatSpawned = spawned.filter((event) => event.payload.phase === "format");
+    expect(formatSpawned).toHaveLength(3);
+    // Handled validations never emit attemptFailed with a stale reference.
+    expect(eventsOfType(result, "agent.attemptFailed")).toHaveLength(0);
+    const formatOutput = eventsOfType(result, "agent.outputReceived").find(
+      (event) => event.payload.phase === "format",
+    );
+    expect(provenanceOf(formatOutput as Event)).toMatchObject({
+      formatValidationAttempt: 3,
+      spawnEventId: formatSpawned[2]?.id,
+    });
+    expect(sharedFrozen.failure.details).toBe(arrayDetails);
+  });
+
+  it("binds format exhaustion to the final output-producing spawn, not a swallowed validator", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-dispatch-provenance-shared-exhaust-"));
+    const arrayDetails: unknown = ["keep-me"];
+    const sharedFrozen = Object.freeze(
+      new TrailStepFailureError({
+        code: "agent_output_invalid",
+        message: "sentinel",
+        details: arrayDetails,
+      }),
+    );
+    const alwaysFailingOutput: Schema<{ answer: string }> = {
+      validate: (value: unknown): value is { answer: string } =>
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as { answer?: unknown }).answer === "string",
+      diagnostics: () => [{ path: "", message: "sentinel" }],
+      assert: () => {
+        throw sharedFrozen;
+      },
+      jsonSchema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+        additionalProperties: false,
+      },
+      captureMode: "json",
+    };
+    const workflow: Workflow<{ task: string }, { answer: string }> = {
+      id: "dispatch-provenance-shared-exhaust-workflow",
+      inputShape: { task: "string" },
+      outputShape: { answer: "string" },
+      agents: { reviewer: { size: "medium" } },
+      start(input) {
+        return step({ id: "review" })
+          .prompt(({ input }) => `Review ${input.task}.`, {
+            output: alwaysFailingOutput,
+            agent: "reviewer",
+          })
+          .do((output) => done(output))(input);
+      },
+    };
+
+    const result = await runWorkflow({
+      workflow,
+      input: { task: "two-phase" },
+      runName: "dispatch-provenance-shared-exhaust-run",
+      cwd,
+      trailstepConfig: twoPhaseConfig(),
+      workingAgentProcessRunner: async (request) => {
+        if (request.outputFile.endsWith(join("steps", "0001-review", "work.txt"))) {
+          await writeFile(request.outputFile, "work report", "utf8");
+          return { exitCode: 0 };
+        }
+        await writeFile(request.outputFile, JSON.stringify({ answer: "formatted" }), "utf8");
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") {
+      throw new Error("Expected format exhaustion failure");
+    }
+    const spawned = eventsOfType(result, "agent.spawned");
+    expect(spawned).toHaveLength(4);
+    const formatSpawned = spawned.filter((event) => event.payload.phase === "format");
+    expect(formatSpawned).toHaveLength(3);
+    const workSpawned = spawned.filter((event) => event.payload.phase === "work");
+    expect(workSpawned).toHaveLength(1);
+    const attemptFailed = eventsOfType(result, "agent.attemptFailed");
+    expect(attemptFailed).toHaveLength(1);
+    // Exhaustion references the final output-producing format spawn — never
+    // the work spawn and never an earlier format spawn.
+    expect(provenanceOf(attemptFailed[0] as Event)).toMatchObject({
+      spawnEventId: formatSpawned[2]?.id,
+    });
+    expect(provenanceOf(attemptFailed[0] as Event).spawnEventId).not.toBe(workSpawned[0]?.id);
+    expect(provenanceOf(attemptFailed[0] as Event).spawnEventId).not.toBe(formatSpawned[0]?.id);
+    expect(sharedFrozen.failure.details).toBe(arrayDetails);
+    expect(JSON.stringify(result.failure)).not.toContain("spawnEventId");
   });
 });

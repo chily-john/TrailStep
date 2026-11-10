@@ -11,10 +11,11 @@ import {
   buildProviderHygieneArgs,
   type ProviderHygieneArgs,
 } from "../../../../providers/provider-manifest.js";
+import { dispatchProvenanceFields } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import {
-  correlateSpawnEventId,
-  dispatchProvenanceFields,
-} from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
+  createSpawnFailureScope,
+  type SpawnFailureScope,
+} from "../../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import { resolveExecutionPolicy } from "../../../../runtime/execution/execution-policy.js";
 import {
@@ -49,6 +50,8 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly workSpawnTry?: number;
   /** Explicit A2b dispatch context for provenance on working-agent events. */
   readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
   readonly files: WorkingAgentFiles;
   readonly renderedPrompt: string;
   readonly signal?: AbortSignal;
@@ -128,6 +131,9 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       ...(options.dispatchProvenance === undefined
         ? {}
         : { dispatchProvenance: options.dispatchProvenance }),
+      ...(options.spawnFailureScope === undefined
+        ? {}
+        : { spawnFailureScope: options.spawnFailureScope }),
     });
   }
 
@@ -155,6 +161,7 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   const targetOrdinal = options.targetOrdinal ?? 1;
   const workSpawnTry = options.workSpawnTry ?? 1;
   const dispatchProvenance = options.dispatchProvenance;
+  const parentScope = options.spawnFailureScope;
 
   const spawnedEvent = createEvent({
     runId: options.runId,
@@ -190,6 +197,9 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     }),
   );
 
+  // Owned work-dispatch child for post-spawn failures only. Created after the
+  // spawn/prompt emits so pre-spawn emit failures stay uncorrelated.
+  const workScope = createSpawnFailureScope();
   try {
     const result = await spawnManifestPhase({
       phase: "work",
@@ -266,11 +276,14 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     });
   } catch (error) {
     // Link every post-spawn failure from this attempt to its actual
-    // `agent.spawned` event via the non-mutating side channel, so outer
-    // seams can reference it on `agent.attemptFailed` provenance without
-    // replacing the thrown error or touching failure.details. The exact
-    // thrown value (structured, cancellation, frozen, or primitive)
-    // propagates unchanged.
-    throw correlateSpawnEventId(error, spawnEventId);
+    // `agent.spawned` event via the ephemeral side channel, so outer seams
+    // can reference it on `agent.attemptFailed` provenance without replacing
+    // the thrown error or touching failure.details. The exact thrown value
+    // (structured, cancellation, frozen, or primitive) propagates unchanged.
+    workScope.record(error, spawnEventId);
+    parentScope?.forward(error, workScope);
+    throw error;
+  } finally {
+    workScope.close();
   }
 }

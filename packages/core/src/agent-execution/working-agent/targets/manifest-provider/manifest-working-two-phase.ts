@@ -14,10 +14,11 @@ import type {
   TrailStepProviderManifest,
   TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
+import { dispatchProvenanceFields } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import {
-  correlateSpawnEventId,
-  dispatchProvenanceFields,
-} from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
+  createSpawnFailureScope,
+  type SpawnFailureScope,
+} from "../../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type { SpawnRetryPolicy } from "../../../../runtime/retry/spawn-retry-policy.js";
 import type {
@@ -83,11 +84,14 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
   readonly workSpawnTry: number;
   /** Explicit A2b dispatch context for provenance on working-agent events. */
   readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
 }): Promise<TOutput> {
   const { options, working, followUp } = context;
   const { files, step, target } = options;
   const spawnRetry = context.spawnRetry;
   const dispatchProvenance = context.dispatchProvenance;
+  const parentScope = context.spawnFailureScope;
   const sessionId = randomUUID();
   const captureStdout = working.output?.style !== "provider-output-file";
 
@@ -194,6 +198,10 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
 
   let phase1Result: Awaited<ReturnType<typeof spawnManifestPhase>>;
   let phase1Tail: string;
+  // Owned work-dispatch child, created after the spawn/prompt emits so
+  // pre-spawn emit failures stay uncorrelated. Closed in finally; terminal
+  // work failures forward to the command-owned parent before close.
+  const workScope = createSpawnFailureScope();
   try {
     phase1Result = await spawnManifestPhase({
       phase: "work",
@@ -266,9 +274,13 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
     );
   } catch (error) {
     // Link every work-phase failure to its actual `agent.spawned` event via
-    // the non-mutating side channel so outer seams can reference it without
+    // the ephemeral side channel so outer seams can reference it without
     // replacing the thrown value or touching failure.details.
-    throw correlateSpawnEventId(error, workSpawnEventId);
+    workScope.record(error, workSpawnEventId);
+    parentScope?.forward(error, workScope);
+    throw error;
+  } finally {
+    workScope.close();
   }
 
   // Phase 2: pinned same-session format follow-up.
@@ -357,6 +369,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
         sessionId,
         targetOrdinal: context.targetOrdinal,
         ...(dispatchProvenance === undefined ? {} : { dispatchProvenance }),
+        ...(parentScope === undefined ? {} : { spawnFailureScope: parentScope }),
         model: context.model,
         captureStdout,
         spawnRetry,
@@ -430,9 +443,13 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
   // failure.details (and not only in the overwritten per-attempt usage
   // artifact), so the outer `agent.attemptFailed` provenance can reference
   // the actual last format spawn while the raw failure stays unchanged.
-  // Without a real format spawn, no reference is fabricated.
+  // The new aggregate is bound directly to the final output-producing
+  // format dispatch; the swallowed validator error is never forwarded as
+  // though it were the aggregate, and pre-dispatch prep/budget failures
+  // never reuse work or earlier-format IDs. Without a real format spawn,
+  // no reference is fabricated.
   if (lastFormatSpawnEventId !== undefined) {
-    correlateSpawnEventId(exhaustedFailure, lastFormatSpawnEventId);
+    parentScope?.record(exhaustedFailure, lastFormatSpawnEventId);
   }
   throw exhaustedFailure;
 }

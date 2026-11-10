@@ -10,10 +10,11 @@ import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-p
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import { errorMessage } from "../../../../json/guards.js";
+import { dispatchProvenanceFields } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
 import {
-  correlateSpawnEventId,
-  dispatchProvenanceFields,
-} from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
+  createSpawnFailureScope,
+  type SpawnFailureScope,
+} from "../../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type {
   Event,
@@ -40,6 +41,8 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   readonly workSpawnTry?: number;
   /** Explicit A2b dispatch context for provenance on working-agent events. */
   readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
@@ -69,109 +72,120 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
   const targetOrdinal = options.targetOrdinal ?? 1;
   const workSpawnTry = options.workSpawnTry ?? 1;
   const dispatchProvenance = options.dispatchProvenance;
+  // Owned work-dispatch child: terminal catches record into it and forward to
+  // the command-owned parent before it is closed. Successful work leaves the
+  // parent empty. The correlation lifetime encloses the inner process
+  // timer/listener cleanup below and output validation, but timers are never
+  // extended through validation.
+  const workScope = createSpawnFailureScope();
+  const parentScope = options.spawnFailureScope;
+  const recordAndForward = (error: unknown, spawnEventId: string): void => {
+    workScope.record(error, spawnEventId);
+    parentScope?.forward(error, workScope);
+  };
 
-  // Emit agent.spawned and retain the constructed event: its ID is the
-  // actual-attempt anchor referenced by prompt/output/failure events.
-  const spawnedEvent = createEvent({
-    runId: options.runId,
-    workflowId: options.workflowId,
-    stepId: options.step.id,
-    type: "agent.spawned",
-    payload: {
-      provider: options.target.provider,
-      model: options.target.model,
-      phase: "work",
-      promptFile: options.files.promptFile,
-      outputFile: options.files.outputFile,
-      ...dispatchProvenanceFields(dispatchProvenance, { targetOrdinal, workSpawnTry }),
-    },
-  });
-  await options.emit(spawnedEvent);
-  const spawnEventId = spawnedEvent.id;
-
-  // Emit agent.promptSent
-  await options.emit(
-    createEvent({
+  try {
+    // Emit agent.spawned and retain the constructed event: its ID is the
+    // actual-attempt anchor referenced by prompt/output/failure events.
+    const spawnedEvent = createEvent({
       runId: options.runId,
       workflowId: options.workflowId,
       stepId: options.step.id,
-      type: "agent.promptSent",
+      type: "agent.spawned",
       payload: {
+        provider: options.target.provider,
+        model: options.target.model,
         phase: "work",
         promptFile: options.files.promptFile,
-        ...dispatchProvenanceFields(dispatchProvenance, {
-          targetOrdinal,
-          workSpawnTry,
-          spawnEventId,
-        }),
+        outputFile: options.files.outputFile,
+        ...dispatchProvenanceFields(dispatchProvenance, { targetOrdinal, workSpawnTry }),
       },
-    }),
-  );
+    });
+    await options.emit(spawnedEvent);
+    const spawnEventId = spawnedEvent.id;
 
-  let result: WorkingAgentProcessResult;
-  // Link caller cancellation and the step timeout into one signal so a
-  // timed-out run actually terminates the child process tree (the spawn
-  // primitive kills on abort) instead of leaking it. The race rejection
-  // below still covers runners that ignore the signal entirely. The timer is
-  // always cleared on settle so idle timeouts cannot fire into later steps.
-  const controller = new AbortController();
-  let timedOut = false;
-  const onCallerAbort = (): void => controller.abort();
-  if (options.signal?.aborted === true) {
-    controller.abort();
-  } else {
-    options.signal?.addEventListener("abort", onCallerAbort, { once: true });
-  }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let spawnPromiseSettled: Promise<void> | undefined;
-  try {
-    // Custom binaries may also be npm .cmd shims on Windows; resolve to the
-    // Node entrypoint (no-op on other platforms) so shell:false keeps working.
-    const executable = await resolveCliCommandForSpawn({
-      command: agentConfig.binary,
-      args,
-    });
-    const spawnPromise = (options.runner ?? spawnWorkingAgentProcess)({
-      command: executable.command,
-      args: executable.args,
-      cwd: options.cwd,
-      shell: false,
-      stdio: "inherit",
-      promptFile: options.files.promptFile,
-      outputFile: options.files.outputFile,
-      ...(options.target.model === undefined ? {} : { model: options.target.model }),
-      signal: controller.signal,
-      ...(options.progress === undefined ? {} : { progress: options.progress }),
-    });
-    // Observes the spawn promise without changing what the caller awaits, so the timeout
-    // branch below can wait for the child to actually die before it throws.
-    spawnPromiseSettled = Promise.resolve(spawnPromise).then(
-      () => undefined,
-      () => undefined,
+    // Emit agent.promptSent
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.step.id,
+        type: "agent.promptSent",
+        payload: {
+          phase: "work",
+          promptFile: options.files.promptFile,
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal,
+            workSpawnTry,
+            spawnEventId,
+          }),
+        },
+      }),
     );
-    if (options.timeoutMs === undefined) {
-      result = await spawnPromise;
+
+    let result: WorkingAgentProcessResult;
+    // Link caller cancellation and the step timeout into one signal so a
+    // timed-out run actually terminates the child process tree (the spawn
+    // primitive kills on abort) instead of leaking it. The race rejection
+    // below still covers runners that ignore the signal entirely. The timer is
+    // always cleared on settle so idle timeouts cannot fire into later steps.
+    const controller = new AbortController();
+    let timedOut = false;
+    const onCallerAbort = (): void => controller.abort();
+    if (options.signal?.aborted === true) {
+      controller.abort();
     } else {
-      result = await Promise.race([
-        spawnPromise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-            reject(new Error("working_agent_timeout"));
-          }, options.timeoutMs);
-        }),
-      ]);
+      options.signal?.addEventListener("abort", onCallerAbort, { once: true });
     }
-  } catch (error) {
-    if (timedOut || (error instanceof Error && error.message === "working_agent_timeout")) {
-      // The race rejected on our timer, not on the child's exit. Give termination a bounded
-      // moment to complete so the next target starts with a dead predecessor.
-      if (spawnPromiseSettled !== undefined) {
-        await withBoundedSettlement(spawnPromiseSettled, options.timeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let spawnPromiseSettled: Promise<void> | undefined;
+    try {
+      // Custom binaries may also be npm .cmd shims on Windows; resolve to the
+      // Node entrypoint (no-op on other platforms) so shell:false keeps working.
+      const executable = await resolveCliCommandForSpawn({
+        command: agentConfig.binary,
+        args,
+      });
+      const spawnPromise = (options.runner ?? spawnWorkingAgentProcess)({
+        command: executable.command,
+        args: executable.args,
+        cwd: options.cwd,
+        shell: false,
+        stdio: "inherit",
+        promptFile: options.files.promptFile,
+        outputFile: options.files.outputFile,
+        ...(options.target.model === undefined ? {} : { model: options.target.model }),
+        signal: controller.signal,
+        ...(options.progress === undefined ? {} : { progress: options.progress }),
+      });
+      // Observes the spawn promise without changing what the caller awaits, so the timeout
+      // branch below can wait for the child to actually die before it throws.
+      spawnPromiseSettled = Promise.resolve(spawnPromise).then(
+        () => undefined,
+        () => undefined,
+      );
+      if (options.timeoutMs === undefined) {
+        result = await spawnPromise;
+      } else {
+        result = await Promise.race([
+          spawnPromise,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+              reject(new Error("working_agent_timeout"));
+            }, options.timeoutMs);
+          }),
+        ]);
       }
-      throw correlateSpawnEventId(
-        new TrailStepFailureError({
+    } catch (error) {
+      if (timedOut || (error instanceof Error && error.message === "working_agent_timeout")) {
+        // The race rejected on our timer, not on the child's exit. Give termination a bounded
+        // moment to complete so the next target starts with a dead predecessor.
+        if (spawnPromiseSettled !== undefined) {
+          await withBoundedSettlement(spawnPromiseSettled, options.timeoutMs);
+        }
+        const timeoutFailure = new TrailStepFailureError({
           code: "agent_provider_timeout",
           message: `Working agent step ${options.step.id} target '${options.target.provider}' timed out after ${options.timeoutMs}ms.`,
           details: {
@@ -179,18 +193,18 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
             ...(options.target.model === undefined ? {} : { model: options.target.model }),
             timeoutMs: options.timeoutMs,
           },
-        }),
-        spawnEventId,
-      );
-    }
-    if (controller.signal.aborted) {
-      // Caller (workflow timeout/cancellation) aborted the run: preserve
-      // cancellation semantics instead of masking it as a spawn error, but
-      // still reference the real spawn attempt via the side channel.
-      throw correlateSpawnEventId(error, spawnEventId);
-    }
-    throw correlateSpawnEventId(
-      new TrailStepFailureError({
+        });
+        recordAndForward(timeoutFailure, spawnEventId);
+        throw timeoutFailure;
+      }
+      if (controller.signal.aborted) {
+        // Caller (workflow timeout/cancellation) aborted the run: preserve
+        // cancellation semantics instead of masking it as a spawn error, but
+        // still reference the real spawn attempt via the side channel.
+        recordAndForward(error, spawnEventId);
+        throw error;
+      }
+      const spawnFailure = new TrailStepFailureError({
         code: "agent_provider_spawn_error",
         message: `Working agent step ${options.step.id} could not start target '${options.target.provider}'.`,
         details: {
@@ -198,19 +212,18 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
           ...(options.target.model === undefined ? {} : { model: options.target.model }),
           cause: errorMessage(error),
         },
-      }),
-      spawnEventId,
-    );
-  } finally {
-    if (timer !== undefined) {
-      clearTimeout(timer);
+      });
+      recordAndForward(spawnFailure, spawnEventId);
+      throw spawnFailure;
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      options.signal?.removeEventListener("abort", onCallerAbort);
     }
-    options.signal?.removeEventListener("abort", onCallerAbort);
-  }
 
-  if (result.exitCode !== 0) {
-    throw correlateSpawnEventId(
-      new TrailStepFailureError({
+    if (result.exitCode !== 0) {
+      const exitFailure = new TrailStepFailureError({
         code: "agent_provider_failed",
         message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
         details: {
@@ -219,40 +232,44 @@ export async function runCustomWorkingProvider<TOutput extends PlainObject>(opti
           target: options.target.provider,
           ...(options.target.model === undefined ? {} : { model: options.target.model }),
         },
+      });
+      recordAndForward(exitFailure, spawnEventId);
+      throw exitFailure;
+    }
+
+    // Emit agent.outputReceived
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.step.id,
+        type: "agent.outputReceived",
+        payload: {
+          phase: "work",
+          outputFile: options.files.outputFile,
+          outputSize: await outputFileSize(options.files.outputFile),
+          valid: true,
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal,
+            workSpawnTry,
+            spawnEventId,
+          }),
+        },
       }),
-      spawnEventId,
     );
-  }
 
-  // Emit agent.outputReceived
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: options.step.id,
-      type: "agent.outputReceived",
-      payload: {
-        phase: "work",
+    try {
+      return await readWorkingAgentOutput({
+        stepId: options.step.id,
         outputFile: options.files.outputFile,
-        outputSize: await outputFileSize(options.files.outputFile),
-        valid: true,
-        ...dispatchProvenanceFields(dispatchProvenance, {
-          targetOrdinal,
-          workSpawnTry,
-          spawnEventId,
-        }),
-      },
-    }),
-  );
-
-  try {
-    return await readWorkingAgentOutput({
-      stepId: options.step.id,
-      outputFile: options.files.outputFile,
-      step: options.step,
-    });
-  } catch (error) {
-    throw correlateSpawnEventId(error, spawnEventId);
+        step: options.step,
+      });
+    } catch (error) {
+      recordAndForward(error, spawnEventId);
+      throw error;
+    }
+  } finally {
+    workScope.close();
   }
 }
 

@@ -196,7 +196,20 @@ describe("MCP server contract", () => {
     expect(descriptions.trst_run_workflow).toContain("per-workflow tool");
     expect(descriptions.trst_run_workflow).toContain("trst_delegate");
     expect(descriptions.trst_run_workflow).toContain("trst_watch");
+    expect(descriptions.trst_run_workflow).toContain(
+      "blocks until the run settles, needs an answer, new events arrive, or the budget expires",
+    );
+    expect(descriptions.trst_run_workflow).not.toContain(
+      "blocks until the run finishes or needs an answer",
+    );
     expect(descriptions.trst_watch).toContain("Blocking wait-for-attention");
+    expect(descriptions.trst_watch).toContain("one call blocks until one of four things happens");
+    expect(descriptions.trst_watch).toContain("the run settles (terminal or crashed)");
+    expect(descriptions.trst_watch).toContain("it needs an answer (waiting)");
+    expect(descriptions.trst_watch).toContain("new events arrive");
+    expect(descriptions.trst_watch).toContain("the budget expires");
+    expect(descriptions.trst_watch).not.toContain("blocks until the run finishes or needs you");
+    expect(descriptions.trst_watch).not.toContain("covers the whole budget");
     expect(descriptions.trst_watch).toContain("persisted per-run cursor");
     expect(descriptions.trst_watch).toContain("trst_answer");
     expect(descriptions.trst_watch).toContain("trst_resume");
@@ -211,6 +224,14 @@ describe("MCP server contract", () => {
     expect(descriptions.trst_watch).toContain("25 s");
     expect(descriptions.trst_watch).toContain("effectiveWaitMs");
     expect(descriptions.trst_watch).toContain("no live process holds the run");
+    expect(descriptions.trst_watch).toContain("cancelled run may carry neither");
+    expect(descriptions.trst_watch).toContain(
+      "client may treat progress notifications as a keep-alive",
+    );
+    expect(descriptions.trst_watch).not.toContain("server keeps the request alive");
+    expect(descriptions.trst_watch).not.toContain("notifications reset");
+    expect(descriptions.trst_watch).toContain("startup grace");
+    expect(descriptions.trst_watch).toContain("no events and no live process");
     expect(descriptions.trst_answer).toContain("Required: runId");
     expect(descriptions.trst_answer).toContain("Required: runId and waitId");
     expect(descriptions.trst_answer).toContain("plain JSON object");
@@ -219,7 +240,12 @@ describe("MCP server contract", () => {
     expect(descriptions.trst_resume).toContain("status");
     expect(descriptions.trst_resume).toContain("in the background");
     expect(descriptions.trst_resume).toContain("trst_watch");
-    expect(descriptions.trst_resume).toContain("blocks until the run finishes or needs an answer");
+    expect(descriptions.trst_resume).toContain(
+      "blocks until the run settles, needs an answer, new events arrive, or the budget expires",
+    );
+    expect(descriptions.trst_resume).not.toContain(
+      "blocks until the run finishes or needs an answer",
+    );
 
     const watch = listed.tools.find((tool) => tool.name === "trst_watch");
     const properties = (watch?.inputSchema.properties ?? {}) as Record<
@@ -230,7 +256,13 @@ describe("MCP server contract", () => {
     expect(properties.maxWaitMs?.description).toContain("5 minutes");
     expect(properties.maxWaitMs?.description).toContain("single-shot");
     expect(properties.maxWaitMs?.description).toContain("25 s");
-    expect(properties.waitFor?.description).toContain("ignores pending waits");
+    expect(properties.maxWaitMs?.description).toContain("state depends on the run");
+    expect(properties.maxWaitMs?.description).not.toContain("in-progress snapshot");
+    expect(properties.waitFor?.description).toContain("at call start");
+    expect(properties.waitFor?.description).toContain("subsequent new event");
+    expect(properties.waitFor?.description).toContain("deadline");
+    expect(properties.waitFor?.description).toContain("waits[]");
+    expect(properties.waitFor?.description).not.toContain("ignores pending waits");
   });
 
   it("sends server instructions that point at the instructions resource", async () => {
@@ -243,7 +275,15 @@ describe("MCP server contract", () => {
     expect(instructions).toContain("trst_resume");
     expect(instructions).toContain("waiting");
     expect(instructions).toContain("in-progress");
-    expect(instructions).toContain("do not poll in a loop");
+    expect(instructions).toMatch(/do not poll in a loop/iu);
+    expect(instructions).toContain("the run settles");
+    expect(instructions).toContain("needs an answer");
+    expect(instructions).toContain("new events arrive");
+    expect(instructions).toContain("budget expires");
+    expect(instructions).toContain("cancelled run may carry neither");
+    expect(instructions).toContain("client may treat progress notifications as a keep-alive");
+    expect(instructions).not.toContain("keeps the request alive");
+    expect(instructions).not.toContain("notifications reset client request timeouts");
   });
 
   it("trst_run_workflow rejects a missing workflow without spawning", async () => {
@@ -394,6 +434,37 @@ describe("MCP server contract", () => {
     expect(firstText(call)).toContain("trst_watch");
   });
 
+  it("reports an empty trail as started inside the startup grace window and crashed after it", async () => {
+    const projectDir = tmpProject("mcp-contract-");
+    writeRunTrail(projectDir, "run-fresh", [], { live: false });
+    const staleRunDir = path.join(projectDir, ".trailstep", "runs", "run-stale");
+    fs.mkdirSync(staleRunDir, { recursive: true });
+    const staleEvents = path.join(staleRunDir, "events.jsonl");
+    fs.writeFileSync(staleEvents, "", "utf8");
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(staleEvents, old, old);
+
+    const client = await connectedClient(projectDir);
+    const fresh = await client.callTool({
+      name: "trst_watch",
+      arguments: { runId: "run-fresh", maxWaitMs: 0 },
+    });
+    expect(fresh.isError).toBeFalsy();
+    expect((JSON.parse(firstText(fresh)) as { state?: string }).state).toBe("started");
+
+    const stale = await client.callTool({
+      name: "trst_watch",
+      arguments: { runId: "run-stale", maxWaitMs: 0 },
+    });
+    expect(stale.isError).toBeFalsy();
+    const payload = JSON.parse(firstText(stale)) as {
+      state?: string;
+      crash?: { reason?: string };
+    };
+    expect(payload.state).toBe("crashed");
+    expect(payload.crash?.reason).toBe("run has no events and no live process");
+  });
+
   it("rejects unknown tools as isError results, not silent hangs", async () => {
     const client = await connectedClient(tmpProject("mcp-contract-"));
     const call = await client.callTool({ name: "no_such_tool", arguments: {} });
@@ -474,6 +545,29 @@ describe("MCP server contract", () => {
       const message = notification.params.message ?? "";
       expect(message).not.toMatch(/\p{Cc}/u);
       expect(message.split("\n")).toHaveLength(1);
+    }
+  });
+
+  it("omits the step field when a step id is only whitespace or control characters", async () => {
+    const projectDir = tmpProject("mcp-progress-");
+    writeRunTrail(projectDir, "run-blank", [
+      runEvent("workflow.started"),
+      runEvent("step.started", {}, " \u0000 \u001b "),
+    ]);
+    const traced = await connectedTracedClient(projectDir, { progressIntervalMs: 40 });
+    await traced.client.callTool({
+      name: "trst_watch",
+      arguments: { runId: "run-blank", maxWaitMs: 0 },
+    });
+    await traced.client.callTool(
+      { name: "trst_watch", arguments: { runId: "run-blank", maxWaitMs: 600 } },
+      undefined,
+      { onprogress: () => undefined },
+    );
+
+    expect(traced.progressNotifications.length).toBeGreaterThanOrEqual(1);
+    for (const notification of traced.progressNotifications) {
+      expect(notification.params.message).toBe("state=in-progress");
     }
   });
 
@@ -689,6 +783,27 @@ describe("MCP server contract", () => {
     expect(INSTRUCTIONS_FALLBACK).toContain('"answer": "trst_answer"');
     expect(INSTRUCTIONS_FALLBACK).toContain('"resume": "trst_resume"');
     expect(INSTRUCTIONS_FALLBACK).not.toContain("embed failed");
+    expect(INSTRUCTIONS_FALLBACK).toContain("the run settles, needs an answer, new events arrive");
+    expect(INSTRUCTIONS_FALLBACK).toContain("cancelled run may carry neither");
+    expect(INSTRUCTIONS_FALLBACK).toContain(
+      "client may treat progress notifications as a keep-alive",
+    );
+    expect(INSTRUCTIONS_FALLBACK).not.toContain("keep the request alive");
+    expect(INSTRUCTIONS_FALLBACK).not.toContain("blocks until the run finishes or needs an answer");
+    expect(INSTRUCTIONS_FALLBACK).not.toContain("in-progress snapshot");
+
+    // The README is an agent-facing surface too; keep it honest about the same
+    // four early-return conditions, cancelled runs, and client-neutral progress.
+    const readme = fs.readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    expect(readme).toContain(
+      "one call blocks until the run settles, needs an answer, new events arrive, or the budget expires",
+    );
+    expect(readme).toContain("cancelled run may carry none");
+    expect(readme).toContain("client may treat those notifications as a keep-alive");
+    expect(readme).not.toContain("one call covers the whole budget");
+    expect(readme).not.toContain("exactly one of `output`");
+    expect(readme).not.toContain("because the notifications reset client request timeouts");
+    expect(readme).not.toContain("in-progress snapshot");
 
     const instructionsPath = path.resolve(".trailstep/mcp/instructions.md");
     if (fs.existsSync(instructionsPath)) {

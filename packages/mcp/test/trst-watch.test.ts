@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -416,6 +424,33 @@ describe("trst_watch attention contract", () => {
     ]);
   });
 
+  it("waitFor terminal returns early with a waiting snapshot when new events arrive", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      waitLine(2, { waitId: "approval", question: "Approve?" }),
+    ]);
+    // Advance the cursor so the terminal-wait call starts with nothing new.
+    await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+
+    setTimeout(() => {
+      appendMoreLines(sandbox, [eventLine("step.progress", 3)]);
+    }, 30);
+
+    const startedAt = Date.now();
+    const result = await trst_watch(
+      { runId: "run-1", waitFor: "terminal" },
+      quickOptions(sandbox, 3000),
+    );
+    const elapsed = Date.now() - startedAt;
+
+    // waitFor terminal only ignores the wait at call start: a new event still
+    // ends the poll, and the honest state is waiting with the pending wait.
+    expect(elapsed).toBeLessThan(1500);
+    expect(result.state).toBe("waiting");
+    expect(result.waits).toHaveLength(1);
+  });
+
   it("signal abort ends the poll promptly with a snapshot instead of throwing", async () => {
     const sandbox = createSandbox();
     appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
@@ -676,15 +711,81 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
     expect(elapsed).toBeLessThan(1500);
   });
 
-  it("reports started state for an empty events file", async () => {
+  it("reports started for an empty trail inside the startup grace window", async () => {
     const sandbox = createSandbox();
     writeFileSync(sandbox.eventsFile, "", "utf8");
 
-    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+    const result = await trst_watch(
+      { runId: "run-1", maxWaitMs: 0 },
+      { ...quickOptions(sandbox, 0), startupGraceMs: 60_000 },
+    );
     expect(result.state).toBe("started");
+    expect(result.crash).toBeUndefined();
     expect(result.lines).toEqual([]);
     expect(result.cursor).toBe(0);
     expect(result.progress?.newEvents).toBe(0);
+  });
+
+  it("reports crashed for an empty trail with no lock once the startup grace window has passed", async () => {
+    const sandbox = createSandbox();
+    writeFileSync(sandbox.eventsFile, "", "utf8");
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(sandbox.eventsFile, old, old);
+
+    const result = await trst_watch(
+      { runId: "run-1" },
+      { ...quickOptions(sandbox, 5000), startupGraceMs: 10_000 },
+    );
+
+    expect(result.state).toBe("crashed");
+    expect(result.crash).toEqual({ reason: "run has no events and no live process" });
+  });
+
+  it("reports crashed for an empty trail whose lock is dead once the startup grace window has passed", async () => {
+    const sandbox = createSandbox();
+    writeFileSync(sandbox.eventsFile, "", "utf8");
+    writeDeadLock(sandbox);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(sandbox.eventsFile, old, old);
+
+    const result = await trst_watch(
+      { runId: "run-1" },
+      { ...quickOptions(sandbox, 5000), startupGraceMs: 10_000 },
+    );
+
+    expect(result.state).toBe("crashed");
+    expect(result.crash).toEqual({ reason: "run has no events and no live process" });
+  });
+
+  it("keeps an empty trail started while a live lock holds the run, even past the grace window", async () => {
+    const sandbox = createSandbox();
+    writeFileSync(sandbox.eventsFile, "", "utf8");
+    writeLiveLock(sandbox);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(sandbox.eventsFile, old, old);
+
+    const result = await trst_watch(
+      { runId: "run-1", maxWaitMs: 0 },
+      { ...quickOptions(sandbox, 0), startupGraceMs: 10_000 },
+    );
+
+    expect(result.state).toBe("started");
+    expect(result.crash).toBeUndefined();
+  });
+
+  it("leaves a non-empty in-progress trail unaffected by the startup grace window", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeLiveLock(sandbox);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(sandbox.eventsFile, old, old);
+
+    const result = await trst_watch(
+      { runId: "run-1", maxWaitMs: 0 },
+      { ...quickOptions(sandbox, 0), startupGraceMs: 10_000 },
+    );
+
+    expect(result.state).toBe("in-progress");
   });
 
   it("keeps the cursor file intact across overlapping watch calls in one process", async () => {

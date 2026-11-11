@@ -8,8 +8,9 @@
  * "cursor").
  *
  * The result is a compact digest, not a tail of raw JSONL: state, cursor,
- * budget, and exactly one payload (terminal `output`, pending `waits`,
- * `crash`, or `progress`). Raw `lines` are populated only for `verbosity:
+ * budget, and whichever payload applies (terminal `output` or `failure`,
+ * pending `waits`, `crash`, or `progress`; a cancelled run may carry none of
+ * them). Raw `lines` are populated only for `verbosity:
  * "full"`, which keeps the old capped tail-follow behaviour (brief 50 /
  * normal 100 / full 200 lines, cursor only through emitted lines so capped-out
  * events stay fetchable). In compact mode every read event is digested by the
@@ -20,7 +21,10 @@
  * embedded in agent output). A run parked on a durable wait is `waiting`, which
  * outranks a live lock: the answer/continue is the operator's move. `crashed`
  * means the trail has no terminal event and no live process holds the run, so
- * nothing will ever append one — stop waiting.
+ * nothing will ever append one — stop waiting. An event-less trail stays
+ * `started` only while a live lock exists or it is younger than the startup
+ * grace window; after that it is `crashed` too (a run that died before its
+ * first event must not look `started` forever).
  *
  * The long-poll budget is capped by an explicit effective ceiling: a
  * progressless client (the default) waits at most `progresslessCeilingMs`
@@ -39,12 +43,12 @@
  *
  * Test seams (`cwd` / `runDir` / `cursorDir` / `maxWaitMs` / `pollIntervalMs` /
  * `progressIntervalMs` / `progresslessCeilingMs` /
- * `progressCapableCeilingMs` / `signal`) keep every artifact in
+ * `progressCapableCeilingMs` / `startupGraceMs` / `signal`) keep every artifact in
  * caller-provided directories — tests never write the repo's own
  * `.trailstep/mcp`.
  */
 import { randomBytes } from "node:crypto";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -109,6 +113,11 @@ export interface TrstWatchOptions {
   readonly onProgress?: (progress: TrstWatchProgressEvent) => void;
   /** Progress hook cadence in ms; defaults to 10000 (10 s). */
   readonly progressIntervalMs?: number;
+  /**
+   * Startup grace in ms: an event-less run with no live lock is only reported
+   * `crashed` once its trail is older than this; defaults to 10000 (10 s).
+   */
+  readonly startupGraceMs?: number;
   /** Aborts the poll promptly and returns a snapshot instead of throwing. */
   readonly signal?: AbortSignal;
 }
@@ -178,9 +187,11 @@ const defaultProgresslessCeilingMs = 25_000;
 const defaultProgressCapableCeilingMs = 300_000;
 const defaultPollIntervalMs = 50;
 const defaultProgressIntervalMs = 10_000;
+const defaultStartupGraceMs = 10_000;
 const minLineCap = 50;
 const maxLineCap = 200;
 const crashReason = "no terminal event and no live lock";
+const emptyTrailCrashReason = "run has no events and no live process";
 
 /**
  * The event types that end a run. Anything else leaves it open.
@@ -244,6 +255,7 @@ export async function trst_watch(
         );
   const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? defaultPollIntervalMs);
   const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
+  const startupGraceMs = resolveCeiling(options.startupGraceMs, defaultStartupGraceMs);
   const waitFor: TrstWatchWaitFor = resolved.waitFor === "terminal" ? "terminal" : "attention";
   const fullMode = resolved.verbosity === "full";
   const lineCap = verbosityLineCap(resolved.verbosity);
@@ -260,7 +272,12 @@ export async function trst_watch(
   // trail is parsed once more to report the honest final state.
   const deadline = Date.now() + effectiveWaitMs;
   let observed = await readTrail(runDir);
-  let classification = await classifyRunState({ runDir, events: observed });
+  let classification = await classifyRunState({
+    runDir,
+    eventsFile,
+    events: observed,
+    startupGraceMs,
+  });
   let read = await readRunEventsSince(eventsFile, startCursor, readOptions);
   let consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
 
@@ -314,7 +331,12 @@ export async function trst_watch(
     read = await readRunEventsSince(eventsFile, startCursor, readOptions);
     consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
     if (!consumedNewData) {
-      classification = await classifyRunState({ runDir, events: observed });
+      classification = await classifyRunState({
+        runDir,
+        eventsFile,
+        events: observed,
+        startupGraceMs,
+      });
       if (options.onProgress !== undefined && Date.now() - lastProgressAt >= progressIntervalMs) {
         notifyProgress(classification.state);
       }
@@ -323,7 +345,12 @@ export async function trst_watch(
 
   if (consumedNewData) {
     observed = await readTrail(runDir);
-    classification = await classifyRunState({ runDir, events: observed });
+    classification = await classifyRunState({
+      runDir,
+      eventsFile,
+      events: observed,
+      startupGraceMs,
+    });
   }
 
   const emitted = read.entries.slice(0, lineCap);
@@ -363,7 +390,7 @@ export async function trst_watch(
     case "waiting":
       return { ...base, waits: toPendingWaits(observed) };
     case "crashed":
-      return { ...base, crash: { reason: crashReason } };
+      return { ...base, crash: { reason: classification.reason ?? crashReason } };
     default:
       return { ...base, progress: describeProgress(observed, read.entries.length) };
   }
@@ -437,17 +464,30 @@ async function requireEventsFile(eventsFile: string, runId: string): Promise<voi
  * Order matters: a pending wait outranks a live lock (a run parked on a durable
  * wait has no process by design) and a terminal event outranks everything.
  * `crashed` is the state a raw trail scan cannot express: no terminal event and
- * no live lock holder, so nothing will ever append one.
+ * no live lock holder, so nothing will ever append one. An event-less trail is
+ * `started` while a live process holds the lock or while its trail is younger
+ * than the startup grace window; after that it is `crashed` too, because a run
+ * that died before its first event would otherwise look `started` forever.
  */
 async function classifyRunState(options: {
   readonly runDir: string;
+  readonly eventsFile: string;
   readonly events: readonly Event[];
-}): Promise<{ readonly state: TrstWatchRunState }> {
+  readonly startupGraceMs: number;
+}): Promise<{ readonly state: TrstWatchRunState; readonly reason?: string }> {
   if (findTerminalEvent(options.events) !== undefined) {
     return { state: "terminal" };
   }
 
   if (options.events.length === 0) {
+    const lock = await readRunLock(options.runDir);
+    if (lock !== undefined && isRunLockLive(lock)) {
+      return { state: "started" };
+    }
+    const ageMs = await trailAgeMs(options.eventsFile, options.runDir);
+    if (ageMs !== undefined && ageMs > options.startupGraceMs) {
+      return { state: "crashed", reason: emptyTrailCrashReason };
+    }
     return { state: "started" };
   }
 
@@ -461,6 +501,23 @@ async function classifyRunState(options: {
   }
 
   return { state: "crashed" };
+}
+
+/**
+ * Age of the empty trail: the events file's mtime, or the run directory's when
+ * the file is absent. `undefined` means the age could not be established, in
+ * which case a run is treated as still starting rather than declared dead.
+ */
+async function trailAgeMs(eventsFile: string, runDir: string): Promise<number | undefined> {
+  for (const target of [eventsFile, runDir]) {
+    try {
+      const info = await stat(target);
+      return Math.max(0, Date.now() - info.mtimeMs);
+    } catch {
+      // Fall through to the run directory (or an unknown age).
+    }
+  }
+  return undefined;
 }
 
 /**

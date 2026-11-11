@@ -17,7 +17,7 @@ trailstep mcp --project /some/dir
 Generic toolkit (always listed):
 
 - `trst_run_workflow` — start a workflow run in the background and return immediately with `{runId, runDir, status, workflow}` where `status` is `"started"` or `"failed"`. `"started"` is reported only after the background run's directory actually materializes (bounded verification); a run that never starts returns `status: "failed"` with an `error` and is surfaced by the server as an `isError` tool result — never a false `"started"`. The run is spawned as a detached `trailstep <workflowRef> <runName> --input <json>` process; the blocking runtime is intentionally not awaited inside the server (non-blocking run contract).
-- `trst_watch` — observe a run's `events.jsonl` from a byte-offset cursor with long-polling. The cursor persists atomically at `.trailstep/mcp/.cursor/<runId>.json`; `verbosity` caps emitted lines at 50 (brief) / 100 (normal) / 200 (full).
+- `trst_watch` — blocking wait-for-attention call on a run: it returns when the run finishes or needs an answer instead of tailing events. Required `runId`; optional `cursor` (byte offset, overrides the persisted per-run cursor), `maxWaitMs` (default `300000` = 5 minutes; `0` is a single-shot snapshot), `waitFor` (`attention` default, or `terminal` to ignore pending waits and wait only for the run to settle), and `verbosity` (`brief` / `normal` default / `full` raw-event escape hatch). The result reports `state` — `started`, `in-progress`, `waiting`, `terminal` or `crashed` — plus `requestedWaitMs`, `effectiveWaitMs`, `truncated` and exactly one of `output`, `waits[]`, `failure`, `crash` or `progress`; `lines` are populated only for `full`. `waiting` means answer every `waits[]` entry with `trst_answer` (pass `branchId` for parallel branches), then `trst_resume` and watch again. `crashed` means no terminal event and no live process holds the run, so stop waiting. Call it once and act on the result: one call covers the whole budget, so do not poll in a loop or sleep between calls.
 - `trst_answer` — persist an answer into the run's real wait answer file (atomic tmp + rename), optionally continuing the run with `continueAfterAnswer`.
 - `trst_resume` — continue a waiting run through the real `trailstep continue` path and report the continue status.
 
@@ -26,6 +26,10 @@ Per-workflow tools (the default, `mcp.perWorkflowTools: true`): every generated 
 Fallback (`mcp.perWorkflowTools: false`): the per-workflow tools are replaced by a single `trst_list` discovery tool that returns `{name, description}` for each generated workflow tool, alongside the generic toolkit above.
 
 The server performs no regeneration: the tool JSONs and the mode flag are re-read fresh on every ListTools/CallTool request.
+
+## Long runs and client timeouts
+
+`trst_watch` is still a blocking call, so it blocks the calling turn: it reduces the number of calls and tokens, it does not give the agent concurrency. How long one call can block depends on the client. When the client sends an MCP progress token, the server emits `notifications/progress` (once immediately, then at most every 10 s) and the call may block for the full requested budget, up to 5 minutes, because the notifications reset client request timeouts. Without a progress token the server caps the call at 25 seconds and sends no notifications; when the budget expires it returns an in-progress snapshot and the agent calls again. `effectiveWaitMs` in the result reports which budget was used.
 
 ## Generated tool artifacts
 

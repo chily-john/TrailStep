@@ -251,7 +251,7 @@ describe("per-workflow MCP tools", () => {
     const listed = await client.listTools();
     const watch = listed.tools.filter((tool) => tool.name === "trst_watch");
     expect(watch).toHaveLength(1);
-    expect(watch[0]?.description).toContain("Observe a TrailStep run");
+    expect(watch[0]?.description).toContain("Blocking wait-for-attention");
   });
 
   it("dispatches a per-workflow tool through runWorkflowTool with the preset workflowRef", async () => {

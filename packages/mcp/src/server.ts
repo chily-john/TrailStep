@@ -64,7 +64,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_run_workflow",
     description:
-      'Start a TrailStep workflow run in the background and return immediately with {runId, runDir, status, workflow}. status is "started" only once the background run\'s directory actually materializes (bounded verification); when the run never starts (missing or refused CLI entry, spawn failure, or a run directory that never appears), status is "failed" with an "error" field and the result is reported as an isError tool result — never a false "started". When a per-workflow tool exists for the workflow you want (for example trst_delegate or trst_take-it-away), prefer it: it already knows the workflow reference and its input schema. Use this generic tool only when no per-workflow tool covers the workflow.',
+      'Start a TrailStep workflow run in the background and return immediately with {runId, runDir, status, workflow}. status is "started" only once the background run\'s directory actually materializes (bounded verification); when the run never starts (missing or refused CLI entry, spawn failure, or a run directory that never appears), status is "failed" with an "error" field and the result is reported as an isError tool result — never a false "started". When a per-workflow tool exists for the workflow you want (for example trst_delegate or trst_take-it-away), prefer it: it already knows the workflow reference and its input schema. Use this generic tool only when no per-workflow tool covers the workflow. Follow it with trst_watch, which blocks until the run finishes or needs an answer.',
     inputSchema: {
       type: "object",
       properties: {
@@ -85,7 +85,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_watch",
     description:
-      "Observe a TrailStep run's event stream since a byte-offset cursor (persisted per run, so repeated calls continue where the last one stopped; an explicit cursor overrides it) with long-polling. Use it together with trst_run_workflow to follow a run and trst_answer to answer a question the run is waiting on. Required: runId (the run name or run id to observe). Optional: cursor (byte offset into events.jsonl to resume from; overrides the persisted cursor) and verbosity (brief = 50 emitted lines, normal = 100, full = 200). The watch long-polls up to ~25 s (20-30 s bounds) when no new events are available and returns early once events appear; it reports the run state (started / in-progress / terminal / crashed), terminal once a workflow.completed|failed|cancelled event appears, and when terminal you should stop watching. crashed means the trail has no terminal event and no live process holds the run, so nothing will ever append one — stop waiting on it.",
+      "Blocking wait-for-attention call on a TrailStep run: it returns as soon as the run finishes or needs you, instead of tailing events. Use it after trst_run_workflow (or a per-workflow tool) and after trst_resume. Required: runId. Optional: cursor (byte offset, overrides the persisted per-run cursor), maxWaitMs (default 300000 = 5 min, 0 = single-shot), waitFor (attention default | terminal), verbosity (brief / normal default / full raw-event escape hatch). Read state and act: started (no events yet) — call again; in-progress (a live process holds the run) — call again with the same params; waiting (the run is parked on durable waits) — answer every waits[] entry with trst_answer (branchId disambiguates parallel branches), continue with trst_resume, then call again; terminal — read output, or failure with code/message/details, then stop; crashed — no terminal event and no live process holds the run, so nothing will ever append: stop. One call covers up to maxWaitMs: do not poll in a loop and do not sleep between calls. Capability degradation: with a progress token the server keeps the request alive and the call may block the full budget; without one it caps at 25 s, sends no progress notifications, and returns an in-progress snapshot when the budget expires so you can call again — effectiveWaitMs reports which budget was used. The compact result carries output, waits[], failure, crash or progress; verbosity full adds raw JSONL lines.",
     inputSchema: {
       type: "object",
       properties: {
@@ -102,18 +102,18 @@ export const tools: readonly McpToolDefinition[] = [
           type: "string",
           enum: ["brief", "normal", "full"],
           description:
-            "Output verbosity; caps emitted lines at 50 (brief) / 100 (normal) / 200 (full).",
+            "Output detail: brief 50 / normal 100 / full 200 line cap. Raw lines are only populated for full (the raw-event escape hatch); brief and normal return the compact result.",
         },
         maxWaitMs: {
           type: "number",
           description:
-            "Requested long-poll budget in ms; 0 returns an immediate single-shot snapshot. Defaults to 300000 and is clamped by the effective ceiling.",
+            "Requested blocking budget in ms. Defaults to 300000 (5 minutes; the ceiling). 0 returns an immediate single-shot snapshot. Without a client progress token the effective budget is capped at 25 s; if the budget expires the call returns an in-progress snapshot to call again. effectiveWaitMs reports the budget actually used.",
         },
         waitFor: {
           type: "string",
           enum: ["attention", "terminal"],
           description:
-            'What to wait for: "attention" (default) returns immediately when the run is waiting or terminal; "terminal" polls through a pending wait until the run settles, the budget expires, or the call is aborted.',
+            '"attention" (default) returns as soon as the run is waiting, terminal or crashed. "terminal" ignores pending waits and blocks until the run settles or the budget expires; use it only when you care about finishing, not about answering.',
         },
         project: projectDirProperty,
       },
@@ -156,7 +156,7 @@ export const tools: readonly McpToolDefinition[] = [
   {
     name: "trst_resume",
     description:
-      "Start (or continue) a run's `continue` in the background and return as soon as it has begun. Does not wait for the run to finish — follow it with `trst_watch`. Required: runId. The result reports the continue status (completed / waiting / cancelled / failed / running) derived from the run's event trail, background: true while the continue is still executing, and an error when the continue did not start.",
+      "Start (or continue) a run's `continue` in the background and return as soon as it has begun. Does not wait for the run to finish — follow it with `trst_watch`, which blocks until the run finishes or needs an answer. Required: runId. The result reports the continue status (completed / waiting / cancelled / failed / running) derived from the run's event trail, background: true while the continue is still executing, and an error when the continue did not start.",
     inputSchema: {
       type: "object",
       properties: {
@@ -213,7 +213,7 @@ const SERVER_INFO = { name: "trailstep-mcp", version: "0.1.0" } as const;
  * the same mapping in detail.
  */
 export const SERVER_INSTRUCTIONS =
-  "TrailStep workflow runs use a run -> watch -> answer -> resume loop: start a run with trst_run_workflow (or a per-workflow trst_* tool), follow it with trst_watch (required runId; verbosity brief/normal/full; long-polls ~25 s; reports started / in-progress / terminal / crashed — stop waiting on terminal or crashed), answer a pending wait with trst_answer (required runId + waitId + plain JSON object answer; branchId/continueAfterAnswer optional), and continue a waiting run with trst_resume (required runId; starts the continue in the background and reports status — follow it with trst_watch). The trailstep://instructions resource describes this loop in detail.";
+  "TrailStep workflow runs use a run -> watch -> answer -> resume loop: start a run with trst_run_workflow (or a per-workflow trst_* tool), then call trst_watch (required runId). trst_watch is a blocking wait-for-attention call, not a poll loop: it returns started (call again), in-progress (call again with the same params), waiting (answer every waits[] entry with trst_answer — branchId disambiguates parallel branches — then trst_resume and call trst_watch again), terminal (read output or failure and stop), or crashed (no terminal event and no live process; stop). One call covers up to maxWaitMs (default 5 minutes); do not poll in a loop or sleep between calls. Clients that send a progress token keep the request alive for the full budget; clients without one are capped at 25 s and call again. The trailstep://instructions resource describes this loop in detail.";
 
 export const PROJECT_RESOURCE_URI = "trailstep://project";
 export const INSTRUCTIONS_RESOURCE_URI = "trailstep://instructions";
@@ -271,9 +271,14 @@ export const INSTRUCTIONS_FALLBACK = `# TrailStep MCP Instructions
 Actionable guidance for the generic TrailStep MCP toolkit (\`trst_run_workflow\`, \`trst_watch\`, \`trst_answer\`, \`trst_resume\`, and \`trst_list\`):
 
 - Start a run with \`trst_run_workflow\` (or the per-workflow \`trst_<id>\` tool for a workflow that has one; \`trst_list\` lists the available per-workflow tools).
-- Watch it with \`trst_watch\`: required \`runId\`; optional \`cursor\` (byte offset, overrides the persisted cursor) and \`verbosity\` (brief 50 / normal 100 / full 200 emitted lines); long-polls ~25 s; reports \`started\` / \`in-progress\` / \`terminal\` / \`crashed\`. \`crashed\` means the trail has no terminal event and no live process holds the run, so stop waiting.
+- Follow it with \`trst_watch\`, a blocking wait-for-attention call rather than a poll loop. Required \`runId\`; optional \`cursor\` (byte offset, overrides the persisted cursor), \`maxWaitMs\` (default 300000 = 5 min; 0 = single-shot), \`waitFor\` (\`attention\` default | \`terminal\`), and \`verbosity\` (\`brief\` / \`normal\` default / \`full\` raw-event escape hatch). One call covers up to the budget: call it again only after it returns, never in a loop or with a sleep.
+  - \`started\` (no events yet) or \`in-progress\` (a live process holds the run): call again with the same params.
+  - \`waiting\`: answer every \`waits[]\` entry with \`trst_answer\` (\`branchId\` disambiguates parallel branches), then \`trst_resume\`, then \`trst_watch\` again.
+  - \`terminal\`: read \`output\`, or \`failure\` (code, message, optional details), and stop.
+  - \`crashed\`: no terminal event and no live process holds the run, so nothing will ever append one — stop.
 - Answer a pending wait with \`trst_answer\`: required \`runId\` + \`waitId\` + \`answer\` (plain JSON object); optional \`branchId\` and \`continueAfterAnswer\`.
-- Resume a waiting run with \`trst_resume\`: required \`runId\`; starts the continue in the background and returns once it has begun, then reports the continue \`status\` (completed / waiting / cancelled / failed / running) — follow it with \`trst_watch\`.
+- Resume a waiting run with \`trst_resume\`: required \`runId\`; starts the continue in the background and returns once it has begun — follow it with \`trst_watch\`, which blocks until the run finishes or needs an answer.
+- Clients that send a progress token keep the watch request alive and may block the full \`maxWaitMs\` (default 5 minutes). Clients without one are capped at 25 s, receive no progress notifications, and, when the budget expires, get an in-progress snapshot to call again; \`effectiveWaitMs\` reports which budget was used.
 
 ## Embedded static snippet
 
@@ -657,7 +662,10 @@ function progressMessage(progress: TrstWatchProgressEvent): string {
 }
 
 function collapseToOneLine(value: string): string | undefined {
-  const collapsed = value.replace(/\s+/gu, "-").trim();
+  // Fold whitespace and every C0/C1 control character (U+0000-U+001F,
+  // U+007F-U+009F, including NEL) into one dash so a step id can never inject
+  // a control sequence or a second line into a progress notification.
+  const collapsed = value.replace(/[\s\p{Cc}]+/gu, "-").trim();
   if (collapsed === "") {
     return undefined;
   }

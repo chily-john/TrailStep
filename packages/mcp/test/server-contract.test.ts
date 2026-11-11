@@ -195,13 +195,21 @@ describe("MCP server contract", () => {
 
     expect(descriptions.trst_run_workflow).toContain("per-workflow tool");
     expect(descriptions.trst_run_workflow).toContain("trst_delegate");
-    expect(descriptions.trst_watch).toContain("Observe a TrailStep run");
-    expect(descriptions.trst_watch).toContain("persisted per run");
+    expect(descriptions.trst_run_workflow).toContain("trst_watch");
+    expect(descriptions.trst_watch).toContain("Blocking wait-for-attention");
+    expect(descriptions.trst_watch).toContain("persisted per-run cursor");
     expect(descriptions.trst_watch).toContain("trst_answer");
+    expect(descriptions.trst_watch).toContain("trst_resume");
     expect(descriptions.trst_watch).toContain("Required: runId");
-    expect(descriptions.trst_watch).toContain("verbosity");
+    expect(descriptions.trst_watch).toContain("maxWaitMs");
+    expect(descriptions.trst_watch).toContain("waitFor");
+    for (const state of ["started", "in-progress", "waiting", "terminal", "crashed"]) {
+      expect(descriptions.trst_watch).toContain(state);
+    }
+    expect(descriptions.trst_watch).toContain("branchId");
+    expect(descriptions.trst_watch).toContain("do not poll in a loop");
     expect(descriptions.trst_watch).toContain("25 s");
-    expect(descriptions.trst_watch).toContain("crashed");
+    expect(descriptions.trst_watch).toContain("effectiveWaitMs");
     expect(descriptions.trst_watch).toContain("no live process holds the run");
     expect(descriptions.trst_answer).toContain("Required: runId");
     expect(descriptions.trst_answer).toContain("Required: runId and waitId");
@@ -211,6 +219,18 @@ describe("MCP server contract", () => {
     expect(descriptions.trst_resume).toContain("status");
     expect(descriptions.trst_resume).toContain("in the background");
     expect(descriptions.trst_resume).toContain("trst_watch");
+    expect(descriptions.trst_resume).toContain("blocks until the run finishes or needs an answer");
+
+    const watch = listed.tools.find((tool) => tool.name === "trst_watch");
+    const properties = (watch?.inputSchema.properties ?? {}) as Record<
+      string,
+      { description?: string }
+    >;
+    expect(properties.maxWaitMs?.description).toContain("300000");
+    expect(properties.maxWaitMs?.description).toContain("5 minutes");
+    expect(properties.maxWaitMs?.description).toContain("single-shot");
+    expect(properties.maxWaitMs?.description).toContain("25 s");
+    expect(properties.waitFor?.description).toContain("ignores pending waits");
   });
 
   it("sends server instructions that point at the instructions resource", async () => {
@@ -221,6 +241,9 @@ describe("MCP server contract", () => {
     expect(instructions).toContain("trst_watch");
     expect(instructions).toContain("trst_answer");
     expect(instructions).toContain("trst_resume");
+    expect(instructions).toContain("waiting");
+    expect(instructions).toContain("in-progress");
+    expect(instructions).toContain("do not poll in a loop");
   });
 
   it("trst_run_workflow rejects a missing workflow without spawning", async () => {
@@ -425,6 +448,32 @@ describe("MCP server contract", () => {
     const values = traced.progressNotifications.map((notification) => notification.params.progress);
     for (let index = 1; index < values.length; index += 1) {
       expect(values[index] ?? 0).toBeGreaterThanOrEqual(values[index - 1] ?? 0);
+    }
+  });
+
+  it("sanitizes control characters and NEL out of progress messages", async () => {
+    const projectDir = tmpProject("mcp-progress-");
+    const stepId = "delegate\u0000turn\u001b[31m\u0085next";
+    writeRunTrail(projectDir, "run-controls", [
+      runEvent("workflow.started"),
+      runEvent("step.started", {}, stepId),
+    ]);
+    const traced = await connectedTracedClient(projectDir, { progressIntervalMs: 40 });
+    await traced.client.callTool({
+      name: "trst_watch",
+      arguments: { runId: "run-controls", maxWaitMs: 0 },
+    });
+    await traced.client.callTool(
+      { name: "trst_watch", arguments: { runId: "run-controls", maxWaitMs: 600 } },
+      undefined,
+      { onprogress: () => undefined },
+    );
+
+    expect(traced.progressNotifications.length).toBeGreaterThanOrEqual(1);
+    for (const notification of traced.progressNotifications) {
+      const message = notification.params.message ?? "";
+      expect(message).not.toMatch(/\p{Cc}/u);
+      expect(message.split("\n")).toHaveLength(1);
     }
   });
 

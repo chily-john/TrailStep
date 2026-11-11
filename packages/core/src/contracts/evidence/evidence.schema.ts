@@ -67,6 +67,7 @@ const diagnosticSchema = {
         "partial-coverage",
         "ambiguous-identity",
         "budget-exceeded",
+        "stale-owner",
         "permission-denied",
         "unsupported-source",
       ],

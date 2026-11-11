@@ -259,6 +259,33 @@ export {
   PROVIDER_EVIDENCE_RESPONSE_KIND,
   PROVIDER_EVIDENCE_SCHEMA_VERSION,
 } from "./contracts/evidence/provider-evidence-adapter.types.js";
+export type {
+  EvidenceArchiveReader,
+  EvidenceFailureSummary,
+  EvidencePendingWait,
+  EvidenceQueryContext,
+  EvidenceQueryLimits,
+  EvidenceQueryLocation,
+  InspectRunEvidenceOptions,
+  ListRunEvidenceOptions,
+  ReadArchivedArtifact,
+  ReadArchivedArtifactRequest,
+  ReadArchivedArtifactResult,
+  ReadArchivedRunEvents,
+  ReadArchivedRunEventsRequest,
+  ReadArchivedRunEventsResult,
+  ResolvedEvidenceSourceLink,
+  ResolveSourceLinkOptions,
+  ResolveSourceLinkSelector,
+  RetrieveEvidenceOptions,
+  RetrieveEvidenceResult,
+  RunEvidenceInspection,
+  RunEvidenceListResult,
+} from "./contracts/evidence/run-evidence-query.types.js";
+export {
+  DEFAULT_EVIDENCE_QUERY_LIMITS,
+  RUN_EVIDENCE_QUERY_PROJECTOR_REVISION,
+} from "./contracts/evidence/run-evidence-query.types.js";
 export type { Failure } from "./contracts/failures/failure.js";
 export {
   isFailureLikeError,
@@ -339,6 +366,7 @@ export { writeWaitAnswerFile } from "./runs/wait-answer-file.js";
 export {
   findLatestPendingWait,
   findPendingWaitsById,
+  listPendingWaits,
   readWaitAnswerFile,
   readWaitQuestion,
   waitEventBranchId,
@@ -369,11 +397,38 @@ export {
 } from "./runtime/cancellation/cancellation.js";
 export { createEvent } from "./runtime/events/create-run-event.js";
 export { readPlainPayload } from "./runtime/events/read-plain-payload.js";
+export type {
+  BoundedTextFileRead,
+  RunEventsScanOptions,
+  RunEventsScanResult,
+} from "./runtime/evidence/bounded-readers.js";
+export {
+  readBoundedTextFile,
+  readRunEventsBounded,
+  scanRunEventsBounded,
+} from "./runtime/evidence/bounded-readers.js";
+export type {
+  ClassifyRunStateOptions,
+  RunStateClassification,
+  TrackStateSignal,
+  WatchRunState,
+} from "./runtime/evidence/classify-run-state.js";
+export {
+  classifyRunState,
+  readTrackStateSignal,
+  toWatchRunState,
+} from "./runtime/evidence/classify-run-state.js";
 export {
   createProviderEvidenceRegistry,
   type InvokeProviderEvidenceAdapterOptions,
   invokeProviderEvidenceAdapter,
 } from "./runtime/evidence/invoke-provider-evidence-adapter.js";
+export {
+  inspectRunEvidence,
+  listRunEvidence,
+  resolveSourceLink,
+  retrieveEvidence,
+} from "./runtime/evidence/run-evidence-query.js";
 export type {
   ExecutionPolicyConfigSource,
   ResolveExecutionPolicyOptions,

@@ -12,7 +12,12 @@ import {
   resolveRunDirectory,
   resolveRunsRoot,
 } from "./run-directory.js";
-import { findLatestPendingWait, findPendingWaitsById, waitEventBranchId } from "./wait-events.js";
+import {
+  findLatestPendingWait,
+  findPendingWaitsById,
+  listPendingWaits,
+  waitEventBranchId,
+} from "./wait-events.js";
 
 async function makeRunDir(name: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-"));
@@ -23,7 +28,7 @@ async function makeRunDir(name: string): Promise<string> {
 }
 
 function waitEvent(
-  type: "wait.started" | "wait.satisfied",
+  type: "wait.started" | "wait.satisfied" | "wait.failed",
   options: {
     readonly waitId: string;
     readonly branchId?: string;
@@ -177,6 +182,49 @@ describe("wait event helpers", () => {
 
   it("treats events without a branch as the root branch", () => {
     expect(waitEventBranchId(waitEvent("wait.started", { waitId: "w1" }))).toBe("root");
+  });
+
+  it("lists a single pending wait", () => {
+    const wait = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([wait])).toEqual([wait]);
+  });
+
+  it("drops a wait resolved by wait.satisfied", () => {
+    const started = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+    const satisfied = waitEvent("wait.satisfied", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([started, satisfied])).toEqual([]);
+  });
+
+  it("drops a wait resolved by wait.failed", () => {
+    const started = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+    const failed = waitEvent("wait.failed", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([started, failed])).toEqual([]);
+  });
+
+  it("keeps two same-waitId waits on different branches distinct", () => {
+    const branchA = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const branchB = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "b",
+      answerFile: "answers/b.json",
+    });
+
+    expect(listPendingWaits([branchA, branchB])).toEqual([branchA, branchB]);
+  });
+
+  it("returns only the later wait when an earlier same-id wait was already resolved", () => {
+    const first = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+    const satisfied = waitEvent("wait.satisfied", { waitId: "w1", answerFile: "answers/a.json" });
+    const second = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([first, satisfied, second])).toEqual([second]);
   });
 });
 

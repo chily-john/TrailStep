@@ -339,6 +339,7 @@ export { writeWaitAnswerFile } from "./runs/wait-answer-file.js";
 export {
   findLatestPendingWait,
   findPendingWaitsById,
+  listPendingWaits,
   readWaitAnswerFile,
   readWaitQuestion,
   waitEventBranchId,

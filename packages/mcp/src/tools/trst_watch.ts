@@ -1,27 +1,40 @@
 /**
- * trst_watch — observe a TrailStep run's event stream over MCP.
+ * trst_watch — attention-based observation of a TrailStep run over MCP.
  *
  * The run is resolved from the runs root — `<cwd>/.trailstep/runs` or the
  * `TRAILSTEP_RUNS_ROOT` override — through the shared `resolveRunsRoot` helper
  * from `@trailstep/core`, exactly like the CLI (`options.env`, defaulting to
  * `process.env`). Then it reads `<runDir>/events.jsonl` by byte offset (the
- * "cursor") and returns a header plus a capped slice of new complete event
- * lines. When nothing new is
- * available it long-polls by actually polling the file (default 50 ms interval
- * up to a 25 s budget, within the 20-30 s range) instead of returning a fake
- * timeout constant. The cursor is persisted atomically (tmp file + rename) at
- * `.trailstep/mcp/.cursor/<runId>.json` so reconnects reuse where they left
- * off; an explicit `params.cursor` overrides the persisted value.
+ * "cursor").
+ *
+ * The result is a compact digest, not a tail of raw JSONL: state, cursor,
+ * budget, and exactly one payload (terminal `output`, pending `waits`,
+ * `crash`, or `progress`). Raw `lines` are populated only for `verbosity:
+ * "full"`, which keeps the old capped tail-follow behaviour (brief 50 /
+ * normal 100 / full 200 lines, cursor only through emitted lines so capped-out
+ * events stay fetchable). In compact mode every read event is digested by the
+ * server, so the persisted cursor advances to the last consumed read offset.
  *
  * Run state is classified from the run's **parsed events** plus its run lock
  * (never from a regex over raw file text, which could match event-shaped text
- * embedded in agent output). `crashed` is the state that makes an orchestrating
- * agent stop waiting: there is no terminal event and no live process holds the
- * run, so nothing will ever append one.
+ * embedded in agent output). A run parked on a durable wait is `waiting`, which
+ * outranks a live lock: the answer/continue is the operator's move. `crashed`
+ * means the trail has no terminal event and no live process holds the run, so
+ * nothing will ever append one — stop waiting.
  *
- * Test seams (`cwd` / `runDir` / `cursorDir` / `timeoutMs` / `pollIntervalMs`)
- * keep every artifact in caller-provided directories — tests never write the
- * repo's own `.trailstep/mcp`.
+ * The long-poll budget is capped by an explicit effective ceiling: a
+ * progressless client (the default) waits at most `progresslessCeilingMs`
+ * (25 s), while a progress-capable client may use `progressCapableCeilingMs`
+ * (300 s). `waitFor: "attention"` returns immediately for `waiting`; `waitFor:
+ * "terminal"` keeps polling through a pending wait until new lines arrive, the
+ * state settles, the budget expires, or `options.signal` aborts. A deadline
+ * exit still reports the honest state (`waiting` plus `waits[]` for a parked
+ * run).
+ *
+ * Test seams (`cwd` / `runDir` / `cursorDir` / `maxWaitMs` / `pollIntervalMs` /
+ * `progresslessCeilingMs` / `progressCapableCeilingMs` / `signal`) keep every
+ * artifact in caller-provided directories — tests never write the repo's own
+ * `.trailstep/mcp`.
  */
 import { randomBytes } from "node:crypto";
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -33,23 +46,33 @@ import {
   isPathLike,
   isPlainObject,
   isRunLockLive,
+  listPendingWaits,
   readRunEvents,
   readRunEventsSince,
   readRunLock,
+  readWaitAnswerFile,
+  readWaitQuestion,
   resolveRunsRoot,
+  waitEventBranchId,
 } from "@trailstep/core";
 
 export type TrstWatchVerbosity = "brief" | "normal" | "full";
 
-export type TrstWatchRunState = "started" | "in-progress" | "terminal" | "crashed";
+export type TrstWatchWaitFor = "attention" | "terminal";
+
+export type TrstWatchRunState = "started" | "in-progress" | "waiting" | "terminal" | "crashed";
 
 export interface TrstWatchParams {
   /** Run name or run id to observe. */
-  readonly runId?: string;
+  readonly runId: string;
   /** Byte offset into `events.jsonl` to resume from; overrides the persisted cursor. */
   readonly cursor?: number;
-  /** Output verbosity; caps emitted lines at 50 (brief) / 100 (normal) / 200 (full). */
+  /** Output verbosity; raw `lines` are only populated for "full". */
   readonly verbosity?: TrstWatchVerbosity;
+  /** Requested long-poll budget in ms; 0 means a single-shot snapshot. Defaults to 300000. */
+  readonly maxWaitMs?: number;
+  /** "attention" (default) returns immediately for `waiting`; "terminal" polls through it. */
+  readonly waitFor?: TrstWatchWaitFor;
 }
 
 export interface TrstWatchOptions {
@@ -59,40 +82,72 @@ export interface TrstWatchOptions {
   readonly runDir?: string;
   /** Explicit cursor directory; defaults to `<cwd>/.trailstep/mcp/.cursor`. */
   readonly cursorDir?: string;
-  /** Long-poll budget in ms; defaults to 25000 (20-30 s range). */
-  readonly timeoutMs?: number;
+  /** Test seam for the requested budget; `params.maxWaitMs` takes precedence. */
+  readonly maxWaitMs?: number;
   /** Poll interval in ms; defaults to 50 (matches `trailstep watch`). */
   readonly pollIntervalMs?: number;
   /** Env used to resolve `TRAILSTEP_RUNS_ROOT`; defaults to process.env. */
   readonly env?: Record<string, string | undefined>;
+  /** Whether the caller can receive progress notifications (unused in this story). */
+  readonly progressCapable?: boolean;
+  /** Effective ceiling for progressless callers; defaults to 25000. */
+  readonly progresslessCeilingMs?: number;
+  /** Effective ceiling for progress-capable callers; defaults to 300000. */
+  readonly progressCapableCeilingMs?: number;
+  /** Progress callback type; unused in this story. */
+  readonly onProgress?: (progress: TrstWatchProgress) => void;
+  /** Aborts the poll promptly and returns a snapshot instead of throwing. */
+  readonly signal?: AbortSignal;
+}
+
+/** One unresolved wait a caller must answer or resolve. */
+export interface TrstWatchWait {
+  readonly waitId: string;
+  readonly stepId?: string;
+  readonly branchId: string;
+  readonly question?: string;
+  readonly answerFile?: string;
+}
+
+/** Digest of an open run: newest step, newest event type, and this call's new event count. */
+export interface TrstWatchProgress {
+  readonly step?: string;
+  readonly lastEventType?: Event["type"];
+  readonly newEvents: number;
 }
 
 export interface TrstWatchResult {
-  /** One-line summary: runId, state, cursor, and number of emitted lines. */
+  /** One-line summary: runId, state, cursor, and emitted line count. */
   readonly header: string;
   readonly runId: string;
-  /** New complete event lines (verbatim jsonl), capped by verbosity. */
-  readonly lines: readonly string[];
-  /** Byte offset into `events.jsonl` after the last emitted line; persisted. */
-  readonly cursor: number;
-  /**
-   * `started` (no events yet), `in-progress` (a live process holds the run lock, or the run is
-   * parked on a durable wait), `terminal` (workflow.completed|failed|cancelled), `crashed` (no
-   * terminal event and no live lock holder — stop waiting).
-   */
   readonly state: TrstWatchRunState;
-  /** Long-poll budget that was actually used, in ms. */
-  readonly timeoutMs: number;
-  /** True when more new lines existed than the verbosity cap allowed. */
+  /** Byte offset into `events.jsonl` after the last consumed/emitted line; persisted. */
+  readonly cursor: number;
+  /** The requested long-poll budget (params.maxWaitMs, or the 300000 default). */
+  readonly requestedWaitMs: number;
+  /** The clamped budget actually used (never unlimited). */
+  readonly effectiveWaitMs: number;
+  /** True when more new lines existed than the `full` verbosity cap allowed. */
   readonly truncated: boolean;
+  /** Terminal event payload.output, verbatim, for `state: "terminal"`. */
+  readonly output?: unknown;
+  /** Every unresolved wait, for `state: "waiting"`. */
+  readonly waits?: readonly TrstWatchWait[];
+  /** Why the run is considered dead, for `state: "crashed"`. */
+  readonly crash?: { readonly reason: string };
+  /** Open-run digest, for the remaining states. */
+  readonly progress?: TrstWatchProgress;
+  /** Raw JSONL lines, only populated when `verbosity` is "full". */
+  readonly lines: readonly string[];
 }
 
-const defaultLongPollTimeoutMs = 25_000;
-const minLongPollTimeoutMs = 20_000;
-const maxLongPollTimeoutMs = 30_000;
+const defaultMaxWaitMs = 300_000;
+const defaultProgresslessCeilingMs = 25_000;
+const defaultProgressCapableCeilingMs = 300_000;
 const defaultPollIntervalMs = 50;
 const minLineCap = 50;
 const maxLineCap = 200;
+const crashReason = "no terminal event and no live lock";
 
 /**
  * The event types that end a run. Anything else leaves it open.
@@ -112,7 +167,8 @@ export async function trst_watch(
   params?: TrstWatchParams | string,
   options: TrstWatchOptions = {},
 ): Promise<TrstWatchResult> {
-  const resolved: TrstWatchParams = typeof params === "string" ? { runId: params } : (params ?? {});
+  const resolved: Partial<TrstWatchParams> =
+    typeof params === "string" ? { runId: params } : (params ?? {});
   const runId =
     typeof resolved.runId === "string" && resolved.runId.trim().length > 0
       ? resolved.runId.trim()
@@ -137,63 +193,112 @@ export async function trst_watch(
     explicitCursor === undefined ? await readPersistedCursor(cursorFile, runId) : undefined;
   const startCursor = explicitCursor ?? persistedCursor ?? 0;
 
-  const timeoutMs =
-    options.timeoutMs ??
-    Math.min(maxLongPollTimeoutMs, Math.max(minLongPollTimeoutMs, defaultLongPollTimeoutMs));
-  const pollIntervalMs = options.pollIntervalMs ?? defaultPollIntervalMs;
+  const requestedWaitMs = resolveRequestedWaitMs(resolved.maxWaitMs, options.maxWaitMs);
+  const progresslessCeilingMs = resolveCeiling(
+    options.progresslessCeilingMs,
+    defaultProgresslessCeilingMs,
+  );
+  const progressCapableCeilingMs = resolveCeiling(
+    options.progressCapableCeilingMs,
+    defaultProgressCapableCeilingMs,
+  );
+  const effectiveWaitMs =
+    requestedWaitMs === 0
+      ? 0
+      : Math.min(
+          requestedWaitMs,
+          options.progressCapable === true ? progressCapableCeilingMs : progresslessCeilingMs,
+        );
+  const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? defaultPollIntervalMs);
+  const waitFor: TrstWatchWaitFor = resolved.waitFor === "terminal" ? "terminal" : "attention";
+  const fullMode = resolved.verbosity === "full";
   const lineCap = verbosityLineCap(resolved.verbosity);
+  const readOptions = {
+    report: (message: string) => console.error(`trst_watch: ${message}`),
+  };
 
-  // Long-poll: keep polling the file until new complete lines arrive (or a
-  // partially written line completes, or malformed lines are consumed), or the
-  // run settles (terminal / crashed), or the real time budget expires. Never a
-  // fixed sleep of the whole budget.
-  //
-  // One full parse of the trail is enough to know whether the run is already
-  // finished or already dead; every poll after it is a cheap stat (see
-  // readRunEventsSince) plus one tiny `run.lock` read, so a long run's watch no
-  // longer re-reads and re-decodes the whole trail every 50 ms.
-  const deadline = Date.now() + timeoutMs;
+  // Long-poll: poll the file until new complete lines arrive (or malformed
+  // lines are consumed), or the run needs attention (waiting/terminal/crashed),
+  // or the effective budget expires, or the signal aborts. Never a fixed sleep
+  // of the whole budget. Classification on idle polls reuses the full trail
+  // parsed at entry and only re-reads the small run lock, so a long run's watch
+  // does not re-decode the whole trail every poll; when new lines appear the
+  // trail is parsed once more to report the honest final state.
+  const deadline = Date.now() + effectiveWaitMs;
   let observed = await readTrail(runDir);
-  let read = await readRunEventsSince(eventsFile, startCursor, {
-    report: (message) => console.error(`trst_watch: ${message}`),
-  });
-  while (read.entries.length === 0 && read.offset === startCursor) {
-    const state = await classifyRunState({ runDir, events: observed });
-    if (state === "terminal" || state === "crashed") {
+  let classification = await classifyRunState({ runDir, events: observed });
+  let read = await readRunEventsSince(eventsFile, startCursor, readOptions);
+  let consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
+
+  while (!consumedNewData) {
+    if (shouldExitForState(classification.state, waitFor)) {
       break;
     }
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       break;
     }
-    await sleep(Math.min(pollIntervalMs, remaining));
-    read = await readRunEventsSince(eventsFile, startCursor, {
-      report: (message) => console.error(`trst_watch: ${message}`),
-    });
+    if (options.signal?.aborted === true) {
+      break;
+    }
+
+    try {
+      await sleep(Math.min(pollIntervalMs, remaining), undefined, { signal: options.signal });
+    } catch (error) {
+      if (options.signal?.aborted) {
+        break;
+      }
+      if (isAbortError(error)) {
+        break;
+      }
+      throw error;
+    }
+
+    read = await readRunEventsSince(eventsFile, startCursor, readOptions);
+    consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
+    if (!consumedNewData) {
+      classification = await classifyRunState({ runDir, events: observed });
+    }
   }
-  if (read.entries.length > 0) {
-    observed = [...observed, ...read.entries.map((entry) => entry.event)];
+
+  if (consumedNewData) {
+    observed = await readTrail(runDir);
+    classification = await classifyRunState({ runDir, events: observed });
   }
 
   const emitted = read.entries.slice(0, lineCap);
-  const truncated = read.entries.length > emitted.length;
-  // Cursor advances only through emitted lines so capped-out events remain
-  // fetchable on the next call.
-  const cursor = emitted.at(-1)?.endOffset ?? read.offset;
-  const state = await classifyRunState({ runDir, events: observed });
-  const lines = emitted.map((entry) => entry.line);
+  const truncated = fullMode && read.entries.length > emitted.length;
+  // `full` keeps the old semantics: the cursor advances only through emitted
+  // lines so capped-out events remain fetchable on the next call. Compact mode
+  // digested every read event server-side, so it advances through the whole read.
+  const cursor = fullMode ? (emitted.at(-1)?.endOffset ?? read.offset) : read.offset;
+  const lines = fullMode ? emitted.map((entry) => entry.line) : [];
 
   await persistCursor(cursorFile, runId, cursor);
 
-  return {
-    header: `watch:${runId} state=${state} cursor=${cursor} lines=${lines.length}`,
+  const base = {
+    header: `watch:${runId} state=${classification.state} cursor=${cursor} lines=${lines.length}`,
     runId,
-    lines,
+    state: classification.state,
     cursor,
-    state,
-    timeoutMs,
+    requestedWaitMs,
+    effectiveWaitMs,
     truncated,
+    lines,
   };
+
+  switch (classification.state) {
+    case "terminal": {
+      const output = findTerminalEvent(observed)?.payload.output;
+      return output === undefined ? base : { ...base, output };
+    }
+    case "waiting":
+      return { ...base, waits: toPendingWaits(observed) };
+    case "crashed":
+      return { ...base, crash: { reason: crashReason } };
+    default:
+      return { ...base, progress: describeProgress(observed, read.entries.length) };
+  }
 }
 
 /**
@@ -261,38 +366,33 @@ async function requireEventsFile(eventsFile: string, runId: string): Promise<voi
 /**
  * Classify a run from its parsed events plus its lock.
  *
- * `crashed` is the state the previous string-scanning implementation could not express: the
- * trail has no terminal event, but no live process holds the run either, so nothing will ever
- * append one. Without it an orchestrating agent waits forever on a dead run.
+ * Order matters: a pending wait outranks a live lock (a run parked on a durable
+ * wait has no process by design) and a terminal event outranks everything.
+ * `crashed` is the state a raw trail scan cannot express: no terminal event and
+ * no live lock holder, so nothing will ever append one.
  */
 async function classifyRunState(options: {
   readonly runDir: string;
   readonly events: readonly Event[];
-}): Promise<TrstWatchRunState> {
-  for (let index = options.events.length - 1; index >= 0; index -= 1) {
-    const type = options.events[index]?.type;
-    if (type !== undefined && terminalEventTypes.includes(type)) {
-      return "terminal";
-    }
+}): Promise<{ readonly state: TrstWatchRunState }> {
+  if (findTerminalEvent(options.events) !== undefined) {
+    return { state: "terminal" };
   }
 
   if (options.events.length === 0) {
-    return "started";
+    return { state: "started" };
+  }
+
+  if (listPendingWaits(options.events).length > 0) {
+    return { state: "waiting" };
   }
 
   const lock = await readRunLock(options.runDir);
   if (lock !== undefined && isRunLockLive(lock)) {
-    return "in-progress";
+    return { state: "in-progress" };
   }
 
-  // A run parked on a durable wait has no process by design; the answer/continue is the
-  // operator's move, and the run is not crashed.
-  if (options.events.at(-1)?.type === "wait.started") {
-    return "in-progress";
-  }
-
-  // No terminal event, no live lock: nothing is driving this run.
-  return "crashed";
+  return { state: "crashed" };
 }
 
 /**
@@ -307,9 +407,73 @@ async function readTrail(runDir: string): Promise<readonly Event[]> {
   }
 }
 
+function findTerminalEvent(events: readonly Event[]): Event | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event !== undefined && terminalEventTypes.includes(event.type)) {
+      return event;
+    }
+  }
+  return undefined;
+}
+
+function toPendingWaits(events: readonly Event[]): TrstWatchWait[] {
+  return listPendingWaits(events).map((event) => ({
+    waitId: typeof event.payload.waitId === "string" ? event.payload.waitId : "",
+    stepId: event.stepId,
+    branchId: waitEventBranchId(event),
+    question: readWaitQuestion(event),
+    answerFile: readWaitAnswerFile(event),
+  }));
+}
+
+function describeProgress(events: readonly Event[], newEvents: number): TrstWatchProgress {
+  let step: string | undefined;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.stepId !== undefined) {
+      step = event.stepId;
+      break;
+    }
+  }
+
+  return {
+    step,
+    lastEventType: events.at(-1)?.type,
+    newEvents,
+  };
+}
+
+function shouldExitForState(state: TrstWatchRunState, waitFor: TrstWatchWaitFor): boolean {
+  if (state === "terminal" || state === "crashed") {
+    return true;
+  }
+  return state === "waiting" && waitFor === "attention";
+}
+
 function verbosityLineCap(verbosity?: TrstWatchVerbosity): number {
   const requested = verbosity === "brief" ? 50 : verbosity === "full" ? maxLineCap : 100;
   return Math.min(maxLineCap, Math.max(minLineCap, requested));
+}
+
+function resolveRequestedWaitMs(param: number | undefined, option: number | undefined): number {
+  const candidate = param ?? option ?? defaultMaxWaitMs;
+  return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0
+    ? candidate
+    : defaultMaxWaitMs;
+}
+
+function resolveCeiling(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { readonly name?: unknown }).name === "AbortError"
+  );
 }
 
 function cursorFileBaseName(runId: string): string {

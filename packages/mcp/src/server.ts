@@ -104,6 +104,17 @@ export const tools: readonly McpToolDefinition[] = [
           description:
             "Output verbosity; caps emitted lines at 50 (brief) / 100 (normal) / 200 (full).",
         },
+        maxWaitMs: {
+          type: "number",
+          description:
+            "Requested long-poll budget in ms; 0 returns an immediate single-shot snapshot. Defaults to 300000 and is clamped by the effective ceiling.",
+        },
+        waitFor: {
+          type: "string",
+          enum: ["attention", "terminal"],
+          description:
+            'What to wait for: "attention" (default) returns immediately when the run is waiting or terminal; "terminal" polls through a pending wait until the run settles, the budget expires, or the call is aborted.',
+        },
         project: projectDirProperty,
       },
       required: ["runId"],
@@ -429,14 +440,20 @@ async function dispatchTool(
       return payload;
     }
     case "trst_watch": {
+      const runId = readOptionalString(args.runId);
+      if (runId === undefined) {
+        throw new Error("trst_watch: `runId` must be a non-empty string.");
+      }
       return await trst_watch(
         {
-          ...(readOptionalString(args.runId) === undefined
-            ? {}
-            : { runId: readOptionalString(args.runId) }),
+          runId,
           ...(typeof args.cursor === "number" ? { cursor: args.cursor } : {}),
           ...(args.verbosity === "brief" || args.verbosity === "normal" || args.verbosity === "full"
             ? { verbosity: args.verbosity }
+            : {}),
+          ...(typeof args.maxWaitMs === "number" ? { maxWaitMs: args.maxWaitMs } : {}),
+          ...(args.waitFor === "attention" || args.waitFor === "terminal"
+            ? { waitFor: args.waitFor }
             : {}),
         },
         { cwd },

@@ -38,44 +38,50 @@ export function waitEventKey(event: Event): string | undefined {
   return event.stepId && waitId ? `${branchId}:${event.stepId}:${waitId}` : undefined;
 }
 
-/** Every unresolved wait.started event with the given waitId, in event order. */
-export function findPendingWaitsById(events: readonly Event[], waitId: string): Event[] {
-  return listPendingWaits(events).filter((event) => event.payload.waitId === waitId);
-}
-
 /**
  * Every unresolved wait.started event, in event order.
  *
  * A wait is resolved by a later wait.satisfied/wait.failed carrying the same
  * wait identity (`waitEventKey`), which embeds the branch id, so same-id waits
- * on different parallel branches stay distinct. A wait.started that was already
- * resolved before a later same-id wait is not pending.
+ * on different parallel branches stay distinct. A wait.started that was
+ * already resolved before a later same-id wait is not pending. This is the one
+ * shared pending-wait seam used by the CLI/MCP and the bounded evidence query.
  */
 export function listPendingWaits(events: readonly Event[]): Event[] {
+  // Record the LAST resolution index for each wait key in one pass. A start is
+  // pending precisely when no resolution with its key occurs after it. This
+  // preserves the old "any later resolution wins" semantics without the
+  // O(n^2) suffix scan that made a long event trail quadratic.
+  const lastResolutionIndex = new Map<string, number>();
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (event?.type !== "wait.satisfied" && event?.type !== "wait.failed") {
+      continue;
+    }
+    const key = waitEventKey(event);
+    if (key !== undefined) {
+      lastResolutionIndex.set(key, index);
+    }
+  }
+
   const pending: Event[] = [];
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index];
     if (event?.type !== "wait.started") {
       continue;
     }
-
     const key = waitEventKey(event);
-    const resolvedLater =
-      key === undefined
-        ? false
-        : events
-            .slice(index + 1)
-            .some(
-              (laterEvent) =>
-                (laterEvent.type === "wait.satisfied" || laterEvent.type === "wait.failed") &&
-                waitEventKey(laterEvent) === key,
-            );
-    if (!resolvedLater) {
+    if (key === undefined || (lastResolutionIndex.get(key) ?? -1) <= index) {
       pending.push(event);
     }
   }
 
   return pending;
+}
+
+/** Every unresolved wait.started event with the given waitId, in event order. */
+export function findPendingWaitsById(events: readonly Event[], waitId: string): Event[] {
+  return listPendingWaits(events).filter((event) => event.payload.waitId === waitId);
 }
 
 /**
@@ -90,31 +96,17 @@ export function findLatestPendingWait(
   events: readonly Event[],
   branchId?: string,
 ): Event | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type !== "wait.started" || typeof event.payload.waitId !== "string") {
+  const pending = listPendingWaits(events);
+  for (let index = pending.length - 1; index >= 0; index -= 1) {
+    const event = pending[index];
+    if (event === undefined || typeof event.payload.waitId !== "string") {
       continue;
     }
-
     if (branchId !== undefined && waitEventBranchId(event) !== branchId) {
       continue;
     }
-
-    const key = waitEventKey(event);
-    const resolvedLater = key
-      ? events
-          .slice(index + 1)
-          .some(
-            (laterEvent) =>
-              (laterEvent.type === "wait.satisfied" || laterEvent.type === "wait.failed") &&
-              waitEventKey(laterEvent) === key,
-          )
-      : false;
-    if (!resolvedLater) {
-      return event;
-    }
+    return event;
   }
-
   return undefined;
 }
 

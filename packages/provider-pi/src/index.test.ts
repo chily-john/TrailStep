@@ -81,6 +81,14 @@ describe("@trailstep/provider-pi exports", () => {
       },
     });
   });
+
+  it("exports the executable evidence adapter beside the serializable manifest", () => {
+    expect(providerPi.trailstepProvider.evidence).toMatchObject({
+      schemaVersion: 1,
+      adapterRevision: "1",
+    });
+    expect(typeof providerPi.trailstepProvider.evidence.readUsage).toBe("function");
+  });
 });
 
 describe("@trailstep/provider-pi hygiene capabilities", () => {

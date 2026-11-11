@@ -1,0 +1,68 @@
+{
+  "activities": [
+    {
+      "activityId": "pi/session-malformed/m-ok-1/assistant",
+      "sessionId": "session-malformed",
+      "sessionFormatVersion": 3,
+      "kind": "assistant",
+      "model": "gpt-5",
+      "provider": "openai",
+      "responseId": "resp-m1",
+      "attribution": "run",
+      "run": {
+        "project": { "kind": "explicit", "key": "trailstep" },
+        "runId": "run-1",
+        "startedEventId": "evt-start",
+        "workflowId": "workflow-a",
+        "identityQuality": "explicit"
+      },
+      "counters": {
+        "inputTokens": 5,
+        "outputTokens": 5,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalTokens": 10
+      },
+      "cost": {
+        "total": 0.003,
+        "input": 0.001,
+        "output": 0.002,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "basis": "reported"
+      }
+    },
+    {
+      "activityId": "pi/session-malformed/m-ok-2/assistant",
+      "sessionId": "session-malformed",
+      "sessionFormatVersion": 3,
+      "kind": "assistant",
+      "model": "gpt-5",
+      "provider": "openai",
+      "responseId": "resp-m3",
+      "attribution": "run",
+      "run": {
+        "project": { "kind": "explicit", "key": "trailstep" },
+        "runId": "run-1",
+        "startedEventId": "evt-start",
+        "workflowId": "workflow-a",
+        "identityQuality": "explicit"
+      },
+      "counters": {
+        "inputTokens": 2,
+        "outputTokens": 2,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalTokens": 4
+      },
+      "cost": {
+        "total": 0.0002,
+        "input": 0.0001,
+        "output": 0.0001,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "basis": "reported"
+      }
+    }
+  ]
+}

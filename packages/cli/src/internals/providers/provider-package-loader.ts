@@ -22,10 +22,21 @@ export interface LoadProviderPackageOptions {
   readonly importer?: ProviderPackageImporter;
 }
 
-export async function loadProviderPackage(
+export interface ImportedProviderPackageModule {
+  readonly provider: Record<string, unknown>;
+  readonly packageJson: Record<string, unknown>;
+  readonly modulePath: string;
+}
+
+/**
+ * Import a provider package entry and return the raw `trailstepProvider`
+ * export. Shared by metadata-only loading and the opt-in evidence loader so
+ * package entry resolution stays identical. No installation happens here.
+ */
+export async function importProviderPackageModule(
   packageRoot: string,
   options: LoadProviderPackageOptions = {},
-): Promise<LoadedProviderPackageDefinition> {
+): Promise<ImportedProviderPackageModule> {
   const packageJson = await readPackageJson(packageRoot);
   const entry = typeof packageJson.exports === "string" ? packageJson.exports : packageJson.main;
   const modulePath = resolve(packageRoot, typeof entry === "string" ? entry : "index.js");
@@ -37,6 +48,14 @@ export async function loadProviderPackage(
       "provider export missing: expected package root export trailstepProvider.",
     );
   }
+  return { provider, packageJson, modulePath };
+}
+
+export async function loadProviderPackage(
+  packageRoot: string,
+  options: LoadProviderPackageOptions = {},
+): Promise<LoadedProviderPackageDefinition> {
+  const { provider, packageJson } = await importProviderPackageModule(packageRoot, options);
 
   const diagnostics: string[] = [];
   const rawManifest = provider.manifest;

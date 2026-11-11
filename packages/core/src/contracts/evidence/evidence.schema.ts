@@ -114,6 +114,9 @@ const runRefSchema = {
   },
   required: ["project", "runId", "identityQuality"] as const,
 };
+
+/** Shared scoped run-reference schema for other V1 evidence DTOs (A3+). */
+export const runEvidenceRunRefSchema = runRefSchema;
 const sourceRefSchema = {
   type: "object",
   additionalProperties: true,
@@ -351,6 +354,11 @@ function sanitizeRunRef(input: Record<string, unknown>): RunEvidenceRunRef {
     ...(started !== undefined ? { startedEventId: started } : {}),
     ...(workflow !== undefined ? { workflowId: workflow } : {}),
   };
+}
+
+/** Rebuild a scoped run reference from an already validated input. */
+export function sanitizeRunEvidenceRunRef(input: Record<string, unknown>): RunEvidenceRunRef {
+  return sanitizeRunRef(input);
 }
 
 function sanitizeExecution(input: Record<string, unknown>): EvidenceExecutionObservation {

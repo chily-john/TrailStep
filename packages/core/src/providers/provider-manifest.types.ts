@@ -1,4 +1,5 @@
 import type { WorkflowAgentThinking } from "../contracts/agents/agent-role.types.js";
+import type { ProviderEvidenceAdapterV1 } from "../contracts/evidence/provider-evidence-adapter.types.js";
 
 export interface TrailStepProviderRegistration {
   readonly source: TrailStepProviderSource;
@@ -23,6 +24,12 @@ export type TrailStepProviderSource =
 export interface TrailStepProviderPackageDefinition {
   readonly manifest: TrailStepProviderManifest;
   readonly hooks?: Record<string, unknown>;
+  /**
+   * Optional callable evidence capability. Exported beside the manifest and
+   * hooks, never stored inside the serializable manifest. A3a loads and
+   * validates it but does not wire it into the productive run path.
+   */
+  readonly evidence?: ProviderEvidenceAdapterV1;
 }
 
 export interface TrailStepProviderManifest {

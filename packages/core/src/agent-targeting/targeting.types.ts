@@ -47,6 +47,20 @@ export interface TrailStepAgentTarget {
 
 export type TrailStepAgentMappings = Readonly<Record<string, readonly TrailStepAgentTarget[]>>;
 
+export interface TrailStepEvidenceSettings {
+  /** Wire/config contract version. Unknown versions must not be guessed. */
+  readonly schemaVersion: 1;
+  /** Opt-in. Omitted/false means no evidence package import or invocation. */
+  readonly usage: boolean;
+  /**
+   * Explicitly authorized provider session roots keyed by registered package
+   * provider id. Relative roots are resolved by the declaring config scope
+   * before scope merging. Missing/empty roots with `usage: true` yield an
+   * unavailable observation, never a fabricated zero.
+   */
+  readonly providerRoots?: Readonly<Record<string, readonly string[]>>;
+}
+
 export interface TrailStepSettings {
   readonly retry?: RetryPolicyInput;
   /** Backoff retry policy for transient working-agent spawn failures. */
@@ -60,6 +74,8 @@ export interface TrailStepSettings {
    * the agent role's block (per-workflow wins over this one).
    */
   readonly execution?: AgentExecutionConfig;
+  /** Opt-in provider evidence collection (A3). Default off. */
+  readonly evidence?: TrailStepEvidenceSettings;
   readonly [key: string]: unknown;
 }
 

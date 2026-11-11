@@ -22,6 +22,7 @@ export type {
   TrailStepCustomProviderConfig,
   TrailStepCustomProviderModelOverrideSupport,
   TrailStepCustomProviderThinkingOverrideSupport,
+  TrailStepEvidenceSettings,
   TrailStepMcpConfig,
   TrailStepSettings,
   TrailStepWorkflowConfig,
@@ -210,6 +211,54 @@ export {
   RUN_EVIDENCE_PROJECTOR_REVISION,
   RUN_EVIDENCE_SCHEMA_VERSION,
 } from "./contracts/evidence/evidence.types.js";
+export {
+  DEFAULT_PROVIDER_EVIDENCE_LIMITS,
+  isProviderUsageEvidence,
+  parseProviderEvidenceAdapter,
+  parseProviderUsageEvidence,
+  parseProviderUsageEvidenceRequest,
+  providerEvidenceLimitsSchema,
+  providerUsageEvidenceRequestSchema,
+  providerUsageEvidenceSchema,
+} from "./contracts/evidence/provider-evidence-adapter.schema.js";
+export type {
+  ProviderEvidenceActivityKind,
+  ProviderEvidenceAdapterMalformedResult,
+  ProviderEvidenceAdapterParseResult,
+  ProviderEvidenceAdapterUnsupportedVersionResult,
+  ProviderEvidenceAdapterV1,
+  ProviderEvidenceAdapterValidResult,
+  ProviderEvidenceAttribution,
+  ProviderEvidenceCandidateRun,
+  ProviderEvidenceDiagnostic,
+  ProviderEvidenceDiagnosticCode,
+  ProviderEvidenceDispatchObservation,
+  ProviderEvidenceInvocationResult,
+  ProviderEvidenceLimits,
+  ProviderEvidenceProviderRef,
+  ProviderEvidenceRegistry,
+  ProviderEvidenceRegistryEntry,
+  ProviderEvidenceResponseStatus,
+  ProviderUsageActivity,
+  ProviderUsageCost,
+  ProviderUsageCounters,
+  ProviderUsageEvidenceMalformedResult,
+  ProviderUsageEvidenceParseResult,
+  ProviderUsageEvidenceRequestMalformedResult,
+  ProviderUsageEvidenceRequestParseResult,
+  ProviderUsageEvidenceRequestUnsupportedVersionResult,
+  ProviderUsageEvidenceRequestV1,
+  ProviderUsageEvidenceRequestValidResult,
+  ProviderUsageEvidenceUnsupportedVersionResult,
+  ProviderUsageEvidenceV1,
+  ProviderUsageEvidenceValidResult,
+  ProviderUsageSubtotal,
+} from "./contracts/evidence/provider-evidence-adapter.types.js";
+export {
+  PROVIDER_EVIDENCE_REQUEST_KIND,
+  PROVIDER_EVIDENCE_RESPONSE_KIND,
+  PROVIDER_EVIDENCE_SCHEMA_VERSION,
+} from "./contracts/evidence/provider-evidence-adapter.types.js";
 export type { Failure } from "./contracts/failures/failure.js";
 export {
   isFailureLikeError,
@@ -320,6 +369,11 @@ export {
 } from "./runtime/cancellation/cancellation.js";
 export { createEvent } from "./runtime/events/create-run-event.js";
 export { readPlainPayload } from "./runtime/events/read-plain-payload.js";
+export {
+  createProviderEvidenceRegistry,
+  type InvokeProviderEvidenceAdapterOptions,
+  invokeProviderEvidenceAdapter,
+} from "./runtime/evidence/invoke-provider-evidence-adapter.js";
 export type {
   ExecutionPolicyConfigSource,
   ResolveExecutionPolicyOptions,

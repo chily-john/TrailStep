@@ -40,7 +40,7 @@ import { runWorkflowTool } from "./tools/run_workflow.js";
 import { trstAnswer } from "./tools/trst_answer.js";
 import { trstList } from "./tools/trst_list.js";
 import { trstResume } from "./tools/trst_resume.js";
-import { trst_watch } from "./tools/trst_watch.js";
+import { type TrstWatchProgressEvent, trst_watch } from "./tools/trst_watch.js";
 
 export interface McpToolDefinition {
   readonly name: string;
@@ -179,6 +179,30 @@ export interface CreateServerOptions {
    * the real home directory; tests inject a tmp dir for isolation.
    */
   readonly homeDir?: string;
+  /**
+   * Test seam: cadence for per-poll `notifications/progress` messages. Defaults
+   * to the trst_watch cadence (10 s).
+   */
+  readonly progressIntervalMs?: number;
+}
+
+/**
+ * The slice of the SDK's `RequestHandlerExtra` the CallTool handler uses. The
+ * structural shape keeps the dispatch layer independent of the SDK's generic
+ * request/notification unions.
+ */
+interface CallToolExtra {
+  readonly signal: AbortSignal;
+  readonly _meta?: { readonly progressToken?: string | number };
+  readonly sendNotification: (notification: {
+    readonly method: "notifications/progress";
+    readonly params: {
+      readonly progressToken: string | number;
+      readonly progress: number;
+      readonly total?: number;
+      readonly message?: string;
+    };
+  }) => Promise<void>;
 }
 
 const SERVER_INFO = { name: "trailstep-mcp", version: "0.1.0" } as const;
@@ -290,11 +314,18 @@ export function createServer(options: CreateServerOptions = {}): Server {
     })),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     try {
-      const result = await dispatchTool(name, args, projectDir, homeDir);
+      const result = await dispatchTool(
+        name,
+        args,
+        projectDir,
+        homeDir,
+        extra,
+        options.progressIntervalMs,
+      );
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],
       };
@@ -408,6 +439,8 @@ async function dispatchTool(
   args: Record<string, unknown>,
   projectDir: string,
   homeDir: string | undefined,
+  extra: CallToolExtra,
+  progressIntervalMs: number | undefined,
 ): Promise<unknown> {
   const cwd =
     typeof args.project === "string" && args.project.trim() !== ""
@@ -444,6 +477,12 @@ async function dispatchTool(
       if (runId === undefined) {
         throw new Error("trst_watch: `runId` must be a non-empty string.");
       }
+      // Capability detection: only a request that actually carried a
+      // progress token may use the 300 s ceiling and receive keep-alives. A
+      // token-less request stays exactly on the 25 s progressless ceiling.
+      const progressToken = readProgressToken(extra._meta);
+      const onProgress =
+        progressToken === undefined ? undefined : createProgressEmitter(extra, progressToken);
       return await trst_watch(
         {
           runId,
@@ -456,7 +495,12 @@ async function dispatchTool(
             ? { waitFor: args.waitFor }
             : {}),
         },
-        { cwd },
+        {
+          cwd,
+          signal: extra.signal,
+          ...(onProgress === undefined ? {} : { progressCapable: true, onProgress }),
+          ...(progressIntervalMs === undefined ? {} : { progressIntervalMs }),
+        },
       );
     }
     case "trst_answer": {
@@ -556,6 +600,68 @@ async function dispatchPerWorkflowTool(
 
 function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function readProgressToken(meta: CallToolExtra["_meta"]): string | number | undefined {
+  const token = meta?.progressToken;
+  return typeof token === "string" || typeof token === "number" ? token : undefined;
+}
+
+/**
+ * Build the per-call progress emitter. It sends one `notifications/progress`
+ * per `onProgress` call (the watch owns the 10 s cadence), uses elapsed seconds
+ * as a monotonically non-decreasing progress value, and reports the effective
+ * budget as the total. Notification delivery is best-effort: a rejection or
+ * throw disables further emission for this call and never changes the watch
+ * result.
+ */
+function createProgressEmitter(
+  extra: CallToolExtra,
+  progressToken: string | number,
+): (progress: TrstWatchProgressEvent) => void {
+  const startedAt = Date.now();
+  let lastProgressSeconds = 0;
+  let disabled = false;
+
+  return (progress) => {
+    if (disabled || extra.signal.aborted) {
+      return;
+    }
+    const elapsedSeconds = Math.max(lastProgressSeconds, (Date.now() - startedAt) / 1000);
+    lastProgressSeconds = elapsedSeconds;
+    const total = Math.max(0, Math.round(progress.effectiveWaitMs / 1000));
+    try {
+      void extra
+        .sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: elapsedSeconds,
+            total,
+            message: progressMessage(progress),
+          },
+        })
+        .catch(() => {
+          disabled = true;
+        });
+    } catch {
+      disabled = true;
+    }
+  };
+}
+
+/** One short line, never raw event text (a step id may still contain whitespace). */
+function progressMessage(progress: TrstWatchProgressEvent): string {
+  const step = progress.step === undefined ? undefined : collapseToOneLine(progress.step);
+  return step === undefined ? `state=${progress.state}` : `state=${progress.state} step=${step}`;
+}
+
+function collapseToOneLine(value: string): string | undefined {
+  const collapsed = value.replace(/\s+/gu, "-").trim();
+  if (collapsed === "") {
+    return undefined;
+  }
+  return collapsed.length > 80 ? `${collapsed.slice(0, 77)}...` : collapsed;
 }
 
 /**

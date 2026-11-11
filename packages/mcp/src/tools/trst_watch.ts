@@ -25,15 +25,22 @@
  * The long-poll budget is capped by an explicit effective ceiling: a
  * progressless client (the default) waits at most `progresslessCeilingMs`
  * (25 s), while a progress-capable client may use `progressCapableCeilingMs`
- * (300 s). `waitFor: "attention"` returns immediately for `waiting`; `waitFor:
- * "terminal"` keeps polling through a pending wait until new lines arrive, the
- * state settles, the budget expires, or `options.signal` aborts. A deadline
- * exit still reports the honest state (`waiting` plus `waits[]` for a parked
- * run).
+ * (300 s). A capable client can also install `onProgress`: it fires once
+ * immediately and then at most once per `progressIntervalMs` (10 s) from
+ * inside the poll loop, without changing the polling cadence. `waitFor:
+ * "attention"` returns immediately for `waiting`; `waitFor: "terminal"` keeps
+ * polling through a pending wait until new lines arrive, the state settles,
+ * the budget expires, or `options.signal` aborts. A deadline exit still
+ * reports the honest state (`waiting` plus `waits[]` for a parked run).
+ *
+ * Terminal results are additive: `workflow.completed` returns payload.output
+ * verbatim, while `workflow.failed` / `workflow.cancelled` also return the
+ * structured `failure` the caller must react to when the payload carries one.
  *
  * Test seams (`cwd` / `runDir` / `cursorDir` / `maxWaitMs` / `pollIntervalMs` /
- * `progresslessCeilingMs` / `progressCapableCeilingMs` / `signal`) keep every
- * artifact in caller-provided directories — tests never write the repo's own
+ * `progressIntervalMs` / `progresslessCeilingMs` /
+ * `progressCapableCeilingMs` / `signal`) keep every artifact in
+ * caller-provided directories — tests never write the repo's own
  * `.trailstep/mcp`.
  */
 import { randomBytes } from "node:crypto";
@@ -88,14 +95,20 @@ export interface TrstWatchOptions {
   readonly pollIntervalMs?: number;
   /** Env used to resolve `TRAILSTEP_RUNS_ROOT`; defaults to process.env. */
   readonly env?: Record<string, string | undefined>;
-  /** Whether the caller can receive progress notifications (unused in this story). */
+  /** Whether the caller can receive progress notifications (raises the wait ceiling). */
   readonly progressCapable?: boolean;
   /** Effective ceiling for progressless callers; defaults to 25000. */
   readonly progresslessCeilingMs?: number;
   /** Effective ceiling for progress-capable callers; defaults to 300000. */
   readonly progressCapableCeilingMs?: number;
-  /** Progress callback type; unused in this story. */
-  readonly onProgress?: (progress: TrstWatchProgress) => void;
+  /**
+   * Per-poll progress hook: called once immediately, then at most once per
+   * `progressIntervalMs` while the watch is polling. Best-effort and
+   * synchronous; the caller must not block on it.
+   */
+  readonly onProgress?: (progress: TrstWatchProgressEvent) => void;
+  /** Progress hook cadence in ms; defaults to 10000 (10 s). */
+  readonly progressIntervalMs?: number;
   /** Aborts the poll promptly and returns a snapshot instead of throwing. */
   readonly signal?: AbortSignal;
 }
@@ -116,6 +129,23 @@ export interface TrstWatchProgress {
   readonly newEvents: number;
 }
 
+/**
+ * The per-poll payload passed to `onProgress`: the compact result's progress
+ * digest plus the classified state and the clamped budget, which the MCP
+ * server needs to build a notification message and its total.
+ */
+export interface TrstWatchProgressEvent extends TrstWatchProgress {
+  readonly state: TrstWatchRunState;
+  readonly effectiveWaitMs: number;
+}
+
+/** The structured failure an agent needs in order to react to a terminal run. */
+export interface TrstWatchFailure {
+  readonly code: string;
+  readonly message: string;
+  readonly details?: unknown;
+}
+
 export interface TrstWatchResult {
   /** One-line summary: runId, state, cursor, and emitted line count. */
   readonly header: string;
@@ -131,6 +161,8 @@ export interface TrstWatchResult {
   readonly truncated: boolean;
   /** Terminal event payload.output, verbatim, for `state: "terminal"`. */
   readonly output?: unknown;
+  /** Structured failure for a failed/cancelled terminal event, when present. */
+  readonly failure?: TrstWatchFailure;
   /** Every unresolved wait, for `state: "waiting"`. */
   readonly waits?: readonly TrstWatchWait[];
   /** Why the run is considered dead, for `state: "crashed"`. */
@@ -145,6 +177,7 @@ const defaultMaxWaitMs = 300_000;
 const defaultProgresslessCeilingMs = 25_000;
 const defaultProgressCapableCeilingMs = 300_000;
 const defaultPollIntervalMs = 50;
+const defaultProgressIntervalMs = 10_000;
 const minLineCap = 50;
 const maxLineCap = 200;
 const crashReason = "no terminal event and no live lock";
@@ -210,6 +243,7 @@ export async function trst_watch(
           options.progressCapable === true ? progressCapableCeilingMs : progresslessCeilingMs,
         );
   const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? defaultPollIntervalMs);
+  const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
   const waitFor: TrstWatchWaitFor = resolved.waitFor === "terminal" ? "terminal" : "attention";
   const fullMode = resolved.verbosity === "full";
   const lineCap = verbosityLineCap(resolved.verbosity);
@@ -229,6 +263,29 @@ export async function trst_watch(
   let classification = await classifyRunState({ runDir, events: observed });
   let read = await readRunEventsSince(eventsFile, startCursor, readOptions);
   let consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
+
+  // Progress is best-effort and synchronous: one notification immediately at
+  // the start of the call, then at most one per progressIntervalMs of polling.
+  // A throwing observer never changes the watch result, and an abort stops
+  // further emissions because the poll loop exits.
+  let lastProgressAt = Date.now();
+  const notifyProgress = (state: TrstWatchRunState): void => {
+    if (options.onProgress === undefined || options.signal?.aborted === true) {
+      return;
+    }
+    lastProgressAt = Date.now();
+    try {
+      options.onProgress({
+        ...describeProgress(observed, read.entries.length),
+        state,
+        effectiveWaitMs,
+      });
+    } catch {
+      // Progress is advisory; it must never fail the watch itself.
+    }
+  };
+
+  notifyProgress(classification.state);
 
   while (!consumedNewData) {
     if (shouldExitForState(classification.state, waitFor)) {
@@ -258,6 +315,9 @@ export async function trst_watch(
     consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
     if (!consumedNewData) {
       classification = await classifyRunState({ runDir, events: observed });
+      if (options.onProgress !== undefined && Date.now() - lastProgressAt >= progressIntervalMs) {
+        notifyProgress(classification.state);
+      }
     }
   }
 
@@ -289,8 +349,16 @@ export async function trst_watch(
 
   switch (classification.state) {
     case "terminal": {
-      const output = findTerminalEvent(observed)?.payload.output;
-      return output === undefined ? base : { ...base, output };
+      const terminal = findTerminalEvent(observed);
+      if (terminal === undefined) {
+        return base;
+      }
+      if (terminal.type === "workflow.completed") {
+        const output = terminal.payload.output;
+        return output === undefined ? base : { ...base, output };
+      }
+      const failure = describeTerminalFailure(terminal);
+      return failure === undefined ? base : { ...base, failure };
     }
     case "waiting":
       return { ...base, waits: toPendingWaits(observed) };
@@ -417,6 +485,41 @@ function findTerminalEvent(events: readonly Event[]): Event | undefined {
   return undefined;
 }
 
+/**
+ * Extract the failure an agent must react to from a failed/cancelled terminal
+ * event. `workflow.failed` payloads carry `{ failure, message? }`; a cancelled
+ * payload carries a failure only when the runtime supplied one. A failed
+ * event always reports something (falling back to the top-level message), so
+ * the caller is never left with an unexplained terminal state.
+ */
+function describeTerminalFailure(event: Event): TrstWatchFailure | undefined {
+  if (event.type === "workflow.completed") {
+    return undefined;
+  }
+  const payloadFailure = isPlainObject(event.payload.failure) ? event.payload.failure : undefined;
+  if (event.type === "workflow.cancelled" && payloadFailure === undefined) {
+    return undefined;
+  }
+
+  const topLevelMessage = readNonEmptyString(event.payload.message);
+  const code = payloadFailure === undefined ? undefined : readNonEmptyString(payloadFailure.code);
+  const message =
+    payloadFailure === undefined
+      ? topLevelMessage
+      : (readNonEmptyString(payloadFailure.message) ?? topLevelMessage);
+  const isFailure = event.type === "workflow.failed";
+
+  return {
+    code: code ?? (isFailure ? "workflow_failed" : "workflow_cancelled"),
+    message: message ?? (isFailure ? "workflow failed" : "workflow cancelled"),
+    ...(payloadFailure?.details === undefined ? {} : { details: payloadFailure.details }),
+  };
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
 function toPendingWaits(events: readonly Event[]): TrstWatchWait[] {
   return listPendingWaits(events).map((event) => ({
     waitId: typeof event.payload.waitId === "string" ? event.payload.waitId : "",
@@ -465,6 +568,12 @@ function resolveRequestedWaitMs(param: number | undefined, option: number | unde
 
 function resolveCeiling(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function resolveProgressIntervalMs(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : defaultProgressIntervalMs;
 }
 
 function isAbortError(error: unknown): boolean {

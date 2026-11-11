@@ -37,9 +37,16 @@ export {
   trstResume as trst_resume,
 } from "./tools/trst_resume.js";
 export {
+  type TrstWatchFailure,
   type TrstWatchOptions,
   type TrstWatchParams,
+  type TrstWatchProgress,
+  type TrstWatchProgressEvent,
   type TrstWatchResult,
+  type TrstWatchRunState,
+  type TrstWatchVerbosity,
+  type TrstWatchWait,
+  type TrstWatchWaitFor,
   trst_watch,
 } from "./tools/trst_watch.js";
 export { tools };

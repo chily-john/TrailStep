@@ -1,9 +1,14 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type TrstWatchParams, trst_watch } from "../src/tools/trst_watch.js";
+import {
+  type TrstWatchParams,
+  type TrstWatchProgressEvent,
+  trst_watch,
+} from "../src/tools/trst_watch.js";
 
 // Focused tests for the trst_watch tool. Every artifact (run dir, events.jsonl,
 // cursor dir) lives in a per-test tmp directory — never the repo .trailstep/mcp.
@@ -431,6 +436,156 @@ describe("trst_watch attention contract", () => {
     expect(result.effectiveWaitMs).toBe(5000);
     expect(result.state).toBe("in-progress");
     expect(result.progress?.newEvents).toBe(0);
+  });
+});
+
+describe("trst_watch progress hook and terminal failures", () => {
+  it("calls onProgress immediately, then no faster than the configured cadence", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("step.started", 2, {}, "delegate-turn"),
+    ]);
+    writeLiveLock(sandbox);
+    // Advance the cursor so the watched call has nothing new to read.
+    await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    const calls: { at: number; progress: TrstWatchProgressEvent }[] = [];
+    const result = await trst_watch(
+      { runId: "run-1", maxWaitMs: 420 },
+      {
+        ...quickOptions(sandbox, 420),
+        progressCapable: true,
+        progressIntervalMs: 100,
+        onProgress: (progress) => {
+          calls.push({ at: Date.now(), progress });
+        },
+      },
+    );
+
+    expect(result.state).toBe("in-progress");
+    expect(result.effectiveWaitMs).toBe(420);
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls[0]?.progress).toEqual({
+      state: "in-progress",
+      step: "delegate-turn",
+      lastEventType: "step.started",
+      newEvents: 0,
+      effectiveWaitMs: 420,
+    });
+    for (let index = 1; index < calls.length; index += 1) {
+      const previous = calls[index - 1]?.at ?? 0;
+      const current = calls[index]?.at ?? 0;
+      expect(current - previous).toBeGreaterThanOrEqual(80);
+    }
+  });
+
+  it("does not call onProgress after the signal aborts", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeLiveLock(sandbox);
+    await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
+
+    const controller = new AbortController();
+    let calls = 0;
+    const watching = trst_watch(
+      { runId: "run-1", maxWaitMs: 5000 },
+      {
+        ...quickOptions(sandbox, 5000),
+        progressCapable: true,
+        progressIntervalMs: 50,
+        signal: controller.signal,
+        onProgress: () => {
+          calls += 1;
+        },
+      },
+    );
+
+    await sleep(160);
+    controller.abort();
+    const callsAtAbort = calls;
+    const result = await watching;
+    await sleep(150);
+
+    expect(result.state).toBe("in-progress");
+    expect(result.progress?.newEvents).toBe(0);
+    expect(calls).toBe(callsAtAbort);
+  });
+
+  it("reports the failure object from workflow.failed and leaves output undefined", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("workflow.failed", 2, {
+        failure: { code: "step_failed", message: "The step exploded", details: { step: "x" } },
+        message: "top-level failure message",
+      }),
+    ]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+
+    expect(result.state).toBe("terminal");
+    expect(result.failure).toEqual({
+      code: "step_failed",
+      message: "The step exploded",
+      details: { step: "x" },
+    });
+    expect(result.output).toBeUndefined();
+  });
+
+  it("falls back to the terminal event's top-level message when the failure has none", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("workflow.failed", 2, {
+        failure: { code: "agent_failed" },
+        message: "top-level failure message",
+      }),
+    ]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+
+    expect(result.failure).toEqual({
+      code: "agent_failed",
+      message: "top-level failure message",
+    });
+    expect(result.output).toBeUndefined();
+  });
+
+  it("reports no failure for a cancelled run whose payload carries none", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("workflow.cancelled", 2, {
+        requestedAt: new Date(0).toISOString(),
+        reason: "operator cancelled",
+      }),
+    ]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+
+    expect(result.state).toBe("terminal");
+    expect(result.failure).toBeUndefined();
+    expect(result.output).toBeUndefined();
+  });
+
+  it("reports a cancelled run's failure when the payload carries one", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("workflow.cancelled", 2, {
+        reason: "cancelled",
+        failure: { code: "cancelled_by_operator", message: "Stopped by the operator" },
+      }),
+    ]);
+
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
+
+    expect(result.failure).toEqual({
+      code: "cancelled_by_operator",
+      message: "Stopped by the operator",
+    });
+    expect(result.output).toBeUndefined();
   });
 });
 

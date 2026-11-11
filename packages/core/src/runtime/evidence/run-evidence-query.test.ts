@@ -214,6 +214,66 @@ describe("bounded evidence query", () => {
     }
   });
 
+  it("redacts denied JSON keys structurally when a truncated artifact cannot be parsed", async () => {
+    const runsRoot = await makeRunsRoot();
+    const canary = "CANARY-TRUNCATED-JSON-OUTPUT";
+    const content = JSON.stringify({
+      output: canary,
+      nested: {
+        token: canary,
+        secret: { output: canary },
+      },
+      padding: "x".repeat(4096),
+      count: 7,
+    });
+    await writeRun(runsRoot, "truncated-json-run", [event("workflow.started")], {
+      artifacts: {
+        "state.json": content,
+        "branches/root.state.json": `{"output":"${canary}",`,
+      },
+    });
+
+    for (const maxExcerptBytes of [64, 128, 256, 1024]) {
+      const result = await retrieveEvidence({
+        runsRoot,
+        sourceRef: sourceRef("truncated-json-run", { artifactPath: "state.json" }),
+        limits: { maxExcerptBytes },
+      });
+      expect(result.status).toBe("ok");
+      if (result.status === "ok") {
+        expect(result.excerpt).not.toContain(canary);
+        expect(result.truncated).toBe(true);
+        expect(result.redacted).toBe(true);
+      }
+    }
+
+    const malformed = await retrieveEvidence({
+      runsRoot,
+      sourceRef: sourceRef("truncated-json-run", {
+        artifactPath: "branches/root.state.json",
+      }),
+      limits: { maxExcerptBytes: 4096 },
+    });
+    expect(malformed.status).toBe("ok");
+    if (malformed.status === "ok") {
+      expect(malformed.excerpt).not.toContain(canary);
+      expect(malformed.redacted).toBe(true);
+    }
+
+    const full = await retrieveEvidence({
+      runsRoot,
+      sourceRef: sourceRef("truncated-json-run", { artifactPath: "state.json" }),
+      limits: { maxExcerptBytes: 8192 },
+    });
+    expect(full.status).toBe("ok");
+    if (full.status === "ok") {
+      expect(full.excerpt).not.toContain(canary);
+      expect(full.excerpt).not.toContain('"output"');
+      expect(full.excerpt).not.toContain('"token"');
+      expect(full.excerpt).toContain('"count": 7');
+    }
+  });
+
   it("maps an orphaned running track to stale + stale-owner under schemaVersion 1", async () => {
     const runsRoot = await makeRunsRoot();
     await writeRun(
@@ -280,6 +340,80 @@ describe("bounded evidence query", () => {
     expect(listed.entries[0]?.execution.state).toBe("completed");
     expect(listed.entries[0]?.execution.coverage).toBe("complete");
     expect(listed.bytesRead).toBeGreaterThan(0);
+  });
+
+  it("uses the last scanned event for timestamps even when it is not retained", async () => {
+    const runsRoot = await makeRunsRoot();
+    const track = { status: "running", ownerPid: 2_147_483_647 };
+    await writeRun(
+      runsRoot,
+      "aaa-review-repro",
+      [
+        event("workflow.started", { timestamp: "2026-01-01T00:00:00.000Z" }),
+        event("wait.started", {
+          stepId: "approval",
+          timestamp: "2026-01-01T00:01:00.000Z",
+          payload: { waitId: "approve", branchId: "root" },
+        }),
+        event("step.progress", {
+          stepId: "approval",
+          timestamp: "2026-01-01T00:05:00.000Z",
+          payload: { message: "later progress" },
+        }),
+      ],
+      { track: { runId: "aaa-review-repro", ...track } },
+    );
+    await writeRun(
+      runsRoot,
+      "zzz-earlier-progress",
+      [
+        event("workflow.started", { timestamp: "2026-01-01T00:00:00.000Z" }),
+        event("wait.started", {
+          stepId: "approval",
+          timestamp: "2026-01-01T00:01:00.000Z",
+          payload: { waitId: "approve", branchId: "root" },
+        }),
+        event("step.progress", {
+          stepId: "approval",
+          timestamp: "2026-01-01T00:02:00.000Z",
+          payload: { message: "earlier progress" },
+        }),
+      ],
+      { track: { runId: "zzz-earlier-progress", ...track } },
+    );
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "aaa-review-repro",
+    });
+    expect(inspected.lastTimestamp).toBe("2026-01-01T00:05:00.000Z");
+
+    const since = await listRunEvidence({
+      runsRoot,
+      project,
+      since: "2026-01-01T00:03:00.000Z",
+      limits: { deadlineMs: 10_000 },
+    });
+    expect(since.entries.map((entry) => entry.run.runId)).toEqual(["aaa-review-repro"]);
+
+    const until = await listRunEvidence({
+      runsRoot,
+      project,
+      until: "2026-01-01T00:03:00.000Z",
+      limits: { deadlineMs: 10_000 },
+    });
+    expect(until.entries.map((entry) => entry.run.runId)).toEqual(["zzz-earlier-progress"]);
+
+    const all = await listRunEvidence({
+      runsRoot,
+      project,
+      limits: { deadlineMs: 10_000 },
+    });
+    expect(all.entries.map((entry) => entry.run.runId)).toEqual([
+      "aaa-review-repro",
+      "zzz-earlier-progress",
+    ]);
   });
 
   it("reports partial coverage + budget-exceeded for a byte-capped trail", async () => {
@@ -375,6 +509,79 @@ describe("bounded evidence query", () => {
     expect((await readFile(gzPath)).equals(gzipBytes)).toBe(true);
     expect(await readFile(manifestPath, "utf8")).toContain('"archived-run"');
     expect(await snapshot(runsRoot)).toEqual(before);
+  });
+
+  it("bounds archive manifest discovery by maxRuns and reports partial coverage", async () => {
+    const runsRoot = await makeRunsRoot();
+    for (let index = 0; index < 50; index += 1) {
+      await writeArchive(
+        runsRoot,
+        `archived-${index}`,
+        {
+          schemaVersion: 1,
+          runId: `archived-${index}`,
+          status: "completed",
+          lastTimestamp: "2026-01-01T00:00:00.000Z",
+          padding: "x".repeat(4096),
+        },
+        Buffer.from("payload"),
+      );
+    }
+
+    const listed = await listRunEvidence({
+      runsRoot,
+      project,
+      limits: { maxRuns: 1, deadlineMs: 10_000 },
+    });
+    expect(listed.scannedRuns).toBe(1);
+    expect(listed.archivedRuns).toBe(1);
+    expect(listed.entries).toHaveLength(1);
+    expect(listed.truncated).toBe(true);
+    expect(listed.coverage).toBe("partial");
+    expect(listed.diagnostics.map((diagnostic) => diagnostic.code)).toContain("budget-exceeded");
+    expect(listed.bytesRead).toBeLessThan(8 * 1024);
+  });
+
+  it("checks the archive discovery deadline and abort before reading manifests", async () => {
+    const runsRoot = await makeRunsRoot();
+    for (let index = 0; index < 5; index += 1) {
+      await writeArchive(
+        runsRoot,
+        `deadline-${index}`,
+        {
+          schemaVersion: 1,
+          runId: `deadline-${index}`,
+          status: "completed",
+          padding: "x".repeat(4096),
+        },
+        Buffer.from("payload"),
+      );
+    }
+
+    const deadline = await listRunEvidence({
+      runsRoot,
+      project,
+      limits: { maxRuns: 10, deadlineMs: 0 },
+    });
+    expect(deadline.bytesRead).toBe(0);
+    expect(deadline.scannedRuns).toBe(0);
+    expect(deadline.entries).toHaveLength(0);
+    expect(deadline.truncated).toBe(true);
+    expect(deadline.coverage).toBe("partial");
+    expect(deadline.diagnostics.map((diagnostic) => diagnostic.code)).toContain("budget-exceeded");
+
+    const aborted = await listRunEvidence({
+      runsRoot,
+      project,
+      signal: AbortSignal.abort(),
+      limits: { maxRuns: 10, deadlineMs: 10_000 },
+    });
+    expect(aborted.bytesRead).toBe(0);
+    expect(aborted.scannedRuns).toBe(0);
+    expect(aborted.entries).toHaveLength(0);
+    expect(aborted.truncated).toBe(true);
+    expect(aborted.coverage).toBe("partial");
+    expect(aborted.diagnostics.map((diagnostic) => diagnostic.code)).toContain("budget-exceeded");
   });
 
   it("returns a typed budget diagnostic when the query signal is already aborted", async () => {

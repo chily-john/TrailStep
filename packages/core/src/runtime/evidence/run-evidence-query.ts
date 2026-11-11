@@ -97,6 +97,10 @@ interface ArchiveManifestListing {
   readonly records: readonly ArchiveManifestRecord[];
   readonly diagnostics: readonly EvidenceDiagnostic[];
   readonly bytesRead: number;
+  /** Manifests the discovery loop attempted to read, including malformed ones. */
+  readonly examined: number;
+  /** True when a run/byte/deadline/abort budget stopped discovery early. */
+  readonly truncated: boolean;
 }
 
 /** List run evidence envelopes, newest first, under a bounded scan budget. */
@@ -192,11 +196,18 @@ export async function listRunEvidence(
   }
 
   if (options.includeArchived !== false) {
-    const archived = await listArchivedManifests(runsRoot, limits, options.signal);
+    const archived = await listArchivedManifests(runsRoot, limits, {
+      remainingRuns: Math.max(0, limits.maxRuns - scannedRuns),
+      deadline,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
     diagnostics.push(...archived.diagnostics);
     bytesRead += archived.bytesRead;
+    if (archived.truncated) {
+      truncated = true;
+    }
     for (const record of archived.records) {
-      if (scanBudgetHit({ scannedRuns, limits, deadline, signal: options.signal })) {
+      if (options.signal?.aborted === true || Date.now() >= deadline) {
         truncated = true;
         pushDiagnostic(diagnostics, {
           code: "budget-exceeded",
@@ -204,7 +215,6 @@ export async function listRunEvidence(
         });
         break;
       }
-      scannedRuns += 1;
       archivedRuns += 1;
 
       const archivedEntry = await inspectArchivedRecord({
@@ -226,6 +236,7 @@ export async function listRunEvidence(
         });
       }
     }
+    scannedRuns += archived.examined;
   }
 
   entries.sort(compareListEntries);
@@ -562,9 +573,7 @@ async function inspectHotRun(options: {
     evidence,
     classification,
     scan,
-    ...(classification.lastEvent === undefined
-      ? {}
-      : { lastTimestamp: classification.lastEvent.timestamp }),
+    ...(scan.lastEvent === undefined ? {} : { lastTimestamp: scan.lastEvent.timestamp }),
   };
 }
 
@@ -921,7 +930,11 @@ async function retrieveArchivedEvidence(options: {
 async function listArchivedManifests(
   runsRoot: string,
   limits: EvidenceQueryLimits,
-  signal?: AbortSignal,
+  options: {
+    readonly remainingRuns: number;
+    readonly deadline: number;
+    readonly signal?: AbortSignal;
+  },
 ): Promise<ArchiveManifestListing> {
   const archiveDir = join(runsRoot, ARCHIVE_DIR);
   let entries: Dirent[];
@@ -929,7 +942,7 @@ async function listArchivedManifests(
     entries = await readdir(archiveDir, { withFileTypes: true });
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return { records: [], diagnostics: [], bytesRead: 0 };
+      return { records: [], diagnostics: [], bytesRead: 0, examined: 0, truncated: false };
     }
     return {
       records: [],
@@ -937,11 +950,21 @@ async function listArchivedManifests(
         { code: "unreadable-source", message: "The archive directory could not be read." },
       ],
       bytesRead: 0,
+      examined: 0,
+      truncated: false,
     };
   }
 
   const records: ArchiveManifestRecord[] = [];
+  const diagnostics: EvidenceDiagnostic[] = [];
   let bytesRead = 0;
+  let examined = 0;
+  let truncated = false;
+  // Each manifest read is separately capped at maxTrackBytes. The pass as a
+  // whole is capped by the remaining run allowance, so a small maxRuns cannot
+  // still read every manifest first and apply the budget afterwards.
+  const byteBudget = options.remainingRuns * limits.maxTrackBytes;
+
   for (const entry of entries) {
     if (entry.isFile() === false || entry.name.endsWith(".manifest.json") === false) {
       continue;
@@ -950,13 +973,41 @@ async function listArchivedManifests(
     if (RUN_ID_PATTERN.test(runId) === false) {
       continue;
     }
-    const record = await readArchiveManifest(runsRoot, runId, limits, signal);
+
+    const stopReason = archiveDiscoveryStopReason({
+      examined,
+      remainingRuns: options.remainingRuns,
+      bytesRead,
+      byteBudget,
+      deadline: options.deadline,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    if (stopReason !== undefined) {
+      truncated = true;
+      diagnostics.push({
+        code: "budget-exceeded",
+        message: `Archive manifest discovery stopped: ${stopReason}.`,
+      });
+      break;
+    }
+
+    examined += 1;
+    const record = await readArchiveManifest(runsRoot, runId, limits, options.signal);
     bytesRead += record.bytesRead;
     if (record.present) {
       records.push(record);
     }
+    if (options.signal?.aborted === true) {
+      truncated = true;
+      diagnostics.push({
+        code: "budget-exceeded",
+        message: "Archive manifest discovery stopped: the query was aborted.",
+      });
+      break;
+    }
   }
-  return { records, diagnostics: [], bytesRead };
+
+  return { records, diagnostics, bytesRead, examined, truncated };
 }
 
 async function readArchiveManifest(
@@ -1218,6 +1269,29 @@ function scanBudgetHit(options: {
   );
 }
 
+function archiveDiscoveryStopReason(options: {
+  readonly examined: number;
+  readonly remainingRuns: number;
+  readonly bytesRead: number;
+  readonly byteBudget: number;
+  readonly deadline: number;
+  readonly signal?: AbortSignal;
+}): string | undefined {
+  if (options.signal?.aborted === true) {
+    return "the query was aborted";
+  }
+  if (options.examined >= options.remainingRuns) {
+    return "the maxRuns budget was reached";
+  }
+  if (options.bytesRead >= options.byteBudget) {
+    return "the archive manifest byte budget was reached";
+  }
+  if (Date.now() >= options.deadline) {
+    return "the query deadline was exceeded";
+  }
+  return undefined;
+}
+
 function pendingWaitsFromEvents(events: readonly Event[]): {
   readonly waits: readonly EvidencePendingWait[];
   readonly truncated: boolean;
@@ -1352,8 +1426,13 @@ function sanitizeArtifactContent(
   options: { readonly maxBytes: number; readonly sourceTruncated: boolean },
 ): { readonly text: string; readonly truncated: boolean; readonly redacted: boolean } {
   if (access === "json") {
+    // Structural deny-key redaction runs on the raw text before parsing or
+    // truncation. If the bounded read cut the JSON mid-document, JSON.parse
+    // fails; the fallback then reuses this already-redacted text instead of
+    // downgrading to regex-only redaction.
+    const structurallyRedacted = redactDeniedJsonKeys(content);
     try {
-      const parsed: unknown = JSON.parse(content);
+      const parsed: unknown = JSON.parse(structurallyRedacted);
       if (artifactPath === "track.json" && isPlainObject(parsed)) {
         const picked = pickTrackSummary(parsed);
         const json = JSON.stringify(picked, null, 2);
@@ -1376,6 +1455,13 @@ function sanitizeArtifactContent(
       // A truncated JSON preview is not parseable; fall through to a redacted
       // text excerpt so the caller still gets a bounded observation.
     }
+    const redacted = redactSecrets(structurallyRedacted);
+    const text = truncateUtf8(redacted, options.maxBytes);
+    return {
+      text,
+      truncated: options.sourceTruncated || text !== redacted,
+      redacted: structurallyRedacted !== content || redacted !== structurallyRedacted,
+    };
   }
 
   const redacted = redactSecrets(content);
@@ -1476,6 +1562,119 @@ const DENIED_JSON_KEYS: ReadonlySet<string> = new Set([
   "transcripts",
   "work",
 ]);
+
+/**
+ * Redact denied object keys from raw JSON text without requiring the document
+ * to be complete or parseable. Keys are recognized as JSON string tokens
+ * followed (after whitespace) by `:`, so text inside a string value is never
+ * mistaken for a key. A denied key's value is skipped as one balanced JSON
+ * value; when truncation cuts the value short, everything to the end of the
+ * available text is removed. This runs before any size or parse fallback, so
+ * a truncated artifact cannot leak a denied value.
+ */
+function redactDeniedJsonKeys(text: string): string {
+  let output = "";
+  let index = 0;
+  while (index < text.length) {
+    const char = text.charAt(index);
+    if (char !== '"') {
+      output += char;
+      index += 1;
+      continue;
+    }
+    const tokenEnd = readJsonStringToken(text, index);
+    const token = text.slice(index, tokenEnd);
+    let afterToken = tokenEnd;
+    while (afterToken < text.length && isJsonWhitespace(text.charAt(afterToken))) {
+      afterToken += 1;
+    }
+    const key = decodeJsonStringToken(token);
+    if (
+      text.charAt(afterToken) !== ":" ||
+      key === undefined ||
+      DENIED_JSON_KEYS.has(key.toLowerCase()) === false
+    ) {
+      output += token;
+      index = tokenEnd;
+      continue;
+    }
+    output += text.slice(index, afterToken + 1);
+    const valueEnd = findJsonValueEnd(text, afterToken + 1);
+    output += ' "[REDACTED]"';
+    index = valueEnd;
+  }
+  return output;
+}
+
+/** Return the index just past a JSON string token beginning at `start`. */
+function readJsonStringToken(text: string, start: number): number {
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text.charAt(index);
+    if (char === "\\") {
+      index += 2;
+      continue;
+    }
+    if (char === '"') {
+      return index + 1;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+
+function decodeJsonStringToken(token: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(token);
+    return typeof parsed === "string" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Find the end of one JSON value, tolerating a truncated final value. */
+function findJsonValueEnd(text: string, start: number): number {
+  let index = start;
+  while (index < text.length && isJsonWhitespace(text.charAt(index))) {
+    index += 1;
+  }
+  const first = text.charAt(index);
+  if (first === '"') {
+    return readJsonStringToken(text, index);
+  }
+  if (first === "{" || first === "[") {
+    let depth = 0;
+    while (index < text.length) {
+      const char = text.charAt(index);
+      if (char === '"') {
+        index = readJsonStringToken(text, index);
+        continue;
+      }
+      if (char === "{" || char === "[") {
+        depth += 1;
+      } else if (char === "}" || char === "]") {
+        depth -= 1;
+        if (depth === 0) {
+          return index + 1;
+        }
+      }
+      index += 1;
+    }
+    return text.length;
+  }
+  while (index < text.length) {
+    const char = text.charAt(index);
+    if (char === "," || char === "}" || char === "]" || isJsonWhitespace(char)) {
+      break;
+    }
+    index += 1;
+  }
+  return index;
+}
+
+function isJsonWhitespace(char: string): boolean {
+  return char === " " || char === "\t" || char === "\n" || char === "\r";
+}
 
 function sanitizeJsonValue(value: unknown, depth: number): { readonly value: unknown } {
   if (depth > 6) {

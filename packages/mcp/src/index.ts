@@ -37,6 +37,8 @@ export {
   trstResume as trst_resume,
 } from "./tools/trst_resume.js";
 export {
+  type TrstWatchCrash,
+  type TrstWatchCrashCode,
   type TrstWatchFailure,
   type TrstWatchOptions,
   type TrstWatchParams,

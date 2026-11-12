@@ -27,10 +27,12 @@ import { readBoundedTextFile } from "./bounded-readers.js";
  * - `workflow.cancelRequested` without a terminal event is `cancelled`;
  * - a pending wait is `waiting`, even when the track owner is gone (an
  *   operator answer is the next move, not an orphan);
- * - a live lock is `active`;
+ * - a live run lock is `active`, even when `track.json` is missing, unreadable
+ *   or unusable, because the lock is direct evidence that a process is driving
+ *   the run;
  * - a running track with a dead owner is `stale` + `stale-owner`;
- * - a missing/unreadable track without a terminal event is `unknown`, never
- *   `active`;
+ * - without a live lock, a missing/unreadable track with no terminal event is
+ *   `unknown`, never `active`;
  * - an incomplete bounded scan is `unknown` unless a terminal event was seen.
  */
 
@@ -158,10 +160,17 @@ export async function classifyRunState(
     return { ...base, state: "waiting", diagnostics: [] };
   }
 
-  // A missing/unreadable track can never prove `active`, even if a lock file
-  // exists: legacy/partial runs are common enough that "no terminal + no
-  // track" must stay unknown rather than look like a fresh failure or a live
-  // run. Waiting is already handled above from a durable event.
+  // A live run lock outranks absent or unusable track evidence: the lock is
+  // direct evidence that a process is driving the run, while a missing or
+  // malformed track may simply be a legacy/partial artifact. Waiting is
+  // already handled above from a durable event.
+  if (lockLive) {
+    return { ...base, state: "active", diagnostics: [] };
+  }
+
+  // Only a run without a live lock reaches these guards. Without usable track
+  // evidence the state cannot be established, so it stays unknown rather than
+  // looking like a fresh failure or a live run.
   if (trackSignal === null || trackSignal.present === false) {
     return {
       ...base,
@@ -188,10 +197,6 @@ export async function classifyRunState(
         },
       ],
     };
-  }
-
-  if (lockLive) {
-    return { ...base, state: "active", diagnostics: [] };
   }
 
   if (trackSignal.status === "waiting") {

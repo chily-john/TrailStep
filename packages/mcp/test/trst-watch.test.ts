@@ -101,12 +101,35 @@ function appendLines(sandbox: TmpSandbox, lines: readonly string[]): void {
   writeFileSync(sandbox.eventsFile, `${lines.join("\n")}\n`, "utf8");
 }
 
+const deadPid = 2_147_483_646;
+const staleOwnerReason =
+  "The track still reports running but its owner process is no longer alive.";
+
 /**
- * Writes a run lock held by a LIVE pid (this test process). Without one, a trail with no
- * terminal event is classified `crashed`: nothing is driving the run. Mirroring reality (a
- * running continue holds the lock) is what keeps an in-progress fixture in-progress.
+ * Writes the durable track signal. The canonical classifier treats a missing
+ * track as `unknown`, never `active`, so every open-run fixture needs one.
  */
-function writeLiveLock(sandbox: TmpSandbox): void {
+function writeTrack(sandbox: TmpSandbox, status = "running", ownerPid: number = process.pid): void {
+  writeFileSync(
+    path.join(sandbox.runDir, "track.json"),
+    JSON.stringify({
+      runId: path.basename(sandbox.runDir),
+      workflowId: "wf",
+      status,
+      ownerPid,
+      branches: [],
+      splitOccurred: false,
+    }),
+    "utf8",
+  );
+}
+
+/**
+ * Writes a run lock held by a LIVE pid (this test process) without a track.
+ * The lock alone is direct evidence of liveness, so classification must not
+ * depend on track.json existing.
+ */
+function writeLiveLockFile(sandbox: TmpSandbox): void {
   writeFileSync(
     path.join(sandbox.runDir, "run.lock"),
     JSON.stringify({
@@ -121,20 +144,32 @@ function writeLiveLock(sandbox: TmpSandbox): void {
   );
 }
 
-/** Writes a run lock whose holder pid does not exist: a dead run's leftovers. */
+/**
+ * Writes a run lock held by a LIVE pid (this test process) plus the running
+ * track a published run always has. Mirroring reality (a running continue holds
+ * the lock and its track says running with a live owner) is what keeps an
+ * in-progress fixture in-progress.
+ */
+function writeLiveLock(sandbox: TmpSandbox): void {
+  writeLiveLockFile(sandbox);
+  writeTrack(sandbox);
+}
+
+/** Writes a dead run's leftovers: a dead lock and a running track with a dead owner. */
 function writeDeadLock(sandbox: TmpSandbox): void {
   writeFileSync(
     path.join(sandbox.runDir, "run.lock"),
     JSON.stringify({
       schemaVersion: 1,
       runId: path.basename(sandbox.runDir),
-      pid: 2_147_483_646,
+      pid: deadPid,
       startedAt: new Date(0).toISOString(),
       lastHeartbeatAt: new Date(0).toISOString(),
       nonce: "test-dead-lock",
     }),
     "utf8",
   );
+  writeTrack(sandbox, "running", deadPid);
 }
 
 function appendMoreLines(sandbox: TmpSandbox, lines: readonly string[]): void {
@@ -259,14 +294,18 @@ describe("trst_watch attention contract", () => {
     expect(reattached.output).toEqual({ answer: 42, nested: { ok: true } });
   });
 
-  it("reports crashed with a reason when there is no terminal event and no live lock", async () => {
+  it("reports crashed with no-live-process for a stale running track with no lock", async () => {
     const sandbox = createSandbox();
     appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeTrack(sandbox, "running", deadPid);
 
     const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
 
     expect(result.state).toBe("crashed");
-    expect(result.crash).toEqual({ reason: "no terminal event and no live lock" });
+    expect(result.crash).toEqual({
+      reason: staleOwnerReason,
+      code: "no-live-process",
+    });
     expect(result.waits).toBeUndefined();
     expect(result.output).toBeUndefined();
   });
@@ -711,14 +750,13 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
     expect(elapsed).toBeLessThan(1500);
   });
 
-  it("reports started for an empty trail inside the startup grace window", async () => {
+  it("reports started for an event-less run whose track reports a live running owner", async () => {
     const sandbox = createSandbox();
     writeFileSync(sandbox.eventsFile, "", "utf8");
+    writeTrack(sandbox);
 
-    const result = await trst_watch(
-      { runId: "run-1", maxWaitMs: 0 },
-      { ...quickOptions(sandbox, 0), startupGraceMs: 60_000 },
-    );
+    const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
+
     expect(result.state).toBe("started");
     expect(result.crash).toBeUndefined();
     expect(result.lines).toEqual([]);
@@ -726,64 +764,100 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
     expect(result.progress?.newEvents).toBe(0);
   });
 
-  it("reports crashed for an empty trail with no lock once the startup grace window has passed", async () => {
+  it("reports crashed with unknown-run-state for an event-less run with no track", async () => {
     const sandbox = createSandbox();
     writeFileSync(sandbox.eventsFile, "", "utf8");
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(sandbox.eventsFile, old, old);
 
-    const result = await trst_watch(
-      { runId: "run-1" },
-      { ...quickOptions(sandbox, 5000), startupGraceMs: 10_000 },
-    );
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
 
     expect(result.state).toBe("crashed");
-    expect(result.crash).toEqual({ reason: "run has no events and no live process" });
+    expect(result.state).not.toBe("started");
+    expect(result.crash?.code).toBe("unknown-run-state");
+    expect(result.crash?.reason).toContain("Track metadata is missing");
   });
 
-  it("reports crashed for an empty trail whose lock is dead once the startup grace window has passed", async () => {
+  it("reports crashed with no-live-process for an event-less trail whose track owner is dead", async () => {
     const sandbox = createSandbox();
     writeFileSync(sandbox.eventsFile, "", "utf8");
-    writeDeadLock(sandbox);
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(sandbox.eventsFile, old, old);
+    writeTrack(sandbox, "running", deadPid);
 
-    const result = await trst_watch(
-      { runId: "run-1" },
-      { ...quickOptions(sandbox, 5000), startupGraceMs: 10_000 },
-    );
+    const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox, 5000));
 
     expect(result.state).toBe("crashed");
-    expect(result.crash).toEqual({ reason: "run has no events and no live process" });
+    expect(result.crash).toEqual({
+      reason: staleOwnerReason,
+      code: "no-live-process",
+    });
   });
 
-  it("keeps an empty trail started while a live lock holds the run, even past the grace window", async () => {
+  it("keeps an empty trail started while a live lock holds the run", async () => {
     const sandbox = createSandbox();
     writeFileSync(sandbox.eventsFile, "", "utf8");
-    writeLiveLock(sandbox);
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(sandbox.eventsFile, old, old);
+    writeLiveLockFile(sandbox);
 
-    const result = await trst_watch(
-      { runId: "run-1", maxWaitMs: 0 },
-      { ...quickOptions(sandbox, 0), startupGraceMs: 10_000 },
-    );
+    const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
 
     expect(result.state).toBe("started");
     expect(result.crash).toBeUndefined();
   });
 
-  it("leaves a non-empty in-progress trail unaffected by the startup grace window", async () => {
+  it("keeps a live run in-progress when track.json is missing, malformed, or oversized", async () => {
+    const missing = createSandbox("run-missing-track");
+    appendLines(missing, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeLiveLockFile(missing);
+
+    const malformed = createSandbox("run-malformed-track");
+    appendLines(malformed, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeLiveLockFile(malformed);
+    writeFileSync(path.join(malformed.runDir, "track.json"), "{not json", "utf8");
+
+    const oversized = createSandbox("run-oversized-track");
+    appendLines(oversized, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeLiveLockFile(oversized);
+    writeFileSync(
+      path.join(oversized.runDir, "track.json"),
+      JSON.stringify({ status: "running", ownerPid: process.pid, padding: "x".repeat(300 * 1024) }),
+      "utf8",
+    );
+
+    for (const sandbox of [missing, malformed, oversized]) {
+      const result = await trst_watch(
+        { runId: path.basename(sandbox.runDir), maxWaitMs: 0 },
+        quickOptions(sandbox, 0),
+      );
+
+      expect(result.state).toBe("in-progress");
+      expect(result.crash).toBeUndefined();
+    }
+  });
+
+  it("returns the honest entry snapshot when the signal is already aborted", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
+    writeTrack(sandbox, "waiting", deadPid);
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await trst_watch(
+      { runId: "run-1", maxWaitMs: 5000 },
+      { ...quickOptions(sandbox, 5000), signal: controller.signal },
+    );
+
+    // Aborting the entry track read would make the classifier see an
+    // unreadable track and report a spurious crashed/unknown-run-state.
+    expect(result.state).toBe("waiting");
+    expect(result.crash).toBeUndefined();
+    expect(result.waits).toEqual([]);
+  });
+
+  it("keeps a non-empty live trail in-progress regardless of trail age", async () => {
     const sandbox = createSandbox();
     appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);
     writeLiveLock(sandbox);
     const old = new Date(Date.now() - 60_000);
     utimesSync(sandbox.eventsFile, old, old);
 
-    const result = await trst_watch(
-      { runId: "run-1", maxWaitMs: 0 },
-      { ...quickOptions(sandbox, 0), startupGraceMs: 10_000 },
-    );
+    const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
 
     expect(result.state).toBe("in-progress");
   });
@@ -886,7 +960,10 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
     const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
 
     expect(result.state).toBe("crashed");
-    expect(result.crash?.reason).toBe("no terminal event and no live lock");
+    expect(result.crash).toEqual({
+      reason: staleOwnerReason,
+      code: "no-live-process",
+    });
   });
 
   it("does not report terminal for event-shaped text embedded in a display payload", async () => {
@@ -898,12 +975,71 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
         text: 'agent said: {"type":"workflow.completed","payload":{}}',
       }),
     ]);
+    writeLiveLock(sandbox);
 
     const result = await trst_watch({ runId: "run-1" }, quickOptions(sandbox));
 
     // A naive text scan would have matched the embedded fragment and stopped
-    // watching a run that is still going (here: dead, which is the real state).
+    // watching a run that is still going.
     expect(result.state).not.toBe("terminal");
-    expect(result.state).toBe("crashed");
+    expect(result.state).toBe("in-progress");
+  });
+});
+
+describe("trst_watch canonical state projection", () => {
+  it("projects canonical unknown to crashed with unknown-run-state, distinct from stale", async () => {
+    const unknownSandbox = createSandbox("run-unknown");
+    appendLines(unknownSandbox, [eventLine("workflow.started", 1)]);
+
+    const unknown = await trst_watch(
+      { runId: "run-unknown", maxWaitMs: 0 },
+      quickOptions(unknownSandbox, 0),
+    );
+
+    expect(unknown.state).toBe("crashed");
+    expect(unknown.crash?.code).toBe("unknown-run-state");
+    expect(unknown.crash?.reason).toContain("Track metadata is missing");
+
+    const staleSandbox = createSandbox("run-stale");
+    appendLines(staleSandbox, [eventLine("workflow.started", 1)]);
+    writeTrack(staleSandbox, "running", deadPid);
+
+    const stale = await trst_watch(
+      { runId: "run-stale", maxWaitMs: 0 },
+      quickOptions(staleSandbox, 0),
+    );
+
+    expect(stale.state).toBe("crashed");
+    expect(stale.crash?.code).toBe("no-live-process");
+    expect(stale.crash?.reason).not.toBe(unknown.crash?.reason);
+  });
+
+  it("passes a canonical waiting track through even with no pending wait event", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1)]);
+    writeTrack(sandbox, "waiting");
+
+    const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
+
+    expect(result.state).toBe("waiting");
+    expect(result.waits).toEqual([]);
+  });
+
+  it("follows the classifier when its answer disagrees with a raw terminal-event scan", async () => {
+    const sandbox = createSandbox();
+    // The canonical classifier treats a cancel request without a terminal event
+    // as `cancelled` (terminal). A watch that re-derived state from its own
+    // terminal-event scan would report `crashed` for this trail.
+    appendLines(sandbox, [
+      eventLine("workflow.started", 1),
+      eventLine("workflow.cancelRequested", 2, { reason: "operator" }),
+    ]);
+
+    const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
+
+    expect(result.state).toBe("terminal");
+    expect(result.crash).toBeUndefined();
+    expect(result.output).toBeUndefined();
+    expect(result.failure).toBeUndefined();
   });
 });

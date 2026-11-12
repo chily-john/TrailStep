@@ -183,25 +183,74 @@ describe("classifyRunState", () => {
     expect(toWatchRunState(classification)).toBe("started");
   });
 
-  it("never maps a missing track to active, even when a lock file exists", async () => {
+  it("lets a live lock outrank a missing, unreadable, or unusable track", async () => {
+    const liveLock = {
+      schemaVersion: 1 as const,
+      runId: "run-1",
+      pid: 42,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
+      nonce: "nonce",
+    };
+    const trackSignals = [
+      null,
+      { present: true, readable: false },
+      { present: true, readable: true },
+    ] as const;
+
+    for (const trackSignal of trackSignals) {
+      const classification = await classifyRunState({
+        runDir: await runDir(),
+        events: [event("workflow.started")],
+        trackSignal,
+        lock: liveLock,
+        pidIsAlive: () => true,
+      });
+
+      expect(classification.state).toBe("active");
+      expect(classification.diagnostics).toEqual([]);
+      expect(toWatchRunState(classification)).toBe("in-progress");
+    }
+  });
+
+  it("keeps an unreadable track unknown when there is no live lock", async () => {
     const classification = await classifyRunState({
       runDir: await runDir(),
       events: [event("workflow.started")],
-      trackSignal: null,
-      lock: {
-        schemaVersion: 1,
-        runId: "run-1",
-        pid: 42,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
-        nonce: "nonce",
-      },
-      pidIsAlive: () => true,
+      trackSignal: { present: true, readable: false },
+      lock: null,
     });
 
     expect(classification.state).toBe("unknown");
     expect(classification.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-      "missing-source",
+      "unreadable-source",
+    );
+  });
+
+  it("keeps a stale running track crashed when there is no live lock", async () => {
+    const classification = await classifyRunState({
+      runDir: await runDir(),
+      events: [event("workflow.started")],
+      trackSignal: { present: true, readable: true, status: "running", ownerPid: 42 },
+      lock: null,
+      pidIsAlive: () => false,
+    });
+
+    expect(classification.state).toBe("stale");
+    expect(toWatchRunState(classification)).toBe("crashed");
+  });
+
+  it("keeps a readable track with no status unknown when there is no live lock", async () => {
+    const classification = await classifyRunState({
+      runDir: await runDir(),
+      events: [event("workflow.started")],
+      trackSignal: { present: true, readable: true },
+      lock: null,
+    });
+
+    expect(classification.state).toBe("unknown");
+    expect(classification.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "partial-coverage",
     );
   });
 });

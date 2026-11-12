@@ -19,15 +19,15 @@
  * events stay fetchable). In compact mode every read event is digested by the
  * server, so the persisted cursor advances to the last consumed read offset.
  *
- * Run state is classified from the run's **parsed events** plus its run lock
- * (never from a regex over raw file text, which could match event-shaped text
- * embedded in agent output). A run parked on a durable wait is `waiting`, which
- * outranks a live lock: the answer/continue is the operator's move. `crashed`
- * means the trail has no terminal event and no live process holds the run, so
- * nothing will ever append one — stop waiting. An event-less trail stays
- * `started` only while a live lock exists or it is younger than the startup
- * grace window; after that it is `crashed` too (a run that died before its
- * first event must not look `started` forever).
+ * Run state is owned by `classifyRunState` / `toWatchRunState` in
+ * `@trailstep/core`; this tool only projects the canonical evidence vocabulary
+ * onto the five public watch states and never re-derives terminal/wait/orphan
+ * semantics from its own event scan. A run parked on a durable wait is
+ * `waiting`; a terminal event wins; a live process is `in-progress`; an
+ * event-less live run is `started`. The canonical `unknown` state is surfaced
+ * as `crashed` because the watch will not observe further progress, but the
+ * crash payload keeps the forensic difference alive in `code`
+ * (`unknown-run-state` vs `no-live-process`).
  *
  * The long-poll budget is capped by an explicit effective ceiling: a
  * progressless client (the default) waits at most `progresslessCeilingMs`
@@ -46,26 +46,28 @@
  *
  * Test seams (`cwd` / `runDir` / `cursorDir` / `maxWaitMs` / `pollIntervalMs` /
  * `progressIntervalMs` / `progresslessCeilingMs` /
- * `progressCapableCeilingMs` / `startupGraceMs` / `signal`) keep every artifact in
+ * `progressCapableCeilingMs` / `signal`) keep every artifact in
  * caller-provided directories — tests never write the repo's own
  * `.trailstep/mcp`.
  */
 import { randomBytes } from "node:crypto";
-import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
+  classifyRunState,
+  DEFAULT_EVIDENCE_QUERY_LIMITS,
   type Event,
   isPlainObject,
-  isRunLockLive,
-  listPendingWaits,
+  type RunStateClassification,
   readRunEvents,
   readRunEventsSince,
-  readRunLock,
+  readTrackStateSignal,
   readWaitAnswerFile,
   readWaitQuestion,
   resolveRunsRoot,
+  toWatchRunState,
   validateRunIdentifier,
   waitEventBranchId,
 } from "@trailstep/core";
@@ -116,11 +118,6 @@ export interface TrstWatchOptions {
   readonly onProgress?: (progress: TrstWatchProgressEvent) => void;
   /** Progress hook cadence in ms; defaults to 10000 (10 s). */
   readonly progressIntervalMs?: number;
-  /**
-   * Startup grace in ms: an event-less run with no live lock is only reported
-   * `crashed` once its trail is older than this; defaults to 10000 (10 s).
-   */
-  readonly startupGraceMs?: number;
   /** Aborts the poll promptly and returns a snapshot instead of throwing. */
   readonly signal?: AbortSignal;
 }
@@ -158,6 +155,15 @@ export interface TrstWatchFailure {
   readonly details?: unknown;
 }
 
+/** Why a crashed run is dead, keeping `unknown` distinguishable from `stale`. */
+export type TrstWatchCrashCode = "no-live-process" | "unknown-run-state";
+
+/** The forensic crash payload for `state: "crashed"`. */
+export interface TrstWatchCrash {
+  readonly reason: string;
+  readonly code: TrstWatchCrashCode;
+}
+
 export interface TrstWatchResult {
   /** One-line summary: runId, state, cursor, and emitted line count. */
   readonly header: string;
@@ -178,7 +184,7 @@ export interface TrstWatchResult {
   /** Every unresolved wait, for `state: "waiting"`. */
   readonly waits?: readonly TrstWatchWait[];
   /** Why the run is considered dead, for `state: "crashed"`. */
-  readonly crash?: { readonly reason: string };
+  readonly crash?: TrstWatchCrash;
   /** Open-run digest, for the remaining states. */
   readonly progress?: TrstWatchProgress;
   /** Raw JSONL lines, only populated when `verbosity` is "full". */
@@ -190,20 +196,10 @@ const defaultProgresslessCeilingMs = 25_000;
 const defaultProgressCapableCeilingMs = 300_000;
 const defaultPollIntervalMs = 50;
 const defaultProgressIntervalMs = 10_000;
-const defaultStartupGraceMs = 10_000;
 const minLineCap = 50;
 const maxLineCap = 200;
 const crashReason = "no terminal event and no live lock";
-const emptyTrailCrashReason = "run has no events and no live process";
-
-/**
- * The event types that end a run. Anything else leaves it open.
- */
-const terminalEventTypes: readonly Event["type"][] = [
-  "workflow.completed",
-  "workflow.failed",
-  "workflow.cancelled",
-];
+const unknownRunStateReason = "run state is unknown";
 
 /**
  * Watch a run's events since the current (or explicit) cursor.
@@ -229,6 +225,21 @@ export async function trst_watch(
   const eventsFile = await resolveEventsFile(cwd, runsRoot, runId, options.runDir);
   const runDir = path.dirname(eventsFile);
   await requireEventsFile(eventsFile, runId);
+
+  // Read the durable track signal once per call. The classifier runs on every
+  // poll (the lock and owner liveness can change without new events), so
+  // injecting the same signal keeps a 50 ms loop from re-reading track.json on
+  // every iteration. The abort signal is deliberately not forwarded here: this
+  // single bounded read defines the entry snapshot, and aborting it would make
+  // the classifier see absent track evidence and report a spurious crash (for
+  // example for a stale or waiting run). A call whose signal is already aborted
+  // still returns that honest entry snapshot; the poll loop below observes the
+  // signal. A run that changes track.json mid-call is classified from the entry
+  // snapshot until this call returns (new events re-read the trail, not the
+  // track); a crashed result exits immediately, so the next call re-reads it.
+  const trackSignal = await readTrackStateSignal(runDir, {
+    maxBytes: DEFAULT_EVIDENCE_QUERY_LIMITS.maxTrackBytes,
+  });
 
   const cursorDir = options.cursorDir ?? path.join(cwd, ".trailstep", "mcp", ".cursor");
   const cursorFile = path.join(cursorDir, `${cursorFileBaseName(runId)}.json`);
@@ -258,7 +269,6 @@ export async function trst_watch(
         );
   const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? defaultPollIntervalMs);
   const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
-  const startupGraceMs = resolveCeiling(options.startupGraceMs, defaultStartupGraceMs);
   const waitFor: TrstWatchWaitFor = resolved.waitFor === "terminal" ? "terminal" : "attention";
   const fullMode = resolved.verbosity === "full";
   const lineCap = verbosityLineCap(resolved.verbosity);
@@ -270,17 +280,16 @@ export async function trst_watch(
   // lines are consumed), or the run needs attention (waiting/terminal/crashed),
   // or the effective budget expires, or the signal aborts. Never a fixed sleep
   // of the whole budget. Classification on idle polls reuses the full trail
-  // parsed at entry and only re-reads the small run lock, so a long run's watch
+  // parsed at entry and re-reads only the small run lock, so a long run's watch
   // does not re-decode the whole trail every poll; when new lines appear the
   // trail is parsed once more to report the honest final state.
+  const classify = async (events: readonly Event[]): Promise<RunStateClassification> =>
+    await classifyRunState({ runDir, events, trackSignal });
+
   const deadline = Date.now() + effectiveWaitMs;
   let observed = await readTrail(runDir);
-  let classification = await classifyRunState({
-    runDir,
-    eventsFile,
-    events: observed,
-    startupGraceMs,
-  });
+  let classification = await classify(observed);
+  let state = projectWatchState(classification);
   let read = await readRunEventsSince(eventsFile, startCursor, readOptions);
   let consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
 
@@ -305,10 +314,10 @@ export async function trst_watch(
     }
   };
 
-  notifyProgress(classification.state);
+  notifyProgress(state);
 
   while (!consumedNewData) {
-    if (shouldExitForState(classification.state, waitFor)) {
+    if (shouldExitForState(state, waitFor)) {
       break;
     }
     const remaining = deadline - Date.now();
@@ -334,26 +343,18 @@ export async function trst_watch(
     read = await readRunEventsSince(eventsFile, startCursor, readOptions);
     consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
     if (!consumedNewData) {
-      classification = await classifyRunState({
-        runDir,
-        eventsFile,
-        events: observed,
-        startupGraceMs,
-      });
+      classification = await classify(observed);
+      state = projectWatchState(classification);
       if (options.onProgress !== undefined && Date.now() - lastProgressAt >= progressIntervalMs) {
-        notifyProgress(classification.state);
+        notifyProgress(state);
       }
     }
   }
 
   if (consumedNewData) {
     observed = await readTrail(runDir);
-    classification = await classifyRunState({
-      runDir,
-      eventsFile,
-      events: observed,
-      startupGraceMs,
-    });
+    classification = await classify(observed);
+    state = projectWatchState(classification);
   }
 
   const emitted = read.entries.slice(0, lineCap);
@@ -367,9 +368,9 @@ export async function trst_watch(
   await persistCursor(cursorFile, runId, cursor);
 
   const base = {
-    header: `watch:${runId} state=${classification.state} cursor=${cursor} lines=${lines.length}`,
+    header: `watch:${runId} state=${state} cursor=${cursor} lines=${lines.length}`,
     runId,
-    state: classification.state,
+    state,
     cursor,
     requestedWaitMs,
     effectiveWaitMs,
@@ -377,9 +378,9 @@ export async function trst_watch(
     lines,
   };
 
-  switch (classification.state) {
+  switch (state) {
     case "terminal": {
-      const terminal = findTerminalEvent(observed);
+      const terminal = classification.terminalEvent;
       if (terminal === undefined) {
         return base;
       }
@@ -391,9 +392,9 @@ export async function trst_watch(
       return failure === undefined ? base : { ...base, failure };
     }
     case "waiting":
-      return { ...base, waits: toPendingWaits(observed) };
+      return { ...base, waits: toPendingWaits(classification.pendingWaits) };
     case "crashed":
-      return { ...base, crash: { reason: classification.reason ?? crashReason } };
+      return { ...base, crash: describeCrash(classification) };
     default:
       return { ...base, progress: describeProgress(observed, read.entries.length) };
   }
@@ -466,65 +467,29 @@ async function requireEventsFile(eventsFile: string, runId: string): Promise<voi
 }
 
 /**
- * Classify a run from its parsed events plus its lock.
+ * Project the canonical evidence vocabulary onto the five public watch states.
  *
- * Order matters: a pending wait outranks a live lock (a run parked on a durable
- * wait has no process by design) and a terminal event outranks everything.
- * `crashed` is the state a raw trail scan cannot express: no terminal event and
- * no live lock holder, so nothing will ever append one. An event-less trail is
- * `started` while a live process holds the lock or while its trail is younger
- * than the startup grace window; after that it is `crashed` too, because a run
- * that died before its first event would otherwise look `started` forever.
+ * Mapping: `active` → `started` (zero events) or `in-progress`; `waiting` →
+ * `waiting`; `completed`/`failed`/`cancelled` → `terminal`; `stale` →
+ * `crashed` with code `no-live-process`; `unknown` → `crashed` with code
+ * `unknown-run-state`. The public enum deliberately stays at five states — when
+ * either crash state applies the watch will not observe further progress —
+ * while `describeCrash` preserves the forensic distinction.
  */
-async function classifyRunState(options: {
-  readonly runDir: string;
-  readonly eventsFile: string;
-  readonly events: readonly Event[];
-  readonly startupGraceMs: number;
-}): Promise<{ readonly state: TrstWatchRunState; readonly reason?: string }> {
-  if (findTerminalEvent(options.events) !== undefined) {
-    return { state: "terminal" };
-  }
-
-  if (options.events.length === 0) {
-    const lock = await readRunLock(options.runDir);
-    if (lock !== undefined && isRunLockLive(lock)) {
-      return { state: "started" };
-    }
-    const ageMs = await trailAgeMs(options.eventsFile, options.runDir);
-    if (ageMs !== undefined && ageMs > options.startupGraceMs) {
-      return { state: "crashed", reason: emptyTrailCrashReason };
-    }
-    return { state: "started" };
-  }
-
-  if (listPendingWaits(options.events).length > 0) {
-    return { state: "waiting" };
-  }
-
-  const lock = await readRunLock(options.runDir);
-  if (lock !== undefined && isRunLockLive(lock)) {
-    return { state: "in-progress" };
-  }
-
-  return { state: "crashed" };
+function projectWatchState(classification: RunStateClassification): TrstWatchRunState {
+  const projected = toWatchRunState(classification);
+  return projected === "unknown" ? "crashed" : projected;
 }
 
-/**
- * Age of the empty trail: the events file's mtime, or the run directory's when
- * the file is absent. `undefined` means the age could not be established, in
- * which case a run is treated as still starting rather than declared dead.
- */
-async function trailAgeMs(eventsFile: string, runDir: string): Promise<number | undefined> {
-  for (const target of [eventsFile, runDir]) {
-    try {
-      const info = await stat(target);
-      return Math.max(0, Date.now() - info.mtimeMs);
-    } catch {
-      // Fall through to the run directory (or an unknown age).
-    }
-  }
-  return undefined;
+/** Keep the canonical unknown/stale distinction while the public state stays `crashed`. */
+function describeCrash(classification: RunStateClassification): TrstWatchCrash {
+  const diagnostic = classification.diagnostics[0];
+  return {
+    reason:
+      diagnostic?.message ??
+      (classification.state === "unknown" ? unknownRunStateReason : crashReason),
+    code: classification.state === "unknown" ? "unknown-run-state" : "no-live-process",
+  };
 }
 
 /**
@@ -537,16 +502,6 @@ async function readTrail(runDir: string): Promise<readonly Event[]> {
   } catch {
     return [];
   }
-}
-
-function findTerminalEvent(events: readonly Event[]): Event | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event !== undefined && terminalEventTypes.includes(event.type)) {
-      return event;
-    }
-  }
-  return undefined;
 }
 
 /**
@@ -585,7 +540,7 @@ function readNonEmptyString(value: unknown): string | undefined {
 }
 
 function toPendingWaits(events: readonly Event[]): TrstWatchWait[] {
-  return listPendingWaits(events).map((event) => ({
+  return events.map((event) => ({
     waitId: typeof event.payload.waitId === "string" ? event.payload.waitId : "",
     stepId: event.stepId,
     branchId: waitEventBranchId(event),

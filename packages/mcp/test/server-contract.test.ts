@@ -112,7 +112,11 @@ function runEvent(
   };
 }
 
-/** Writes a run trail (and, by default, a live run lock held by this test process). */
+/**
+ * Writes a run trail (and, by default, the live lock plus running track a
+ * published run has; the canonical classifier never treats a missing track as
+ * active).
+ */
 function writeRunTrail(
   projectDir: string,
   runId: string,
@@ -129,6 +133,18 @@ function writeRunTrail(
   if (options.live === false) {
     return;
   }
+  fs.writeFileSync(
+    path.join(runDir, "track.json"),
+    JSON.stringify({
+      runId,
+      workflowId: "wf",
+      status: "running",
+      ownerPid: process.pid,
+      branches: [],
+      splitOccurred: false,
+    }),
+    "utf8",
+  );
   fs.writeFileSync(
     path.join(runDir, "run.lock"),
     JSON.stringify({
@@ -223,15 +239,15 @@ describe("MCP server contract", () => {
     expect(descriptions.trst_watch).toContain("do not poll in a loop");
     expect(descriptions.trst_watch).toContain("25 s");
     expect(descriptions.trst_watch).toContain("effectiveWaitMs");
-    expect(descriptions.trst_watch).toContain("no live process holds the run");
+    expect(descriptions.trst_watch).toContain("the watch will not observe further progress");
     expect(descriptions.trst_watch).toContain("cancelled run may carry neither");
     expect(descriptions.trst_watch).toContain(
       "client may treat progress notifications as a keep-alive",
     );
     expect(descriptions.trst_watch).not.toContain("server keeps the request alive");
     expect(descriptions.trst_watch).not.toContain("notifications reset");
-    expect(descriptions.trst_watch).toContain("startup grace");
-    expect(descriptions.trst_watch).toContain("no events and no live process");
+    expect(descriptions.trst_watch).toContain("unknown-run-state");
+    expect(descriptions.trst_watch).toContain("no-live-process");
     expect(descriptions.trst_answer).toContain("Required: runId");
     expect(descriptions.trst_answer).toContain("Required: runId and waitId");
     expect(descriptions.trst_answer).toContain("plain JSON object");
@@ -434,15 +450,22 @@ describe("MCP server contract", () => {
     expect(firstText(call)).toContain("trst_watch");
   });
 
-  it("reports an empty trail as started inside the startup grace window and crashed after it", async () => {
+  it("classifies event-less runs from their track: live is started, stale and unknown are crashed", async () => {
     const projectDir = tmpProject("mcp-contract-");
-    writeRunTrail(projectDir, "run-fresh", [], { live: false });
+    writeRunTrail(projectDir, "run-fresh", [], { live: true });
+
     const staleRunDir = path.join(projectDir, ".trailstep", "runs", "run-stale");
     fs.mkdirSync(staleRunDir, { recursive: true });
-    const staleEvents = path.join(staleRunDir, "events.jsonl");
-    fs.writeFileSync(staleEvents, "", "utf8");
-    const old = new Date(Date.now() - 60_000);
-    fs.utimesSync(staleEvents, old, old);
+    fs.writeFileSync(path.join(staleRunDir, "events.jsonl"), "", "utf8");
+    fs.writeFileSync(
+      path.join(staleRunDir, "track.json"),
+      JSON.stringify({ runId: "run-stale", status: "running", ownerPid: 2_147_483_646 }),
+      "utf8",
+    );
+
+    const unknownRunDir = path.join(projectDir, ".trailstep", "runs", "run-unknown");
+    fs.mkdirSync(unknownRunDir, { recursive: true });
+    fs.writeFileSync(path.join(unknownRunDir, "events.jsonl"), "", "utf8");
 
     const client = await connectedClient(projectDir);
     const fresh = await client.callTool({
@@ -457,12 +480,27 @@ describe("MCP server contract", () => {
       arguments: { runId: "run-stale", maxWaitMs: 0 },
     });
     expect(stale.isError).toBeFalsy();
-    const payload = JSON.parse(firstText(stale)) as {
+    const stalePayload = JSON.parse(firstText(stale)) as {
       state?: string;
-      crash?: { reason?: string };
+      crash?: { reason?: string; code?: string };
     };
-    expect(payload.state).toBe("crashed");
-    expect(payload.crash?.reason).toBe("run has no events and no live process");
+    expect(stalePayload.state).toBe("crashed");
+    expect(stalePayload.crash).toEqual({
+      reason: "The track still reports running but its owner process is no longer alive.",
+      code: "no-live-process",
+    });
+
+    const unknown = await client.callTool({
+      name: "trst_watch",
+      arguments: { runId: "run-unknown", maxWaitMs: 0 },
+    });
+    expect(unknown.isError).toBeFalsy();
+    const unknownPayload = JSON.parse(firstText(unknown)) as {
+      state?: string;
+      crash?: { code?: string };
+    };
+    expect(unknownPayload.state).toBe("crashed");
+    expect(unknownPayload.crash?.code).toBe("unknown-run-state");
   });
 
   it("rejects unknown tools as isError results, not silent hangs", async () => {
@@ -664,9 +702,15 @@ describe("MCP server contract", () => {
     const projectDir = tmpProject("mcp-progress-");
     const runDir = path.join(projectDir, ".trailstep", "runs", "run-abort");
     fs.mkdirSync(runDir, { recursive: true });
-    // Empty trail + no cursor: the watch has nothing new to consume, so it
-    // long-polls until the request is cancelled.
+    // Empty trail + a live running track + no cursor: the watch has nothing new
+    // to consume and reports `started`, so it long-polls until the request is
+    // cancelled.
     fs.writeFileSync(path.join(runDir, "events.jsonl"), "", "utf8");
+    fs.writeFileSync(
+      path.join(runDir, "track.json"),
+      JSON.stringify({ runId: "run-abort", status: "running", ownerPid: process.pid }),
+      "utf8",
+    );
     const server: Server = createServer({
       projectDir,
       homeDir: tmpProject("mcp-contract-"),

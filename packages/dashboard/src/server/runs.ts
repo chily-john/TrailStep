@@ -1,73 +1,42 @@
-import type { Dirent } from "node:fs";
-import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { readDashboardRunEvents } from "./events";
+import { listRunSummaries, type RunSummaryStatus } from "@trailstep/core";
 
 export interface DashboardRunSummary {
   readonly runId: string;
   readonly path: string;
-  readonly status: "running" | "completed" | "failed" | "cancelled" | "unknown";
+  readonly status: RunSummaryStatus;
   readonly latestTimestamp?: string;
 }
 
+/**
+ * The dashboard is a projection of core run summaries, not a second status
+ * classifier: an event-less run gets exactly the active/stale/unknown status
+ * the CLI and core report for the same track.
+ */
 export async function listRuns(options: { readonly cwd: string }): Promise<DashboardRunSummary[]> {
   const runsRoot = join(options.cwd, ".trailstep", "runs");
-  let entries: Dirent<string>[];
+  const summaries = await listRunSummaries({ cwd: options.cwd, runsRoot });
 
-  try {
-    entries = await readdir(runsRoot, { encoding: "utf8", withFileTypes: true });
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return [];
-    }
-
-    throw error;
-  }
-
-  const runs = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry): Promise<DashboardRunSummary> => {
-        const runDir = join(runsRoot, entry.name);
-        const events = await readDashboardRunEvents(runDir);
-        const latestEvent = events.at(-1);
-
-        return {
-          runId: entry.name,
-          path: runDir,
-          status: statusFromEventType(latestEvent?.type),
-          ...(latestEvent ? { latestTimestamp: latestEvent.timestamp } : {}),
-        };
+  return summaries
+    .filter((summary) => summary.status !== "archived")
+    .map(
+      (summary): DashboardRunSummary => ({
+        runId: summary.runId,
+        path: summary.runDir,
+        status: summary.status,
+        ...(summary.lastTimestamp === undefined ? {} : { latestTimestamp: summary.lastTimestamp }),
       }),
-  );
-
-  return runs.sort(compareRunsByLatestTimestampDescending);
-}
-
-function statusFromEventType(type: string | undefined): DashboardRunSummary["status"] {
-  switch (type) {
-    case "workflow.completed":
-      return "completed";
-    case "workflow.failed":
-    case "step.failed":
-      return "failed";
-    case "workflow.cancelled":
-      return "cancelled";
-    case undefined:
-      return "unknown";
-    default:
-      return "running";
-  }
+    )
+    .sort(compareRunsByLatestTimestampDescending);
 }
 
 function compareRunsByLatestTimestampDescending(
   left: DashboardRunSummary,
   right: DashboardRunSummary,
 ): number {
-  return (right.latestTimestamp ?? "").localeCompare(left.latestTimestamp ?? "");
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
+  return (
+    (right.latestTimestamp ?? "").localeCompare(left.latestTimestamp ?? "") ||
+    left.runId.localeCompare(right.runId)
+  );
 }

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -201,6 +201,148 @@ describe("listRunSummaries", () => {
     await expect(listRunSummaries({ cwd })).resolves.toEqual([
       expect.objectContaining({ runId: "retried-successful-run", status: "completed" }),
     ]);
+  });
+
+  it("uses the track mtime as the timestamp for an event-less terminal run", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runDir = join(cwd, ".trailstep", "runs", "eventless-terminal-run");
+    const trackPath = join(runDir, "track.json");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      trackPath,
+      `${JSON.stringify({
+        runId: "eventless-terminal-run",
+        workflowId: "workflow-a",
+        status: "completed",
+        branches: [],
+      })}\n`,
+      "utf8",
+    );
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    await utimes(trackPath, old, old);
+
+    await expect(listRunSummaries({ cwd })).resolves.toEqual([
+      expect.objectContaining({
+        runId: "eventless-terminal-run",
+        status: "completed",
+        lastTimestamp: "2026-01-01T00:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("reports an event-less run with a live creation track as active", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runDir = join(cwd, ".trailstep", "runs", "fresh-track-run");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "track.json"),
+      `${JSON.stringify({
+        runId: "fresh-track-run",
+        workflowId: "factory-maintenance",
+        status: "running",
+        ownerPid: process.pid,
+        branches: [],
+        splitOccurred: false,
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(listRunSummaries({ cwd })).resolves.toEqual([
+      expect.objectContaining({
+        runId: "fresh-track-run",
+        status: "active",
+        workflowId: "factory-maintenance",
+        track: expect.objectContaining({ status: "running", workflowId: "factory-maintenance" }),
+      }),
+    ]);
+  });
+
+  it("reports an event-less run whose track owner is dead as stale", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runDir = join(cwd, ".trailstep", "runs", "dead-owner-run");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, "events.jsonl"), "", "utf8");
+    await writeFile(
+      join(runDir, "track.json"),
+      `${JSON.stringify({
+        runId: "dead-owner-run",
+        status: "running",
+        ownerPid: 2_147_483_647,
+        branches: [],
+      })}\n`,
+      "utf8",
+    );
+
+    const summaries = await listRunSummaries({ cwd });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toEqual(
+      expect.objectContaining({ runId: "dead-owner-run", status: "stale", stale: true }),
+    );
+    expect(summaries[0]?.warning).toContain("no longer alive");
+  });
+
+  it("reports an event-less legacy run without a track as unknown", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    await mkdir(join(cwd, ".trailstep", "runs", "legacy-eventless-run"), { recursive: true });
+
+    await expect(listRunSummaries({ cwd })).resolves.toEqual([
+      expect.objectContaining({ runId: "legacy-eventless-run", status: "unknown" }),
+    ]);
+  });
+
+  it("reports an event-less run with an unreadable track as unknown", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runDir = join(cwd, ".trailstep", "runs", "unreadable-track-run");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, "track.json"), "[]\n", "utf8");
+
+    await expect(listRunSummaries({ cwd })).resolves.toEqual([
+      expect.objectContaining({ runId: "unreadable-track-run", status: "unknown" }),
+    ]);
+  });
+
+  it("never lists staging infrastructure as a run", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const staleTrack = `${JSON.stringify({
+      runId: "phantom",
+      status: "running",
+      ownerPid: process.pid,
+      branches: [],
+    })}\n`;
+    await mkdir(join(runsRoot, ".staging", "phantom"), { recursive: true });
+    await writeFile(join(runsRoot, ".staging", "phantom", "track.json"), staleTrack, "utf8");
+
+    await expect(listRunSummaries({ cwd })).resolves.toEqual([]);
+  });
+
+  it("keeps a contested foreign-track directory visible under its own name", async ({ task }) => {
+    // A track-less creation can only rename onto an empty target, so a foreign
+    // track-bearing directory at the final name is unreachable outside a
+    // synthetic fixture. If it exists, it must stay visible: hiding it would
+    // orphan a run some other creator believes it owns.
+    const cwd = join("node_modules", ".tmp-trailstep-run-summaries-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const runDir = join(runsRoot, "contested-track-run");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "track.json"),
+      `${JSON.stringify({
+        runId: "someone-else",
+        status: "running",
+        ownerPid: process.pid,
+        branches: [],
+      })}\n`,
+      "utf8",
+    );
+
+    const summaries = await listRunSummaries({ cwd });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      runId: "contested-track-run",
+      status: "active",
+      track: { runId: "someone-else" },
+    });
   });
 });
 

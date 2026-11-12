@@ -15,9 +15,11 @@
  */
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
-
+import { join, resolve } from "node:path";
 import { type Event, readRunEvents, TRAILSTEP_DIR_NAME } from "../runtime/artifacts/run-storage.js";
+import { isPathLike, type RunIdentifierAccess, validateRunIdentifier } from "./run-identifier.js";
+
+export { isPathLike } from "./run-identifier.js";
 
 /** Environment variable that overrides the runs root. */
 export const TRAILSTEP_RUNS_ROOT_ENV = "TRAILSTEP_RUNS_ROOT";
@@ -52,6 +54,13 @@ export interface ResolveRunDirectoryOptions {
    * throw to abort the resolution (the CLI does that for archived runs).
    */
   readonly onRunNotFound?: (context: RunNotFoundContext) => void | Promise<void>;
+  /**
+   * `mutate` (default) routes through the canonical validator's mutating
+   * checks. `inspect` is the explicit read-only exception: it permits a path
+   * inside a reserved directory (for example an archived run) but never
+   * permits a write.
+   */
+  readonly access?: RunIdentifierAccess;
 }
 
 /** The configured runs root (resolved against the cwd), or undefined. */
@@ -75,22 +84,6 @@ export function resolveRunsRoot(context: RunDirectoryContext): string {
   return resolveConfiguredRunsRoot(context) ?? join(context.cwd, TRAILSTEP_DIR_NAME, "runs");
 }
 
-/**
- * Whether a value looks like a filesystem path rather than a bare run name.
- */
-export function isPathLike(value: string): boolean {
-  return (
-    isAbsolute(value) ||
-    value.startsWith("./") ||
-    value.startsWith("../") ||
-    value.startsWith(".\\") ||
-    value.startsWith("..\\") ||
-    value.includes("/") ||
-    value.includes("\\") ||
-    /^[A-Za-z]:[\\/]/u.test(value)
-  );
-}
-
 /** Whether a run directory carries an `events.jsonl` artifact. */
 export async function hasEventsFile(runDir: string): Promise<boolean> {
   try {
@@ -104,9 +97,10 @@ export async function hasEventsFile(runDir: string): Promise<boolean> {
 /**
  * Resolve a run name (under the runs root) or a run directory path.
  *
- * Direct path candidates win when they carry an events file, then the named
- * candidate under the runs root. Archived-run awareness is a CLI concern and
- * is injected through `options.onRunNotFound`.
+ * Both forms go through {@link validateRunIdentifier} before any filesystem
+ * lookup. Direct path candidates win when they carry an events file, then the
+ * named candidate under the runs root. Archived-run awareness is a CLI concern
+ * and is injected through `options.onRunNotFound`.
  */
 export async function resolveRunDirectory(
   runNameOrRunDir: string,
@@ -114,14 +108,30 @@ export async function resolveRunDirectory(
   options: ResolveRunDirectoryOptions = {},
 ): Promise<ResolvedRunDirectory> {
   const runsRoot = resolveRunsRoot(context);
-  const directCandidate = isPathLike(runNameOrRunDir)
-    ? resolve(context.cwd, runNameOrRunDir)
-    : undefined;
+  const access = options.access ?? "mutate";
+  const pathLike = isPathLike(runNameOrRunDir);
+  const validated = await validateRunIdentifier(runNameOrRunDir, {
+    cwd: context.cwd,
+    runsRoot,
+    access,
+  });
+
+  const directCandidate = pathLike ? validated.runDir : undefined;
   if (directCandidate !== undefined && (await hasEventsFile(directCandidate))) {
     return { runDir: directCandidate, displayName: runNameOrRunDir };
   }
 
-  const namedCandidate = join(runsRoot, runNameOrRunDir);
+  // Preserve the historical fallback that also checks the path under the runs
+  // root. Validate that candidate too, so a path-like input can never reach
+  // infrastructure through the fallback.
+  const namedCandidate = pathLike ? join(runsRoot, runNameOrRunDir) : validated.runDir;
+  if (pathLike && namedCandidate !== directCandidate) {
+    await validateRunIdentifier(namedCandidate, {
+      cwd: context.cwd,
+      runsRoot,
+      access,
+    });
+  }
   if (await hasEventsFile(namedCandidate)) {
     return { runDir: namedCandidate, displayName: runNameOrRunDir };
   }

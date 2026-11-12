@@ -6,7 +6,12 @@ import { dirname, join } from "node:path";
 import nodeProcess from "node:process";
 import { fileURLToPath } from "node:url";
 
-import type { Event, InteractiveProcessRunner, WorkingAgentProcessRunner } from "@trailstep/core";
+import {
+  type Event,
+  type InteractiveProcessRunner,
+  readFailureCode,
+  type WorkingAgentProcessRunner,
+} from "@trailstep/core";
 import {
   type CliCommandContext,
   CliUsageError,
@@ -123,6 +128,14 @@ export async function main(options: TrailStepMainOptions = {}): Promise<number> 
         io.writeError(`Caused by: ${cause.message}`);
         cause = cause.cause;
       }
+      return 1;
+    }
+
+    // A rejected run identifier is an expected user error, not a bug. Render
+    // the typed failure message without a stack trace or raw error dump.
+    const failureCode = readFailureCode(error);
+    if (failureCode === "run_name_reserved" || failureCode === "run_name_invalid") {
+      io.writeError(error instanceof Error ? error.message : String(error));
       return 1;
     }
 

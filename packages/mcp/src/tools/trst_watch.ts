@@ -4,8 +4,11 @@
  * The run is resolved from the runs root — `<cwd>/.trailstep/runs` or the
  * `TRAILSTEP_RUNS_ROOT` override — through the shared `resolveRunsRoot` helper
  * from `@trailstep/core`, exactly like the CLI (`options.env`, defaulting to
- * `process.env`). Then it reads `<runDir>/events.jsonl` by byte offset (the
- * "cursor").
+ * `process.env`). The run identifier then goes through the shared
+ * `validateRunIdentifier` with read-only inspection access, so this surface
+ * accepts the same names and paths (including an archived note) as the rest of
+ * TrailStep and never invents its own path resolution. Then it reads
+ * `<runDir>/events.jsonl` by byte offset (the "cursor").
  *
  * The result is a compact digest, not a tail of raw JSONL: state, cursor,
  * budget, and whichever payload applies (terminal `output` or `failure`,
@@ -54,7 +57,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   type Event,
-  isPathLike,
   isPlainObject,
   isRunLockLive,
   listPendingWaits,
@@ -64,6 +66,7 @@ import {
   readWaitAnswerFile,
   readWaitQuestion,
   resolveRunsRoot,
+  validateRunIdentifier,
   waitEventBranchId,
 } from "@trailstep/core";
 
@@ -223,7 +226,7 @@ export async function trst_watch(
 
   const cwd = options.cwd ?? process.cwd();
   const runsRoot = resolveRunsRoot({ cwd, env: options.env ?? process.env });
-  const eventsFile = resolveEventsFile(cwd, runsRoot, runId, options.runDir);
+  const eventsFile = await resolveEventsFile(cwd, runsRoot, runId, options.runDir);
   const runDir = path.dirname(eventsFile);
   await requireEventsFile(eventsFile, runId);
 
@@ -440,14 +443,18 @@ async function readPersistedCursor(cursorFile: string, runId: string): Promise<n
   return undefined;
 }
 
-function resolveEventsFile(cwd: string, runsRoot: string, runId: string, runDir?: string): string {
-  if (runDir !== undefined) {
-    return path.resolve(runDir, "events.jsonl");
-  }
-  if (isPathLike(runId)) {
-    return path.resolve(cwd, runId, "events.jsonl");
-  }
-  return path.join(runsRoot, runId, "events.jsonl");
+async function resolveEventsFile(
+  cwd: string,
+  runsRoot: string,
+  runId: string,
+  runDir?: string,
+): Promise<string> {
+  const validated = await validateRunIdentifier(runDir ?? runId, {
+    cwd,
+    runsRoot,
+    access: "inspect",
+  });
+  return path.join(validated.runDir, "events.jsonl");
 }
 
 async function requireEventsFile(eventsFile: string, runId: string): Promise<void> {

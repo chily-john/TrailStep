@@ -72,7 +72,9 @@ export const watchCommand: CliCommand<WatchCommandArgs> = {
     return { runNameOrRunDir: runNameOrRunDir as string, outputMode, follow, since };
   },
   async run(args, context) {
-    const resolved = await resolveRunDirectory(args.runNameOrRunDir, context);
+    const resolved = await resolveRunDirectory(args.runNameOrRunDir, context, {
+      access: "inspect",
+    });
     const eventsFile = join(resolved.runDir, "events.jsonl");
 
     try {

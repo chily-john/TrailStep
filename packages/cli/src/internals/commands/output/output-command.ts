@@ -61,7 +61,9 @@ export const outputCommand: CliCommand<OutputCommandArgs> = {
     };
   },
   async run(args: OutputCommandArgs, context: CliCommandContext): Promise<number> {
-    const resolved = await resolveRunDirectory(args.runNameOrRunDir, context);
+    const resolved = await resolveRunDirectory(args.runNameOrRunDir, context, {
+      access: "inspect",
+    });
     const events = await readEventsForRun(resolved.runDir);
     if (args.message) {
       const terminal = findLatestTerminalEvent(events);

@@ -1,11 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { coerceScalarStrings } from "../../authoring/shape/coerce-scalars.js";
 import { normalizeShape } from "../../authoring/shape/json-schema.js";
 import type { ContinuationResult } from "../../authoring/step/continuation.types.js";
 import { type Failure, TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject, Schema } from "../../contracts/shapes/shape.types.js";
-import { isPlainObject } from "../../json/guards.js";
+import { errorMessage, isNodeError, isPlainObject } from "../../json/guards.js";
 import { findLatestPendingWait, waitEventBranchId } from "../../runs/wait-events.js";
 import type {
   Event,
@@ -83,11 +83,7 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
   }
 
   const { runId, runName, runDir, previousEvents } = initialized;
-  const trailstepConfig =
-    options.trailstepConfig === undefined
-      ? undefined
-      : parseTrailStepConfigInput(options.trailstepConfig);
-  const { projectCwd, cwd } = await resolveAndValidateRunCwds(options);
+  const createdRunDir = isResume || isRetry || isWaitContinue ? undefined : runDir;
   const events: Event[] = [...previousEvents];
 
   const emit = async (event: Event): Promise<void> => {
@@ -96,22 +92,38 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     await options.eventSink?.(event);
   };
 
-  const runContext = createRunContext({
-    runId,
-    runName,
-    runDir,
-    workflowId: options.workflow.id,
-    workflowAgents: options.workflow.agents ?? {},
-    projectCwd,
-    cwd,
-    executionCwd: cwd,
-    trailstepConfig,
-    workingAgentProcessRunner: options.workingAgentProcessRunner,
-    providerWorkingRunner: options.providerWorkingRunner,
-    emit,
-    events: () => events,
-    ...(isResume || isRetry ? { initialState: {} } : {}),
-  });
+  let trailstepConfig: ReturnType<typeof parseTrailStepConfigInput> | undefined;
+  let projectCwd: string;
+  let cwd: string;
+  let runContext: ReturnType<typeof createRunContext>;
+  try {
+    trailstepConfig =
+      options.trailstepConfig === undefined
+        ? undefined
+        : parseTrailStepConfigInput(options.trailstepConfig);
+    ({ projectCwd, cwd } = await resolveAndValidateRunCwds(options));
+    runContext = createRunContext({
+      runId,
+      runName,
+      runDir,
+      workflowId: options.workflow.id,
+      workflowAgents: options.workflow.agents ?? {},
+      projectCwd,
+      cwd,
+      executionCwd: cwd,
+      trailstepConfig,
+      workingAgentProcessRunner: options.workingAgentProcessRunner,
+      providerWorkingRunner: options.providerWorkingRunner,
+      emit,
+      events: () => events,
+      ...(isResume || isRetry ? { initialState: {} } : {}),
+    });
+  } catch (error) {
+    if (createdRunDir !== undefined) {
+      await removeFreshRunDirectoryIfEventless(createdRunDir);
+    }
+    throw error;
+  }
 
   const emitBestEffort = async (event: Event): Promise<void> => {
     try {
@@ -195,7 +207,11 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
     events,
   });
 
-  const acquired = await acquireRunLock({ runDir, runId });
+  const acquired = await acquireRunLockForCreatedRun({
+    runDir,
+    runId,
+    createdRunDir,
+  });
   if (acquired.status === "held") {
     const failure = workflowFailure(
       new TrailStepFailureError({
@@ -699,6 +715,63 @@ export async function runWorkflow<TInput extends PlainObject, TOutput extends Pl
       output,
       events,
     };
+  }
+}
+
+/**
+ * A new run directory is only removed before the lock if it still has no
+ * event trail. After the lock, failures must leave their evidence in place.
+ * Best effort: the original setup error is what the caller must receive.
+ */
+async function removeFreshRunDirectoryIfEventless(runDir: string): Promise<void> {
+  try {
+    const contents = await readFile(join(runDir, "events.jsonl"), "utf8");
+    if (contents.trim().length > 0) {
+      return;
+    }
+  } catch (error) {
+    if (!(isNodeError(error) && error.code === "ENOENT")) {
+      return;
+    }
+  }
+  await rm(runDir, { recursive: true, force: true }).catch((error: unknown) => {
+    reportRollbackRemovalFailure(runDir, error);
+  });
+}
+
+/**
+ * A rollback failure must stay observable without replacing the original
+ * setup error. Written to stderr so CLI/MCP protocol channels (stdout) stay
+ * clean, and never allowed to throw: the caller is already unwinding.
+ */
+function reportRollbackRemovalFailure(runDir: string, error: unknown): void {
+  try {
+    process.stderr.write(
+      `trailstep: could not remove event-less run directory ${runDir} during rollback: ${errorMessage(error)}\n`,
+    );
+  } catch {
+    // Observability must never mask the original setup failure.
+  }
+}
+
+/**
+ * Acquire the run lock, rolling back a just-created run directory when the
+ * acquisition itself fails (for example an unwritable run directory). Lock
+ * results are unchanged: `held` still flows through the normal failure path,
+ * and resume/retry/continue never pass a created directory here.
+ */
+async function acquireRunLockForCreatedRun(options: {
+  readonly runDir: string;
+  readonly runId: string;
+  readonly createdRunDir: string | undefined;
+}): Promise<Awaited<ReturnType<typeof acquireRunLock>>> {
+  try {
+    return await acquireRunLock({ runDir: options.runDir, runId: options.runId });
+  } catch (error) {
+    if (options.createdRunDir !== undefined) {
+      await removeFreshRunDirectoryIfEventless(options.createdRunDir);
+    }
+    throw error;
   }
 }
 

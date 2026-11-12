@@ -362,6 +362,14 @@ export {
   resolveRunsRoot,
   TRAILSTEP_RUNS_ROOT_ENV,
 } from "./runs/run-directory.js";
+export {
+  type RunIdentifierAccess,
+  type RunIdentifierCanonicalization,
+  type RunIdentifierForm,
+  type ValidatedRunIdentifier,
+  type ValidateRunIdentifierOptions,
+  validateRunIdentifier,
+} from "./runs/run-identifier.js";
 export { writeWaitAnswerFile } from "./runs/wait-answer-file.js";
 export {
   findLatestPendingWait,
@@ -377,10 +385,13 @@ export {
   appendEvent,
   atomicWriteJson,
   defaultRunsRoot,
+  isReservedRunsRootEntry,
+  RUNS_ROOT_STAGING_DIR_NAME,
   readGlobalState,
   readRunEvents,
   readRunEventsSince,
   readRunState,
+  STALE_RUN_STAGING_MAX_AGE_MS,
   TRAILSTEP_DIR_NAME,
   TRAILSTEP_GITIGNORE_BODY,
   writeGlobalState,

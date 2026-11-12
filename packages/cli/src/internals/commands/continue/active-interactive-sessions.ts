@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 
-import { isPlainObject } from "@trailstep/core";
+import { isPlainObject, isReservedRunsRootEntry } from "@trailstep/core";
 
 export interface ActiveInteractiveSessionSummary {
   readonly interactiveFile: string;
@@ -21,7 +21,7 @@ export async function findActiveInteractiveSessions(
   cwd: string,
 ): Promise<readonly ActiveInteractiveSessionSummary[]> {
   const runsDir = join(cwd, ".trailstep", "runs");
-  const files = await findInteractiveFiles(runsDir);
+  const files = await findInteractiveFiles(runsDir, { runsRoot: true });
   const sessions: ActiveInteractiveSessionSummary[] = [];
 
   for (const interactiveFile of files) {
@@ -39,7 +39,10 @@ export async function findActiveInteractiveSessions(
   return sessions.sort((left, right) => left.label.localeCompare(right.label));
 }
 
-async function findInteractiveFiles(dir: string): Promise<readonly string[]> {
+async function findInteractiveFiles(
+  dir: string,
+  options: { readonly runsRoot: boolean } = { runsRoot: false },
+): Promise<readonly string[]> {
   let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -52,6 +55,9 @@ async function findInteractiveFiles(dir: string): Promise<readonly string[]> {
 
   const files: string[] = [];
   for (const entry of entries) {
+    if (options.runsRoot && isReservedRunsRootEntry(entry.name)) {
+      continue;
+    }
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await findInteractiveFiles(path)));

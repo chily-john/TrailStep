@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { Event } from "../../contracts/events/event.types.js";
+import { initializeRun } from "../run-workflow/initialize-run.js";
 import { classifyRunState, toWatchRunState } from "./classify-run-state.js";
 
 function event(
@@ -108,6 +109,30 @@ describe("classifyRunState", () => {
     expect(classification.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       "missing-source",
     );
+  });
+
+  it("classifies a freshly created event-less run as a live starting run, not unknown", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-classify-fresh-run-"));
+    const initialized = await initializeRun({
+      workflow: {
+        id: "fresh-run-classification",
+        start() {
+          throw new Error("not used");
+        },
+      },
+      input: {},
+      runName: "fresh-run",
+      cwd,
+    });
+
+    const classification = await classifyRunState({ runDir: initialized.runDir, events: [] });
+
+    expect(classification.state).toBe("active");
+    expect(classification.trackStatus).toBe("running");
+    expect(classification.ownerPid).toBe(process.pid);
+    expect(classification.workflowId).toBe("fresh-run-classification");
+    expect(classification.diagnostics).toEqual([]);
+    expect(toWatchRunState(classification)).toBe("started");
   });
 
   it("maps cancelRequested without a terminal event to cancelled + a diagnostic", async () => {

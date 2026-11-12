@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { listRunSummaries } from "@trailstep/core";
 import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
@@ -135,7 +136,102 @@ describe("runs command", () => {
     expect(recentFailedSection).not.toContain("retried-successful-run");
     expect(allRunsSection).toContain("retried-successful-run [completed]");
   });
+
+  it("uses the creation track for event-less runs and hides staging", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-runs-command-tests", `${task.id}-eventless`);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await writeTrackRun(runsRoot, "fresh-track-run", process.pid);
+    await writeTrackRun(runsRoot, "dead-owner-run", 2_147_483_647, { emptyEvents: true });
+    await mkdir(join(runsRoot, "legacy-eventless-run"), { recursive: true });
+    await writeTrackRun(join(runsRoot, ".staging"), "phantom-run", process.pid);
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["runs"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => lines.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    const output = lines.join("\n");
+    const activeSection = output.slice(
+      output.indexOf("Active runs:"),
+      output.indexOf("Recent failed runs (last 7 days):"),
+    );
+    const allRunsSection = output.slice(output.indexOf("All runs:"));
+
+    expect(activeSection).toContain("fresh-track-run [active]");
+    expect(allRunsSection).toContain("dead-owner-run [stale]");
+    expect(allRunsSection).toContain("legacy-eventless-run [unknown]");
+    expect(output).toContain("orphaned");
+    expect(output).not.toContain("phantom-run");
+  });
+
+  it("agrees with core summaries for event-less running and stale tracks", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-runs-command-tests", `${task.id}-agreement`);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await writeTrackRun(runsRoot, "live-track-run", process.pid);
+    await writeTrackRun(runsRoot, "dead-track-run", 2_147_483_647);
+
+    const coreStatuses = (await listRunSummaries({ cwd, runsRoot })).map(
+      (summary) => `${summary.runId}:${summary.status}`,
+    );
+    const lines: string[] = [];
+    await expect(
+      main({
+        argv: ["runs", "--json"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => lines.push(line) },
+      }),
+    ).resolves.toBe(0);
+    const cliStatuses = (
+      JSON.parse(lines.join("\n")) as readonly { readonly runId: string; readonly status: string }[]
+    ).map((summary) => `${summary.runId}:${summary.status}`);
+
+    expect(cliStatuses).toEqual(coreStatuses);
+    expect([...coreStatuses].sort()).toEqual(["dead-track-run:stale", "live-track-run:active"]);
+  });
+
+  it("lists a run named like the retired legacy staging pattern", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-runs-command-tests", `${task.id}-legacy-name`);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const runName = ".legit-run.tmp-abc123";
+    await writeTrackRun(runsRoot, runName, process.pid);
+    await writeTrackRun(runsRoot, "created-after-it", process.pid);
+    const lines: string[] = [];
+
+    await expect(
+      main({
+        argv: ["runs"],
+        cwd,
+        io: { writeLine: (line) => lines.push(line), writeError: (line) => lines.push(line) },
+      }),
+    ).resolves.toBe(0);
+
+    const output = lines.join("\n");
+    expect(output).toContain(`${runName} [active]`);
+    await expect(stat(join(runsRoot, runName))).resolves.toBeDefined();
+  });
 });
+
+async function writeTrackRun(
+  runsRoot: string,
+  runId: string,
+  ownerPid: number,
+  options: { readonly emptyEvents?: boolean } = {},
+): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
+  if (options.emptyEvents === true) {
+    await writeFile(join(runDir, "events.jsonl"), "", "utf8");
+  }
+  await writeFile(
+    join(runDir, "track.json"),
+    `${JSON.stringify({ runId, status: "running", ownerPid, branches: [] })}\n`,
+    "utf8",
+  );
+}
 
 async function writeParallelTrackFixture(cwd: string): Promise<void> {
   const runDir = join(cwd, ".trailstep", "runs", "parallel-track-run");

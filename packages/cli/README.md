@@ -167,6 +167,10 @@ trailstep mcp [--project <dir>]
 
 See the repository [CLI reference](https://github.com/chily-john/trailstep/blob/main/packages/cli/README.md) for the full command list and detailed behavior.
 
+### Storage lifecycle limitations
+
+`trailstep storage gc` archives or deletes terminal, unpinned runs according to `storage.lifecycle`. Two liveness limitations are intentionally accepted for now. First, the `run.lock` check and the archive/delete filesystem mutation are not atomic: a process can acquire the lock after the check but before the directory is renamed or removed, so a just-started run may still be archived or deleted. A future fix would hold an exclusive lifecycle lock across the mutation or make it a compare-and-swap rename. Second, lock liveness is pid-only: if a run process died and its pid was reused by an unrelated live process, the stale lock looks live and archive/delete is blocked indefinitely. There is no stale-lock escape in this version; a future fix would check process start time or a boot identifier, or require an explicit operator override.
+
 ## MCP server
 
 `trailstep mcp` runs the TrailStep MCP server in the foreground over stdio, exposing registered workflows to MCP clients as `trst_*` tools. `trailstep add` generates per-workflow MCP tool JSONs under `.trailstep/mcp/`, and `trailstep update --workflows` refreshes them; no other command rewrites those artifacts. `trailstep init` and `trailstep add` also offer to register the server with your coding agent. pi is registered by writing pi's `mcp.json` entry directly (project/local scope: `<project>/.pi/mcp.json`; global scope: `$PI_CODING_AGENT_DIR` or `~/.pi/agent/mcp.json`) so pi's `exposure` / `toolExposure` profile can be applied, and every other coding agent is registered via `add-mcp`.

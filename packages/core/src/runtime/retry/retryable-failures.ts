@@ -39,8 +39,8 @@ export type RetryOnMode = "transient" | "always";
  * `agent_targets_unavailable`, `agent_provider_interactive_unsupported`,
  * `review_rejected`, `agent_target_exhausted`, `agent_target_failed`,
  * `step_execution_failed`, `branch_failed`, `concurrent_branch_failed`,
- * `step_attempts_exhausted`, `max_steps_exceeded`, `run_name_invalid`, and
- * every `resume_*` / `retry_*` code.
+ * `step_attempts_exhausted`, `max_steps_exceeded`, `run_name_invalid`,
+ * `run_name_reserved`, and every `resume_*` / `retry_*` code.
  *
  * `validation_failed` and `agent_target_exhausted` are deliberately permanent:
  * the first is a deterministic contract violation that retrying cannot fix, and

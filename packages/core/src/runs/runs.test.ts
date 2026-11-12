@@ -130,6 +130,53 @@ describe("run directory resolution", () => {
     expect(seen).toEqual(["missing-run"]);
   });
 
+  it("refuses to resolve reserved bare run names with a typed failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-reserved-"));
+    await mkdir(join(root, ".trailstep", "runs", ".staging"), { recursive: true });
+
+    for (const runName of [".STAGING", ".staging.", ".Archive ", ".archive."]) {
+      await expect(resolveRunDirectory(runName, { cwd: root })).rejects.toMatchObject({
+        failure: { code: "run_name_reserved" },
+      });
+    }
+  });
+
+  it("refuses mutating resolution of a reserved entry or anything inside it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-reserved-path-"));
+    const runsRoot = join(root, ".trailstep", "runs");
+    const archiveDir = join(runsRoot, ".archive");
+    const archivedChild = join(archiveDir, "payload-run");
+    const archivedNested = join(archivedChild, "steps", "0001-review");
+    await mkdir(archivedNested, { recursive: true });
+    await writeFile(join(archiveDir, "events.jsonl"), "", "utf8");
+    await writeFile(join(archivedChild, "events.jsonl"), "", "utf8");
+    await writeFile(join(archivedNested, "events.jsonl"), "", "utf8");
+
+    for (const runDir of [
+      archiveDir,
+      archivedChild,
+      archivedNested,
+      join(runsRoot, ".staging"),
+      join(runsRoot, ".staging", "child", "nested"),
+    ]) {
+      await mkdir(runDir, { recursive: true });
+      await expect(resolveRunDirectory(runDir, { cwd: root })).rejects.toMatchObject({
+        failure: { code: "run_name_reserved" },
+      });
+    }
+  });
+
+  it("still resolves a reserved path for read-only inspection when explicitly allowed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-reserved-readonly-"));
+    const archiveDir = join(root, ".trailstep", "runs", ".archive");
+    await mkdir(archiveDir, { recursive: true });
+    await writeFile(join(archiveDir, "events.jsonl"), "", "utf8");
+
+    await expect(
+      resolveRunDirectory(archiveDir, { cwd: root }, { access: "inspect" }),
+    ).resolves.toMatchObject({ runDir: archiveDir });
+  });
+
   it("reads the events of a run directory", async () => {
     const runDir = await makeRunDir("events-run");
     expect(await readEventsForRun(runDir)).toEqual([]);

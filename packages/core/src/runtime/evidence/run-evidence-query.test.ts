@@ -315,6 +315,31 @@ describe("bounded evidence query", () => {
     );
   });
 
+  it("does not list staging infrastructure as run evidence", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, ".staging/phantom-run", [event("workflow.started")], {
+      track: { runId: "phantom-run", status: "running", ownerPid: process.pid },
+    });
+    await writeRun(runsRoot, "real-run", [event("workflow.started")], {
+      track: { runId: "real-run", status: "running", ownerPid: process.pid },
+    });
+
+    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
+    expect(listed.entries.map((entry) => entry.run.runId)).toEqual(["real-run"]);
+    expect(listed.entries).toHaveLength(1);
+  });
+
+  it("lists a run named like the retired legacy staging pattern as evidence", async () => {
+    const runsRoot = await makeRunsRoot();
+    const runId = ".legit-run.tmp-abc123";
+    await writeRun(runsRoot, runId, [event("workflow.started")], {
+      track: { runId, status: "running", ownerPid: process.pid },
+    });
+
+    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
+    expect(listed.entries.map((entry) => entry.run.runId)).toEqual([runId]);
+  });
+
   it("maps cancelRequested without a terminal event to cancelled + a diagnostic", async () => {
     const runsRoot = await makeRunsRoot();
     await writeRun(runsRoot, "cancelled-run", [

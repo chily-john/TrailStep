@@ -1,8 +1,13 @@
 import type { Dirent } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage, isNodeError } from "../../json/guards.js";
-import { defaultRunsRoot, readRunEvents } from "../artifacts/run-storage.js";
+import { isFailureLikeError } from "../../contracts/failures/failure.js";
+import { errorMessage, isNodeError, isPlainObject } from "../../json/guards.js";
+import {
+  defaultRunsRoot,
+  isReservedRunsRootEntry,
+  readRunEvents,
+} from "../artifacts/run-storage.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
@@ -15,6 +20,7 @@ export type RunSummaryStatus =
   | "failed"
   | "cancelled"
   | "archived"
+  | "stale"
   | "unknown";
 
 export interface RunSummary {
@@ -51,7 +57,7 @@ export async function listRunSummaries(options: {
   const summaries: RunSummary[] = [];
 
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === ".archive") {
+    if (!entry.isDirectory() || isReservedRunsRootEntry(entry.name)) {
       continue;
     }
 
@@ -60,7 +66,11 @@ export async function listRunSummaries(options: {
 
     try {
       summaries.push(
-        await summarizeReadableRun({ runId, runDir, events: await readRunEvents(runDir) }),
+        await summarizeReadableRun({
+          runId,
+          runDir,
+          events: await readRunEventsOrEmpty(runDir),
+        }),
       );
     } catch (error) {
       summaries.push({
@@ -119,6 +129,16 @@ async function summarizeReadableRun(options: {
     ...(track === undefined ? {} : { track }),
     ...(trackWarning === undefined ? {} : { trackWarning }),
   };
+
+  if (options.events.length === 0) {
+    return {
+      ...options,
+      ...trackFields,
+      ...summarizeEventlessTrack(track),
+      ...(track === undefined ? {} : await trackTimestampFields(options.runDir)),
+    };
+  }
+
   const latestFailure = selectLatestUnresolvedFailure(options.events);
   const terminalStatus = selectTerminalStatus(options.events);
   const lastEvent = options.events.at(-1);
@@ -154,6 +174,85 @@ async function summarizeReadableRun(options: {
     lastTimestamp: lastEvent?.timestamp,
     ...orphanedTrackFields(track),
   };
+}
+
+/**
+ * A run that has not written its first event yet. The creation track is the
+ * only durable truth in that window: a live running track is active, a running
+ * track whose owner is gone is stale, and a missing/unreadable track stays
+ * unknown instead of being guessed from the directory name alone.
+ */
+function summarizeEventlessTrack(track: TrackSummary | undefined): {
+  readonly status: RunSummaryStatus;
+  readonly workflowId?: string;
+  readonly stale?: true;
+  readonly warning?: string;
+} {
+  if (track === undefined) {
+    return { status: "unknown" };
+  }
+
+  if (track.status === "completed" || track.status === "failed" || track.status === "cancelled") {
+    return {
+      status: track.status,
+      ...(track.workflowId === undefined ? {} : { workflowId: track.workflowId }),
+    };
+  }
+
+  const trackWorkflowId = track.workflowId === undefined ? {} : { workflowId: track.workflowId };
+  if (track.status === "running") {
+    const orphaned = orphanedTrackFields(track);
+    return {
+      status: orphaned.stale === true ? "stale" : "active",
+      ...trackWorkflowId,
+      ...orphaned,
+    };
+  }
+
+  // Waiting is still a live run from the summary's perspective; the detailed
+  // track carries the exact status. Any other/unreadable status stays unknown.
+  if (track.status === "waiting") {
+    return { status: "active", ...trackWorkflowId };
+  }
+
+  return { status: "unknown", ...trackWorkflowId };
+}
+
+/**
+ * An event-less run has no event timestamp, so the track's own modification
+ * time is the only honest age signal. Terminal tracks need it for storage
+ * lifecycle eligibility; active/stale tracks use it for listing order.
+ */
+async function trackTimestampFields(runDir: string): Promise<{ readonly lastTimestamp?: string }> {
+  try {
+    const info = await stat(join(runDir, "track.json"));
+    return { lastTimestamp: info.mtime.toISOString() };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
+}
+
+async function readRunEventsOrEmpty(runDir: string): Promise<Event[]> {
+  try {
+    return await readRunEvents(runDir);
+  } catch (error) {
+    if (isMissingEventsFileError(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function isMissingEventsFileError(error: unknown): boolean {
+  return (
+    isFailureLikeError(error) &&
+    error.failure.code === "resume_target_not_found" &&
+    isPlainObject(error.failure.details) &&
+    error.failure.details.causeCode === "ENOENT"
+  );
 }
 
 /**

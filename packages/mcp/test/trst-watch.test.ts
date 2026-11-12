@@ -852,6 +852,32 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
     );
   });
 
+  it("routes run identifiers through the shared validator", async () => {
+    const sandbox = createSandbox();
+    appendLines(sandbox, [eventLine("workflow.started", 1)]);
+    writeLiveLock(sandbox);
+
+    // An explicit path outside the configured runs root remains readable.
+    const result = await trst_watch(
+      { runId: sandbox.runDir, maxWaitMs: 0 },
+      {
+        cwd: sandbox.root,
+        cursorDir: sandbox.cursorDir,
+        pollIntervalMs: 5,
+      },
+    );
+    expect(result.runId).toBe(sandbox.runDir);
+
+    // A bare reserved name is rejected before any filesystem access, exactly
+    // like every other surface that uses the shared validator.
+    await expect(
+      trst_watch(
+        { runId: ".staging", maxWaitMs: 0 },
+        { cwd: sandbox.root, cursorDir: sandbox.cursorDir, pollIntervalMs: 5 },
+      ),
+    ).rejects.toThrow(/reserved/u);
+  });
+
   it("reports crashed when the run lock is held by a dead pid", async () => {
     const sandbox = createSandbox();
     appendLines(sandbox, [eventLine("workflow.started", 1), eventLine("step.started", 2)]);

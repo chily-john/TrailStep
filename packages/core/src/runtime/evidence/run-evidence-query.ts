@@ -38,7 +38,7 @@ import {
 } from "../../contracts/evidence/run-evidence-query.types.js";
 import { isNodeError, isPlainObject } from "../../json/guards.js";
 import { readWaitAnswerFile, waitEventBranchId } from "../../runs/wait-events.js";
-import { defaultRunsRoot } from "../artifacts/run-storage.js";
+import { defaultRunsRoot, isReservedRunsRootEntry } from "../artifacts/run-storage.js";
 import {
   type RunEventsScanResult,
   readBoundedTextFile,
@@ -140,7 +140,7 @@ export async function listRunEvidence(
   }
 
   for (const entry of hotEntries) {
-    if (entry.name === ARCHIVE_DIR || entry.isDirectory() === false) {
+    if (entry.isDirectory() === false || isReservedRunsRootEntry(entry.name)) {
       continue;
     }
     if (scanBudgetHit({ scannedRuns, limits, deadline, signal: options.signal })) {

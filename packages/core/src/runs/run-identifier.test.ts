@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { validateRunIdentifier } from "./run-identifier.js";
+import { isReservedRunsRootEntry, validateRunIdentifier } from "./run-identifier.js";
 
 async function makeFixture(): Promise<{
   readonly root: string;
@@ -246,5 +246,19 @@ describe("canonical run identifier validation", () => {
       access: "mutate",
     });
     expect(missing.canonicalization).toBe("realpath-ancestor");
+  });
+
+  it("trims trailing dots and spaces without quadratic backtracking", () => {
+    // CodeQL js/polynomial-redos: `/[. ]+$/u` backtracks quadratically on a long
+    // run of dots/spaces that does not end the value, and the value is
+    // caller-supplied. Linear scanning keeps this instant.
+    const adversarial = `run${" ".repeat(100_000)}tail`;
+    const startedAt = performance.now();
+    expect(isReservedRunsRootEntry(adversarial)).toBe(false);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+
+    // The end-anchored aliases must still be caught at the same length.
+    expect(isReservedRunsRootEntry(`.archive${" ".repeat(100_000)}`)).toBe(true);
+    expect(isReservedRunsRootEntry(`.staging${" .".repeat(50_000)}`)).toBe(true);
   });
 });

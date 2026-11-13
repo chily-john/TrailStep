@@ -23,6 +23,30 @@ import { isNodeError } from "../json/guards.js";
 export const RUNS_ROOT_STAGING_DIR_NAME = ".staging";
 
 /**
+ * Trim trailing dots and spaces from one path component.
+ *
+ * Windows ignores both at the end of a component, so `.archive.` and
+ * `.archive ` address the same directory as `.archive`. The scan is written out
+ * instead of using `/[. ]+$/u` because that regex is quadratic on a component
+ * with a long run of dots/spaces that does not end the string, and every input
+ * here comes from the caller (CodeQL `js/polynomial-redos`). The scan also
+ * anchors at the true end of the value only: `$` would additionally match
+ * before one trailing newline, and a newline never makes a component alias a
+ * reserved entry on any supported filesystem.
+ */
+function trimTrailingDotsAndSpaces(value: string): string {
+  let end = value.length;
+  while (end > 0) {
+    const character = value.charAt(end - 1);
+    if (character !== "." && character !== " ") {
+      break;
+    }
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+}
+
+/**
  * Single source of truth for "this runs-root child is not a run directory".
  *
  * Every enumerator (core run summaries, the public evidence query, CLI runs and
@@ -39,7 +63,7 @@ export const RUNS_ROOT_STAGING_DIR_NAME = ".staging";
  * keeps creation, resolution and every storage operation in agreement.
  */
 export function isReservedRunsRootEntry(name: string): boolean {
-  const normalized = name.replace(/[. ]+$/u, "").toLowerCase();
+  const normalized = trimTrailingDotsAndSpaces(name).toLowerCase();
   return normalized === ".archive" || normalized === RUNS_ROOT_STAGING_DIR_NAME;
 }
 
@@ -129,7 +153,7 @@ export async function validateRunIdentifier(
   // runs root or its parent. Explicit paths are handled by the canonical
   // location checks below.
   if (kind === "name") {
-    const normalized = identifier.replace(/[. ]+$/u, "");
+    const normalized = trimTrailingDotsAndSpaces(identifier);
     if (normalized.length === 0 || normalized === "." || normalized === "..") {
       throw reservedIdentifier(
         identifier,
@@ -312,7 +336,7 @@ function aliasPathKey(path: string): string {
     if (raw.length === 0) {
       continue;
     }
-    const component = raw.replace(/[. ]+$/u, "");
+    const component = trimTrailingDotsAndSpaces(raw);
     if (component.length === 0 || component === ".") {
       continue;
     }

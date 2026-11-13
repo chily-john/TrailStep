@@ -76,6 +76,15 @@ describe("usageText", () => {
     expect(usageText).toContain("{{#thinking}}");
   });
 
+  it("documents watch exit codes for both follow modes", () => {
+    expect(usageText).toContain("trailstep watch exits 0 after a terminal event");
+    expect(usageText).toContain("It exits 2 when the run crashed");
+    expect(usageText).toContain("3 when the run state is unknown");
+    expect(usageText).toContain("missing/unreadable/unusable track evidence");
+    expect(usageText).toContain("These codes apply with and without --follow");
+    expect(usageText).toContain("--no-follow only stops the polling");
+  });
+
   it("documents direct source workflow refs and bulk add selection syntax", () => {
     expect(usageText).toContain("./workflow.ts#reviewWorkflow");
     expect(usageText).toContain("./workflows#takeItAway");

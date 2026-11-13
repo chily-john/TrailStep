@@ -64,6 +64,8 @@ export type AbsoluteTerminalKind = "absoluteDone" | "absoluteFail";
 
 export interface TrackStateJson {
   readonly runId: string;
+  /** Workflow identity, available from the moment the run directory is created. */
+  readonly workflowId?: string;
   readonly status: string;
   readonly workers: number;
   readonly failurePolicy: "fail-fast";
@@ -77,6 +79,18 @@ export interface TrackStateJson {
   readonly terminalOutput?: PlainObject;
   readonly failure?: Failure;
 }
+
+/**
+ * The subset of `TrackStateJson` that is certainly true at creation time. The
+ * scheduler replaces it with the full shape on its first `persistTrack`.
+ */
+export type InitialTrackStateJson = Pick<
+  TrackStateJson,
+  "runId" | "ownerPid" | "branches" | "splitOccurred"
+> & {
+  readonly workflowId: string;
+  readonly status: "running";
+};
 
 export interface BranchState {
   readonly branchId: string;

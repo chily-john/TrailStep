@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { isRecord, parseTrailStepConfig, type TrailStepConfig } from "@trailstep/core";
+import { resolveProviderEvidenceRootsInScope } from "../providers/provider-evidence-settings.js";
 
 export class CliConfigError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -55,9 +56,14 @@ export async function loadTrailStepProjectConfig(
   const reads = await readScopeConfigs(cwd, homeDir);
   const configErrors = collectConfigScopeErrors(reads);
 
-  const user = reads.user.value;
-  const project = reads.project.value;
-  const projectLocal = reads.local.value;
+  // Resolve evidence roots per scope before merging, because merging drops
+  // which config file declared a relative root.
+  const user = resolveProviderEvidenceRootsInScope(reads.user.value, join(homeDir, ".trailstep"));
+  const project = resolveProviderEvidenceRootsInScope(reads.project.value, join(cwd, ".trailstep"));
+  const projectLocal = resolveProviderEvidenceRootsInScope(
+    reads.local.value,
+    join(cwd, ".trailstep"),
+  );
 
   if (user === undefined && project === undefined && projectLocal === undefined) {
     return {

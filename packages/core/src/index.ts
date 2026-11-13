@@ -22,6 +22,7 @@ export type {
   TrailStepCustomProviderConfig,
   TrailStepCustomProviderModelOverrideSupport,
   TrailStepCustomProviderThinkingOverrideSupport,
+  TrailStepEvidenceSettings,
   TrailStepMcpConfig,
   TrailStepSettings,
   TrailStepWorkflowConfig,
@@ -173,6 +174,119 @@ export type {
   WorkflowAgentSize,
   WorkflowAgentThinking,
 } from "./contracts/agents/agent-role.types.js";
+export type {
+  DispatchProvenance,
+  DispatchProvenanceContext,
+  DispatchProvenanceLayer,
+} from "./contracts/dispatch-provenance/dispatch-provenance.types.js";
+export { DISPATCH_PROVENANCE_SCHEMA_VERSION } from "./contracts/dispatch-provenance/dispatch-provenance.types.js";
+export {
+  isRunEvidence,
+  isSafeEvidenceArtifactPath,
+  parseRunEvidence,
+  runEvidenceSchema,
+} from "./contracts/evidence/evidence.schema.js";
+export type {
+  EvidenceAvailability,
+  EvidenceAvailabilityReason,
+  EvidenceCoverage,
+  EvidenceDiagnostic,
+  EvidenceDiagnosticCode,
+  EvidenceExecutionObservation,
+  EvidenceExecutionState,
+  EvidenceIdentityQuality,
+  EvidenceLinkedArtifactRef,
+  EvidenceProjectIdentity,
+  EvidenceSourceRef,
+  EvidenceStorageLocation,
+  RunEvidence,
+  RunEvidenceMalformedResult,
+  RunEvidenceParseResult,
+  RunEvidenceRunRef,
+  RunEvidenceUnsupportedVersionResult,
+  RunEvidenceValidResult,
+} from "./contracts/evidence/evidence.types.js";
+export {
+  RUN_EVIDENCE_KIND,
+  RUN_EVIDENCE_PROJECTOR_REVISION,
+  RUN_EVIDENCE_SCHEMA_VERSION,
+} from "./contracts/evidence/evidence.types.js";
+export {
+  DEFAULT_PROVIDER_EVIDENCE_LIMITS,
+  isProviderUsageEvidence,
+  parseProviderEvidenceAdapter,
+  parseProviderUsageEvidence,
+  parseProviderUsageEvidenceRequest,
+  providerEvidenceLimitsSchema,
+  providerUsageEvidenceRequestSchema,
+  providerUsageEvidenceSchema,
+} from "./contracts/evidence/provider-evidence-adapter.schema.js";
+export type {
+  ProviderEvidenceActivityKind,
+  ProviderEvidenceAdapterMalformedResult,
+  ProviderEvidenceAdapterParseResult,
+  ProviderEvidenceAdapterUnsupportedVersionResult,
+  ProviderEvidenceAdapterV1,
+  ProviderEvidenceAdapterValidResult,
+  ProviderEvidenceAttribution,
+  ProviderEvidenceCandidateRun,
+  ProviderEvidenceDiagnostic,
+  ProviderEvidenceDiagnosticCode,
+  ProviderEvidenceDispatchObservation,
+  ProviderEvidenceInvocationResult,
+  ProviderEvidenceLimits,
+  ProviderEvidenceProviderRef,
+  ProviderEvidenceRegistry,
+  ProviderEvidenceRegistryEntry,
+  ProviderEvidenceResponseStatus,
+  ProviderUsageActivity,
+  ProviderUsageCost,
+  ProviderUsageCounters,
+  ProviderUsageEvidenceMalformedResult,
+  ProviderUsageEvidenceParseResult,
+  ProviderUsageEvidenceRequestMalformedResult,
+  ProviderUsageEvidenceRequestParseResult,
+  ProviderUsageEvidenceRequestUnsupportedVersionResult,
+  ProviderUsageEvidenceRequestV1,
+  ProviderUsageEvidenceRequestValidResult,
+  ProviderUsageEvidenceUnsupportedVersionResult,
+  ProviderUsageEvidenceV1,
+  ProviderUsageEvidenceValidResult,
+  ProviderUsageSubtotal,
+} from "./contracts/evidence/provider-evidence-adapter.types.js";
+export {
+  PROVIDER_EVIDENCE_REQUEST_KIND,
+  PROVIDER_EVIDENCE_RESPONSE_KIND,
+  PROVIDER_EVIDENCE_SCHEMA_VERSION,
+} from "./contracts/evidence/provider-evidence-adapter.types.js";
+export type {
+  EvidenceArchiveReader,
+  EvidenceFailureSummary,
+  EvidenceLifecycleCycle,
+  EvidencePendingWait,
+  EvidenceQueryContext,
+  EvidenceQueryLimits,
+  EvidenceQueryLocation,
+  InspectRunEvidenceOptions,
+  ListRunEvidenceOptions,
+  ReadArchivedArtifact,
+  ReadArchivedArtifactRequest,
+  ReadArchivedArtifactResult,
+  ReadArchivedRunEvents,
+  ReadArchivedRunEventsRequest,
+  ReadArchivedRunEventsResult,
+  ResolvedEvidenceSourceLink,
+  ResolveSourceLinkOptions,
+  ResolveSourceLinkSelector,
+  RetrieveEvidenceOptions,
+  RetrieveEvidenceResult,
+  RunEvidenceInspection,
+  RunEvidenceListResult,
+} from "./contracts/evidence/run-evidence-query.types.js";
+export {
+  DEFAULT_EVIDENCE_QUERY_LIMITS,
+  RUN_EVIDENCE_QUERY_PROJECTOR_REVISION,
+} from "./contracts/evidence/run-evidence-query.types.js";
 export type { Failure } from "./contracts/failures/failure.js";
 export {
   isFailureLikeError,
@@ -249,10 +363,19 @@ export {
   resolveRunsRoot,
   TRAILSTEP_RUNS_ROOT_ENV,
 } from "./runs/run-directory.js";
+export {
+  type RunIdentifierAccess,
+  type RunIdentifierCanonicalization,
+  type RunIdentifierForm,
+  type ValidatedRunIdentifier,
+  type ValidateRunIdentifierOptions,
+  validateRunIdentifier,
+} from "./runs/run-identifier.js";
 export { writeWaitAnswerFile } from "./runs/wait-answer-file.js";
 export {
   findLatestPendingWait,
   findPendingWaitsById,
+  listPendingWaits,
   readWaitAnswerFile,
   readWaitQuestion,
   waitEventBranchId,
@@ -263,10 +386,13 @@ export {
   appendEvent,
   atomicWriteJson,
   defaultRunsRoot,
+  isReservedRunsRootEntry,
+  RUNS_ROOT_STAGING_DIR_NAME,
   readGlobalState,
   readRunEvents,
   readRunEventsSince,
   readRunState,
+  STALE_RUN_STAGING_MAX_AGE_MS,
   TRAILSTEP_DIR_NAME,
   TRAILSTEP_GITIGNORE_BODY,
   writeGlobalState,
@@ -282,7 +408,52 @@ export {
   writeCancellationMarker,
 } from "./runtime/cancellation/cancellation.js";
 export { createEvent } from "./runtime/events/create-run-event.js";
+export type {
+  LifecycleReopenEventType,
+  LifecycleTerminal,
+  LifecycleTerminalState,
+} from "./runtime/events/lifecycle-cycle.js";
+export {
+  findLifecycleCycleStartIndex,
+  findLifecycleTerminalEvent,
+  isLifecycleReopenEvent,
+  selectCurrentLifecycleCycle,
+} from "./runtime/events/lifecycle-cycle.js";
 export { readPlainPayload } from "./runtime/events/read-plain-payload.js";
+export type {
+  BoundedTextFileRead,
+  RunEventsScanOptions,
+  RunEventsScanResult,
+} from "./runtime/evidence/bounded-readers.js";
+export {
+  readBoundedTextFile,
+  readRunEventsBounded,
+  scanRunEventsBounded,
+} from "./runtime/evidence/bounded-readers.js";
+export type {
+  ClassifyRunStateOptions,
+  PublicWatchRunState,
+  RunStateClassification,
+  TrackStateSignal,
+  WatchRunState,
+} from "./runtime/evidence/classify-run-state.js";
+export {
+  classifyRunState,
+  readTrackStateSignal,
+  toPublicWatchRunState,
+  toWatchRunState,
+} from "./runtime/evidence/classify-run-state.js";
+export {
+  createProviderEvidenceRegistry,
+  type InvokeProviderEvidenceAdapterOptions,
+  invokeProviderEvidenceAdapter,
+} from "./runtime/evidence/invoke-provider-evidence-adapter.js";
+export {
+  inspectRunEvidence,
+  listRunEvidence,
+  resolveSourceLink,
+  retrieveEvidence,
+} from "./runtime/evidence/run-evidence-query.js";
 export type {
   ExecutionPolicyConfigSource,
   ResolveExecutionPolicyOptions,

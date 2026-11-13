@@ -8,6 +8,7 @@ import type { Event } from "../run-workflow/run-workflow.types.js";
 export interface TrackSummary {
   readonly runId: string;
   readonly status: string;
+  readonly workflowId?: string;
   readonly workers?: number;
   readonly ownerPid?: number;
   readonly failurePolicy?: string;
@@ -55,6 +56,9 @@ export async function readTrackSummary(options: {
   return {
     runId: stringValue(track.runId) ?? options.runId,
     status: stringValue(track.status) ?? "unknown",
+    ...(stringValue(track.workflowId) === undefined
+      ? {}
+      : { workflowId: stringValue(track.workflowId) }),
     ...(numberValue(track.workers) === undefined ? {} : { workers: numberValue(track.workers) }),
     ...(numberValue(track.ownerPid) === undefined ? {} : { ownerPid: numberValue(track.ownerPid) }),
     ...(stringValue(track.failurePolicy) === undefined

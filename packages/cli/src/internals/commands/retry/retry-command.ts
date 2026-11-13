@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import {
   clearCancellationMarker,
   type Event,
@@ -9,6 +7,7 @@ import {
   readCancellationMarker,
   readRunEvents,
   runWorkflow,
+  validateRunIdentifier,
 } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
@@ -58,6 +57,17 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
 
       throw error;
     }
+    // Retry is a mutating entry point: validate the run name before reading or
+    // appending anything. The old direct `join` let `.staging`, traversal
+    // paths and Windows dot/space aliases reach the event trail.
+    const targetRunDir = (
+      await validateRunIdentifier(retryTarget.workflowRunName, {
+        cwd: projectRoot,
+        runsRoot,
+        access: "mutate",
+        form: "name",
+      })
+    ).runDir;
     const projectConfig = await loadTrailStepProjectConfig(projectRoot, {
       homeDir: context.homeDir,
     });
@@ -96,7 +106,6 @@ export const retryCommand: CliCommand<RetryCommandArgs> = {
       ...(trailstepConfig === undefined ? {} : { trailstepConfig }),
     };
 
-    const targetRunDir = join(runsRoot, retryTarget.workflowRunName);
     // Retrying consumes a pending cancellation the same way continuing does:
     // the marker is a pending request, so the retried run is not cancelled
     // again by the request it is replacing.

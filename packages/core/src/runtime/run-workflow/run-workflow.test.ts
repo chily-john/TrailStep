@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -57,6 +57,72 @@ describe("runWorkflow runtime front-door", () => {
     expect(result.output).toEqual({ task: "Investigate:Investigate", count: 1 });
   });
 
+  it("keeps the creation-time running track through the scheduler and ends terminal", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-initial-track-"));
+    const workflow: Workflow<{ value: number }, { value: number }> = {
+      id: "initial-track-transition",
+      inputShape: { value: "number" },
+      outputShape: { value: "number" },
+      start(input) {
+        return step({ id: "increment" }).do((current: { value: number }) =>
+          done({ value: current.value + 1 }),
+        )(input);
+      },
+    };
+
+    let trackAtStarted: Record<string, unknown> | undefined;
+    let trackAtFirstStep: Record<string, unknown> | undefined;
+    const result = await runWorkflow({
+      workflow,
+      input: { value: 1 },
+      runName: "initial-track-transition-run",
+      cwd,
+      eventSink: async (event) => {
+        if (event.type === "workflow.started") {
+          trackAtStarted = JSON.parse(
+            await readFile(join(cwd, ".trailstep", "runs", event.runId, "track.json"), "utf8"),
+          ) as Record<string, unknown>;
+        }
+        if (event.type === "step.started" && trackAtFirstStep === undefined) {
+          trackAtFirstStep = JSON.parse(
+            await readFile(join(cwd, ".trailstep", "runs", event.runId, "track.json"), "utf8"),
+          ) as Record<string, unknown>;
+        }
+      },
+    });
+
+    expect(trackAtStarted).toEqual({
+      runId: "initial-track-transition-run",
+      workflowId: workflow.id,
+      status: "running",
+      ownerPid: process.pid,
+      branches: [],
+      splitOccurred: false,
+    });
+    expect(trackAtFirstStep).toMatchObject({
+      status: "running",
+      workflowId: workflow.id,
+      ownerPid: process.pid,
+      rootBranchId: "root",
+      splitOccurred: false,
+      branches: ["root"],
+    });
+    expect(result.status).toBe("success");
+
+    const finalTrack = JSON.parse(
+      await readFile(join(result.runDir, "track.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(finalTrack).toMatchObject({
+      status: "completed",
+      workflowId: workflow.id,
+      ownerPid: process.pid,
+      rootBranchId: "root",
+      splitOccurred: false,
+      branches: ["root"],
+    });
+    expect(finalTrack).not.toHaveProperty("terminalKind");
+  });
+
   it("accepts an already-flattened non-empty TrailStepConfig without reparsing it as raw entries", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-flattened-config-"));
     const workflow: Workflow<{ task: string }, { answer: string }> = {
@@ -95,6 +161,35 @@ describe("runWorkflow runtime front-door", () => {
       throw new Error(result.failure.message);
     }
     expect(result.output).toEqual({ answer: "fast" });
+  });
+
+  it("removes the fresh run directory when pre-lock setup rejects invalid config", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-runtime-invalid-config-"));
+    const workflow: Workflow<{ value: number }, { ok: boolean }> = {
+      id: "invalid-config-pre-lock",
+      inputShape: { value: "number" },
+      outputShape: { ok: "boolean" },
+      start() {
+        return done({ ok: true });
+      },
+    };
+
+    await expect(
+      runWorkflow({
+        workflow,
+        input: { value: 1 },
+        runName: "invalid-config-run",
+        cwd,
+        trailstepConfig: { version: 1, agents: { broken: "not-an-array" } } as never,
+      }),
+    ).rejects.toMatchObject({
+      failure: { code: "validation_failed", message: "Invalid .trailstep/config.json." },
+    });
+
+    await expect(stat(join(cwd, ".trailstep", "runs", "invalid-config-run"))).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
+    await expect(readdir(join(cwd, ".trailstep", "runs"))).resolves.toEqual([]);
   });
 
   it("persists durable step.display events", async () => {

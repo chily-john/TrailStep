@@ -1,3 +1,5 @@
+import { piEvidenceAdapter } from "./evidence.js";
+
 export const trailstepProvider = {
   manifest: {
     schemaVersion: 1,
@@ -82,4 +84,12 @@ export const trailstepProvider = {
   hooks: {
     extractOutput: { supported: true, source: "package" },
   },
+  evidence: piEvidenceAdapter,
 } as const;
+
+export { PI_EVIDENCE_ADAPTER_REVISION, piEvidenceAdapter } from "./evidence.js";
+export {
+  PI_SESSION_MAX_SUPPORTED_VERSION,
+  PI_SESSION_MIN_SUPPORTED_VERSION,
+  PI_SESSION_PROVIDER_ID,
+} from "./pi-session-format.js";

@@ -286,6 +286,84 @@ describe("parseTrailStepConfig", () => {
     expect(parsed.workflows?.review?.settings?.timeout).toBe(10_000);
   });
 
+  it("parses opt-in evidence settings and defaults usage to false", () => {
+    const disabled = parseTrailStepConfig({
+      version: 1,
+      customProviders: {},
+      agents: {},
+      settings: { evidence: { schemaVersion: 1 } },
+    });
+    expect(disabled.settings?.evidence).toEqual({ schemaVersion: 1, usage: false });
+
+    const enabled = parseTrailStepConfig({
+      version: 1,
+      customProviders: {},
+      agents: {},
+      settings: {
+        evidence: {
+          schemaVersion: 1,
+          usage: true,
+          providerRoots: { pi: ["/authorized/pi", "relative/root"] },
+          futureKey: "drop-me",
+        },
+      },
+      workflows: {
+        review: {
+          settings: {
+            evidence: { schemaVersion: 1, usage: false, providerRoots: { pi: [] } },
+          },
+        },
+      },
+    });
+
+    expect(enabled.settings?.evidence).toEqual({
+      schemaVersion: 1,
+      usage: true,
+      providerRoots: { pi: ["/authorized/pi", "relative/root"] },
+    });
+    expect(enabled.workflows?.review?.settings?.evidence).toEqual({
+      schemaVersion: 1,
+      usage: false,
+      providerRoots: { pi: [] },
+    });
+  });
+
+  it("rejects unsupported evidence versions, bad usage flags and unsafe roots", () => {
+    const expectDiagnostic = (evidence: unknown, diagnostic: string): void => {
+      try {
+        parseTrailStepConfig({
+          version: 1,
+          customProviders: {},
+          agents: {},
+          settings: { evidence },
+        });
+        throw new Error("Expected parseTrailStepConfig to reject invalid evidence settings.");
+      } catch (error) {
+        expect(error).toBeInstanceOf(TrailStepFailureError);
+        expect((error as TrailStepFailureError).failure.details).toEqual({
+          diagnostics: [diagnostic],
+        });
+      }
+    };
+
+    expectDiagnostic(
+      { schemaVersion: 2, usage: false },
+      "settings.evidence.schemaVersion must be 1.",
+    );
+    expectDiagnostic(
+      { schemaVersion: 1, usage: "yes" },
+      "settings.evidence.usage must be a boolean when present.",
+    );
+    expectDiagnostic(
+      { schemaVersion: 1, usage: true, providerRoots: { pi: "not-an-array" } },
+      "settings.evidence.providerRoots.pi must be an array of authorized root paths.",
+    );
+    expectDiagnostic(
+      { schemaVersion: 1, usage: true, providerRoots: { pi: ["bad\u0000root"] } },
+      "settings.evidence.providerRoots.pi roots must be non-empty bounded strings without control characters.",
+    );
+  });
+
   it("normalizes empty retry settings so they do not shadow lower-precedence policies", () => {
     const parsed = parseTrailStepConfig({
       version: 1,

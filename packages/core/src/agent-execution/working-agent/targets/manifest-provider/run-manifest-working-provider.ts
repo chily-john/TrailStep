@@ -4,12 +4,18 @@ import type {
 } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentRole } from "../../../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import {
   buildProviderHygieneArgs,
   type ProviderHygieneArgs,
 } from "../../../../providers/provider-manifest.js";
+import { dispatchProvenanceFields } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
+import {
+  createSpawnFailureScope,
+  type SpawnFailureScope,
+} from "../../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import { resolveExecutionPolicy } from "../../../../runtime/execution/execution-policy.js";
 import {
@@ -38,6 +44,14 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
   readonly cwd: string;
   readonly runner?: WorkingAgentProcessRunner;
   readonly target: TrailStepAgentTarget;
+  /** 1-based position of this target in the fallback chain (A2b). Defaults to 1 for direct/legacy calls. */
+  readonly targetOrdinal?: number;
+  /** 1-based process-level spawn retry for the work phase (A2b). Defaults to 1 for direct/legacy calls. */
+  readonly workSpawnTry?: number;
+  /** Explicit A2b dispatch context for provenance on working-agent events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
   readonly files: WorkingAgentFiles;
   readonly renderedPrompt: string;
   readonly signal?: AbortSignal;
@@ -112,6 +126,14 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
       hygieneArgs,
       spawnRetry,
       timeoutMs: options.timeoutMs,
+      targetOrdinal: options.targetOrdinal ?? 1,
+      workSpawnTry: options.workSpawnTry ?? 1,
+      ...(options.dispatchProvenance === undefined
+        ? {}
+        : { dispatchProvenance: options.dispatchProvenance }),
+      ...(options.spawnFailureScope === undefined
+        ? {}
+        : { spawnFailureScope: options.spawnFailureScope }),
     });
   }
 
@@ -136,98 +158,132 @@ export async function runManifestWorkingProvider<TOutput extends PlainObject>(op
     commandDescription: "Manifest working provider command",
   });
   const captureStdout = working.output?.style !== "provider-output-file";
+  const targetOrdinal = options.targetOrdinal ?? 1;
+  const workSpawnTry = options.workSpawnTry ?? 1;
+  const dispatchProvenance = options.dispatchProvenance;
+  const parentScope = options.spawnFailureScope;
 
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: options.step.id,
-      type: "agent.spawned",
-      payload: {
-        provider: options.target.provider,
-        model,
-        phase: "work",
-        promptFile: options.files.promptFile,
-        outputFile: options.files.outputFile,
-      },
-    }),
-  );
+  const spawnedEvent = createEvent({
+    runId: options.runId,
+    workflowId: options.workflowId,
+    stepId: options.step.id,
+    type: "agent.spawned",
+    payload: {
+      provider: options.target.provider,
+      model,
+      phase: "work",
+      promptFile: options.files.promptFile,
+      outputFile: options.files.outputFile,
+      ...dispatchProvenanceFields(dispatchProvenance, { targetOrdinal, workSpawnTry }),
+    },
+  });
+  await options.emit(spawnedEvent);
+  const spawnEventId = spawnedEvent.id;
   await options.emit(
     createEvent({
       runId: options.runId,
       workflowId: options.workflowId,
       stepId: options.step.id,
       type: "agent.promptSent",
-      payload: { phase: "work", promptFile: options.files.promptFile },
-    }),
-  );
-
-  const result = await spawnManifestPhase({
-    phase: "work",
-    stepId: options.step.id,
-    provider: options.target.provider,
-    command: working.command,
-    args,
-    cwd: options.cwd,
-    model,
-    promptFile: options.files.promptFile,
-    outputFile: options.files.outputFile,
-    stdio: captureStdout ? "pipe" : "inherit",
-    runner: options.runner,
-    signal: options.signal,
-    timeoutMs: options.timeoutMs,
-    ...(options.progress === undefined ? {} : { progress: options.progress }),
-  });
-
-  if (result.exitCode !== 0) {
-    const stderrTail = tailString(result.stderr);
-    await appendStderrArtifact(
-      options.files.stderrFile,
-      { phase: "work", exitCode: result.exitCode },
-      result.stderr,
-    );
-    throw new TrailStepFailureError({
-      code: "agent_provider_failed",
-      message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
-      details: {
-        phase: "work",
-        exitCode: result.exitCode,
-        provider: working.command,
-        target: options.target.provider,
-        ...(model === undefined ? {} : { model }),
-        ...(stderrTail === undefined ? {} : { stderrTail }),
-      },
-    });
-  }
-
-  await writeCapturedStdoutOutput({
-    provider: options.target.provider,
-    stepId: options.step.id,
-    outputFile: options.files.outputFile,
-    captureMode: options.step.output.captureMode,
-    stdout: (result as WorkingAgentProcessResult & { readonly stdout?: string }).stdout,
-    output: working.output,
-    extractOutputHook: registration?.manifest.hooks?.extractOutput,
-  });
-
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: options.step.id,
-      type: "agent.outputReceived",
       payload: {
         phase: "work",
-        outputFile: options.files.outputFile,
-        outputSize: await outputFileSize(options.files.outputFile),
-        valid: true,
+        promptFile: options.files.promptFile,
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal,
+          workSpawnTry,
+          spawnEventId,
+        }),
       },
     }),
   );
 
-  return readWorkingAgentOutput({
-    stepId: options.step.id,
-    outputFile: options.files.outputFile,
-    step: options.step,
-  });
+  // Owned work-dispatch child for post-spawn failures only. Created after the
+  // spawn/prompt emits so pre-spawn emit failures stay uncorrelated.
+  const workScope = createSpawnFailureScope();
+  try {
+    const result = await spawnManifestPhase({
+      phase: "work",
+      stepId: options.step.id,
+      provider: options.target.provider,
+      command: working.command,
+      args,
+      cwd: options.cwd,
+      model,
+      promptFile: options.files.promptFile,
+      outputFile: options.files.outputFile,
+      stdio: captureStdout ? "pipe" : "inherit",
+      runner: options.runner,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+      ...(options.progress === undefined ? {} : { progress: options.progress }),
+    });
+
+    if (result.exitCode !== 0) {
+      const stderrTail = tailString(result.stderr);
+      await appendStderrArtifact(
+        options.files.stderrFile,
+        { phase: "work", exitCode: result.exitCode },
+        result.stderr,
+      );
+      throw new TrailStepFailureError({
+        code: "agent_provider_failed",
+        message: `Working agent step ${options.step.id} target '${options.target.provider}' exited with code ${result.exitCode}.`,
+        details: {
+          phase: "work",
+          exitCode: result.exitCode,
+          provider: working.command,
+          target: options.target.provider,
+          ...(model === undefined ? {} : { model }),
+          ...(stderrTail === undefined ? {} : { stderrTail }),
+        },
+      });
+    }
+
+    await writeCapturedStdoutOutput({
+      provider: options.target.provider,
+      stepId: options.step.id,
+      outputFile: options.files.outputFile,
+      captureMode: options.step.output.captureMode,
+      stdout: (result as WorkingAgentProcessResult & { readonly stdout?: string }).stdout,
+      output: working.output,
+      extractOutputHook: registration?.manifest.hooks?.extractOutput,
+    });
+
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: options.step.id,
+        type: "agent.outputReceived",
+        payload: {
+          phase: "work",
+          outputFile: options.files.outputFile,
+          outputSize: await outputFileSize(options.files.outputFile),
+          valid: true,
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal,
+            workSpawnTry,
+            spawnEventId,
+          }),
+        },
+      }),
+    );
+
+    return await readWorkingAgentOutput({
+      stepId: options.step.id,
+      outputFile: options.files.outputFile,
+      step: options.step,
+    });
+  } catch (error) {
+    // Link every post-spawn failure from this attempt to its actual
+    // `agent.spawned` event via the ephemeral side channel, so outer seams
+    // can reference it on `agent.attemptFailed` provenance without replacing
+    // the thrown error or touching failure.details. The exact thrown value
+    // (structured, cancellation, frozen, or primitive) propagates unchanged.
+    workScope.record(error, spawnEventId);
+    parentScope?.forward(error, workScope);
+    throw error;
+  } finally {
+    workScope.close();
+  }
 }

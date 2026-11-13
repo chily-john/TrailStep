@@ -16,20 +16,34 @@ interface ResolvedFailureIdentity {
   readonly replayPosition?: number;
 }
 
+export interface SelectLatestUnresolvedFailureOptions {
+  /**
+   * First trail position to consider, normally the start of the current
+   * lifecycle cycle. Positions stay absolute so retry replay metadata remains
+   * meaningful; `workflow.started` is still read from the whole trail so the
+   * original workflow input is preserved.
+   */
+  readonly fromIndex?: number;
+}
+
 export function selectLatestUnresolvedFailure(
   events: readonly Event[],
+  options: SelectLatestUnresolvedFailureOptions = {},
 ): LatestUnresolvedFailure | undefined {
+  const fromIndex = Math.max(0, Math.min(events.length, Math.trunc(options.fromIndex ?? 0)));
   const startedEvent = events.find((event) => event.type === "workflow.started");
   const workflowInput = startedEvent ? readPlainPayload(startedEvent, "input") : undefined;
-  const resolvedFailures = events.flatMap((event) =>
-    event.type === "workflow.retryStarted" ? readResolvedFailureIdentity(event) : [],
+  const resolvedFailures = events.flatMap((event, index) =>
+    index >= fromIndex && event.type === "workflow.retryStarted"
+      ? readResolvedFailureIdentity(event)
+      : [],
   );
 
   let workflowFailureFallback: LatestUnresolvedFailure | undefined;
   let laterWorkflowTerminalSeen = false;
   const laterTerminalStepCounts = new Map<string, number>();
 
-  for (let replayPosition = events.length - 1; replayPosition >= 0; replayPosition -= 1) {
+  for (let replayPosition = events.length - 1; replayPosition >= fromIndex; replayPosition -= 1) {
     const event = events[replayPosition];
     if (!event) {
       continue;

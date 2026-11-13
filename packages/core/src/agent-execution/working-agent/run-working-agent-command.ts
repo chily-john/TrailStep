@@ -8,8 +8,11 @@ import type {
 import type { AgentStepRequestConfig } from "../../authoring/step/agent-step.types.js";
 import type { ProviderWorkingRunner } from "../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
 import type { PlainObject } from "../../contracts/shapes/shape.types.js";
+import { dispatchProvenanceFields } from "../../runtime/dispatch-provenance/dispatch-provenance.js";
+import { createSpawnFailureScope } from "../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../runtime/events/create-run-event.js";
 import {
   resolveSpawnRetryPolicy,
@@ -54,6 +57,11 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
   /** Called with the selected target immediately before each target attempt runs. */
   readonly onTargetAttempt?: (target: TrailStepAgentTarget) => void | Promise<void>;
   readonly stepIndex: number;
+  /**
+   * Explicit A2b dispatch context for provenance on working-agent events.
+   * Absent in legacy direct calls, which keep the legacy event shape.
+   */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
   readonly files?: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   // Story 05 replaces the signal wiring in this file.
@@ -95,7 +103,8 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
     global: options.config.settings?.spawnRetry,
   });
 
-  for (const target of targets) {
+  for (const [targetIndex, target] of targets.entries()) {
+    const targetOrdinal = targetIndex + 1;
     await options.onTargetAttempt?.(target);
     // Emit agent.targetSelected event
     await options.emit(
@@ -108,6 +117,7 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
           provider: target.provider,
           model: target.model,
           thinking: target.thinking,
+          ...dispatchProvenanceFields(options.dispatchProvenance, { targetOrdinal }),
         },
       }),
     );
@@ -116,13 +126,20 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
     // before the target is consumed, so a spawn-storm burst cannot burn the
     // whole fallback chain in under a second.
     for (let spawnTry = 1; ; spawnTry += 1) {
+      // Fresh ephemeral failure-correlation root for this dispatch attempt.
+      // A reused error value must never carry an earlier attempt’s spawn
+      // reference, and sibling/concurrent attempts never share a root.
+      const failureScope = createSpawnFailureScope();
       try {
         return await runWorkingAgentTargetAttempt({
           ...options,
           target,
+          targetOrdinal,
+          workSpawnTry: spawnTry,
           files,
           timeoutMs,
           spawnRetry,
+          spawnFailureScope: failureScope,
         });
       } catch (error) {
         const transient = isTransientWorkingAgentFailure(error);
@@ -134,6 +151,12 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
         const stderrTail = stderrTailFromDetails(details);
         const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
         const decision = canRetry ? "retry" : "nextTarget";
+        // Correlation is read by error identity from this attempt’s scope,
+        // not from failure.details: the raw failure (code/retryability/
+        // details, including non-record details) reaches the step.failed
+        // projection unchanged, while this event’s provenance references
+        // the spawn. The read happens before the scope is closed.
+        const spawnEventId = failureScope.read(error);
 
         await appendAttemptLog(files.attemptsFile, {
           timestamp: new Date().toISOString(),
@@ -170,6 +193,15 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
               ...(delayMs === undefined ? {} : { delayMs }),
               ...(stderrTail === undefined ? {} : { stderrTail }),
               message: failureSummary.message,
+              // Link this failure to the actual spawn attempt when the
+              // provider recorded one. Pre-spawn failures keep available
+              // context (target ordinal + work spawn retry) with no spawn
+              // reference rather than a fabricated one.
+              ...dispatchProvenanceFields(options.dispatchProvenance, {
+                targetOrdinal,
+                workSpawnTry: spawnTry,
+                ...(spawnEventId === undefined ? {} : { spawnEventId }),
+              }),
             },
           }),
         );
@@ -179,6 +211,8 @@ export async function runWorkingAgentCommand<TOutput extends PlainObject>(option
           break;
         }
         await sleep(delayMs ?? 0);
+      } finally {
+        failureScope.close();
       }
     }
   }

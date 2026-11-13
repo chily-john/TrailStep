@@ -76,6 +76,30 @@ async function writeWaitingWorkflow(cwd: string): Promise<void> {
 }
 
 describe("retry command", () => {
+  it("rejects a reserved run name before touching its event trail", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-retry-command-tests", task.id);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await writeRetryWorkflow(cwd);
+    const stagingDir = join(cwd, ".trailstep", "runs", ".staging");
+    await mkdir(stagingDir, { recursive: true });
+    const eventsPath = join(stagingDir, "events.jsonl");
+    const original = '{"type":"workflow.started","payload":{}}\n';
+    await writeFile(eventsPath, original, "utf8");
+    const errors: string[] = [];
+
+    await expect(
+      main({
+        argv: ["retry", "./workflow.mjs#retryFeature", ".staging"],
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+
+    expect(errors.join("\n")).toMatch(/reserved for TrailStep storage infrastructure/i);
+    expect(errors.join("\n")).not.toMatch(/\n\s+at /u);
+    await expect(readFile(eventsPath, "utf8")).resolves.toBe(original);
+  });
+
   it("fails safely with no target in non-interactive mode", async () => {
     const errors: string[] = [];
 

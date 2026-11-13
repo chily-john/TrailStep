@@ -5,6 +5,7 @@ import type { Event, LatestUnresolvedFailure } from "@trailstep/core";
 import {
   defaultRunsRoot,
   isPlainObject,
+  isReservedRunsRootEntry,
   readRunEvents,
   selectLatestUnresolvedFailure,
 } from "@trailstep/core";
@@ -41,7 +42,7 @@ export async function listRunSummaries(options: {
   }
 
   return entries
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !isReservedRunsRootEntry(entry.name))
     .map((entry) => ({ runId: entry.name, runDir: join(runsRoot, entry.name) }))
     .sort((left, right) => left.runId.localeCompare(right.runId));
 }

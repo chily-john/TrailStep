@@ -251,6 +251,64 @@ describe("cancel command", () => {
     expect(eventText.match(/"type":"step.cancelled"/g)).toHaveLength(1);
   });
 
+  it("cancels a resumed run again instead of reusing the superseded cycle's cancellation", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-resumed-cycle`);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelRequested", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelled", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.resumed", { runId: "delegate-run", workflowId: "delegate" }),
+      event("step.started", { runId: "delegate-run", workflowId: "delegate", stepId: "ask" }),
+    ]);
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["cancel", "delegate-run"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    // The earlier cycle's workflow.cancelled is history, not the current state.
+    expect(lines.join("\n")).toContain("Cancellation requested: delegate-run");
+    expect(lines.join("\n")).not.toContain("Run already cancelled");
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(eventText.match(/"type":"workflow.cancelRequested"/g)).toHaveLength(2);
+    expect(eventText.match(/"type":"workflow.cancelled"/g)).toHaveLength(2);
+  });
+
+  it("ignores a cancelled event from a cycle superseded by a retry", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-retried-cycle`);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelRequested", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.cancelled", { runId: "delegate-run", workflowId: "delegate" }),
+      event("workflow.retryStarted", { runId: "delegate-run", workflowId: "delegate" }),
+    ]);
+    const lines: string[] = [];
+
+    const exitCode = await main({
+      argv: ["cancel", "delegate-run"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: () => undefined },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Cancellation requested: delegate-run");
+    expect(lines.join("\n")).not.toContain("Run already cancelled");
+    const eventText = await readFile(join(runDir, "events.jsonl"), "utf8");
+    expect(eventText.match(/"type":"workflow.cancelRequested"/g)).toHaveLength(2);
+    expect(eventText.match(/"type":"workflow.cancelled"/g)).toHaveLength(2);
+  });
+
   it("clears a pending cancellation marker without starting a run", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-clear`);
     await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

@@ -6,7 +6,9 @@ import type {
 import type { AgentStepRequestConfig } from "../../../authoring/step/agent-step.types.js";
 import type { ProviderWorkingRunner } from "../../../cli-provider-runtime/catalog/provider-adapter.types.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
+import type { SpawnFailureScope } from "../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import type { SpawnRetryPolicy } from "../../../runtime/retry/spawn-retry-policy.js";
 import type {
   Event,
@@ -30,6 +32,14 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
   readonly providerWorkingRunner?: ProviderWorkingRunner;
   readonly stepIndex: number;
   readonly target: TrailStepAgentTarget;
+  /** 1-based position of this target in the fallback chain (A2b). */
+  readonly targetOrdinal: number;
+  /** 1-based process-level spawn retry for the work phase (A2b). */
+  readonly workSpawnTry: number;
+  /** Explicit A2b dispatch context for provenance on working-agent events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
   readonly files: WorkingAgentFiles;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
@@ -55,6 +65,14 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
       cwd: options.cwd,
       runner: options.runner,
       target: options.target,
+      targetOrdinal: options.targetOrdinal,
+      workSpawnTry: options.workSpawnTry,
+      ...(options.dispatchProvenance === undefined
+        ? {}
+        : { dispatchProvenance: options.dispatchProvenance }),
+      ...(options.spawnFailureScope === undefined
+        ? {}
+        : { spawnFailureScope: options.spawnFailureScope }),
       files: options.files,
       renderedPrompt: options.renderedPrompt,
       signal: options.signal,
@@ -74,6 +92,14 @@ export async function runWorkingAgentTargetAttempt<TOutput extends PlainObject>(
     cwd: options.cwd,
     runner: options.runner,
     target: options.target,
+    targetOrdinal: options.targetOrdinal,
+    workSpawnTry: options.workSpawnTry,
+    ...(options.dispatchProvenance === undefined
+      ? {}
+      : { dispatchProvenance: options.dispatchProvenance }),
+    ...(options.spawnFailureScope === undefined
+      ? {}
+      : { spawnFailureScope: options.spawnFailureScope }),
     files: options.files,
     signal: options.signal,
     timeoutMs: options.timeoutMs,

@@ -1,9 +1,8 @@
-import { join, resolve } from "node:path";
-
 import type { CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { migrateLegacyCustomProvidersConfig } from "../../providers/provider-config-migration.js";
 import { loadProviderPackage } from "../../providers/provider-package-loader.js";
+import { resolveRegisteredProviderPackageRoot } from "../../providers/provider-package-root.js";
 import {
   configPathForScope,
   readRawTrailStepConfigFile,
@@ -182,23 +181,4 @@ export async function providerRegistrationHasHooks(
   } catch {
     return false;
   }
-}
-
-function resolveRegisteredProviderPackageRoot(
-  source: Exclude<
-    TrailStepProviderRegistration["source"],
-    { readonly type: "local-manifest" } | { readonly type: "legacy-custom-provider" }
-  >,
-  scope: WorkflowRegistryScope,
-  context: CliCommandContext,
-): string {
-  if (source.type === "local-package") {
-    return resolve(context.cwd, source.spec);
-  }
-
-  const installRoot =
-    scope === "global"
-      ? join(context.homeDir ?? context.cwd, ".trailstep", "packages")
-      : context.cwd;
-  return join(installRoot, "node_modules", ...source.packageName.split("/"));
 }

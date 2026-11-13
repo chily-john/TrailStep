@@ -1022,7 +1022,14 @@ describe("main", () => {
       "Workflow completed: @acme/trailstep-workflows:reviewFeature",
     );
     expect(errors).toEqual([]);
-    expect(events).toContainEqual(expect.objectContaining({ payload: { input: { ok: true } } }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          input: { ok: true },
+          provenance: expect.any(Object),
+        }),
+      }),
+    );
   });
 
   it("run loads .trailstep/config.json and passes it to runWorkflow", async ({ task }) => {

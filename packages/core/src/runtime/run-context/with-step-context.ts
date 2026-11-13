@@ -18,6 +18,12 @@ import { runContextStorage } from "./run-context-storage.js";
  * scope — e.g. unit tests that exercise the resume/continuation internals
  * in isolation), this falls back to running `fn` with no ambient context,
  * matching prior behavior exactly rather than throwing.
+ *
+ * `options.branchId`/`stepIndex`/`stepArtifactId`/`stepAttempt` carry the
+ * enclosing step's A2b dispatch context into the scope so subprompts can
+ * inherit it explicitly. Replay call sites omit them on purpose: replayed
+ * completed steps (and cached subprompt returns) allocate no dispatch
+ * identity.
  */
 export async function withStepContext<T>(
   stepId: string,
@@ -28,6 +34,11 @@ export async function withStepContext<T>(
     readonly cwd?: string;
     readonly executionCwd?: string;
     readonly replay?: { readonly kind: "completed-step" };
+    /** Dispatch context inherited by subprompts (A2b); absent during replay. */
+    readonly branchId?: string;
+    readonly stepIndex?: number;
+    readonly stepArtifactId?: string;
+    readonly stepAttempt?: number;
   } = {},
 ): Promise<T> {
   const parentContext = runContextStorage.getStore();
@@ -50,6 +61,10 @@ export async function withStepContext<T>(
       cwd: executionCwd ?? parentContext.cwd,
       executionCwd: executionCwd ?? parentContext.executionCwd,
       replay: options.replay,
+      ...(options.branchId === undefined ? {} : { branchId: options.branchId }),
+      ...(options.stepIndex === undefined ? {} : { stepIndex: options.stepIndex }),
+      ...(options.stepArtifactId === undefined ? {} : { stepArtifactId: options.stepArtifactId }),
+      ...(options.stepAttempt === undefined ? {} : { stepAttempt: options.stepAttempt }),
       nextDocumentIndex(): number {
         nextDocumentIndex += 1;
         return nextDocumentIndex;

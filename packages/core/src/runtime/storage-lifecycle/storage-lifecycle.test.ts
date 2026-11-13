@@ -1,20 +1,26 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { gunzip } from "node:zlib";
+import { gunzip, gzip } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
+import { readRunEvents } from "../artifacts/run-storage.js";
+import { classifyRunState } from "../evidence/classify-run-state.js";
 import { listRunSummaries } from "../runs/run-summaries.js";
 import {
   applyStorageLifecycle,
+  archiveRun,
+  deleteArchivedRun,
   deleteRun,
   pinRun,
   planStorageLifecycle,
+  readStorageLifecycleStatus,
   restoreArchivedRun,
   unpinRun,
 } from "./storage-lifecycle.js";
 
 const gunzipAsync = promisify(gunzip);
+const gzipAsync = promisify(gzip);
 
 describe("storage lifecycle", () => {
   it("does nothing when lifecycle is disabled", async ({ task }) => {
@@ -91,12 +97,42 @@ describe("storage lifecycle", () => {
     expect(summaries.map((summary) => `${summary.runId}:${summary.status}`)).toContain(
       "old-terminal:archived",
     );
+    // A started-only trail with no track is not evidence of a live run, so the
+    // summary projects the classifier's unknown instead of assuming active.
     expect(summaries.map((summary) => `${summary.runId}:${summary.status}`)).toContain(
-      "old-active:active",
+      "old-active:unknown",
     );
     expect(summaries.map((summary) => `${summary.runId}:${summary.status}`)).toContain(
       "old-pinned:completed",
     );
+  });
+
+  it("ignores staging infrastructure in lifecycle status and plan scans", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeTerminalRun(runsRoot, "old-terminal", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await writeTerminalRun(
+      runsRoot,
+      join(".staging", "phantom"),
+      "workflow-a",
+      "2026-01-01T00:00:00.000Z",
+    );
+
+    await expect(readStorageLifecycleStatus({ cwd, runsRoot })).resolves.toMatchObject({
+      hotRuns: 1,
+      archivedRuns: 0,
+    });
+
+    const actions = await planStorageLifecycle({
+      cwd,
+      runsRoot,
+      policy: { enabled: true, archiveAfterDays: 1, deleteAfterDays: 30 },
+      now: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    expect(actions.map((action) => `${action.action}:${action.runId}`)).toEqual([
+      "archive:old-terminal",
+    ]);
   });
 
   it("restores archived run files explicitly and removes archive copies", async ({ task }) => {
@@ -123,6 +159,35 @@ describe("storage lifecycle", () => {
     await expect(
       stat(join(runsRoot, ".archive", "restore-me.manifest.json")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("restores a legacy archive without a track as unknown, never as a fresh run", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeLegacyArchiveWithoutTrack(runsRoot, "legacy-no-track", {
+      runId: "legacy-no-track",
+      workflowId: "workflow-a",
+      type: "workflow.started",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    });
+
+    await restoreArchivedRun({ runsRoot, runId: "legacy-no-track" });
+
+    const runDir = join(runsRoot, "legacy-no-track");
+    const classification = await classifyRunState({
+      runDir,
+      events: await readRunEvents(runDir),
+    });
+    expect(classification.state).toBe("unknown");
+    expect(classification.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "missing-source",
+    );
+    await expect(stat(join(runsRoot, "legacy-no-track", "track.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("refuses to restore over an existing hot run", async ({ task }) => {
@@ -240,6 +305,161 @@ describe("storage lifecycle", () => {
       stat(join(runsRoot, ".archive", "archived-delete.manifest.json")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("plans and applies lifecycle actions for a genuinely event-less terminal run", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeEventlessTerminalRun(runsRoot, "eventless-archive", "completed", {
+      runId: "eventless-archive",
+      workflowId: "workflow-a",
+      status: "completed",
+    });
+    await writeEventlessTerminalRun(runsRoot, "eventless-delete", "failed", {
+      runId: "eventless-delete",
+      workflowId: "workflow-a",
+      status: "failed",
+    });
+    // A terminal track written before workflow.completed must never make a run
+    // with a still-active event trail lifecycle eligible, even with a live
+    // owner that is still finishing it.
+    await writeFinishingRun(runsRoot, "finishing-run", "workflow-a", process.pid);
+    // The track says completed but the event trail is still non-terminal and no
+    // lock is held: the summary projects the classifier's unknown, which stays
+    // non-terminal for lifecycle purposes.
+    await expect(listRunSummaries({ cwd, runsRoot })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          runId: "finishing-run",
+          status: "unknown",
+          track: expect.objectContaining({ status: "completed", ownerPid: process.pid }),
+        }),
+      ]),
+    );
+
+    const archiveActions = await planStorageLifecycle({
+      cwd,
+      runsRoot,
+      policy: { enabled: true, archiveAfterDays: 7, deleteAfterDays: 30 },
+      now: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    expect(archiveActions.map((action) => `${action.action}:${action.runId}`)).toEqual([
+      "archive:eventless-archive",
+      "archive:eventless-delete",
+    ]);
+    await expect(
+      archiveRun({ runsRoot, runId: "finishing-run", now: new Date("2026-01-10T00:00:00.000Z") }),
+    ).rejects.toThrow("not a terminal readable run");
+
+    await archiveRun({ runsRoot, runId: "eventless-archive" });
+    await expect(stat(join(runsRoot, "eventless-archive"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      readFile(join(runsRoot, ".archive", "eventless-archive.manifest.json"), "utf8"),
+    ).resolves.toContain('"runId": "eventless-archive"');
+
+    const deleteActions = await planStorageLifecycle({
+      cwd,
+      runsRoot,
+      policy: { enabled: true, deleteAfterDays: 7 },
+      now: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    expect(deleteActions.map((action) => `${action.action}:${action.runId}`).sort()).toEqual([
+      "delete-archive:eventless-archive",
+      "delete-hot:eventless-delete",
+    ]);
+
+    await applyStorageLifecycle({
+      cwd,
+      runsRoot,
+      policy: { enabled: true, deleteAfterDays: 7 },
+      now: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    await expect(stat(join(runsRoot, "eventless-delete"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      stat(join(runsRoot, ".archive", "eventless-archive.json.gz")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    // The still-finishing run was never archived or deleted.
+    await expect(stat(join(runsRoot, "finishing-run"))).resolves.toBeDefined();
+  });
+
+  it("never plans or applies archive/delete for a run whose lock is live", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeTerminalRun(runsRoot, "locked-terminal", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await writeLiveLock(join(runsRoot, "locked-terminal"), "locked-terminal");
+    await writeEventlessTerminalRun(runsRoot, "locked-eventless", "completed", {
+      runId: "locked-eventless",
+      workflowId: "workflow-a",
+      status: "completed",
+    });
+    await writeLiveLock(join(runsRoot, "locked-eventless"), "locked-eventless");
+
+    const actions = await planStorageLifecycle({
+      cwd,
+      runsRoot,
+      policy: { enabled: true, archiveAfterDays: 1, deleteAfterDays: 1 },
+      now: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    expect(actions).toEqual([]);
+
+    await expect(archiveRun({ runsRoot, runId: "locked-terminal" })).rejects.toThrow(
+      "held by a live process and cannot be archived",
+    );
+    await expect(deleteRun({ runsRoot, runId: "locked-eventless" })).rejects.toThrow(
+      "held by a live process and cannot be deleted",
+    );
+    await expect(stat(join(runsRoot, "locked-eventless"))).resolves.toBeDefined();
+  });
+
+  it("refuses reserved names in every name-addressed storage operation", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await mkdir(join(runsRoot, ".staging"), { recursive: true });
+    await writeFile(join(runsRoot, ".staging", "keep.txt"), "staged", "utf8");
+    await mkdir(join(runsRoot, ".archive"), { recursive: true });
+    await writeFile(join(runsRoot, ".archive", "keep.txt"), "archived", "utf8");
+
+    const operations = [
+      () => archiveRun({ runsRoot, runId: ".staging" }),
+      () => restoreArchivedRun({ runsRoot, runId: ".staging" }),
+      () => pinRun({ runsRoot, runId: ".staging" }),
+      () => unpinRun({ runsRoot, runId: ".staging" }),
+      () => deleteRun({ runsRoot, runId: ".staging" }),
+      () => deleteArchivedRun({ runsRoot, runId: ".archive" }),
+      () => deleteRun({ runsRoot, runId: ".Archive" }),
+      // Windows ignores trailing dots/spaces, so these must not alias the
+      // reserved entries either.
+      () => deleteRun({ runsRoot, runId: ".staging." }),
+      () => deleteRun({ runsRoot, runId: ".staging " }),
+      () => archiveRun({ runsRoot, runId: ".archive." }),
+      () => deleteArchivedRun({ runsRoot, runId: ".archive " }),
+      // Dot/space aliases of the runs root or its parent must never reach rm.
+      () => deleteRun({ runsRoot, runId: "..." }),
+      () => deleteRun({ runsRoot, runId: ".. " }),
+      () => archiveRun({ runsRoot, runId: ". " }),
+      () => deleteArchivedRun({ runsRoot, runId: ".." }),
+    ];
+
+    for (const operation of operations) {
+      await expect(operation()).rejects.toMatchObject({
+        message: expect.stringMatching(/reserved for TrailStep storage infrastructure/u),
+        failure: { code: "run_name_reserved" },
+      });
+    }
+
+    await expect(readFile(join(runsRoot, ".staging", "keep.txt"), "utf8")).resolves.toBe("staged");
+    await expect(readFile(join(runsRoot, ".archive", "keep.txt"), "utf8")).resolves.toBe(
+      "archived",
+    );
+  });
 });
 
 async function writeTerminalRun(
@@ -271,6 +491,109 @@ async function writeActiveRun(
   await writeFile(
     join(runsRoot, runId, "events.jsonl"),
     `${eventLine({ runId, workflowId, type: "workflow.started", timestamp })}\n`,
+    "utf8",
+  );
+}
+
+async function writeEventlessTerminalRun(
+  runsRoot: string,
+  runId: string,
+  status: "completed" | "failed" | "cancelled",
+  track: { readonly runId: string; readonly workflowId: string; readonly status: string },
+): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
+  await writeFile(join(runDir, "track.json"), `${JSON.stringify({ ...track, status })}\n`, "utf8");
+  const old = new Date("2026-01-01T00:00:00.000Z");
+  await utimes(join(runDir, "track.json"), old, old);
+  await utimes(runDir, old, old);
+}
+
+/** A run the scheduler has marked terminal in its track but whose event trail
+ * is still non-terminal: the exact window in which the removed lifecycle
+ * disjunct used to archive a live run. */
+async function writeFinishingRun(
+  runsRoot: string,
+  runId: string,
+  workflowId: string,
+  ownerPid: number,
+): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
+  await writeFile(
+    join(runDir, "events.jsonl"),
+    `${eventLine({
+      runId,
+      workflowId,
+      type: "workflow.started",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    })}\n`,
+    "utf8",
+  );
+  await writeFile(
+    join(runDir, "track.json"),
+    `${JSON.stringify({ runId, workflowId, status: "completed", ownerPid, branches: [] })}\n`,
+    "utf8",
+  );
+  const old = new Date("2026-01-01T00:00:00.000Z");
+  await utimes(join(runDir, "events.jsonl"), old, old);
+  await utimes(join(runDir, "track.json"), old, old);
+  await utimes(runDir, old, old);
+}
+
+async function writeLiveLock(runDir: string, runId: string): Promise<void> {
+  const now = new Date("2026-01-01T00:00:00.000Z").toISOString();
+  await writeFile(
+    join(runDir, "run.lock"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      runId,
+      pid: process.pid,
+      startedAt: now,
+      lastHeartbeatAt: now,
+      nonce: `test-lock-${runId}`,
+    })}\n`,
+    "utf8",
+  );
+}
+
+async function writeLegacyArchiveWithoutTrack(
+  runsRoot: string,
+  runId: string,
+  event: {
+    readonly runId: string;
+    readonly workflowId: string;
+    readonly type: string;
+    readonly timestamp: string;
+  },
+): Promise<void> {
+  await mkdir(join(runsRoot, ".archive"), { recursive: true });
+  const manifest = {
+    schemaVersion: 1,
+    runId,
+    archivedAt: "2026-01-02T00:00:00.000Z",
+    sourceRunDir: join(runsRoot, runId),
+    workflowId: event.workflowId,
+    lastTimestamp: event.timestamp,
+    status: "cancelled",
+  };
+  const payload = {
+    manifest,
+    files: [
+      {
+        path: "events.jsonl",
+        contentBase64: Buffer.from(`${eventLine(event)}\n`, "utf8").toString("base64"),
+      },
+    ],
+  };
+  await writeFile(
+    join(runsRoot, ".archive", `${runId}.json.gz`),
+    await gzipAsync(JSON.stringify(payload)),
+    "utf8",
+  );
+  await writeFile(
+    join(runsRoot, ".archive", `${runId}.manifest.json`),
+    `${JSON.stringify(manifest, null, 2)}\n`,
     "utf8",
   );
 }

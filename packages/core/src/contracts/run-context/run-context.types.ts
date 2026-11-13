@@ -120,6 +120,17 @@ export interface RunContext {
     readonly cwd?: string;
     readonly executionCwd?: string;
     readonly replay?: { readonly kind: "completed-step" };
+    /**
+     * Dispatch context of the enclosing step execution (A2b), when the step
+     * runs live (not during completed-step replay). `branchId` is the durable
+     * scheduler branch, `stepIndex`/`stepArtifactId` the allocated step
+     * identity, `stepAttempt` the runtime attempt. Subprompts inherit these
+     * exactly; they never infer branches or allocate identity.
+     */
+    readonly branchId?: string;
+    readonly stepIndex?: number;
+    readonly stepArtifactId?: string;
+    readonly stepAttempt?: number;
     nextDocumentIndex(): number;
     nextSubPromptIndex(): number;
   };

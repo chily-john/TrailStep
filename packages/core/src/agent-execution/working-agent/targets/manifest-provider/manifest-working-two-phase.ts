@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import type { TrailStepAgentTarget } from "../../../../agent-targeting/targeting.types.js";
 import type { AgentStepRequestConfig } from "../../../../authoring/step/agent-step.types.js";
 import type { WorkflowAgentThinking } from "../../../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import type { PlainObject } from "../../../../contracts/shapes/shape.types.js";
 import { errorMessage } from "../../../../json/guards.js";
@@ -13,6 +14,11 @@ import type {
   TrailStepProviderManifest,
   TrailStepProviderWorkingManifest,
 } from "../../../../providers/provider-manifest.js";
+import { dispatchProvenanceFields } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
+import {
+  createSpawnFailureScope,
+  type SpawnFailureScope,
+} from "../../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import type { SpawnRetryPolicy } from "../../../../runtime/retry/spawn-retry-policy.js";
 import type {
@@ -72,10 +78,20 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
   readonly hygieneArgs: ProviderHygieneArgs;
   readonly spawnRetry: SpawnRetryPolicy;
   readonly timeoutMs?: number;
+  /** 1-based position of this target in the fallback chain (A2b). */
+  readonly targetOrdinal: number;
+  /** 1-based process-level spawn retry for the work phase (A2b). */
+  readonly workSpawnTry: number;
+  /** Explicit A2b dispatch context for provenance on working-agent events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
 }): Promise<TOutput> {
   const { options, working, followUp } = context;
   const { files, step, target } = options;
   const spawnRetry = context.spawnRetry;
+  const dispatchProvenance = context.dispatchProvenance;
+  const parentScope = context.spawnFailureScope;
   const sessionId = randomUUID();
   const captureStdout = working.output?.style !== "provider-output-file";
 
@@ -141,96 +157,131 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
     phase1Args.push(followUp.sessionIdFlag, sessionId);
   }
 
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: step.id,
-      type: "agent.spawned",
-      payload: {
-        provider: target.provider,
-        model: context.model,
-        phase: "work",
-        sessionId,
-        promptFile: files.promptFile,
-        outputFile: files.workFile,
-      },
-    }),
-  );
+  const spawnedEvent = createEvent({
+    runId: options.runId,
+    workflowId: options.workflowId,
+    stepId: step.id,
+    type: "agent.spawned",
+    payload: {
+      provider: target.provider,
+      model: context.model,
+      phase: "work",
+      sessionId,
+      promptFile: files.promptFile,
+      outputFile: files.workFile,
+      ...dispatchProvenanceFields(dispatchProvenance, {
+        targetOrdinal: context.targetOrdinal,
+        workSpawnTry: context.workSpawnTry,
+      }),
+    },
+  });
+  await options.emit(spawnedEvent);
+  const workSpawnEventId = spawnedEvent.id;
   await options.emit(
     createEvent({
       runId: options.runId,
       workflowId: options.workflowId,
       stepId: step.id,
       type: "agent.promptSent",
-      payload: { phase: "work", promptFile: files.promptFile, sessionId },
-    }),
-  );
-
-  const phase1Result = await spawnManifestPhase({
-    phase: "work",
-    stepId: step.id,
-    provider: target.provider,
-    command: working.command ?? "",
-    args: phase1Args,
-    cwd: options.cwd,
-    model: context.model,
-    promptFile: files.promptFile,
-    outputFile: files.workFile,
-    stdio: captureStdout ? "pipe" : "inherit",
-    runner: options.runner,
-    signal: options.signal,
-    timeoutMs: phase1BudgetMs,
-    ...(options.progress === undefined ? {} : { progress: options.progress }),
-  });
-
-  if (phase1Result.exitCode !== 0) {
-    const stderrTail = tailString(phase1Result.stderr);
-    await appendStderrArtifact(
-      files.stderrFile,
-      { phase: "work", exitCode: phase1Result.exitCode },
-      phase1Result.stderr,
-    );
-    throw new TrailStepFailureError({
-      code: "agent_provider_failed",
-      message: `Working agent step ${step.id} target '${target.provider}' exited with code ${phase1Result.exitCode}.`,
-      details: {
-        phase: "work",
-        exitCode: phase1Result.exitCode,
-        provider: working.command,
-        target: target.provider,
-        ...(context.model === undefined ? {} : { model: context.model }),
-        ...(stderrTail === undefined ? {} : { stderrTail }),
-      },
-    });
-  }
-
-  if (captureStdout) {
-    // Raw work report: deliberately no JSON parsing here.
-    await writeFile(files.workFile, phase1Result.stdout ?? "", "utf8");
-  }
-  const phase1Tail = await readPhase1Tail(files.workFile);
-  await writePhaseUsageFile({
-    usageFile: files.usageFile,
-    sessionId,
-    provider: target.provider,
-    model: context.model,
-  });
-  await options.emit(
-    createEvent({
-      runId: options.runId,
-      workflowId: options.workflowId,
-      stepId: step.id,
-      type: "agent.outputReceived",
       payload: {
         phase: "work",
+        promptFile: files.promptFile,
         sessionId,
-        outputFile: files.workFile,
-        outputSize: await outputFileSize(files.workFile),
-        valid: true,
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal: context.targetOrdinal,
+          workSpawnTry: context.workSpawnTry,
+          spawnEventId: workSpawnEventId,
+        }),
       },
     }),
   );
+
+  let phase1Result: Awaited<ReturnType<typeof spawnManifestPhase>>;
+  let phase1Tail: string;
+  // Owned work-dispatch child, created after the spawn/prompt emits so
+  // pre-spawn emit failures stay uncorrelated. Closed in finally; terminal
+  // work failures forward to the command-owned parent before close.
+  const workScope = createSpawnFailureScope();
+  try {
+    phase1Result = await spawnManifestPhase({
+      phase: "work",
+      stepId: step.id,
+      provider: target.provider,
+      command: working.command ?? "",
+      args: phase1Args,
+      cwd: options.cwd,
+      model: context.model,
+      promptFile: files.promptFile,
+      outputFile: files.workFile,
+      stdio: captureStdout ? "pipe" : "inherit",
+      runner: options.runner,
+      signal: options.signal,
+      timeoutMs: phase1BudgetMs,
+      ...(options.progress === undefined ? {} : { progress: options.progress }),
+    });
+
+    if (phase1Result.exitCode !== 0) {
+      const stderrTail = tailString(phase1Result.stderr);
+      await appendStderrArtifact(
+        files.stderrFile,
+        { phase: "work", exitCode: phase1Result.exitCode },
+        phase1Result.stderr,
+      );
+      throw new TrailStepFailureError({
+        code: "agent_provider_failed",
+        message: `Working agent step ${step.id} target '${target.provider}' exited with code ${phase1Result.exitCode}.`,
+        details: {
+          phase: "work",
+          exitCode: phase1Result.exitCode,
+          provider: working.command,
+          target: target.provider,
+          ...(context.model === undefined ? {} : { model: context.model }),
+          ...(stderrTail === undefined ? {} : { stderrTail }),
+        },
+      });
+    }
+
+    if (captureStdout) {
+      // Raw work report: deliberately no JSON parsing here.
+      await writeFile(files.workFile, phase1Result.stdout ?? "", "utf8");
+    }
+    phase1Tail = await readPhase1Tail(files.workFile);
+    await writePhaseUsageFile({
+      usageFile: files.usageFile,
+      sessionId,
+      provider: target.provider,
+      model: context.model,
+    });
+    await options.emit(
+      createEvent({
+        runId: options.runId,
+        workflowId: options.workflowId,
+        stepId: step.id,
+        type: "agent.outputReceived",
+        payload: {
+          phase: "work",
+          sessionId,
+          outputFile: files.workFile,
+          outputSize: await outputFileSize(files.workFile),
+          valid: true,
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal: context.targetOrdinal,
+            workSpawnTry: context.workSpawnTry,
+            spawnEventId: workSpawnEventId,
+          }),
+        },
+      }),
+    );
+  } catch (error) {
+    // Link every work-phase failure to its actual `agent.spawned` event via
+    // the ephemeral side channel so outer seams can reference it without
+    // replacing the thrown value or touching failure.details.
+    workScope.record(error, workSpawnEventId);
+    parentScope?.forward(error, workScope);
+    throw error;
+  } finally {
+    workScope.close();
+  }
 
   // Phase 2: pinned same-session format follow-up.
   const phase2Args = renderCustomProviderArgs({
@@ -249,6 +300,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
 
   const validationDiagnostics: string[] = [];
   let formatFailureMessage = "";
+  let lastFormatSpawnEventId: string | undefined;
 
   await options.emit(
     createEvent({
@@ -256,7 +308,13 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       workflowId: options.workflowId,
       stepId: step.id,
       type: "agent.outputRequested",
-      payload: { phase: "format", sessionId },
+      payload: {
+        phase: "format",
+        sessionId,
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal: context.targetOrdinal,
+        }),
+      },
     }),
   );
   await options.emit(
@@ -265,7 +323,13 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       workflowId: options.workflowId,
       stepId: step.id,
       type: "agent.sessionResumed",
-      payload: { sessionId, phase: "format" },
+      payload: {
+        sessionId,
+        phase: "format",
+        ...dispatchProvenanceFields(dispatchProvenance, {
+          targetOrdinal: context.targetOrdinal,
+        }),
+      },
     }),
   );
 
@@ -290,26 +354,31 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       outputSchema: step.output.jsonSchema,
       ...(attempt === 1 ? {} : { validationError: formatFailureMessage }),
     });
-    const phase2Result = await spawnFormatWithTransientRetry({
-      stepId: step.id,
-      target,
-      command: working.command ?? "",
-      args: phase2Args,
-      cwd: options.cwd,
-      files,
-      runner: options.runner,
-      signal: options.signal,
-      timeoutMs: attemptBudgetMs,
-      attempt,
-      sessionId,
-      model: context.model,
-      captureStdout,
-      spawnRetry,
-      ...(options.progress === undefined ? {} : { progress: options.progress }),
-      emit: options.emit,
-      runId: options.runId,
-      workflowId: options.workflowId,
-    });
+    const { result: phase2Result, spawnEventId: formatSpawnEventId } =
+      await spawnFormatWithTransientRetry({
+        stepId: step.id,
+        target,
+        command: working.command ?? "",
+        args: phase2Args,
+        cwd: options.cwd,
+        files,
+        runner: options.runner,
+        signal: options.signal,
+        timeoutMs: attemptBudgetMs,
+        attempt,
+        sessionId,
+        targetOrdinal: context.targetOrdinal,
+        ...(dispatchProvenance === undefined ? {} : { dispatchProvenance }),
+        ...(parentScope === undefined ? {} : { spawnFailureScope: parentScope }),
+        model: context.model,
+        captureStdout,
+        spawnRetry,
+        ...(options.progress === undefined ? {} : { progress: options.progress }),
+        emit: options.emit,
+        runId: options.runId,
+        workflowId: options.workflowId,
+      });
+    lastFormatSpawnEventId = formatSpawnEventId;
 
     try {
       await writeCapturedStdoutOutput({
@@ -339,6 +408,14 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
             outputFile: files.outputFile,
             outputSize: await outputFileSize(files.outputFile),
             valid: true,
+            // Propagate the successful format spawn reference explicitly:
+            // `sessionId` is reused across attempts and cannot identify the
+            // actual spawn that produced this output.
+            ...dispatchProvenanceFields(dispatchProvenance, {
+              targetOrdinal: context.targetOrdinal,
+              formatValidationAttempt: attempt,
+              spawnEventId: formatSpawnEventId,
+            }),
           },
         }),
       );
@@ -351,7 +428,7 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
     }
   }
 
-  throw new TrailStepFailureError({
+  const exhaustedFailure = new TrailStepFailureError({
     code: "agent_target_failed",
     message: `Working agent step ${step.id} target '${target.provider}' failed output validation after ${MAX_FORMAT_ATTEMPTS} format attempts in session ${sessionId}.`,
     details: {
@@ -362,4 +439,17 @@ export async function runTwoPhaseManifestWorking<TOutput extends PlainObject>(co
       phase1Tail,
     },
   });
+  // Preserve the last format spawn reference via the side channel, not in
+  // failure.details (and not only in the overwritten per-attempt usage
+  // artifact), so the outer `agent.attemptFailed` provenance can reference
+  // the actual last format spawn while the raw failure stays unchanged.
+  // The new aggregate is bound directly to the final output-producing
+  // format dispatch; the swallowed validator error is never forwarded as
+  // though it were the aggregate, and pre-dispatch prep/budget failures
+  // never reuse work or earlier-format IDs. Without a real format spawn,
+  // no reference is fabricated.
+  if (lastFormatSpawnEventId !== undefined) {
+    parentScope?.record(exhaustedFailure, lastFormatSpawnEventId);
+  }
+  throw exhaustedFailure;
 }

@@ -1,11 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import {
+  appendFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Event } from "../../contracts/events/event.types.js";
 import { TrailStepFailureError } from "../../contracts/failures/failure.js";
-import { isNodeError, isPlainObject } from "../../json/guards.js";
+import { errorMessage, isNodeError, isPlainObject } from "../../json/guards.js";
+import { RUNS_ROOT_STAGING_DIR_NAME, validateRunIdentifier } from "../../runs/run-identifier.js";
 
 export type { Event } from "../../contracts/events/event.types.js";
+export {
+  isReservedRunsRootEntry,
+  RUNS_ROOT_STAGING_DIR_NAME,
+} from "../../runs/run-identifier.js";
 
 export type RunState = Record<string, unknown>;
 
@@ -17,6 +35,16 @@ export function defaultRunsRoot(cwd: string): string {
 }
 
 /**
+ * How old a staging directory must be before a later run creation removes it.
+ * A live creation writes its track and renames within milliseconds, so one day
+ * is unambiguously stale and can never race a healthy creator.
+ */
+export const STALE_RUN_STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Prefix `mkdtemp` gives every staging directory this module creates. */
+const RUN_STAGING_ENTRY_PREFIX = "run-";
+
+/**
  * Creates a fresh run directory under the runs root.
  *
  * - `runName`: caller-chosen base name for the run (validated; defaults to the
@@ -25,30 +53,259 @@ export function defaultRunsRoot(cwd: string): string {
  *   a previous run already took the base name (n increments until free).
  * - `runDir`: the absolute path of the new run directory
  *   (`<runsRoot>/<runId>`) where events.jsonl and other artifacts are written.
+ * - `initialTrackState`: optional factory for the `track.json` a new run must
+ *   own before its directory is returned to the caller. It runs only after a
+ *   genuinely new directory is staged; a failure removes that staging directory
+ *   and fails creation instead of leaving a run the classifier would call
+ *   unknown. The staged directory is renamed into its final name only after the
+ *   track is written, so the final path never exists without a readable track.
+ *   After the rename the published track is re-read and must record this run
+ *   id; otherwise the name belongs to a concurrent creator and creation moves
+ *   to the next suffix instead of deleting a directory it cannot prove is its
+ *   own.
+ *
+ * Staging lives in one reserved `<runsRoot>/.staging` directory whose child
+ * names never embed the run name, so long-but-legal run names are limited only
+ * by the final path. Each creation opportunistically removes only its own
+ * `run-*` staging entries older than {@link STALE_RUN_STAGING_MAX_AGE_MS}, so a
+ * crash cannot leave phantoms or leak empty staging directories forever.
+ *
+ * A directory at the staging path is not necessarily staging. Released versions
+ * accepted a run named exactly `.staging`, so a real project can hold a legacy
+ * run there. Such a run (its own `events.jsonl` and `track.json`) is never
+ * pruned, and nothing inside it is reclaimed either: it is the `.staging`
+ * directory itself, not an entry inside it, so its children are run content. It
+ * stays out of run listings because `.staging` is a reserved runs-root entry; an
+ * operator can still read it by explicit path through read-only inspection
+ * (`access: "inspect"`), and that is deliberate. Moving or migrating the
+ * directory would risk exactly the data loss this guard prevents, so it stays in
+ * place until an operator relocates it.
  */
 export async function createRunDirectory(options: {
   readonly cwd: string;
   readonly runName: string;
   readonly runsRoot?: string;
+  readonly initialTrackState?: (created: {
+    readonly runId: string;
+    readonly runDir: string;
+  }) => object | Promise<object>;
 }): Promise<{ runId: string; runDir: string }> {
   const runsRoot = options.runsRoot ?? defaultRunsRoot(options.cwd);
-  validateRunName(options.runName);
+  await validateRunIdentifier(options.runName, {
+    cwd: options.cwd,
+    runsRoot,
+    access: "mutate",
+    form: "name",
+  });
   await mkdir(runsRoot, { recursive: true });
   await ensureTrailStepGitignoreForRunsRoot(runsRoot);
+  // Opportunistic, best-effort cleanup: a failed prune must never fail a run.
+  await pruneStaleRunStaging(runsRoot).catch(() => undefined);
+
+  const stagingRoot = join(runsRoot, RUNS_ROOT_STAGING_DIR_NAME);
+  await mkdir(stagingRoot, { recursive: true });
 
   for (let suffix = 1; ; suffix += 1) {
     const runId = suffix === 1 ? options.runName : `${options.runName}-${suffix}`;
     const runDir = join(runsRoot, runId);
 
+    // Check before staging so an existing (even empty) run directory keeps its
+    // name. A concurrent creator that wins after this check has a non-empty
+    // directory with its track, so the rename below fails instead of replacing it.
+    if (await pathExists(runDir)) {
+      continue;
+    }
+
+    // Staging names deliberately omit the run name: a long but legal run name
+    // must not push the staging path over the filesystem component limit.
+    const tempDir = await createStagingDirectory(stagingRoot);
     try {
-      await mkdir(runDir);
-      return { runId, runDir };
-    } catch (error) {
-      if (isNodeError(error) && error.code === "EEXIST") {
+      if (options.initialTrackState !== undefined) {
+        try {
+          const initialTrack = await options.initialTrackState({ runId, runDir });
+          // Validate the in-memory track before publishing: a track that does
+          // not record this run id would make the final directory claim another
+          // owner. This check is before the write so a caller bug leaves no
+          // directory behind.
+          const recordedRunId = isPlainObject(initialTrack) ? initialTrack.runId : undefined;
+          if (recordedRunId !== runId) {
+            throw new TrailStepFailureError({
+              code: "run_track_initialization_failed",
+              message: `Initial track metadata for new run ${runId} must record runId ${runId}.`,
+              details: { runDir, recordedRunId },
+            });
+          }
+          await atomicWriteJson(join(tempDir, "track.json"), initialTrack);
+        } catch (error) {
+          throw new TrailStepFailureError({
+            code: "run_track_initialization_failed",
+            message: `Failed to initialize track metadata for new run ${runId}: ${errorMessage(error)}`,
+            details: { runDir, ...(isNodeError(error) ? { causeCode: error.code } : {}) },
+          });
+        }
+      }
+
+      try {
+        // Production creations always staged a track.json above, so this source
+        // directory is non-empty: on POSIX, rename replaces only an empty target,
+        // and a concurrent creator's track-bearing directory fails instead.
+        // A caller that passed no initialTrackState leaves an empty source; it
+        // may replace an empty target, which is not a readable run yet.
+        await rename(tempDir, runDir);
+      } catch (error) {
+        // Never treat an occupied final name as ours: discard the staged copy
+        // and try the next suffix, preserving the -2, -3, ... collision
+        // behaviour. Both errno values are real cross-platform collisions.
+        if (
+          (await pathExists(runDir)) ||
+          (isNodeError(error) && (error.code === "EEXIST" || error.code === "ENOTEMPTY"))
+        ) {
+          await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+          continue;
+        }
+        throw error;
+      }
+
+      const publishedRunId = await readTrackRunId(runDir);
+      // A track-bearing creation must publish its own track; a track-less
+      // creation must not inherit a foreign one. Either way, never delete a
+      // directory whose track we cannot prove is ours: leave it to its owner
+      // and take the next suffix.
+      //
+      // A foreign track here is unreachable in practice for a track-bearing
+      // creation: the staged source contains track.json and a non-empty source
+      // can only be renamed onto an empty target, so a foreign track-bearing
+      // target makes the rename above fail with ENOTEMPTY/EEXIST instead. Only
+      // a synthetic fixture (or a track-less creation racing a foreign track
+      // writer) can produce this state. Do not add a reclaim path for it: the
+      // contested directory stays visible to every run enumerator under its
+      // own name, and deleting it would destroy evidence owned by another run.
+      // The ownership check remains as a defensive guard against races and
+      // non-POSIX rename semantics.
+      const ownsPublishedTrack =
+        options.initialTrackState === undefined
+          ? publishedRunId === undefined || publishedRunId === runId
+          : publishedRunId === runId;
+      if (!ownsPublishedTrack) {
+        await removeStagingRootIfEmpty(stagingRoot);
         continue;
       }
 
+      await removeStagingRootIfEmpty(stagingRoot);
+      return { runId, runDir };
+    } catch (error) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+      await removeStagingRootIfEmpty(stagingRoot);
       throw error;
+    }
+  }
+}
+
+async function removeStagingRootIfEmpty(stagingRoot: string): Promise<void> {
+  try {
+    await rmdir(stagingRoot);
+  } catch {
+    // Another creation is still staging, or the directory is already gone.
+  }
+}
+
+async function createStagingDirectory(stagingRoot: string): Promise<string> {
+  // A concurrent creation may remove an empty `.staging` between our mkdir and
+  // mkdtemp. Recreate it once instead of failing a healthy run.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await mkdtemp(join(stagingRoot, RUN_STAGING_ENTRY_PREFIX));
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "ENOENT" || attempt > 0) {
+        throw error;
+      }
+      await mkdir(stagingRoot, { recursive: true });
+    }
+  }
+}
+
+/**
+ * Whether a `.staging` child is a directory this module created. Anything else
+ * under the staging directory is not ours to delete: a released version allowed
+ * a run named `.staging`, so legacy run content can live there.
+ */
+function isRunStagingEntryName(name: string): boolean {
+  return name.startsWith(RUN_STAGING_ENTRY_PREFIX);
+}
+
+/**
+ * Defence in depth for reclamation: even a `run-*` name is not enough to
+ * delete an entry that holds run artifacts, so a future naming change cannot
+ * turn a misidentified run into a deletion target. The cost is that a staging
+ * directory abandoned after its track write is left in place (it is small and
+ * invisible to run listings). An I/O error also counts as "not safely
+ * removable" and leaves the entry alone.
+ */
+async function holdsRunArtifacts(dir: string): Promise<boolean> {
+  for (const artifact of ["events.jsonl", "track.json"] as const) {
+    try {
+      await lstat(join(dir, artifact));
+      return true;
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Reclaims stale `run-*` staging entries left by crashed creations.
+ *
+ * Reclamation is suspended while `<runsRoot>/.staging` is itself a legacy run:
+ * `holdsRunArtifacts` returns early so nothing inside a real run is deleted. The
+ * cost is that abandoned `run-*` staging entries in that project are never
+ * reclaimed and accumulate for as long as the legacy run stays there. There is
+ * no automatic migration. Manual remedy: after stopping any process using the
+ * run, an operator can move the legacy run directory to a normal (non-reserved)
+ * name under the runs root, which preserves it and makes it visible to run
+ * listings; reclamation resumes on the next creation.
+ */
+async function pruneStaleRunStaging(runsRoot: string): Promise<void> {
+  const cutoffMs = Date.now() - STALE_RUN_STAGING_MAX_AGE_MS;
+  const dir = join(runsRoot, RUNS_ROOT_STAGING_DIR_NAME);
+  // A released version allowed a run named exactly `.staging`, so the staging
+  // path can itself be a legacy run. Its children are run content, not staging
+  // entries, so reclamation must not touch anything inside it.
+  if (await holdsRunArtifacts(dir)) {
+    return;
+  }
+
+  let entries: Dirent[];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    // Never delete anything under `.staging` that this module did not create.
+    if (!isRunStagingEntryName(entry.name)) {
+      continue;
+    }
+
+    const entryPath = join(dir, entry.name);
+    try {
+      const info = await lstat(entryPath);
+      if (!info.isDirectory() || info.mtimeMs > cutoffMs) {
+        continue;
+      }
+      if (await holdsRunArtifacts(entryPath)) {
+        continue;
+      }
+      await rm(entryPath, { recursive: true, force: true });
+    } catch {
+      // A concurrent creator may publish or remove the entry between readdir
+      // and lstat; cleanup stays best-effort and must never fail a run.
     }
   }
 }
@@ -419,19 +676,25 @@ export async function writeBranchRunState(
   await writeJsonStateArtifact(branchStatePath(runDir, branchId), state);
 }
 
-function validateRunName(runName: string): void {
-  if (
-    runName.trim().length === 0 ||
-    runName === "." ||
-    runName === ".." ||
-    runName.includes("/") ||
-    runName.includes("\\")
-  ) {
-    throw new TrailStepFailureError({
-      code: "run_name_invalid",
-      message: "Run name must be a non-empty single path segment.",
-      details: { runName },
-    });
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** The run id recorded by a published `track.json`, or undefined when unreadable. */
+async function readTrackRunId(runDir: string): Promise<string | undefined> {
+  try {
+    const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8")) as unknown;
+    return isPlainObject(track) && typeof track.runId === "string" ? track.runId : undefined;
+  } catch {
+    return undefined;
   }
 }
 

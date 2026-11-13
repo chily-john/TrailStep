@@ -203,6 +203,7 @@ export async function runBranch(
           ? source
           : `${source} branch ${branch.branchId}`,
       allocateStepIndex: () => allocateStepIndex(runtime, branch),
+      branchId: branch.branchId,
       returnContinuationArrays: true,
       workflowAgents: options.workflowAgents,
       workflowTimeout: options.workflowTimeout,

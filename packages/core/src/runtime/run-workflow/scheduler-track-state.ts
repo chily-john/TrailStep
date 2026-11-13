@@ -12,6 +12,7 @@ import type {
   BranchState,
   BranchStateJson,
   BranchStatus,
+  InitialTrackStateJson,
   RunRootContinuationArraySchedulerOptions,
   TrackStateJson,
   TrackTerminalKind,
@@ -63,6 +64,28 @@ export function branchFromJson(json: BranchStateJson): BranchState {
   };
 }
 
+export interface InitialTrackStateOptions {
+  readonly runId: string;
+  readonly workflowId: string;
+}
+
+/**
+ * Build the track state for a brand-new run before any workflow event or
+ * branch exists. Only fields that are certainly true at creation are written;
+ * the scheduler's first `persistTrack` replaces this with the full track once
+ * it has validated the real worker/failure-policy configuration.
+ */
+export function createInitialTrackState(options: InitialTrackStateOptions): InitialTrackStateJson {
+  return {
+    runId: options.runId,
+    workflowId: options.workflowId,
+    status: "running",
+    ownerPid: process.pid,
+    branches: [],
+    splitOccurred: false,
+  };
+}
+
 export async function persistTrack(
   options: RunRootContinuationArraySchedulerOptions,
   workers: number,
@@ -77,6 +100,7 @@ export async function persistTrack(
 ): Promise<void> {
   const trackState: TrackStateJson = {
     runId: options.runId,
+    workflowId: options.workflowId,
     status,
     workers,
     failurePolicy: "fail-fast",

@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { listRunSummaries } from "@trailstep/core";
+import { describe, expect } from "vitest";
 
 import { listRuns } from "./runs";
+import { it } from "./test-fixtures";
 
 const workflowCompletedEvent = {
   id: "event-2",
@@ -26,8 +28,7 @@ const workflowStartedEvent = {
 };
 
 describe("dashboard run listing", () => {
-  it("lists local runs with latest status from core readRunEvents", async ({ task }) => {
-    const cwd = join(process.cwd(), ".tmp", task.id);
+  it("lists local runs with latest status from core readRunEvents", async ({ cwd }) => {
     const runDir = join(cwd, ".trailstep", "runs", "run-a");
     await mkdir(runDir, { recursive: true });
     await writeFile(
@@ -45,4 +46,59 @@ describe("dashboard run listing", () => {
       },
     ]);
   });
+
+  it("does not list reserved infrastructure as a run", async ({ cwd }) => {
+    const runDir = join(cwd, ".trailstep", "runs", ".staging", "phantom-run");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify({ ...workflowStartedEvent, runId: runDir })}\n`,
+      "utf8",
+    );
+
+    await expect(listRuns({ cwd })).resolves.toEqual([]);
+  });
+
+  it("lists a run named like the retired legacy staging pattern", async ({ cwd }) => {
+    const runName = ".legit-run.tmp-abc123";
+    const runDir = join(cwd, ".trailstep", "runs", runName);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${JSON.stringify({ ...workflowStartedEvent, runId: runName })}\n`,
+      "utf8",
+    );
+
+    // A started-only trail with no track is not evidence of a live run, so the
+    // projection reports unknown; the test only cares that the name is listed.
+    await expect(listRuns({ cwd })).resolves.toEqual([
+      expect.objectContaining({ runId: runName, status: "unknown" }),
+    ]);
+  });
+
+  it("agrees with core summaries for event-less running and stale tracks", async ({ cwd }) => {
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await writeTrackRun(runsRoot, "live-track-run", process.pid);
+    await writeTrackRun(runsRoot, "dead-track-run", 2_147_483_647);
+
+    const coreStatuses = (await listRunSummaries({ cwd, runsRoot })).map(
+      (summary) => `${summary.runId}:${summary.status}`,
+    );
+    const dashboardStatuses = (await listRuns({ cwd })).map(
+      (summary) => `${summary.runId}:${summary.status}`,
+    );
+
+    expect(dashboardStatuses).toEqual(coreStatuses);
+    expect([...coreStatuses].sort()).toEqual(["dead-track-run:stale", "live-track-run:active"]);
+  });
 });
+
+async function writeTrackRun(runsRoot: string, runId: string, ownerPid: number): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
+  await writeFile(
+    join(runDir, "track.json"),
+    `${JSON.stringify({ runId, status: "running", ownerPid, branches: [] })}\n`,
+    "utf8",
+  );
+}

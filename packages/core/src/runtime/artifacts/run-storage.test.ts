@@ -1,10 +1,12 @@
-import { mkdir, mkdtemp, open, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import type { Event } from "../../contracts/events/event.types.js";
+import { resolveRunDirectory } from "../../runs/run-directory.js";
+import { listRunSummaries } from "../runs/run-summaries.js";
 import {
   appendEvent,
   atomicWriteJson,
@@ -152,6 +154,452 @@ describe("run storage", () => {
 
     const readBack = await readRunEvents(runDir);
     expect(readBack.map((event) => event.id)).toEqual(events.map((event) => event.id));
+  });
+
+  it("writes initial track state before returning a newly created run directory", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+    const { runDir } = await createRunDirectory({
+      cwd,
+      runName: "initial-track-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(track).toEqual({ runId: "initial-track-run", status: "running", ownerPid: process.pid });
+  });
+
+  it("removes a new run directory when initial track state cannot be written", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+    await expect(
+      createRunDirectory({
+        cwd,
+        runName: "broken-track-run",
+        initialTrackState: ({ runId }) => ({ runId, ownerPid: 1n }),
+      }),
+    ).rejects.toMatchObject({ failure: { code: "run_track_initialization_failed" } });
+    await expect(stat(join(cwd, ".trailstep", "runs", "broken-track-run"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(readdir(join(cwd, ".trailstep", "runs"))).resolves.toEqual([]);
+  });
+
+  it("preserves the underlying cause code when track initialization fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+    await expect(
+      createRunDirectory({
+        cwd,
+        runName: "cause-code-run",
+        initialTrackState: () => {
+          throw Object.assign(new Error("track write denied"), { code: "EACCES" });
+        },
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: "run_track_initialization_failed",
+        details: { causeCode: "EACCES" },
+      },
+    });
+    await expect(readdir(join(cwd, ".trailstep", "runs"))).resolves.toEqual([]);
+  });
+
+  it("never exposes a run directory before its track is readable", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const runName = "atomic-track-run";
+    const runDir = join(runsRoot, runName);
+
+    let releaseTrack!: () => void;
+    const trackGate = new Promise<void>((resolve) => {
+      releaseTrack = resolve;
+    });
+    let markTrackFactoryStarted!: () => void;
+    const trackFactoryStarted = new Promise<void>((resolve) => {
+      markTrackFactoryStarted = resolve;
+    });
+    let markAbsentSeen!: () => void;
+    const absentSeen = new Promise<void>((resolve) => {
+      markAbsentSeen = resolve;
+    });
+    let markTrackSeen!: () => void;
+    const trackSeen = new Promise<void>((resolve) => {
+      markTrackSeen = resolve;
+    });
+
+    let done = false;
+    const observations: ("absent" | "track" | "trackless")[] = [];
+    const observer = (async () => {
+      while (!done) {
+        try {
+          await readdir(runDir);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            observations.push("absent");
+            markAbsentSeen();
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            continue;
+          }
+          throw error;
+        }
+
+        try {
+          const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8")) as {
+            readonly runId?: unknown;
+          };
+          if (track.runId === runName) {
+            observations.push("track");
+            markTrackSeen();
+          } else {
+            observations.push("trackless");
+          }
+        } catch {
+          observations.push("trackless");
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    })();
+
+    const creation = createRunDirectory({
+      cwd,
+      runName,
+      initialTrackState: async ({ runId }) => {
+        markTrackFactoryStarted();
+        await trackGate;
+        return { runId, status: "running", ownerPid: process.pid };
+      },
+    });
+
+    await trackFactoryStarted;
+    await absentSeen;
+    releaseTrack();
+
+    let created: { readonly runId: string; readonly runDir: string };
+    try {
+      created = await creation;
+      await trackSeen;
+    } finally {
+      done = true;
+    }
+    await observer;
+
+    expect(created.runDir).toBe(runDir);
+    expect(observations).toContain("track");
+    expect(observations).not.toContain("trackless");
+    await expect(readFile(join(created.runDir, "track.json"), "utf8")).resolves.toContain(
+      `"runId": "${runName}"`,
+    );
+  });
+
+  it("publishes a run directory with no staging marker or staging residue", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+
+    const created = await createRunDirectory({
+      cwd,
+      runName: "clean-publish-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    const runEntries = await readdir(created.runDir);
+    expect(runEntries).toEqual(["track.json"]);
+    expect(runEntries).not.toContain(".trailstep-staging");
+    expect(created.runDir).not.toContain(".tmp-");
+
+    const runsRootEntries = await readdir(runsRoot);
+    expect(runsRootEntries).toContain("clean-publish-run");
+    expect(runsRootEntries.filter((name) => name.includes(".tmp-"))).toEqual([]);
+  });
+
+  it("keeps stale staging invisible as a run and reclaims it on the next creation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const stagingDir = join(runsRoot, ".staging", "run-stale-staging");
+    await mkdir(stagingDir, { recursive: true });
+    const old = new Date(0);
+    await utimes(stagingDir, old, old);
+
+    // Staging is infrastructure, never a phantom run.
+    await expect(listRunSummaries({ cwd, runsRoot })).resolves.toEqual([]);
+
+    await createRunDirectory({
+      cwd,
+      runName: "after-crash-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    await expect(stat(stagingDir)).rejects.toMatchObject({ code: "ENOENT" });
+    const summaries = await listRunSummaries({ cwd, runsRoot });
+    expect(summaries.map((summary) => summary.runId)).toEqual(["after-crash-run"]);
+  });
+
+  it("never reclaims an aged staging entry that lacks the run- prefix", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const foreignDir = join(runsRoot, ".staging", "operator-notes");
+    const notePath = join(foreignDir, "note.txt");
+    await mkdir(foreignDir, { recursive: true });
+    await writeFile(notePath, "not ours\n", "utf8");
+    const old = new Date(0);
+    await utimes(notePath, old, old);
+    await utimes(foreignDir, old, old);
+
+    await createRunDirectory({
+      cwd,
+      runName: "after-foreign-staging-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    // The entry holds no run artifacts, so only the mkdtemp `run-` naming rule
+    // protects it. The sibling artifact-bearing test covers the other rule.
+    await expect(stat(foreignDir)).resolves.toBeDefined();
+    await expect(readFile(notePath, "utf8")).resolves.toBe("not ours\n");
+  });
+
+  it("never reclaims a run-* staging candidate that holds run artifacts", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const candidateDir = join(runsRoot, ".staging", "run-artifact-bearing");
+    const eventsPath = join(candidateDir, "events.jsonl");
+    const trackPath = join(candidateDir, "track.json");
+    await mkdir(candidateDir, { recursive: true });
+    await writeFile(
+      eventsPath,
+      `${JSON.stringify({ ...makeEvent("workflow.started"), runId: "artifact-bearing" })}\n`,
+      "utf8",
+    );
+    await writeFile(trackPath, `${JSON.stringify({ runId: "artifact-bearing" })}\n`, "utf8");
+    const old = new Date(0);
+    await utimes(candidateDir, old, old);
+
+    // Defence in depth: a run artifact inside the candidate blocks deletion even
+    // though its `run-` name matches the staging rule; it also stays invisible
+    // to run listings.
+    await expect(listRunSummaries({ cwd, runsRoot })).resolves.toEqual([]);
+    await createRunDirectory({
+      cwd,
+      runName: "after-defence-in-depth-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    await expect(readFile(eventsPath, "utf8")).resolves.toContain('"type":"workflow.started"');
+    await expect(readFile(trackPath, "utf8")).resolves.toContain('"runId":"artifact-bearing"');
+  });
+
+  it("never prunes a legacy run stored at the .staging path and keeps it readable", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const legacyRunDir = join(runsRoot, ".staging");
+    const stepsDir = join(legacyRunDir, "steps");
+    const stepDir = join(stepsDir, "0001-review");
+    const eventsPath = join(legacyRunDir, "events.jsonl");
+    const trackPath = join(legacyRunDir, "track.json");
+    const outputPath = join(stepDir, "output.md");
+    const runNamedChildDir = join(legacyRunDir, "run-legacy-child");
+    const runNamedChildPath = join(runNamedChildDir, "output.txt");
+
+    await mkdir(stepDir, { recursive: true });
+    await mkdir(runNamedChildDir, { recursive: true });
+    await writeFile(
+      eventsPath,
+      `${JSON.stringify({ ...makeEvent("workflow.started"), runId: "legacy-staging-run" })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      trackPath,
+      `${JSON.stringify({ runId: "legacy-staging-run", status: "completed", branches: [] })}\n`,
+      "utf8",
+    );
+    await writeFile(outputPath, "legacy step output\n", "utf8");
+    await writeFile(runNamedChildPath, "legacy child output\n", "utf8");
+    const old = new Date(0);
+    await utimes(outputPath, old, old);
+    await utimes(runNamedChildPath, old, old);
+    await utimes(stepDir, old, old);
+    await utimes(stepsDir, old, old);
+    await utimes(runNamedChildDir, old, old);
+    await utimes(legacyRunDir, old, old);
+
+    // Reserved infrastructure stays out of run listings by design.
+    await expect(listRunSummaries({ cwd, runsRoot })).resolves.toEqual([]);
+
+    await createRunDirectory({
+      cwd,
+      runName: "after-legacy-staging-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    // The review fixture: a three-day-old steps subtree must survive the next
+    // creation intact, together with the legacy events and track.
+    await expect(readFile(eventsPath, "utf8")).resolves.toContain('"runId":"legacy-staging-run"');
+    await expect(readFile(trackPath, "utf8")).resolves.toContain('"runId":"legacy-staging-run"');
+    await expect(readFile(outputPath, "utf8")).resolves.toBe("legacy step output\n");
+    // Even a staging-looking child of a legacy run is run content, not ours.
+    await expect(readFile(runNamedChildPath, "utf8")).resolves.toBe("legacy child output\n");
+
+    // An operator reaches the legacy run by explicit path with read-only
+    // inspection; the reserved name only blocks mutating resolution.
+    const resolved = await resolveRunDirectory(legacyRunDir, { cwd }, { access: "inspect" });
+    expect(resolved.runDir).toBe(legacyRunDir);
+    await expect(readRunEvents(resolved.runDir)).resolves.toEqual([
+      expect.objectContaining({ runId: "legacy-staging-run" }),
+    ]);
+
+    const summaries = await listRunSummaries({ cwd, runsRoot });
+    expect(summaries.map((summary) => summary.runId)).toEqual(["after-legacy-staging-run"]);
+  });
+
+  it("treats a run named like the retired legacy staging pattern as a normal run", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const legacyLookingName = ".legit-run.tmp-abc123";
+
+    const created = await createRunDirectory({
+      cwd,
+      runName: legacyLookingName,
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+    // Backdate the run so the retired legacy reclaimer would have deleted it.
+    const old = new Date(0);
+    await utimes(created.runDir, old, old);
+    await createRunDirectory({
+      cwd,
+      runName: "another-run",
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    await expect(stat(created.runDir)).resolves.toBeDefined();
+    const summaries = await listRunSummaries({ cwd });
+    expect(summaries.map((summary) => summary.runId)).toContain(legacyLookingName);
+  });
+
+  it.each([
+    ".staging",
+    ".archive",
+    ".STAGING",
+    ".Archive",
+    ".staging.",
+    ".staging ",
+    ".archive.",
+    ".archive ",
+  ])("rejects the reserved run name %s before creating anything", async (runName) => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+    await expect(createRunDirectory({ cwd, runName })).rejects.toMatchObject({
+      failure: { code: "run_name_reserved" },
+    });
+    await expect(stat(join(cwd, ".trailstep", "runs"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it.each([".", "..", "...", ". ", ".. ", ". .", " ..."])(
+    "rejects the runs-root alias name %j before creating anything",
+    async (runName) => {
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+      await expect(createRunDirectory({ cwd, runName })).rejects.toMatchObject({
+        failure: { code: "run_name_reserved" },
+      });
+      await expect(stat(join(cwd, ".trailstep", "runs"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it("still creates a dotted near-miss name that is not reserved", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runName = ".near-miss-run";
+
+    const created = await createRunDirectory({
+      cwd,
+      runName,
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    expect(created.runId).toBe(runName);
+    await expect(stat(join(created.runDir, "track.json"))).resolves.toBeDefined();
+  });
+
+  it.each([".staging-run", ".archive-run", ".stagingx", ".archivex"])(
+    "still creates the reserved-looking near-miss name %s",
+    async (runName) => {
+      const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+      const created = await createRunDirectory({
+        cwd,
+        runName,
+        initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+      });
+
+      expect(created.runId).toBe(runName);
+      await expect(stat(created.runDir)).resolves.toBeDefined();
+    },
+  );
+
+  it("rejects an initial track that does not record the created run id", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+
+    await expect(
+      createRunDirectory({
+        cwd,
+        runName: "foreign-track-run",
+        initialTrackState: () => ({ runId: "someone-else", status: "running" }),
+      }),
+    ).rejects.toMatchObject({ failure: { code: "run_track_initialization_failed" } });
+    await expect(readdir(join(cwd, ".trailstep", "runs"))).resolves.toEqual([]);
+  });
+
+  it("takes the next suffix when the published track belongs to another run", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    let calls = 0;
+
+    const created = await createRunDirectory({
+      cwd,
+      runName: "contested-track-run",
+      initialTrackState: ({ runId }) => {
+        calls += 1;
+        if (calls === 1) {
+          // Simulate a concurrent writer replacing the published track after
+          // our rename: the on-disk track records a different run id even
+          // though the in-memory value validated before publication.
+          return {
+            runId,
+            status: "running",
+            toJSON: () => ({ runId: "other-owner", status: "running" }),
+          };
+        }
+        return { runId, status: "running", ownerPid: process.pid };
+      },
+    });
+
+    expect(created.runId).toBe("contested-track-run-2");
+    // The contested directory is left for its track's owner, never deleted.
+    await expect(
+      readFile(join(runsRoot, "contested-track-run", "track.json"), "utf8"),
+    ).resolves.toContain('"runId": "other-owner"');
+    await expect(readFile(join(created.runDir, "track.json"), "utf8")).resolves.toContain(
+      '"runId": "contested-track-run-2"',
+    );
+  });
+
+  it("creates a long but legal run name without embedding it in the staging path", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-run-storage-"));
+    const runName = "r".repeat(244);
+
+    const created = await createRunDirectory({
+      cwd,
+      runName,
+      initialTrackState: ({ runId }) => ({ runId, status: "running", ownerPid: process.pid }),
+    });
+
+    expect(created.runId).toBe(runName);
+    expect(basename(created.runDir)).toBe(runName);
+    await expect(stat(join(created.runDir, "track.json"))).resolves.toBeDefined();
   });
 
   it("rejects run names that would escape the runs root", async () => {

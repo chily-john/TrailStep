@@ -12,7 +12,12 @@ import {
   resolveRunDirectory,
   resolveRunsRoot,
 } from "./run-directory.js";
-import { findLatestPendingWait, findPendingWaitsById, waitEventBranchId } from "./wait-events.js";
+import {
+  findLatestPendingWait,
+  findPendingWaitsById,
+  listPendingWaits,
+  waitEventBranchId,
+} from "./wait-events.js";
 
 async function makeRunDir(name: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-"));
@@ -23,7 +28,7 @@ async function makeRunDir(name: string): Promise<string> {
 }
 
 function waitEvent(
-  type: "wait.started" | "wait.satisfied",
+  type: "wait.started" | "wait.satisfied" | "wait.failed",
   options: {
     readonly waitId: string;
     readonly branchId?: string;
@@ -125,6 +130,53 @@ describe("run directory resolution", () => {
     expect(seen).toEqual(["missing-run"]);
   });
 
+  it("refuses to resolve reserved bare run names with a typed failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-reserved-"));
+    await mkdir(join(root, ".trailstep", "runs", ".staging"), { recursive: true });
+
+    for (const runName of [".STAGING", ".staging.", ".Archive ", ".archive."]) {
+      await expect(resolveRunDirectory(runName, { cwd: root })).rejects.toMatchObject({
+        failure: { code: "run_name_reserved" },
+      });
+    }
+  });
+
+  it("refuses mutating resolution of a reserved entry or anything inside it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-reserved-path-"));
+    const runsRoot = join(root, ".trailstep", "runs");
+    const archiveDir = join(runsRoot, ".archive");
+    const archivedChild = join(archiveDir, "payload-run");
+    const archivedNested = join(archivedChild, "steps", "0001-review");
+    await mkdir(archivedNested, { recursive: true });
+    await writeFile(join(archiveDir, "events.jsonl"), "", "utf8");
+    await writeFile(join(archivedChild, "events.jsonl"), "", "utf8");
+    await writeFile(join(archivedNested, "events.jsonl"), "", "utf8");
+
+    for (const runDir of [
+      archiveDir,
+      archivedChild,
+      archivedNested,
+      join(runsRoot, ".staging"),
+      join(runsRoot, ".staging", "child", "nested"),
+    ]) {
+      await mkdir(runDir, { recursive: true });
+      await expect(resolveRunDirectory(runDir, { cwd: root })).rejects.toMatchObject({
+        failure: { code: "run_name_reserved" },
+      });
+    }
+  });
+
+  it("still resolves a reserved path for read-only inspection when explicitly allowed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trailstep-core-runs-reserved-readonly-"));
+    const archiveDir = join(root, ".trailstep", "runs", ".archive");
+    await mkdir(archiveDir, { recursive: true });
+    await writeFile(join(archiveDir, "events.jsonl"), "", "utf8");
+
+    await expect(
+      resolveRunDirectory(archiveDir, { cwd: root }, { access: "inspect" }),
+    ).resolves.toMatchObject({ runDir: archiveDir });
+  });
+
   it("reads the events of a run directory", async () => {
     const runDir = await makeRunDir("events-run");
     expect(await readEventsForRun(runDir)).toEqual([]);
@@ -177,6 +229,49 @@ describe("wait event helpers", () => {
 
   it("treats events without a branch as the root branch", () => {
     expect(waitEventBranchId(waitEvent("wait.started", { waitId: "w1" }))).toBe("root");
+  });
+
+  it("lists a single pending wait", () => {
+    const wait = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([wait])).toEqual([wait]);
+  });
+
+  it("drops a wait resolved by wait.satisfied", () => {
+    const started = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+    const satisfied = waitEvent("wait.satisfied", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([started, satisfied])).toEqual([]);
+  });
+
+  it("drops a wait resolved by wait.failed", () => {
+    const started = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+    const failed = waitEvent("wait.failed", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([started, failed])).toEqual([]);
+  });
+
+  it("keeps two same-waitId waits on different branches distinct", () => {
+    const branchA = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const branchB = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "b",
+      answerFile: "answers/b.json",
+    });
+
+    expect(listPendingWaits([branchA, branchB])).toEqual([branchA, branchB]);
+  });
+
+  it("returns only the later wait when an earlier same-id wait was already resolved", () => {
+    const first = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+    const satisfied = waitEvent("wait.satisfied", { waitId: "w1", answerFile: "answers/a.json" });
+    const second = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
+
+    expect(listPendingWaits([first, satisfied, second])).toEqual([second]);
   });
 });
 

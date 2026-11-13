@@ -1,0 +1,5 @@
+---
+"@trailstep/core": patch
+---
+
+A new run now writes its `track.json` before its final directory is published, so event-less runs are classifiable from creation. Run identifiers pass through one canonical core validator at creation, resolution, retry/continue/cancel/answer/resume and every storage operation; it rejects empty, dot/dot-dot and trailing-dot/space aliases, reserved `.staging`/`.archive` entries at any depth, and mutating bare names that escape the runs root. Those rejections surface as typed `run_name_invalid` and `run_name_reserved` failures, which the CLI renders as messages for creation, retry, cancel-by-path and storage commands. A run with a live `run.lock` is never planned or mutated for archive/delete. Staging stays in the reserved `.staging` directory: only aged `run-*` entries created by TrailStep are reclaimed, never one holding `events.jsonl` or `track.json`, and a legacy run at `.staging` itself is preserved and remains readable by explicit path. Long run names no longer hit staging path limits.

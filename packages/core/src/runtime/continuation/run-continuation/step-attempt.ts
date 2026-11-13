@@ -11,6 +11,7 @@ import {
   isWorkflowInvocationNode,
 } from "../../../authoring/step/step-node.js";
 import type { WorkflowAgentRole } from "../../../contracts/agents/agent-role.types.js";
+import type { DispatchProvenanceContext } from "../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import type { PlainObject } from "../../../contracts/shapes/shape.types.js";
 import { resolveStepArtifactPaths } from "../../artifacts/step-artifacts.js";
 import { readCancellationMarker } from "../../cancellation/cancellation.js";
@@ -40,6 +41,8 @@ export interface StepAttemptContext {
   readonly stepNode: StepNode;
   readonly resumeWait: ResumeWaitOptions | undefined;
   readonly stepIndex: number;
+  /** Durable scheduler branch executing this step, when running under the scheduler (A2b). */
+  readonly branchId?: string;
   readonly currentWorkflowId: string;
   readonly currentWorkflowAgents: Readonly<Record<string, WorkflowAgentRole>>;
   readonly trailstepConfig: TrailStepConfig | undefined;
@@ -83,6 +86,17 @@ export async function runStepAttempt(context: StepAttemptContext): Promise<StepA
     stepId: config.id,
     stepIndex,
   });
+  // A2b dispatch context for every agent dispatch in this attempt: the
+  // authoritative scheduler branch, the allocated step index/artifact
+  // identity, the runtime attempt, and the exact resolved execution cwd.
+  // `promptPhaseIndex` is per-dispatch and merged in at the dispatch site.
+  const stepDispatchContext: DispatchProvenanceContext = {
+    ...(context.branchId === undefined ? {} : { branchId: context.branchId }),
+    stepIndex,
+    stepArtifactId: stepArtifacts.artifactStepId,
+    stepAttempt: context.attempt,
+    executionCwd: stepCwd,
+  };
 
   const stepResult = await runWithStepControl({
     stepId: config.id,
@@ -154,7 +168,7 @@ export async function runStepAttempt(context: StepAttemptContext): Promise<StepA
                 workflowId: currentWorkflowId,
                 emit: options.emit,
               }),
-            dispatchPrompt: async (phase) => {
+            dispatchPrompt: async (phase, phaseIndex) => {
               const outputSchema = resolveStepOutputSchema(phase);
               if (!outputSchema) {
                 throw new Error(`step ${config.id} with a prompt requires an output shape`);
@@ -179,6 +193,7 @@ export async function runStepAttempt(context: StepAttemptContext): Promise<StepA
                 providerWorkingRunner: options.providerWorkingRunner,
                 processRunner: options.processRunner,
                 stepIndex,
+                dispatchProvenance: { ...stepDispatchContext, promptPhaseIndex: phaseIndex },
                 ...(stallPolicy.stallTimeoutMs === undefined
                   ? {}
                   : { stallTimeoutMs: stallPolicy.stallTimeoutMs }),
@@ -237,7 +252,15 @@ export async function runStepAttempt(context: StepAttemptContext): Promise<StepA
           throwIfStepTimedOut(signal, config.id, timeoutPolicy.timeoutMs);
           return phaseResult;
         },
-        { maxSubPrompts: context.maxSubPrompts, cwd: stepCwd, executionCwd: stepCwd },
+        {
+          maxSubPrompts: context.maxSubPrompts,
+          cwd: stepCwd,
+          executionCwd: stepCwd,
+          ...(context.branchId === undefined ? {} : { branchId: context.branchId }),
+          stepIndex,
+          stepArtifactId: stepArtifacts.artifactStepId,
+          stepAttempt: context.attempt,
+        },
       ),
   });
 

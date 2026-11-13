@@ -261,3 +261,62 @@ describe("loadTrailStepProjectConfig scope composition", () => {
     });
   });
 });
+
+describe("provider evidence scope resolution", () => {
+  it("resolves relative evidence roots against the scope that declared them", async () => {
+    const paths = await sandbox();
+    await writeScopeConfig(paths.globalConfigPath, {
+      version: 1,
+      settings: {
+        evidence: {
+          schemaVersion: 1,
+          usage: true,
+          providerRoots: {
+            "global-pkg": ["./global-sessions", "/absolute/global-sessions"],
+          },
+        },
+      },
+    });
+    await writeScopeConfig(paths.projectConfigPath, {
+      version: 1,
+      settings: {
+        timeout: 60_000,
+        evidence: {
+          schemaVersion: 1,
+          usage: true,
+          providerRoots: {
+            "project-pkg": ["project-sessions"],
+            "global-pkg": ["project-overrides-global"],
+          },
+        },
+      },
+    });
+    await writeScopeConfig(paths.localConfigPath, {
+      version: 1,
+      settings: {
+        evidence: {
+          schemaVersion: 1,
+          usage: true,
+          providerRoots: {
+            "local-pkg": ["local-sessions"],
+          },
+        },
+      },
+    });
+
+    const loaded = await loadTrailStepProjectConfig(paths.projectDir, {
+      homeDir: paths.homeDir,
+    });
+
+    expect(loaded.trailstepConfig?.settings?.timeout).toBe(60_000);
+    expect(loaded.trailstepConfig?.settings?.evidence).toEqual({
+      schemaVersion: 1,
+      usage: true,
+      providerRoots: {
+        "global-pkg": [join(paths.projectDir, ".trailstep", "project-overrides-global")],
+        "project-pkg": [join(paths.projectDir, ".trailstep", "project-sessions")],
+        "local-pkg": [join(paths.projectDir, ".trailstep", "local-sessions")],
+      },
+    });
+  });
+});

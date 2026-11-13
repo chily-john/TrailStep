@@ -6,6 +6,7 @@ import {
   isPathLike,
   isPlainObject,
   type ResolvedRunDirectory,
+  type RunIdentifierAccess,
   resolveRunDirectory as resolveRunDirectoryCore,
 } from "@trailstep/core";
 import type { CliCommandContext } from "../command-framework/command.types.js";
@@ -33,6 +34,7 @@ export {
 export async function resolveRunDirectory(
   runNameOrRunDir: string,
   context: Pick<CliCommandContext, "cwd" | "env">,
+  options: { readonly access?: RunIdentifierAccess } = {},
 ): Promise<ResolvedRunDirectory> {
   return await resolveRunDirectoryCore(
     runNameOrRunDir,
@@ -48,6 +50,7 @@ export async function resolveRunDirectory(
           );
         }
       },
+      ...options,
     },
   );
 }

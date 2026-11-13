@@ -40,7 +40,7 @@ export async function runStepPhases(options: {
     previousWaitId?: string,
   ) => Promise<HandleWaitResult>;
   readonly handleResumedWait: (wait: ResumedWaitDetails) => Promise<HandleWaitResult>;
-  readonly dispatchPrompt: (phase: PromptPhase) => Promise<PlainObject>;
+  readonly dispatchPrompt: (phase: PromptPhase, phaseIndex: number) => Promise<PlainObject>;
   readonly resume?: {
     readonly startPhaseIndex: number;
     readonly phaseValue: PlainObject;
@@ -107,7 +107,7 @@ export async function runStepPhases(options: {
     }
 
     if (phase.kind === "prompt") {
-      phaseValue = await options.dispatchPrompt(phase);
+      phaseValue = await options.dispatchPrompt(phase, phaseIndex);
       throwIfCancellationRequested(await options.readCancellation());
       throwIfStepTimedOut(options.signal, stepNode.config.id, options.timeoutMs);
       continue;

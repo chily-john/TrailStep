@@ -272,6 +272,7 @@ export async function runContinuation(
       stepNode,
       resumeWait,
       stepIndex,
+      ...(options.branchId === undefined ? {} : { branchId: options.branchId }),
       currentWorkflowId,
       currentWorkflowAgents,
       currentWorkflowTimeout,

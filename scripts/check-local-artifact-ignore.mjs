@@ -98,6 +98,7 @@ function escapeRegExp(value) {
 }
 
 for (const pattern of [
+  ".tmp/",
   ".trailstep/*",
   ".claude/",
   "agent/skills/",
@@ -108,6 +109,8 @@ for (const pattern of [
 }
 
 for (const path of [
+  ".tmp/example/events.jsonl",
+  "packages/dashboard/.tmp/example/.trailstep/runs/run-a/events.jsonl",
   ".trailstep/config-local.json",
   ".trailstep/runs/example/events.jsonl",
   ".claude/settings.json",

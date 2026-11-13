@@ -1,10 +1,35 @@
+/**
+ * Storage lifecycle: archive, restore, pin and delete run artifacts.
+ *
+ * `planStorageLifecycle`/`applyStorageLifecycle` operate on terminal, unpinned
+ * runs. Direct name-addressed operations and lifecycle actions share the
+ * canonical run-identifier validator in `runs/run-identifier.ts`, so a run id
+ * cannot alias the runs root, its parent, or `.staging`/`.archive`.
+ *
+ * Two liveness limitations are deliberate and documented at their checks:
+ *
+ * - **Time-of-check/time-of-use (TOCTOU).** The lock is read in the planner and
+ *   again in `assertRunNotLiveLocked`, but neither read is atomic with the
+ *   directory rename/removal. A process can acquire the lock after the check
+ *   and before the mutation, so a just-started run may still be archived or
+ *   deleted. A future fix would hold an exclusive lifecycle lock that outlives
+ *   the rename, or make the mutation a compare-and-swap directory rename.
+ * - **Reused-pid stale lock.** Lock liveness is pid-only. If a run's process
+ *   died and the operating system reused its pid for an unrelated live
+ *   process, the stale `run.lock` looks live and archive/delete is blocked
+ *   forever. There is intentionally no stale-lock escape in this story; a
+ *   future fix would check process start time or a boot identifier, or offer an
+ *   explicit operator-approved escape.
+ */
 import { createReadStream, type Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import { isNodeError } from "../../json/guards.js";
+import { validateRunIdentifier } from "../../runs/run-identifier.js";
 import { defaultRunsRoot } from "../artifacts/run-storage.js";
+import { isRunLockLive, readRunLock } from "../run-lock/run-lock.js";
 import { listRunSummaries, type RunSummary } from "../runs/run-summaries.js";
 
 const gzipAsync = promisify(gzip);
@@ -104,6 +129,25 @@ export async function planStorageLifecycle(options: {
     if (!isLifecycleEligible(summary) || (await isRunPinned(summary.runDir))) {
       continue;
     }
+    // A terminal event trail is necessary but not sufficient: the scheduler
+    // writes a terminal track before it emits workflow.completed, and a run
+    // that is still finishing must never be archived or deleted underneath its
+    // live driver. The lock is the only cross-process liveness signal here.
+    //
+    // Known limitation (TOCTOU): this read is not atomic with the later
+    // archive/delete mutation. A process can acquire the lock after this check
+    // and before `archiveRun`/`deleteRun` renames or removes the directory, so
+    // a just-started run may still be archived or deleted. A future fix would
+    // hold an exclusive lifecycle lock across the mutation, or make the
+    // mutation a compare-and-swap directory rename.
+    //
+    // Known limitation (reused pid): liveness is pid-only, so a stale lock
+    // whose pid was recycled by an unrelated live process keeps this run out
+    // of the plan forever. There is intentionally no stale-lock escape here;
+    // see `assertRunNotLiveLocked` for the same limitation on direct calls.
+    if (isRunLockLive(await readRunLock(summary.runDir))) {
+      continue;
+    }
 
     const workflowPolicy = summary.workflowId ? policy.workflows?.[summary.workflowId] : undefined;
     const archiveAfterDays = resolvePolicyDays(workflowPolicy, policy, "archiveAfterDays");
@@ -181,8 +225,8 @@ export async function archiveRun(options: {
   readonly runId: string;
   readonly now?: Date;
 }): Promise<void> {
-  assertRunId(options.runId);
-  const runDir = join(options.runsRoot, options.runId);
+  const runDir = await validateStorageRunId(options.runsRoot, options.runId);
+  await assertRunNotLiveLocked(runDir, options.runId, "archived");
   const summaries = await listRunSummaries({
     cwd: dirname(dirname(options.runsRoot)),
     runsRoot: options.runsRoot,
@@ -221,14 +265,20 @@ export async function archiveRun(options: {
   await rm(runDir, { recursive: true, force: true });
 }
 
+/**
+ * Restores an archived run's historical files without creating a new run
+ * track. This is an intentional exception to the creation invariant that a
+ * new run directory always owns a track: a restored run is historical, so a
+ * legacy archive without `track.json` must stay classifiable as unknown
+ * instead of being given a synthetic current track.
+ */
 export async function restoreArchivedRun(options: {
   readonly runsRoot: string;
   readonly runId: string;
 }): Promise<void> {
-  assertRunId(options.runId);
+  const runDir = await validateStorageRunId(options.runsRoot, options.runId);
   const payloadPath = archivePayloadPath(options.runsRoot, options.runId);
   const manifestPath = archiveManifestPath(options.runsRoot, options.runId);
-  const runDir = join(options.runsRoot, options.runId);
   if (await pathExists(runDir)) {
     throw new Error(
       `Run ${options.runId} already exists in hot storage; refusing to overwrite it.`,
@@ -254,8 +304,7 @@ export async function pinRun(options: {
   readonly runsRoot: string;
   readonly runId: string;
 }): Promise<void> {
-  assertRunId(options.runId);
-  const runDir = join(options.runsRoot, options.runId);
+  const runDir = await validateStorageRunId(options.runsRoot, options.runId);
   if (!(await pathExists(runDir))) {
     if (await pathExists(archiveManifestPath(options.runsRoot, options.runId))) {
       throw new Error(`Run ${options.runId} is archived; restore it before pinning.`);
@@ -273,8 +322,7 @@ export async function unpinRun(options: {
   readonly runsRoot: string;
   readonly runId: string;
 }): Promise<void> {
-  assertRunId(options.runId);
-  const runDir = join(options.runsRoot, options.runId);
+  const runDir = await validateStorageRunId(options.runsRoot, options.runId);
   if (!(await pathExists(runDir))) {
     if (await pathExists(archiveManifestPath(options.runsRoot, options.runId))) {
       throw new Error(`Run ${options.runId} is archived; restore it before unpinning.`);
@@ -288,9 +336,9 @@ export async function deleteRun(options: {
   readonly runsRoot: string;
   readonly runId: string;
 }): Promise<void> {
-  assertRunId(options.runId);
-  const runDir = join(options.runsRoot, options.runId);
+  const runDir = await validateStorageRunId(options.runsRoot, options.runId);
   if (await pathExists(runDir)) {
+    await assertRunNotLiveLocked(runDir, options.runId, "deleted");
     if (await isRunPinned(runDir)) {
       throw new Error(`Run ${options.runId} is pinned and cannot be deleted.`);
     }
@@ -311,7 +359,7 @@ export async function deleteArchivedRun(options: {
   readonly runsRoot: string;
   readonly runId: string;
 }): Promise<void> {
-  assertRunId(options.runId);
+  await validateStorageRunId(options.runsRoot, options.runId);
   await rm(archivePayloadPath(options.runsRoot, options.runId), { force: true });
   await rm(archiveManifestPath(options.runsRoot, options.runId), { force: true });
 }
@@ -428,7 +476,38 @@ function archiveManifestPath(runsRoot: string, runId: string): string {
 }
 
 function isLifecycleEligible(summary: RunSummary): boolean {
+  // The summary status is the single eligibility signal. A genuinely
+  // event-less run is already terminal here because `summarizeEventlessTrack`
+  // derives its status from the track; a run with an event trail must be
+  // finished by that trail, never by a terminal track written just before the
+  // terminal event.
   return TERMINAL_STATUSES.has(summary.status);
+}
+
+/**
+ * Refuse to mutate a run that a live process is still driving. `planStorageLifecycle`
+ * skips these runs; the direct archive/delete entry points enforce it too so a
+ * caller cannot bypass the planner.
+ *
+ * Known limitation (TOCTOU): the lock read and the caller's subsequent rename
+ * or removal are not one atomic operation. A process can acquire the lock after
+ * this check but before the mutation. A future fix would hold an exclusive
+ * lifecycle lock across the mutation, or make it a compare-and-swap rename.
+ *
+ * Known limitation (reused pid): liveness is pid-only, so a stale `run.lock`
+ * whose pid was recycled by an unrelated live process blocks archive/delete
+ * forever. This is intentionally not escaped here; a future fix would check
+ * process start time or a boot identifier, or offer an operator-approved
+ * escape.
+ */
+async function assertRunNotLiveLocked(
+  runDir: string,
+  runId: string,
+  action: "archived" | "deleted",
+): Promise<void> {
+  if (isRunLockLive(await readRunLock(runDir))) {
+    throw new Error(`Run ${runId} is held by a live process and cannot be ${action}.`);
+  }
 }
 
 function resolvePolicyDays(
@@ -485,8 +564,12 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-function assertRunId(runId: string): void {
-  if (runId !== basename(runId) || runId === "." || runId === ".." || runId.trim() === "") {
-    throw new Error("Run id must be a single path segment.");
-  }
+async function validateStorageRunId(runsRoot: string, runId: string): Promise<string> {
+  const validated = await validateRunIdentifier(runId, {
+    cwd: process.cwd(),
+    runsRoot,
+    access: "mutate",
+    form: "name",
+  });
+  return validated.runDir;
 }

@@ -1,8 +1,14 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import type { TrailStepAgentTarget } from "../../../../agent-targeting/targeting.types.js";
 import { resolveCliCommandForSpawn } from "../../../../cli-provider-runtime/process/resolve-cli-command.js";
+import type { DispatchProvenanceContext } from "../../../../contracts/dispatch-provenance/dispatch-provenance.types.js";
 import { TrailStepFailureError } from "../../../../contracts/failures/failure.js";
 import { errorMessage } from "../../../../json/guards.js";
+import { dispatchProvenanceFields } from "../../../../runtime/dispatch-provenance/dispatch-provenance.js";
+import {
+  createSpawnFailureScope,
+  type SpawnFailureScope,
+} from "../../../../runtime/dispatch-provenance/spawn-failure-correlation.js";
 import { createEvent } from "../../../../runtime/events/create-run-event.js";
 import {
   type SpawnRetryPolicy,
@@ -42,6 +48,12 @@ export async function spawnFormatWithTransientRetry(options: {
   readonly timeoutMs?: number;
   readonly attempt: number;
   readonly sessionId: string;
+  /** 1-based position of this target in the fallback chain (A2b). */
+  readonly targetOrdinal: number;
+  /** Explicit A2b dispatch context for provenance on format events. */
+  readonly dispatchProvenance?: DispatchProvenanceContext;
+  /** Borrowed ephemeral failure-correlation parent (owned by the command). */
+  readonly spawnFailureScope?: SpawnFailureScope;
   readonly model?: string;
   readonly captureStdout: boolean;
   readonly spawnRetry: SpawnRetryPolicy;
@@ -49,11 +61,17 @@ export async function spawnFormatWithTransientRetry(options: {
   readonly emit: (event: Event) => Promise<void>;
   readonly runId: string;
   readonly workflowId: string;
-}): Promise<WorkingAgentProcessResult> {
+}): Promise<{ readonly result: WorkingAgentProcessResult; readonly spawnEventId: string }> {
   const { spawnRetry } = options;
+  const dispatchProvenance = options.dispatchProvenance;
+  const parentScope = options.spawnFailureScope;
   for (let spawnTry = 1; ; spawnTry += 1) {
-    await options.emit(
-      createEvent({
+    // Fresh per-transient-spawn child. Handled transient exits and successes
+    // discard it (close without forward); only terminal spawn failures
+    // record into it and forward to the command-owned parent before close.
+    const spawnScope = createSpawnFailureScope();
+    try {
+      const spawnedEvent = createEvent({
         runId: options.runId,
         workflowId: options.workflowId,
         stepId: options.stepId,
@@ -67,114 +85,145 @@ export async function spawnFormatWithTransientRetry(options: {
           sessionId: options.sessionId,
           promptFile: options.files.repairPromptFile,
           outputFile: options.files.outputFile,
-        },
-      }),
-    );
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: options.stepId,
-        type: "agent.promptSent",
-        payload: {
-          phase: "format",
-          attempt: options.attempt,
-          spawnTry,
-          promptFile: options.files.repairPromptFile,
-          sessionId: options.sessionId,
-        },
-      }),
-    );
-
-    const result = await spawnManifestPhase({
-      phase: "format",
-      stepId: options.stepId,
-      provider: options.target.provider,
-      command: options.command,
-      args: options.args,
-      cwd: options.cwd,
-      model: options.model,
-      promptFile: options.files.repairPromptFile,
-      outputFile: options.files.outputFile,
-      stdio: options.captureStdout ? "pipe" : "inherit",
-      runner: options.runner,
-      signal: options.signal,
-      timeoutMs: options.timeoutMs,
-      ...(options.progress === undefined ? {} : { progress: options.progress }),
-    });
-    if (result.exitCode === 0) {
-      return result;
-    }
-
-    const transient = isTransientSpawnExitCode(result.exitCode);
-    const stderrTail = tailString(result.stderr);
-    await appendStderrArtifact(
-      options.files.stderrFile,
-      { phase: "format", spawnTry, exitCode: result.exitCode },
-      result.stderr,
-    );
-    const canRetry =
-      transient && spawnTry < spawnRetry.maxAttempts && options.signal?.aborted !== true;
-    const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
-    const message = `Working agent step ${options.stepId} target '${options.target.provider}' exited with code ${result.exitCode}.`;
-
-    await appendAttemptLog(options.files.attemptsFile, {
-      timestamp: new Date().toISOString(),
-      provider: options.target.provider,
-      ...(options.model === undefined ? {} : { model: options.model }),
-      phase: "format",
-      attempt: options.attempt,
-      spawnTry,
-      exitCode: result.exitCode,
-      failureCode: "agent_provider_failed",
-      message,
-      transient,
-      decision: canRetry ? "retryFormat" : "fail",
-      ...(delayMs === undefined ? {} : { delayMs }),
-      ...(stderrTail === undefined ? {} : { stderrTail }),
-    });
-    await options.emit(
-      createEvent({
-        runId: options.runId,
-        workflowId: options.workflowId,
-        stepId: options.stepId,
-        type: "agent.attemptFailed",
-        payload: {
-          phase: "format",
-          attempt: options.attempt,
-          spawnTry,
-          provider: options.target.provider,
-          model: options.model,
-          sessionId: options.sessionId,
-          exitCode: result.exitCode,
-          transient,
-          decision: canRetry ? "retryFormat" : "fail",
-          ...(delayMs === undefined ? {} : { delayMs }),
-          ...(stderrTail === undefined ? {} : { stderrTail }),
-          message,
-        },
-      }),
-    );
-
-    if (!canRetry) {
-      throw new TrailStepFailureError({
-        code: "agent_provider_failed",
-        message,
-        details: {
-          phase: "format",
-          attempt: options.attempt,
-          sessionId: options.sessionId,
-          exitCode: result.exitCode,
-          provider: options.command,
-          target: options.target.provider,
-          ...(options.model === undefined ? {} : { model: options.model }),
-          transient,
-          spawnTry,
-          ...(stderrTail === undefined ? {} : { stderrTail }),
+          ...dispatchProvenanceFields(dispatchProvenance, {
+            targetOrdinal: options.targetOrdinal,
+            formatValidationAttempt: options.attempt,
+            formatSpawnTry: spawnTry,
+          }),
         },
       });
+      await options.emit(spawnedEvent);
+      const spawnEventId = spawnedEvent.id;
+      await options.emit(
+        createEvent({
+          runId: options.runId,
+          workflowId: options.workflowId,
+          stepId: options.stepId,
+          type: "agent.promptSent",
+          payload: {
+            phase: "format",
+            attempt: options.attempt,
+            spawnTry,
+            promptFile: options.files.repairPromptFile,
+            sessionId: options.sessionId,
+            ...dispatchProvenanceFields(dispatchProvenance, {
+              targetOrdinal: options.targetOrdinal,
+              formatValidationAttempt: options.attempt,
+              formatSpawnTry: spawnTry,
+              spawnEventId,
+            }),
+          },
+        }),
+      );
+
+      let result: WorkingAgentProcessResult;
+      try {
+        result = await spawnManifestPhase({
+          phase: "format",
+          stepId: options.stepId,
+          provider: options.target.provider,
+          command: options.command,
+          args: options.args,
+          cwd: options.cwd,
+          model: options.model,
+          promptFile: options.files.repairPromptFile,
+          outputFile: options.files.outputFile,
+          stdio: options.captureStdout ? "pipe" : "inherit",
+          runner: options.runner,
+          signal: options.signal,
+          timeoutMs: options.timeoutMs,
+          ...(options.progress === undefined ? {} : { progress: options.progress }),
+        });
+      } catch (error) {
+        spawnScope.record(error, spawnEventId);
+        parentScope?.forward(error, spawnScope);
+        throw error;
+      }
+      if (result.exitCode === 0) {
+        return { result, spawnEventId };
+      }
+
+      const transient = isTransientSpawnExitCode(result.exitCode);
+      const stderrTail = tailString(result.stderr);
+      await appendStderrArtifact(
+        options.files.stderrFile,
+        { phase: "format", spawnTry, exitCode: result.exitCode },
+        result.stderr,
+      );
+      const canRetry =
+        transient && spawnTry < spawnRetry.maxAttempts && options.signal?.aborted !== true;
+      const delayMs = canRetry ? spawnRetryDelayMs(spawnRetry, spawnTry) : undefined;
+      const message = `Working agent step ${options.stepId} target '${options.target.provider}' exited with code ${result.exitCode}.`;
+
+      await appendAttemptLog(options.files.attemptsFile, {
+        timestamp: new Date().toISOString(),
+        provider: options.target.provider,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        phase: "format",
+        attempt: options.attempt,
+        spawnTry,
+        exitCode: result.exitCode,
+        failureCode: "agent_provider_failed",
+        message,
+        transient,
+        decision: canRetry ? "retryFormat" : "fail",
+        ...(delayMs === undefined ? {} : { delayMs }),
+        ...(stderrTail === undefined ? {} : { stderrTail }),
+      });
+      await options.emit(
+        createEvent({
+          runId: options.runId,
+          workflowId: options.workflowId,
+          stepId: options.stepId,
+          type: "agent.attemptFailed",
+          payload: {
+            phase: "format",
+            attempt: options.attempt,
+            spawnTry,
+            provider: options.target.provider,
+            model: options.model,
+            sessionId: options.sessionId,
+            exitCode: result.exitCode,
+            transient,
+            decision: canRetry ? "retryFormat" : "fail",
+            ...(delayMs === undefined ? {} : { delayMs }),
+            ...(stderrTail === undefined ? {} : { stderrTail }),
+            message,
+            ...dispatchProvenanceFields(dispatchProvenance, {
+              targetOrdinal: options.targetOrdinal,
+              formatValidationAttempt: options.attempt,
+              formatSpawnTry: spawnTry,
+              spawnEventId,
+            }),
+          },
+        }),
+      );
+
+      if (!canRetry) {
+        const formatFailure = new TrailStepFailureError({
+          code: "agent_provider_failed",
+          message,
+          details: {
+            phase: "format",
+            attempt: options.attempt,
+            sessionId: options.sessionId,
+            exitCode: result.exitCode,
+            provider: options.command,
+            target: options.target.provider,
+            ...(options.model === undefined ? {} : { model: options.model }),
+            transient,
+            spawnTry,
+            ...(stderrTail === undefined ? {} : { stderrTail }),
+          },
+        });
+        spawnScope.record(formatFailure, spawnEventId);
+        parentScope?.forward(formatFailure, spawnScope);
+        throw formatFailure;
+      }
+      await sleep(delayMs ?? 0);
+    } finally {
+      spawnScope.close();
     }
-    await sleep(delayMs ?? 0);
   }
 }
 

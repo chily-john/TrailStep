@@ -24,9 +24,11 @@ import type {
 
 /**
  * Projector revision for the A4a query projection. It is independent of
- * `schemaVersion`, which stays `1`; `stale-owner` is additive.
+ * `schemaVersion`, which stays `1`; revision 3 adds the `cycles` projection and
+ * projects a bare cancellation request as the run's current state rather than
+ * `cancelled`.
  */
-export const RUN_EVIDENCE_QUERY_PROJECTOR_REVISION = "2" as const;
+export const RUN_EVIDENCE_QUERY_PROJECTOR_REVISION = "3" as const;
 
 export interface EvidenceQueryLimits {
   /** Maximum run directories/manifests examined by one list call. */
@@ -114,6 +116,26 @@ export interface EvidencePendingWait {
 }
 
 /**
+ * One lifecycle cycle observed in a run trail. Historical cycles stay visible
+ * in an inspection even when the current classifier state comes only from the
+ * newest cycle.
+ */
+export interface EvidenceLifecycleCycle {
+  /** Zero-based trail order; the last entry is always the current cycle. */
+  readonly index: number;
+  readonly current: boolean;
+  /** The reopen event that started this cycle; absent for the first cycle. */
+  readonly reopenedBy?: "workflow.resumed" | "workflow.retryStarted";
+  readonly reopenedEventId?: string;
+  readonly reopenedAt?: string;
+  readonly terminalEventId?: string;
+  readonly terminalState?: "completed" | "failed" | "cancelled";
+  readonly cancelRequestedEventId?: string;
+  /** Pending waits in this cycle at the time of inspection. */
+  readonly pendingWaitCount: number;
+}
+
+/**
  * Default-DTO failure summary. The failure message is deliberately omitted:
  * callers that need a bounded, redacted excerpt must ask `retrieveEvidence`
  * for the specific event instead of receiving it in every inspection.
@@ -133,6 +155,8 @@ export interface RunEvidenceInspection {
   readonly failure?: EvidenceFailureSummary;
   readonly terminalEventId?: string;
   readonly trackStatus?: string;
+  /** Every lifecycle cycle, oldest first, with the newest marked current. */
+  readonly cycles?: readonly EvidenceLifecycleCycle[];
   readonly diagnostics: readonly EvidenceDiagnostic[];
 }
 

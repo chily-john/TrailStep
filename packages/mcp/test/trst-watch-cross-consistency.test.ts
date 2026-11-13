@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type { EvidenceExecutionState } from "@trailstep/core";
-import { classifyRunState, readRunEvents, toWatchRunState } from "@trailstep/core";
+import { classifyRunState, readRunEvents } from "@trailstep/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -40,6 +40,11 @@ const publicWatchStates: readonly TrstWatchRunState[] = [
 interface CrossConsistencyRow {
   readonly name: string;
   readonly canonical: EvidenceExecutionState;
+  readonly expectedWatchState: TrstWatchRunState;
+  readonly expectedCrash?: {
+    readonly code: "no-live-process" | "unknown-run-state";
+    readonly reason: string;
+  };
   readonly setup: (sandbox: TmpSandbox) => void;
   readonly assertResult?: (result: TrstWatchResult) => void;
 }
@@ -75,10 +80,16 @@ function writeStatuslessTrack(sandbox: TmpSandbox): void {
   );
 }
 
+// Every expectation below is a hard-coded literal on purpose. Deriving the
+// expected watch state, crash code or crash reason from toPublicWatchRunState
+// or classifyRunState would make this guard circular: a wrong projection, a
+// swapped crash code or a changed message would pass its own test. The table
+// is the independent contract, so a code change must update it deliberately.
 const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "completed run",
     canonical: "completed",
+    expectedWatchState: "terminal",
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -88,6 +99,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "failed run",
     canonical: "failed",
+    expectedWatchState: "terminal",
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -99,6 +111,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "cancelled run",
     canonical: "cancelled",
+    expectedWatchState: "terminal",
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -106,8 +119,75 @@ const matrix: readonly CrossConsistencyRow[] = [
       ]),
   },
   {
-    name: "cancelled run with cancelRequested and no terminal event",
+    name: "cancelled-then-resumed running run",
+    canonical: "active",
+    expectedWatchState: "in-progress",
+    setup: (sandbox) => {
+      appendLines(sandbox, [
+        eventLine("workflow.started", 1),
+        eventLine("workflow.cancelled", 2, { reason: "operator" }),
+        eventLine("workflow.resumed", 3, { resumedStepId: "work" }),
+        eventLine("step.started", 4, {}, "work"),
+      ]);
+      writeTrack(sandbox);
+    },
+  },
+  {
+    name: "failed-then-retried running run",
+    canonical: "active",
+    expectedWatchState: "in-progress",
+    setup: (sandbox) => {
+      appendLines(sandbox, [
+        eventLine("workflow.started", 1),
+        eventLine("workflow.failed", 2, {
+          failure: { code: "step_failed", message: "boom" },
+        }),
+        eventLine("workflow.retryStarted", 3, {
+          sourceFailureEventId: "evt-2",
+          sourceFailureReplayPosition: 1,
+        }),
+        eventLine("step.started", 4, {}, "work"),
+      ]);
+      writeTrack(sandbox);
+    },
+  },
+  {
+    name: "wait parked in an earlier cycle with a resume after it",
+    canonical: "active",
+    expectedWatchState: "in-progress",
+    setup: (sandbox) => {
+      appendLines(sandbox, [
+        eventLine("workflow.started", 1),
+        waitLine(2, { waitId: "approval", question: "Approve?" }),
+        eventLine("workflow.resumed", 3, { resumedStepId: "work" }),
+        eventLine("step.started", 4, {}, "work"),
+      ]);
+      writeTrack(sandbox);
+    },
+  },
+  {
+    name: "resumed and then cancelled again",
     canonical: "cancelled",
+    expectedWatchState: "terminal",
+    setup: (sandbox) =>
+      appendLines(sandbox, [
+        eventLine("workflow.started", 1),
+        eventLine("workflow.cancelled", 2, { reason: "operator" }),
+        eventLine("workflow.resumed", 3, { resumedStepId: "work" }),
+        eventLine("step.started", 4, {}, "work"),
+        eventLine("workflow.cancelRequested", 5, { reason: "operator" }),
+        eventLine("workflow.cancelled", 6, { reason: "operator" }),
+      ]),
+  },
+  {
+    name: "bare cancel request with no terminal event",
+    canonical: "unknown",
+    expectedWatchState: "crashed",
+    expectedCrash: {
+      code: "unknown-run-state",
+      reason:
+        "Track metadata is missing and no terminal event was recorded, so the run state is unknown. A cancellation was requested but no terminal event has been recorded.",
+    },
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -117,6 +197,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "run parked on a pending wait",
     canonical: "waiting",
+    expectedWatchState: "waiting",
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -129,6 +210,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "same waitId parked on two parallel branches",
     canonical: "waiting",
+    expectedWatchState: "waiting",
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -145,6 +227,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "empty trail with a live lock",
     canonical: "active",
+    expectedWatchState: "started",
     setup: (sandbox) => {
       emptyTrail(sandbox);
       writeLiveLockFile(sandbox);
@@ -153,6 +236,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "empty trail with no lock and a readable running track",
     canonical: "active",
+    expectedWatchState: "started",
     setup: (sandbox) => {
       emptyTrail(sandbox);
       writeTrack(sandbox);
@@ -161,6 +245,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "live lock with events and a missing track",
     canonical: "active",
+    expectedWatchState: "in-progress",
     setup: (sandbox) => {
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -172,6 +257,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "live lock with events and a malformed track",
     canonical: "active",
+    expectedWatchState: "in-progress",
     setup: (sandbox) => {
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -184,6 +270,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "live lock with events and an oversized track",
     canonical: "active",
+    expectedWatchState: "in-progress",
     setup: (sandbox) => {
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -196,6 +283,12 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "no lock with a missing track",
     canonical: "unknown",
+    expectedWatchState: "crashed",
+    expectedCrash: {
+      code: "unknown-run-state",
+      reason:
+        "Track metadata is missing and no terminal event was recorded, so the run state is unknown.",
+    },
     setup: (sandbox) =>
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -205,6 +298,12 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "no lock with an unreadable track",
     canonical: "unknown",
+    expectedWatchState: "crashed",
+    expectedCrash: {
+      code: "unknown-run-state",
+      reason:
+        "Track metadata is unreadable and no terminal event was recorded, so the run state is unknown.",
+    },
     setup: (sandbox) => {
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -216,6 +315,11 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "running track with a dead owner",
     canonical: "stale",
+    expectedWatchState: "crashed",
+    expectedCrash: {
+      code: "no-live-process",
+      reason: "The track still reports running but its owner process is no longer alive.",
+    },
     setup: (sandbox) => {
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -227,6 +331,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "waiting-status track with a dead owner",
     canonical: "waiting",
+    expectedWatchState: "waiting",
     setup: (sandbox) => {
       appendLines(sandbox, [eventLine("workflow.started", 1)]);
       writeTrack(sandbox, "waiting", deadPid);
@@ -235,6 +340,11 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "statusless readable track",
     canonical: "unknown",
+    expectedWatchState: "crashed",
+    expectedCrash: {
+      code: "unknown-run-state",
+      reason: "Track metadata has no status and no terminal event was recorded.",
+    },
     setup: (sandbox) => {
       appendLines(sandbox, [eventLine("workflow.started", 1)]);
       writeStatuslessTrack(sandbox);
@@ -243,6 +353,7 @@ const matrix: readonly CrossConsistencyRow[] = [
   {
     name: "event-shaped string inside an agent display payload",
     canonical: "active",
+    expectedWatchState: "in-progress",
     setup: (sandbox) => {
       appendLines(sandbox, [
         eventLine("workflow.started", 1),
@@ -267,8 +378,6 @@ describe("trst_watch cross-consistency with core classifyRunState", () => {
 
     const events = await readRunEvents(sandbox.runDir);
     const canonical = await classifyRunState({ runDir: sandbox.runDir, events });
-    const projected = toWatchRunState(canonical);
-    const expectedWatchState = projected === "unknown" ? "crashed" : projected;
 
     const result = await trst_watch(
       { runId: path.basename(sandbox.runDir), maxWaitMs: 0 },
@@ -281,14 +390,11 @@ describe("trst_watch cross-consistency with core classifyRunState", () => {
     );
 
     expect(canonical.state).toBe(row.canonical);
-    expect(result.state).toBe(expectedWatchState);
+    expect(result.state).toBe(row.expectedWatchState);
     expect(publicWatchStates).toContain(result.state);
 
-    if (canonical.state === "unknown" || canonical.state === "stale") {
-      expect(result.state).toBe("crashed");
-      expect(result.crash?.code).toBe(
-        canonical.state === "unknown" ? "unknown-run-state" : "no-live-process",
-      );
+    if (row.expectedCrash !== undefined) {
+      expect(result.crash).toEqual(row.expectedCrash);
     } else {
       expect(result.crash).toBeUndefined();
     }

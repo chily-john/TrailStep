@@ -1,0 +1,639 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "id": "started-only-no-track",
+      "description": "workflow.started, no track, no lock",
+      "events": [{ "type": "workflow.started" }],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "unknown",
+        "evidence": "unknown",
+        "resume": "running",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown"] }
+      }
+    },
+    {
+      "id": "started-only-live-lock",
+      "description": "workflow.started, no track, live lock",
+      "events": [{ "type": "workflow.started" }],
+      "track": null,
+      "lock": "live",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "running-track-live",
+      "description": "running track with a live owner, no lock",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "running-track-dead",
+      "description": "running track with a dead owner, no lock",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "running", "owner": "dead" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "stale",
+        "watch": "crashed",
+        "crashCode": "no-live-process",
+        "summary": "stale",
+        "evidence": "stale",
+        "resume": "running",
+        "cli": { "exitCode": 2, "stderrIncludes": ["crash"] }
+      }
+    },
+    {
+      "id": "waiting-track",
+      "description": "track reports waiting without a pending wait event",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "waiting" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "waiting",
+        "watch": "waiting",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "waiting",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": ["no pending wait"] }
+      }
+    },
+    {
+      "id": "pending-wait",
+      "description": "durable wait in the current cycle",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "wait.started",
+          "stepId": "wait-step",
+          "payload": { "waitId": "approve", "branchId": "root" }
+        }
+      ],
+      "track": { "status": "waiting" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "waiting",
+        "watch": "waiting",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "waiting",
+        "resume": "waiting",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "pending-wait-no-track",
+      "description": "durable wait with no track and no lock",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "wait.started",
+          "stepId": "wait-step",
+          "payload": { "waitId": "approve", "branchId": "root" }
+        }
+      ],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "waiting",
+        "watch": "waiting",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "waiting",
+        "resume": "waiting",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "completed",
+      "description": "current-cycle workflow.completed",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.completed", "payload": { "output": { "ok": true } } }
+      ],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "completed",
+        "watch": "terminal",
+        "crashCode": null,
+        "summary": "completed",
+        "evidence": "completed",
+        "resume": "completed",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "failed",
+      "description": "current-cycle workflow.failed",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "step.failed",
+          "stepId": "review",
+          "payload": { "failure": { "message": "review failed" } }
+        },
+        {
+          "type": "workflow.failed",
+          "payload": { "failure": { "code": "step_failed", "message": "review failed" } }
+        }
+      ],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "failed",
+        "watch": "terminal",
+        "crashCode": null,
+        "summary": "failed",
+        "evidence": "failed",
+        "resume": "failed",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "cancelled",
+      "description": "cancellation request followed by workflow.cancelled",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } },
+        { "type": "workflow.cancelled", "payload": { "reason": "operator" } }
+      ],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "cancelled",
+        "watch": "terminal",
+        "crashCode": null,
+        "summary": "cancelled",
+        "evidence": "cancelled",
+        "resume": "cancelled",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "cancelled-resumed",
+      "description": "an earlier cycle cancelled; the run resumed and is running",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } },
+        { "type": "workflow.cancelled", "payload": { "reason": "operator" } },
+        { "type": "workflow.resumed", "payload": { "resumedStepId": "work" } },
+        { "type": "step.started", "stepId": "work" }
+      ],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "failed-retried",
+      "description": "an earlier cycle failed; the run retried and is running",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "step.failed",
+          "stepId": "review",
+          "payload": { "failure": { "message": "review failed" } }
+        },
+        {
+          "type": "workflow.failed",
+          "payload": { "failure": { "code": "step_failed", "message": "review failed" } }
+        },
+        { "type": "workflow.retryStarted", "payload": {} },
+        { "type": "step.started", "stepId": "review" }
+      ],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "wait-earlier-cycle-resumed",
+      "description": "an earlier cycle parked on a wait; the resumed cycle does not",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "wait.started",
+          "stepId": "approval",
+          "payload": { "waitId": "approve", "branchId": "root" }
+        },
+        { "type": "workflow.resumed", "payload": { "resumedStepId": "work" } },
+        { "type": "step.started", "stepId": "work" }
+      ],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "dangling-step-no-track",
+      "description": "an interrupted step with no track and no lock",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "unknown",
+        "evidence": "unknown",
+        "resume": "running",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown"] }
+      }
+    },
+    {
+      "id": "dangling-step-dead-track",
+      "description": "an interrupted step whose track owner is dead",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "running", "owner": "dead" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "stale",
+        "watch": "crashed",
+        "crashCode": "no-live-process",
+        "summary": "stale",
+        "evidence": "stale",
+        "resume": "running",
+        "cli": { "exitCode": 2, "stderrIncludes": ["crash"] }
+      }
+    },
+    {
+      "id": "bare-cancel-no-track",
+      "description": "bare cancellation request with no track and no lock",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": null,
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "unknown",
+        "evidence": "unknown",
+        "resume": "running",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown", "cancellation"] }
+      },
+      "crashMessageIncludes": ["cancellation"]
+    },
+    {
+      "id": "bare-cancel-live-lock",
+      "description": "bare cancellation request with a live lock",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": null,
+      "lock": "live",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "bare-cancel-dead-track",
+      "description": "bare cancellation request with a running track whose owner is dead",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": { "status": "running", "owner": "dead" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "stale",
+        "watch": "crashed",
+        "crashCode": "no-live-process",
+        "summary": "stale",
+        "evidence": "stale",
+        "resume": "running",
+        "cli": { "exitCode": 2, "stderrIncludes": ["crash", "cancellation"] }
+      },
+      "crashMessageIncludes": ["cancellation"]
+    },
+    {
+      "id": "bare-cancel-waiting-track",
+      "description": "bare cancellation request with a waiting track and no live owner",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": { "status": "waiting" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "unknown",
+        "evidence": "unknown",
+        "resume": "running",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown", "cancellation"] }
+      },
+      "crashMessageIncludes": ["cancellation"]
+    },
+    {
+      "id": "bare-cancel-wait-live-lock",
+      "description": "bare cancellation request, pending wait, live lock",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "wait.started",
+          "stepId": "wait-step",
+          "payload": { "waitId": "approve", "branchId": "root" }
+        },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": { "status": "waiting" },
+      "lock": "live",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "bare-cancel-wait-no-lock",
+      "description": "bare cancellation request with a pending wait and no live owner",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "wait.started",
+          "stepId": "wait-step",
+          "payload": { "waitId": "approve", "branchId": "root" }
+        },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": { "status": "waiting" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "unknown",
+        "evidence": "unknown",
+        "resume": "running",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown", "cancellation"] }
+      },
+      "crashMessageIncludes": ["cancellation"]
+    },
+    {
+      "id": "bare-cancel-superseded",
+      "description": "reopen after a bare cancellation request",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } },
+        { "type": "workflow.resumed", "payload": { "resumedStepId": "work" } },
+        { "type": "step.started", "stepId": "work" }
+      ],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "cancel-after-resume",
+      "description": "cancellation requested in the current cycle after a resume",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelled", "payload": { "reason": "operator" } },
+        { "type": "workflow.resumed", "payload": { "resumedStepId": "work" } },
+        { "type": "step.started", "stepId": "work" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "step-failed-parked-wait",
+      "description": "a recorded step failure with a pending wait is not terminal",
+      "events": [
+        { "type": "workflow.started" },
+        {
+          "type": "step.failed",
+          "stepId": "review",
+          "payload": { "failure": { "message": "review failed" } }
+        },
+        {
+          "type": "wait.started",
+          "stepId": "wait-step",
+          "payload": { "waitId": "approve", "branchId": "root" }
+        }
+      ],
+      "track": { "status": "waiting" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "waiting",
+        "watch": "waiting",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "waiting",
+        "resume": "waiting",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "eventless-live-track",
+      "description": "creation window: no events yet, live running track",
+      "events": [],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "started",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "unknown",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      }
+    },
+    {
+      "id": "running-track-live-dead-lock",
+      "description": "running track with a live owner and a dead lock",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "running", "owner": "live" },
+      "lock": "dead",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      },
+      "note": "a dead lock must not count as live; the live track owner decides"
+    },
+    {
+      "id": "dangling-step-dead-track-dead-lock",
+      "description": "an interrupted step, a dead track owner, and a dead lock",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "running", "owner": "dead" },
+      "lock": "dead",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "stale",
+        "watch": "crashed",
+        "crashCode": "no-live-process",
+        "summary": "stale",
+        "evidence": "stale",
+        "resume": "running",
+        "cli": { "exitCode": 2, "stderrIncludes": ["crash"] }
+      },
+      "note": "a dead lock must not count as live; the dead track owner decides"
+    },
+    {
+      "id": "running-track-dead-live-lock",
+      "description": "running track with a dead owner and a live lock",
+      "events": [{ "type": "workflow.started" }, { "type": "step.started", "stepId": "work" }],
+      "track": { "status": "running", "owner": "dead" },
+      "lock": "live",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "active",
+        "watch": "in-progress",
+        "crashCode": null,
+        "summary": "active",
+        "evidence": "active",
+        "resume": "running",
+        "cli": { "exitCode": 0, "stderrIncludes": [] }
+      },
+      "note": "a live lock outranks a dead track owner; the run is still being driven"
+    },
+    {
+      "id": "eventless-terminal-track",
+      "description": "no events; the terminal track is the only durable record",
+      "events": [],
+      "track": { "status": "completed" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "completed",
+        "evidence": "unknown",
+        "resume": "unknown",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown"] }
+      },
+      "note": "track terminal is the only record; the classifier requires a terminal event"
+    },
+    {
+      "id": "bare-cancel-malformed-track",
+      "description": "bare cancellation request with a malformed track",
+      "events": [
+        { "type": "workflow.started" },
+        { "type": "workflow.cancelRequested", "payload": { "reason": "operator" } }
+      ],
+      "track": { "mode": "malformed" },
+      "lock": "none",
+      "scanComplete": true,
+      "expect": {
+        "classifier": "unknown",
+        "watch": "crashed",
+        "crashCode": "unknown-run-state",
+        "summary": "unknown",
+        "evidence": "unknown",
+        "resume": "running",
+        "cli": { "exitCode": 3, "stderrIncludes": ["unknown", "cancellation"] }
+      },
+      "crashMessageIncludes": ["cancellation"],
+      "note": "adds the malformed track mode required by the completeness test"
+    }
+  ]
+}

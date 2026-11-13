@@ -4,16 +4,22 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { Event } from "../../contracts/events/event.types.js";
 import type { EvidenceExecutionState } from "../../contracts/evidence/evidence.types.js";
 import { appendEvent, atomicWriteJson, readRunEvents } from "../artifacts/run-storage.js";
 import { createEvent } from "../events/create-run-event.js";
 import { initializeRun } from "../run-workflow/initialize-run.js";
+import type { RunSummaryStatus } from "../runs/run-summaries.js";
+import { listRunSummaries } from "../runs/run-summaries.js";
 import {
   classifyRunState,
+  type PublicWatchRunState,
   type RunStateClassification,
+  toPublicWatchRunState,
   toWatchRunState,
   type WatchRunState,
 } from "./classify-run-state.js";
+import { inspectRunEvidence } from "./run-evidence-query.js";
 
 // Guardrails for run-state drift. These are intentionally tests-only: the
 // classifier and the watch projection are the production seams, and these
@@ -197,5 +203,230 @@ describe("new-run classification invariant", () => {
     expect(locked.state).toBe("active");
     expect(locked.state).not.toBe("unknown");
     expect(toWatchRunState(locked)).toBe("in-progress");
+  });
+});
+
+interface CycleConsistencyRow {
+  readonly name: string;
+  readonly events: readonly Event[];
+  readonly liveTrack: boolean;
+  readonly canonical: EvidenceExecutionState;
+  readonly summary: RunSummaryStatus;
+  readonly watch: PublicWatchRunState;
+  readonly cycles?: readonly {
+    readonly current: boolean;
+    readonly terminalState?: "completed" | "failed" | "cancelled";
+    readonly pendingWaitCount?: number;
+    readonly reopenedBy?: "workflow.resumed" | "workflow.retryStarted";
+  }[];
+}
+
+function cycleEvent(
+  type: Event["type"],
+  id: string,
+  overrides: {
+    readonly stepId?: string;
+    readonly payload?: Record<string, unknown>;
+  } = {},
+): Event {
+  return {
+    id,
+    runId: "cycle-run",
+    workflowId: "cycle-workflow",
+    ...(overrides.stepId === undefined ? {} : { stepId: overrides.stepId }),
+    type,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    schemaVersion: "v0",
+    payload: overrides.payload ?? {},
+  };
+}
+
+const cycleConsistencyRows: readonly CycleConsistencyRow[] = [
+  {
+    name: "cancelled-then-resumed running run",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("workflow.cancelRequested", "cancel-request"),
+      cycleEvent("workflow.cancelled", "cancelled"),
+      cycleEvent("workflow.resumed", "resume"),
+      cycleEvent("step.started", "step", { stepId: "work" }),
+    ],
+    liveTrack: true,
+    canonical: "active",
+    summary: "active",
+    watch: "in-progress",
+    cycles: [
+      { current: false, terminalState: "cancelled", pendingWaitCount: 0 },
+      { current: true, pendingWaitCount: 0, reopenedBy: "workflow.resumed" },
+    ],
+  },
+  {
+    name: "failed-then-retried running run",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("step.failed", "step-failed", {
+        stepId: "review",
+        payload: { failure: { message: "review failed" } },
+      }),
+      cycleEvent("workflow.failed", "workflow-failed", {
+        payload: { failure: { message: "review failed" } },
+      }),
+      cycleEvent("workflow.retryStarted", "retry", {
+        payload: { sourceFailureEventId: "step-failed", sourceFailureReplayPosition: 1 },
+      }),
+      cycleEvent("step.started", "step", { stepId: "review" }),
+    ],
+    liveTrack: true,
+    canonical: "active",
+    summary: "active",
+    watch: "in-progress",
+    cycles: [
+      { current: false, terminalState: "failed", pendingWaitCount: 0 },
+      { current: true, pendingWaitCount: 0, reopenedBy: "workflow.retryStarted" },
+    ],
+  },
+  {
+    name: "completed run",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("workflow.completed", "completed"),
+    ],
+    liveTrack: false,
+    canonical: "completed",
+    summary: "completed",
+    watch: "terminal",
+    cycles: [{ current: true, terminalState: "completed", pendingWaitCount: 0 }],
+  },
+  {
+    name: "cancelled run with no resume",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("workflow.cancelled", "cancelled"),
+    ],
+    liveTrack: false,
+    canonical: "cancelled",
+    summary: "cancelled",
+    watch: "terminal",
+    cycles: [{ current: true, terminalState: "cancelled", pendingWaitCount: 0 }],
+  },
+  {
+    name: "resumed and then cancelled again",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("workflow.cancelled", "first-cancelled"),
+      cycleEvent("workflow.resumed", "resume"),
+      cycleEvent("step.started", "step", { stepId: "work" }),
+      cycleEvent("workflow.cancelRequested", "cancel-request"),
+      cycleEvent("workflow.cancelled", "second-cancelled"),
+    ],
+    liveTrack: false,
+    canonical: "cancelled",
+    summary: "cancelled",
+    watch: "terminal",
+    cycles: [
+      { current: false, terminalState: "cancelled", pendingWaitCount: 0 },
+      {
+        current: true,
+        terminalState: "cancelled",
+        pendingWaitCount: 0,
+        reopenedBy: "workflow.resumed",
+      },
+    ],
+  },
+  {
+    name: "wait parked in an earlier cycle with a resume after it",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("wait.started", "old-wait", {
+        stepId: "approval",
+        payload: { waitId: "approve", branchId: "root" },
+      }),
+      cycleEvent("workflow.resumed", "resume"),
+      cycleEvent("step.started", "step", { stepId: "work" }),
+    ],
+    liveTrack: true,
+    canonical: "active",
+    summary: "active",
+    watch: "in-progress",
+    cycles: [
+      { current: false, pendingWaitCount: 1 },
+      { current: true, pendingWaitCount: 0, reopenedBy: "workflow.resumed" },
+    ],
+  },
+  {
+    name: "failed then retried then completed",
+    events: [
+      cycleEvent("workflow.started", "started"),
+      cycleEvent("workflow.failed", "failed"),
+      cycleEvent("workflow.retryStarted", "retry"),
+      cycleEvent("workflow.completed", "completed"),
+    ],
+    liveTrack: false,
+    canonical: "completed",
+    summary: "completed",
+    watch: "terminal",
+    cycles: [
+      { current: false, terminalState: "failed", pendingWaitCount: 0 },
+      {
+        current: true,
+        terminalState: "completed",
+        pendingWaitCount: 0,
+        reopenedBy: "workflow.retryStarted",
+      },
+    ],
+  },
+];
+
+describe("current-cycle agreement across state consumers", () => {
+  it.each(cycleConsistencyRows)("$name", async (row) => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-cycle-consistency-"));
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    const runId = "cycle-run";
+    const runDir = join(runsRoot, runId);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "events.jsonl"),
+      `${row.events.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+      "utf8",
+    );
+    if (row.liveTrack) {
+      await writeFile(
+        join(runDir, "track.json"),
+        `${JSON.stringify({ runId, status: "running", ownerPid: process.pid, branches: [] })}\n`,
+        "utf8",
+      );
+    }
+
+    const events = await readRunEvents(runDir);
+    const canonical = await classifyRunState({ runDir, events });
+    const summary = (await listRunSummaries({ cwd, runsRoot })).find(
+      (entry) => entry.runId === runId,
+    );
+    const inspection = await inspectRunEvidence({
+      runsRoot,
+      project: { kind: "explicit", key: "cycle-consistency" },
+      runId,
+    });
+
+    expect(canonical.state).toBe(row.canonical);
+    expect(toPublicWatchRunState(canonical)).toBe(row.watch);
+    expect(summary?.status).toBe(row.summary);
+    expect(inspection.evidence?.execution.state).toBe(row.canonical);
+    expect(inspection.cycles).toHaveLength(
+      row.events.filter(
+        (event) => event.type === "workflow.resumed" || event.type === "workflow.retryStarted",
+      ).length + 1,
+    );
+
+    if (row.cycles !== undefined) {
+      expect(
+        inspection.cycles?.map((cycle) => ({
+          current: cycle.current,
+          ...(cycle.terminalState === undefined ? {} : { terminalState: cycle.terminalState }),
+          pendingWaitCount: cycle.pendingWaitCount,
+          ...(cycle.reopenedBy === undefined ? {} : { reopenedBy: cycle.reopenedBy }),
+        })),
+      ).toEqual(row.cycles);
+    }
   });
 });

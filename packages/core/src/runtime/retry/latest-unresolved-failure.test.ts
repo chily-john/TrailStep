@@ -169,3 +169,35 @@ describe("selectLatestUnresolvedFailure", () => {
     expect(target?.replayPosition).toBe(4);
   });
 });
+
+describe("selectLatestUnresolvedFailure cycle window", () => {
+  it("scopes selection to a cycle start while keeping absolute replay positions", () => {
+    const events: readonly Event[] = [
+      event({ id: "started", type: "workflow.started", payload: { input: { topic: "retry" } } }),
+      event({ id: "old-failure", type: "step.failed", stepId: "review" }),
+      event({
+        id: "retry-started",
+        type: "workflow.retryStarted",
+        payload: { sourceFailureEventId: "old-failure", sourceFailureReplayPosition: 1 },
+      }),
+      event({ id: "current-step", type: "step.started", stepId: "review" }),
+      event({ id: "current-failure", type: "step.failed", stepId: "review" }),
+    ];
+
+    const target = selectLatestUnresolvedFailure(events, { fromIndex: 3 });
+
+    expect(target?.event.id).toBe("current-failure");
+    expect(target?.replayPosition).toBe(4);
+    expect(target?.workflowInput).toEqual({ topic: "retry" });
+  });
+
+  it("ignores a failure from a superseded cycle", () => {
+    const events: readonly Event[] = [
+      event({ id: "started", type: "workflow.started" }),
+      event({ id: "old-failure", type: "step.failed", stepId: "review" }),
+      event({ id: "resume", type: "workflow.resumed" }),
+    ];
+
+    expect(selectLatestUnresolvedFailure(events, { fromIndex: 3 })).toBeUndefined();
+  });
+});

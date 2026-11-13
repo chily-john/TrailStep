@@ -25,7 +25,9 @@ describe("runs command", () => {
     ).resolves.toBe(0);
 
     const output = lines.join("\n");
-    expect(output).toContain("parallel-track-run [failed]");
+    // No terminal event in this fixture: the eventful summary projects the
+    // classifier's unknown instead of re-deriving failed from step.failed.
+    expect(output).toContain("parallel-track-run [unknown]");
     expect(output).toContain("branch-1 done");
     expect(output).toContain("branch-2 failed");
     expect(output).toContain("beta exploded");

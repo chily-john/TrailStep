@@ -262,6 +262,7 @@ export {
 export type {
   EvidenceArchiveReader,
   EvidenceFailureSummary,
+  EvidenceLifecycleCycle,
   EvidencePendingWait,
   EvidenceQueryContext,
   EvidenceQueryLimits,
@@ -407,6 +408,17 @@ export {
   writeCancellationMarker,
 } from "./runtime/cancellation/cancellation.js";
 export { createEvent } from "./runtime/events/create-run-event.js";
+export type {
+  LifecycleReopenEventType,
+  LifecycleTerminal,
+  LifecycleTerminalState,
+} from "./runtime/events/lifecycle-cycle.js";
+export {
+  findLifecycleCycleStartIndex,
+  findLifecycleTerminalEvent,
+  isLifecycleReopenEvent,
+  selectCurrentLifecycleCycle,
+} from "./runtime/events/lifecycle-cycle.js";
 export { readPlainPayload } from "./runtime/events/read-plain-payload.js";
 export type {
   BoundedTextFileRead,
@@ -420,6 +432,7 @@ export {
 } from "./runtime/evidence/bounded-readers.js";
 export type {
   ClassifyRunStateOptions,
+  PublicWatchRunState,
   RunStateClassification,
   TrackStateSignal,
   WatchRunState,
@@ -427,6 +440,7 @@ export type {
 export {
   classifyRunState,
   readTrackStateSignal,
+  toPublicWatchRunState,
   toWatchRunState,
 } from "./runtime/evidence/classify-run-state.js";
 export {

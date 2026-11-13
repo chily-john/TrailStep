@@ -22,11 +22,14 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   type Event,
+  findLifecycleTerminalEvent,
+  listPendingWaits,
   type ResolvedRunDirectory,
   type RunDirectoryContext,
   readEventsForRun,
   readRunLock,
   resolveRunDirectory,
+  selectCurrentLifecycleCycle,
 } from "@trailstep/core";
 
 import { resolveCliEntry, TRAILSTEP_CLI_ENTRY_ENV } from "./cli-entry.js";
@@ -299,18 +302,35 @@ function describeEarlyExit(exit: {
   };
 }
 
-/** Status derived from the trail, never from CLI prose. */
+/**
+ * Status derived from the trail, never from CLI prose.
+ *
+ * This is the resume vocabulary (`running` / `waiting` / terminal), not the
+ * full evidence state: an open run is "running" because its current lifecycle
+ * cycle has no terminal event yet. That says nothing about whether a continue
+ * process is still alive — the caller follows up with `trst_watch`, whose
+ * classifier reports a live owner, a crash, or `unknown` from the real
+ * artifacts.
+ *
+ * The current cycle starts after the latest `workflow.resumed` or
+ * `workflow.retryStarted`. A terminal event wins; a cancellation request is
+ * **not** terminal on its own, so while one is pending in the current cycle
+ * this never reports waiting (answering a wait would discard the request). A
+ * request superseded by a reopen is ignored.
+ */
 export function statusFromEvents(events: readonly Event[]): ContinueStatus {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const type = events[index]?.type;
-    if (type === "workflow.completed") return "completed";
-    if (type === "workflow.failed") return "failed";
-    if (type === "workflow.cancelled") return "cancelled";
+  const cycleEvents = selectCurrentLifecycleCycle(events);
+  const terminal = findLifecycleTerminalEvent(cycleEvents);
+  if (terminal !== undefined) {
+    return terminal.state;
   }
-  const last = events.at(-1)?.type;
-  if (last === "wait.started") return "waiting";
-  if (last === undefined) return "unknown";
-  return "running";
+  if (cycleEvents.some((entry) => entry.type === "workflow.cancelRequested")) {
+    return "running";
+  }
+  if (listPendingWaits(cycleEvents).length > 0) {
+    return "waiting";
+  }
+  return events.length === 0 ? "unknown" : "running";
 }
 
 async function statOrUndefined(targetPath: string): Promise<Stats | undefined> {

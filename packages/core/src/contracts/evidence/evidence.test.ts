@@ -5,7 +5,11 @@ import {
   parseRunEvidence,
   runEvidenceSchema,
 } from "./evidence.schema.js";
-import type { EvidenceSourceRef, RunEvidence } from "./evidence.types.js";
+import {
+  EVIDENCE_DIAGNOSTIC_CODES,
+  type EvidenceSourceRef,
+  type RunEvidence,
+} from "./evidence.types.js";
 
 function minimalEvidence(): Record<string, unknown> {
   return {
@@ -111,6 +115,54 @@ describe("parseRunEvidence", () => {
     const unknownDiagnostic = minimalEvidence();
     (unknownDiagnostic.execution as Record<string, unknown>).diagnostics = [{ code: "not-a-code" }];
     expect(parseRunEvidence(unknownDiagnostic).status).toBe("malformed");
+  });
+
+  it("derives the diagnostic schema enum from the runtime code list", () => {
+    const keys = [
+      "properties",
+      "execution",
+      "properties",
+      "diagnostics",
+      "items",
+      "properties",
+      "code",
+      "enum",
+    ] as const;
+    let node: unknown = runEvidenceSchema.jsonSchema;
+    for (const key of keys) {
+      expect(typeof node, key).toBe("object");
+      node = (node as Record<string, unknown>)[key];
+    }
+
+    expect(Array.isArray(node)).toBe(true);
+    expect(node).toEqual([...EVIDENCE_DIAGNOSTIC_CODES]);
+    expect(EVIDENCE_DIAGNOSTIC_CODES).toContain("cancellation-pending");
+  });
+
+  it("accepts every diagnostic code and still rejects an unknown one", () => {
+    for (const code of EVIDENCE_DIAGNOSTIC_CODES) {
+      const input = minimalEvidence();
+      input.execution = {
+        state: "unknown",
+        storage: "hot",
+        coverage: "complete",
+        diagnostics: [{ code }],
+      };
+      expect(parseRunEvidence(input).status, code).toBe("valid");
+    }
+
+    const cancellation = minimalEvidence();
+    cancellation.execution = {
+      state: "unknown",
+      storage: "hot",
+      coverage: "complete",
+      diagnostics: [{ code: "cancellation-pending", message: "cancellation was requested" }],
+    };
+    expect(parseRunEvidence(cancellation).status).toBe("valid");
+
+    const unknown = minimalEvidence();
+    (unknown.execution as Record<string, unknown>).diagnostics = [{ code: "not-a-code" }];
+    expect(parseRunEvidence(unknown).status).toBe("malformed");
   });
 
   it("keeps a measured zero distinct from unknown", () => {

@@ -23,6 +23,7 @@ import {
   DEFAULT_EVIDENCE_QUERY_LIMITS,
   type EvidenceArchiveReader,
   type EvidenceFailureSummary,
+  type EvidenceLifecycleCycle,
   type EvidencePendingWait,
   type EvidenceQueryContext,
   type EvidenceQueryLimits,
@@ -37,8 +38,9 @@ import {
   type RunEvidenceListResult,
 } from "../../contracts/evidence/run-evidence-query.types.js";
 import { isNodeError, isPlainObject } from "../../json/guards.js";
-import { readWaitAnswerFile, waitEventBranchId } from "../../runs/wait-events.js";
+import { listPendingWaits, readWaitAnswerFile, waitEventBranchId } from "../../runs/wait-events.js";
 import { defaultRunsRoot, isReservedRunsRootEntry } from "../artifacts/run-storage.js";
+import { findLifecycleTerminalEvent, isLifecycleReopenEvent } from "../events/lifecycle-cycle.js";
 import {
   type RunEventsScanResult,
   readBoundedTextFile,
@@ -69,6 +71,11 @@ const retainedEventTypes: ReadonlySet<Event["type"]> = new Set([
   "workflow.failed",
   "workflow.cancelled",
   "workflow.cancelRequested",
+  // Reopen events are required to locate the current lifecycle cycle. Without
+  // them an earlier cycle's terminal/cancellation/wait event would be treated
+  // as current, disagreeing with the canonical classifier and run summaries.
+  "workflow.resumed",
+  "workflow.retryStarted",
   "wait.started",
   "wait.satisfied",
   "wait.failed",
@@ -320,6 +327,7 @@ export async function inspectRunEvidence(
       },
       ...(inspected.lastTimestamp === undefined ? {} : { lastTimestamp: inspected.lastTimestamp }),
       pendingWaits: pending.waits,
+      cycles: lifecycleCycles(inspected.scan.events),
       ...(failure === undefined ? {} : { failure }),
       ...(inspected.classification.terminalEvent === undefined
         ? {}
@@ -374,6 +382,7 @@ export async function inspectRunEvidence(
     },
     ...(archived.lastTimestamp === undefined ? {} : { lastTimestamp: archived.lastTimestamp }),
     pendingWaits: pending.waits,
+    ...(archived.cycles === undefined ? {} : { cycles: archived.cycles }),
     ...(failure === undefined ? {} : { failure }),
     ...(archived.classification?.terminalEvent === undefined
       ? {}
@@ -590,6 +599,7 @@ async function inspectArchivedRecord(options: {
   readonly evidence: RunEvidence;
   readonly classification?: RunStateClassification;
   readonly lastTimestamp?: string;
+  readonly cycles?: readonly EvidenceLifecycleCycle[];
 }> {
   if (options.archive !== undefined) {
     const read = await options.archive.readArchivedRunEvents({
@@ -623,6 +633,7 @@ async function inspectArchivedRecord(options: {
         ...(classification.lastEvent === undefined
           ? {}
           : { lastTimestamp: classification.lastEvent.timestamp }),
+        cycles: lifecycleCycles(read.events),
       };
     }
     return manifestEvidence(options.record, {
@@ -1100,6 +1111,80 @@ async function readArchiveManifest(
             },
           ],
     bytesRead: read.bytesRead,
+  };
+}
+
+/**
+ * Summarize every lifecycle cycle in the retained trail, oldest first. The
+ * classifier only judges the newest cycle; this keeps superseded cycles
+ * observable instead of hiding them from an evidence inspection.
+ */
+function lifecycleCycles(events: readonly Event[]): readonly EvidenceLifecycleCycle[] {
+  if (events.length === 0) {
+    return [];
+  }
+
+  const cycles: EvidenceLifecycleCycle[] = [];
+  let cycleStart = 0;
+  let reopenEvent:
+    | (Event & { readonly type: "workflow.resumed" | "workflow.retryStarted" })
+    | undefined;
+
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (event === undefined || isLifecycleReopenEvent(event) === false) {
+      continue;
+    }
+    cycles.push(
+      buildLifecycleCycle({
+        events: events.slice(cycleStart, index),
+        index: cycles.length,
+        current: false,
+        ...(reopenEvent === undefined ? {} : { reopenEvent }),
+      }),
+    );
+    cycleStart = index + 1;
+    reopenEvent = event;
+  }
+
+  cycles.push(
+    buildLifecycleCycle({
+      events: events.slice(cycleStart),
+      index: cycles.length,
+      current: true,
+      ...(reopenEvent === undefined ? {} : { reopenEvent }),
+    }),
+  );
+  return cycles;
+}
+
+function buildLifecycleCycle(options: {
+  readonly events: readonly Event[];
+  readonly index: number;
+  readonly current: boolean;
+  readonly reopenEvent?: Event & { readonly type: "workflow.resumed" | "workflow.retryStarted" };
+}): EvidenceLifecycleCycle {
+  const terminal = findLifecycleTerminalEvent(options.events);
+  const cancelRequested = [...options.events]
+    .reverse()
+    .find((event) => event.type === "workflow.cancelRequested");
+  const reopen = options.reopenEvent;
+
+  return {
+    index: options.index,
+    current: options.current,
+    ...(reopen === undefined
+      ? {}
+      : {
+          reopenedBy: reopen.type,
+          reopenedEventId: reopen.id,
+          reopenedAt: reopen.timestamp,
+        }),
+    ...(terminal === undefined
+      ? {}
+      : { terminalEventId: terminal.event.id, terminalState: terminal.state }),
+    ...(cancelRequested === undefined ? {} : { cancelRequestedEventId: cancelRequested.id }),
+    pendingWaitCount: listPendingWaits(options.events).length,
   };
 }
 

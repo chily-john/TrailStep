@@ -10,7 +10,11 @@ import type {
   RunEvidenceParseResult,
   RunEvidenceRunRef,
 } from "./evidence.types.js";
-import { RUN_EVIDENCE_KIND, RUN_EVIDENCE_SCHEMA_VERSION } from "./evidence.types.js";
+import {
+  EVIDENCE_DIAGNOSTIC_CODES,
+  RUN_EVIDENCE_KIND,
+  RUN_EVIDENCE_SCHEMA_VERSION,
+} from "./evidence.types.js";
 
 /**
  * Versioned JSON-schema validation for {@link RunEvidence} V1.
@@ -58,19 +62,7 @@ const diagnosticSchema = {
   properties: {
     code: {
       type: "string",
-      enum: [
-        "unsupported-version",
-        "malformed-record",
-        "missing-source",
-        "unreadable-source",
-        "changed-source",
-        "partial-coverage",
-        "ambiguous-identity",
-        "budget-exceeded",
-        "stale-owner",
-        "permission-denied",
-        "unsupported-source",
-      ],
+      enum: [...EVIDENCE_DIAGNOSTIC_CODES],
     },
     message: { type: "string", maxLength: 256, pattern: LABEL_PATTERN },
   },

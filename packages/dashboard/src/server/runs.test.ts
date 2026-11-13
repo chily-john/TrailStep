@@ -69,8 +69,10 @@ describe("dashboard run listing", () => {
       "utf8",
     );
 
+    // A started-only trail with no track is not evidence of a live run, so the
+    // projection reports unknown; the test only cares that the name is listed.
     await expect(listRuns({ cwd })).resolves.toEqual([
-      expect.objectContaining({ runId: runName, status: "active" }),
+      expect.objectContaining({ runId: runName, status: "unknown" }),
     ]);
   });
 

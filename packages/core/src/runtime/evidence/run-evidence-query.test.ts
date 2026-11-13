@@ -122,6 +122,16 @@ function sourceRef(
 }
 
 describe("bounded evidence query", () => {
+  it("pins the query projector revision", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "revision-run", [event("workflow.started")]);
+
+    const inspected = await inspectRunEvidence({ runsRoot, project, runId: "revision-run" });
+
+    expect(inspected.status).toBe("found");
+    expect(inspected.evidence?.projectorRevision).toBe("3");
+  });
+
   it("derives waiting, keeps wait text out of default DTOs, and never exposes prompt/output canaries", async () => {
     const runsRoot = await makeRunsRoot();
     const canary = "CANARY-WAIT-PROMPT-SECRET";
@@ -340,16 +350,109 @@ describe("bounded evidence query", () => {
     expect(listed.entries.map((entry) => entry.run.runId)).toEqual([runId]);
   });
 
-  it("maps cancelRequested without a terminal event to cancelled + a diagnostic", async () => {
+  it("maps cancelRequested without a terminal event to unknown + cancellation-pending", async () => {
     const runsRoot = await makeRunsRoot();
     await writeRun(runsRoot, "cancelled-run", [
       event("workflow.started"),
-      event("workflow.cancelRequested"),
+      event("workflow.cancelRequested", { id: "cancel-request" }),
     ]);
 
-    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
-    expect(listed.entries[0]?.execution.state).toBe("cancelled");
-    expect(listed.entries[0]?.execution.diagnostics.length).toBeGreaterThan(0);
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "cancelled-run",
+    });
+    expect(inspected.evidence?.execution.state).toBe("unknown");
+    expect(
+      inspected.evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("cancellation-pending");
+    expect(inspected.cycles?.[0]?.cancelRequestedEventId).toBe("cancel-request");
+  });
+
+  it("keeps historical lifecycle cycles visible while classifying the current cycle", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(
+      runsRoot,
+      "resumed-cycle-run",
+      [
+        event("workflow.started", { id: "resumed-started" }),
+        event("wait.started", {
+          id: "old-wait",
+          stepId: "approval",
+          payload: { waitId: "approve", branchId: "root" },
+        }),
+        event("workflow.cancelled", { id: "old-cancelled" }),
+        event("workflow.resumed", { id: "resumed-reopen" }),
+        event("step.started", { id: "resumed-step", stepId: "work" }),
+      ],
+      { track: { runId: "resumed-cycle-run", status: "running", ownerPid: process.pid } },
+    );
+    await writeRun(
+      runsRoot,
+      "retried-cycle-run",
+      [
+        event("workflow.started", { id: "retried-started" }),
+        event("workflow.failed", { id: "old-failed" }),
+        event("workflow.retryStarted", { id: "retried-reopen" }),
+        event("step.started", { id: "retried-step", stepId: "work" }),
+      ],
+      { track: { runId: "retried-cycle-run", status: "running", ownerPid: process.pid } },
+    );
+
+    const resumed = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "resumed-cycle-run",
+    });
+    expect(resumed.evidence?.execution.state).toBe("active");
+    expect(resumed.pendingWaits).toEqual([]);
+    expect(resumed.cycles).toEqual([
+      expect.objectContaining({
+        index: 0,
+        current: false,
+        terminalEventId: "old-cancelled",
+        terminalState: "cancelled",
+        pendingWaitCount: 1,
+      }),
+      expect.objectContaining({
+        index: 1,
+        current: true,
+        reopenedBy: "workflow.resumed",
+        reopenedEventId: "resumed-reopen",
+        pendingWaitCount: 0,
+      }),
+    ]);
+
+    const retried = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "retried-cycle-run",
+    });
+    expect(retried.evidence?.execution.state).toBe("active");
+    expect(retried.cycles).toEqual([
+      expect.objectContaining({
+        index: 0,
+        current: false,
+        terminalEventId: "old-failed",
+        terminalState: "failed",
+      }),
+      expect.objectContaining({
+        index: 1,
+        current: true,
+        reopenedBy: "workflow.retryStarted",
+        reopenedEventId: "retried-reopen",
+      }),
+    ]);
+
+    // History remains retrievable even though it no longer decides the state.
+    const oldTerminal = await retrieveEvidence({
+      runsRoot,
+      sourceRef: {
+        run: { project, runId: "resumed-cycle-run", identityQuality: "explicit" },
+        eventId: "old-cancelled",
+      },
+    });
+    expect(oldTerminal.status).toBe("ok");
   });
 
   it("lists 10k events without retaining the whole trail", async () => {

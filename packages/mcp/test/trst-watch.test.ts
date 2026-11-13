@@ -614,6 +614,19 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
     expect(result.progress?.newEvents).toBe(0);
   });
 
+  it("reports started for a published track-only run with no events file yet", async () => {
+    const sandbox = createSandbox();
+    writeTrack(sandbox);
+
+    const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
+
+    expect(result.state).toBe("started");
+    expect(result.crash).toBeUndefined();
+    expect(result.lines).toEqual([]);
+    expect(result.cursor).toBe(0);
+    expect(result.progress?.newEvents).toBe(0);
+  });
+
   it("reports crashed with unknown-run-state for an event-less run with no track", async () => {
     const sandbox = createSandbox();
     writeFileSync(sandbox.eventsFile, "", "utf8");
@@ -768,9 +781,14 @@ describe("trst_watch cursor, resolution, and long-poll compatibility", () => {
 
   it("fails clearly for an unknown run and for missing runId", async () => {
     const sandbox = createSandbox();
-    await expect(trst_watch({ runId: "nope" }, quickOptions(sandbox))).rejects.toThrow(
-      /run not found/u,
-    );
+    // A missing events file is no longer a lookup failure; the run DIRECTORY
+    // must be missing for the not-found rejection.
+    await expect(
+      trst_watch(
+        { runId: "nope" },
+        { ...quickOptions(sandbox), runDir: path.join(sandbox.root, "runs", "nope") },
+      ),
+    ).rejects.toThrow(/run not found/u);
     await expect(trst_watch({} as TrstWatchParams, quickOptions(sandbox))).rejects.toThrow(
       /runId/u,
     );
@@ -875,11 +893,11 @@ describe("trst_watch canonical state projection", () => {
     expect(result.waits).toEqual([]);
   });
 
-  it("follows the classifier when its answer disagrees with a raw terminal-event scan", async () => {
+  it("reports a bare cancellation as crashed instead of terminal", async () => {
     const sandbox = createSandbox();
-    // The canonical classifier treats a cancel request without a terminal event
-    // as `cancelled` (terminal). A watch that re-derived state from its own
-    // terminal-event scan would report `crashed` for this trail.
+    // A bare cancellation request is not terminal. With no live owner and no
+    // usable track, the watch must stop as crashed and keep the cancellation
+    // visible in the crash reason.
     appendLines(sandbox, [
       eventLine("workflow.started", 1),
       eventLine("workflow.cancelRequested", 2, { reason: "operator" }),
@@ -887,8 +905,11 @@ describe("trst_watch canonical state projection", () => {
 
     const result = await trst_watch({ runId: "run-1", maxWaitMs: 0 }, quickOptions(sandbox, 0));
 
-    expect(result.state).toBe("terminal");
-    expect(result.crash).toBeUndefined();
+    expect(result.state).toBe("crashed");
+    expect(result.crash?.code).toBe("unknown-run-state");
+    expect(result.crash?.reason).toContain(
+      "A cancellation was requested but no terminal event has been recorded.",
+    );
     expect(result.output).toBeUndefined();
     expect(result.failure).toBeUndefined();
   });

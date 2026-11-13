@@ -22,6 +22,11 @@ import {
 } from "../cancellation/cancellation.js";
 import { runContinuation } from "../continuation/run-continuation/run-continuation.js";
 import { createEvent } from "../events/create-run-event.js";
+import {
+  findLifecycleCycleStartIndex,
+  findLifecycleTerminalEvent,
+  selectCurrentLifecycleCycle,
+} from "../events/lifecycle-cycle.js";
 import { isFailureLikeError } from "../failures/failure-like.js";
 import { workflowFailure } from "../failures/workflow-failure.js";
 import {
@@ -883,46 +888,16 @@ function readWorkflowStartedInput(events: readonly Event[]): PlainObject | undef
 function readPreviousTerminalWorkflowStatus(
   events: readonly Event[],
 ): "completed" | "failed" | "cancelled" | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type === "workflow.completed") {
-      return "completed";
-    }
-    if (event?.type === "workflow.failed") {
-      return "failed";
-    }
-    if (event?.type === "workflow.cancelled") {
-      return "cancelled";
-    }
-  }
-
-  return undefined;
+  return findLifecycleTerminalEvent(events)?.state;
 }
 
 /**
- * Events belonging to the run's current lifecycle cycle: everything after the
- * most recent workflow.resumed/workflow.retryStarted (or all events when the
- * run was never re-opened). Terminal/cancellation checks use this window so a
- * resumed run is not judged by an earlier cancellation cycle's events.
+ * Events belonging to the run's current lifecycle cycle. Terminal and
+ * cancellation checks use this shared window so a resumed run is not judged by
+ * an earlier cycle's events.
  */
 function eventsSinceLastReopen(events: readonly Event[]): readonly Event[] {
-  return events.slice(findCycleStartIndex(events));
-}
-
-/**
- * Index of the first event of the run's current lifecycle cycle: everything
- * after the most recent workflow.resumed/workflow.retryStarted (or the whole
- * trail when the run was never re-opened).
- */
-function findCycleStartIndex(events: readonly Event[]): number {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const type = events[index]?.type;
-    if (type === "workflow.resumed" || type === "workflow.retryStarted") {
-      return index + 1;
-    }
-  }
-
-  return 0;
+  return selectCurrentLifecycleCycle(events);
 }
 
 /**
@@ -941,7 +916,7 @@ function readCycleTerminalWorkflowStatus(
  * undefined when the current cycle has no cancelled step to retry.
  */
 function findCycleCancelledStepIndex(events: readonly Event[]): number | undefined {
-  const cycleStartIndex = findCycleStartIndex(events);
+  const cycleStartIndex = findLifecycleCycleStartIndex(events);
   for (let index = events.length - 1; index >= cycleStartIndex; index -= 1) {
     const event = events[index];
     if (event?.type === "step.cancelled" && event.stepId !== undefined) {

@@ -97,8 +97,10 @@ describe("storage lifecycle", () => {
     expect(summaries.map((summary) => `${summary.runId}:${summary.status}`)).toContain(
       "old-terminal:archived",
     );
+    // A started-only trail with no track is not evidence of a live run, so the
+    // summary projects the classifier's unknown instead of assuming active.
     expect(summaries.map((summary) => `${summary.runId}:${summary.status}`)).toContain(
-      "old-active:active",
+      "old-active:unknown",
     );
     expect(summaries.map((summary) => `${summary.runId}:${summary.status}`)).toContain(
       "old-pinned:completed",
@@ -324,11 +326,14 @@ describe("storage lifecycle", () => {
     // with a still-active event trail lifecycle eligible, even with a live
     // owner that is still finishing it.
     await writeFinishingRun(runsRoot, "finishing-run", "workflow-a", process.pid);
+    // The track says completed but the event trail is still non-terminal and no
+    // lock is held: the summary projects the classifier's unknown, which stays
+    // non-terminal for lifecycle purposes.
     await expect(listRunSummaries({ cwd, runsRoot })).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           runId: "finishing-run",
-          status: "active",
+          status: "unknown",
           track: expect.objectContaining({ status: "completed", ownerPid: process.pid }),
         }),
       ]),

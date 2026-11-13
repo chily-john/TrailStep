@@ -19,7 +19,7 @@
  * events stay fetchable). In compact mode every read event is digested by the
  * server, so the persisted cursor advances to the last consumed read offset.
  *
- * Run state is owned by `classifyRunState` / `toWatchRunState` in
+ * Run state is owned by `classifyRunState` / `toPublicWatchRunState` in
  * `@trailstep/core`; this tool only projects the canonical evidence vocabulary
  * onto the five public watch states and never re-derives terminal/wait/orphan
  * semantics from its own event scan. A run parked on a durable wait is
@@ -51,7 +51,7 @@
  * `.trailstep/mcp`.
  */
 import { randomBytes } from "node:crypto";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -59,6 +59,7 @@ import {
   classifyRunState,
   DEFAULT_EVIDENCE_QUERY_LIMITS,
   type Event,
+  isNodeError,
   isPlainObject,
   type RunStateClassification,
   readRunEvents,
@@ -67,7 +68,7 @@ import {
   readWaitAnswerFile,
   readWaitQuestion,
   resolveRunsRoot,
-  toWatchRunState,
+  toPublicWatchRunState,
   validateRunIdentifier,
   waitEventBranchId,
 } from "@trailstep/core";
@@ -224,7 +225,7 @@ export async function trst_watch(
   const runsRoot = resolveRunsRoot({ cwd, env: options.env ?? process.env });
   const eventsFile = await resolveEventsFile(cwd, runsRoot, runId, options.runDir);
   const runDir = path.dirname(eventsFile);
-  await requireEventsFile(eventsFile, runId);
+  await requireRunDirectory(runDir, runId, eventsFile);
 
   // Read the durable track signal once per call. The classifier runs on every
   // poll (the lock and owner liveness can change without new events), so
@@ -289,8 +290,8 @@ export async function trst_watch(
   const deadline = Date.now() + effectiveWaitMs;
   let observed = await readTrail(runDir);
   let classification = await classify(observed);
-  let state = projectWatchState(classification);
-  let read = await readRunEventsSince(eventsFile, startCursor, readOptions);
+  let state = toPublicWatchRunState(classification);
+  let read = await readRunEventsSinceOrEmpty(runDir, eventsFile, runId, startCursor, readOptions);
   let consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
 
   // Progress is best-effort and synchronous: one notification immediately at
@@ -340,11 +341,11 @@ export async function trst_watch(
       throw error;
     }
 
-    read = await readRunEventsSince(eventsFile, startCursor, readOptions);
+    read = await readRunEventsSinceOrEmpty(runDir, eventsFile, runId, startCursor, readOptions);
     consumedNewData = read.entries.length > 0 || read.offset !== startCursor;
     if (!consumedNewData) {
       classification = await classify(observed);
-      state = projectWatchState(classification);
+      state = toPublicWatchRunState(classification);
       if (options.onProgress !== undefined && Date.now() - lastProgressAt >= progressIntervalMs) {
         notifyProgress(state);
       }
@@ -354,7 +355,7 @@ export async function trst_watch(
   if (consumedNewData) {
     observed = await readTrail(runDir);
     classification = await classify(observed);
-    state = projectWatchState(classification);
+    state = toPublicWatchRunState(classification);
   }
 
   const emitted = read.entries.slice(0, lineCap);
@@ -458,36 +459,68 @@ async function resolveEventsFile(
   return path.join(validated.runDir, "events.jsonl");
 }
 
-async function requireEventsFile(eventsFile: string, runId: string): Promise<void> {
+async function requireRunDirectory(
+  runDir: string,
+  runId: string,
+  eventsFile: string,
+): Promise<void> {
   try {
-    await access(eventsFile);
-  } catch {
-    throw new Error(`trst_watch: run not found or unreadable: ${runId} (${eventsFile})`);
+    await stat(runDir);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new Error(`trst_watch: run not found or unreadable: ${runId} (${eventsFile})`);
+    }
+    throw error;
   }
 }
 
 /**
- * Project the canonical evidence vocabulary onto the five public watch states.
- *
- * Mapping: `active` → `started` (zero events) or `in-progress`; `waiting` →
- * `waiting`; `completed`/`failed`/`cancelled` → `terminal`; `stale` →
- * `crashed` with code `no-live-process`; `unknown` → `crashed` with code
- * `unknown-run-state`. The public enum deliberately stays at five states — when
- * either crash state applies the watch will not observe further progress —
- * while `describeCrash` preserves the forensic distinction.
+ * Read events since the cursor, treating a not-yet-created trail as empty. A
+ * run is published before its first event is appended, so a watch that starts
+ * in that window must return its entry snapshot instead of failing. The same
+ * `ENOENT` also happens when the run directory is deleted mid-watch; stat the
+ * directory so a vanished run is reported instead of looking alive.
  */
-function projectWatchState(classification: RunStateClassification): TrstWatchRunState {
-  const projected = toWatchRunState(classification);
-  return projected === "unknown" ? "crashed" : projected;
+async function readRunEventsSinceOrEmpty(
+  runDir: string,
+  eventsFile: string,
+  runId: string,
+  cursor: number,
+  options: { readonly report?: (message: string) => void },
+): Promise<Awaited<ReturnType<typeof readRunEventsSince>>> {
+  try {
+    return await readRunEventsSince(eventsFile, cursor, options);
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+
+    try {
+      await stat(runDir);
+    } catch (statError) {
+      if (isNodeError(statError) && statError.code === "ENOENT") {
+        throw new Error(`trst_watch: run not found or unreadable: ${runId} (${eventsFile})`);
+      }
+      throw statError;
+    }
+
+    return { text: "", offset: cursor, entries: [] };
+  }
 }
 
 /** Keep the canonical unknown/stale distinction while the public state stays `crashed`. */
 function describeCrash(classification: RunStateClassification): TrstWatchCrash {
-  const diagnostic = classification.diagnostics[0];
+  const messages = classification.diagnostics
+    .map((diagnostic) => diagnostic.message)
+    .filter((message): message is string => message !== undefined && message.length > 0);
+  const joined = [...new Set(messages)].join(" ");
   return {
     reason:
-      diagnostic?.message ??
-      (classification.state === "unknown" ? unknownRunStateReason : crashReason),
+      joined.length > 0
+        ? joined
+        : classification.state === "unknown"
+          ? unknownRunStateReason
+          : crashReason,
     code: classification.state === "unknown" ? "unknown-run-state" : "no-live-process",
   };
 }

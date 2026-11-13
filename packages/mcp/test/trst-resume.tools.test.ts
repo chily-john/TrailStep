@@ -367,6 +367,61 @@ describe("statusFromEvents derives the continue status from the trail, never fro
     );
   });
 
+  it("never maps a pending cancel request to cancelled or waiting", () => {
+    const bareCancel = [event("workflow.started"), event("workflow.cancelRequested")];
+    expect(statusFromEvents(bareCancel)).toBe("running");
+    // A pending wait must not be reported as answerable while the request is pending.
+    expect(
+      statusFromEvents([
+        event("workflow.started"),
+        event("workflow.cancelRequested"),
+        event("wait.started"),
+      ]),
+    ).toBe("running");
+    expect(
+      statusFromEvents([
+        event("workflow.started"),
+        event("workflow.cancelRequested"),
+        event("workflow.cancelled"),
+      ]),
+    ).toBe("cancelled");
+  });
+
+  it("ignores a cancel request superseded by workflow.resumed", () => {
+    expect(
+      statusFromEvents([
+        event("workflow.started"),
+        event("workflow.cancelRequested"),
+        event("workflow.resumed"),
+        event("step.started"),
+      ]),
+    ).toBe("running");
+  });
+
+  it("ignores a terminal event from a superseded cycle", () => {
+    expect(
+      statusFromEvents([
+        event("workflow.started"),
+        event("workflow.cancelRequested"),
+        event("workflow.cancelled"),
+        event("workflow.resumed"),
+        event("step.started"),
+      ]),
+    ).toBe("running");
+  });
+
+  it("keeps running when a new request follows a resume, never waiting", () => {
+    expect(
+      statusFromEvents([
+        event("workflow.started"),
+        event("workflow.cancelRequested"),
+        event("workflow.resumed"),
+        event("step.started"),
+        event("workflow.cancelRequested"),
+      ]),
+    ).toBe("running");
+  });
+
   it("maps a trailing wait.started to waiting", () => {
     expect(statusFromEvents([event("workflow.started"), event("wait.started")])).toBe("waiting");
   });

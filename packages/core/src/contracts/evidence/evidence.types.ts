@@ -78,19 +78,28 @@ export type EvidenceStorageLocation = "hot" | "archived" | "missing" | "unreadab
 /** Whether coverage of the available sources is complete, partial, or unknown. */
 export type EvidenceCoverage = "complete" | "partial" | "unknown";
 
-/** Bounded diagnostic codes. Free-form messages must never echo secrets. */
-export type EvidenceDiagnosticCode =
-  | "unsupported-version"
-  | "malformed-record"
-  | "missing-source"
-  | "unreadable-source"
-  | "changed-source"
-  | "partial-coverage"
-  | "ambiguous-identity"
-  | "budget-exceeded"
-  | "stale-owner"
-  | "permission-denied"
-  | "unsupported-source";
+/**
+ * Bounded diagnostic codes. Free-form messages must never echo secrets.
+ *
+ * The runtime list is the single source of truth: the JSON-schema enum derives
+ * from it, so adding a code cannot silently drift from the type union.
+ */
+export const EVIDENCE_DIAGNOSTIC_CODES = [
+  "unsupported-version",
+  "malformed-record",
+  "missing-source",
+  "unreadable-source",
+  "changed-source",
+  "partial-coverage",
+  "ambiguous-identity",
+  "budget-exceeded",
+  "stale-owner",
+  "permission-denied",
+  "unsupported-source",
+  "cancellation-pending",
+] as const;
+
+export type EvidenceDiagnosticCode = (typeof EVIDENCE_DIAGNOSTIC_CODES)[number];
 
 export interface EvidenceDiagnostic {
   readonly code: EvidenceDiagnosticCode;

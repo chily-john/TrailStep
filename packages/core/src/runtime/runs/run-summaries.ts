@@ -8,6 +8,15 @@ import {
   isReservedRunsRootEntry,
   readRunEvents,
 } from "../artifacts/run-storage.js";
+import {
+  findLifecycleCycleStartIndex,
+  findLifecycleTerminalEvent,
+} from "../events/lifecycle-cycle.js";
+import {
+  classifyRunState,
+  type RunStateClassification,
+  type TrackStateSignal,
+} from "../evidence/classify-run-state.js";
 import type { LatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import { selectLatestUnresolvedFailure } from "../retry/latest-unresolved-failure.js";
 import type { Event } from "../run-workflow/run-workflow.types.js";
@@ -95,7 +104,10 @@ export function selectRecentFailedRunSummaries(
 
   return summaries
     .filter((summary) => {
-      if (summary.status !== "failed" || !summary.latestFailure) {
+      // Status is a projection of the run state, not the failure record: a
+      // waiting or stale run that recorded an unresolved failure must still be
+      // discoverable under "Recent failed runs" while its status stays honest.
+      if (!summary.latestFailure) {
         return false;
       }
 
@@ -131,16 +143,28 @@ async function summarizeReadableRun(options: {
   };
 
   if (options.events.length === 0) {
-    return {
-      ...options,
-      ...trackFields,
-      ...summarizeEventlessTrack(track),
-      ...(track === undefined ? {} : await trackTimestampFields(options.runDir)),
-    };
+    return await summarizeEventlessRun(options, track, trackFields);
   }
 
-  const latestFailure = selectLatestUnresolvedFailure(options.events);
-  const terminalStatus = selectTerminalStatus(options.events);
+  // A reopened run is judged only by its current lifecycle cycle. Both the
+  // terminal status and the unresolved failure must come from that window: an
+  // old cycle's failure would otherwise make a resumed running run look failed
+  // even after `workflow.resumed` / `workflow.retryStarted`.
+  const cycleStartIndex = findLifecycleCycleStartIndex(options.events);
+  const cycleEvents = options.events.slice(cycleStartIndex);
+  const unresolvedFailure = selectLatestUnresolvedFailure(options.events, {
+    fromIndex: cycleStartIndex,
+  });
+  // An interrupted `step.started` is retry metadata, not a recorded failure. A
+  // live run must not be summarized as failed merely because its current step
+  // has not finished yet; only an actual failed event becomes latestFailure.
+  const latestFailure =
+    unresolvedFailure !== undefined &&
+    (unresolvedFailure.event.type === "step.failed" ||
+      unresolvedFailure.event.type === "workflow.failed")
+      ? unresolvedFailure
+      : undefined;
+  const terminalStatus = findLifecycleTerminalEvent(cycleEvents)?.state;
   const lastEvent = options.events.at(-1);
   const workflowId =
     lastEvent?.workflowId ?? options.events.find((event) => event.workflowId)?.workflowId;
@@ -155,24 +179,132 @@ async function summarizeReadableRun(options: {
     };
   }
 
-  if (latestFailure) {
+  if (terminalStatus === "failed") {
     return {
       ...options,
       ...trackFields,
       status: "failed",
-      workflowId: latestFailure.workflowId,
-      lastTimestamp: latestFailure.event.timestamp,
-      latestFailure,
+      workflowId: latestFailure?.workflowId ?? workflowId,
+      lastTimestamp: latestFailure?.event.timestamp ?? lastEvent?.timestamp,
+      ...(latestFailure === undefined ? {} : { latestFailure }),
     };
   }
+
+  // Every other eventful run projects the one canonical classifier, so a
+  // recorded `step.failed` is failure detail (latestFailure) and never decides
+  // the run state: a live or wait-parked run must not look terminal.
+  const classification = await classifyRunState({
+    runDir: options.runDir,
+    events: options.events,
+    ...(track === undefined ? {} : { trackSignal: trackSignalFromSummary(track) }),
+  });
 
   return {
     ...options,
     ...trackFields,
-    status: terminalStatus ?? "active",
+    status: projectSummaryStatus(classification.state),
     workflowId,
     lastTimestamp: lastEvent?.timestamp,
+    ...(latestFailure === undefined ? {} : { latestFailure }),
     ...orphanedTrackFields(track),
+    ...staleProjectionFields(options.runId, track, classification),
+  };
+}
+
+/**
+ * An event-less run: a terminal track is the only durable completion record,
+ * so it keeps its status (and storage-lifecycle eligibility). Everything else
+ * projects the classifier, which is the only place that decides whether a
+ * creation window is active, stale or unknown.
+ */
+async function summarizeEventlessRun(
+  options: {
+    readonly runId: string;
+    readonly runDir: string;
+    readonly events: readonly Event[];
+  },
+  track: TrackSummary | undefined,
+  trackFields: { readonly track?: TrackSummary; readonly trackWarning?: string },
+): Promise<RunSummary> {
+  if (track !== undefined && isTerminalTrackStatus(track.status)) {
+    return {
+      ...options,
+      ...trackFields,
+      ...summarizeEventlessTrack(track),
+      ...(await trackTimestampFields(options.runDir)),
+    };
+  }
+
+  const classification = await classifyRunState({
+    runDir: options.runDir,
+    events: options.events,
+    ...(track === undefined ? {} : { trackSignal: trackSignalFromSummary(track) }),
+  });
+
+  return {
+    ...options,
+    ...trackFields,
+    status: projectSummaryStatus(classification.state),
+    ...(classification.workflowId === undefined ? {} : { workflowId: classification.workflowId }),
+    ...(track === undefined ? {} : await trackTimestampFields(options.runDir)),
+    ...orphanedTrackFields(track),
+    ...staleProjectionFields(options.runId, track, classification),
+  };
+}
+
+function isTerminalTrackStatus(status: string): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+/** Pass the already-read track to the classifier instead of re-reading track.json. */
+function trackSignalFromSummary(track: TrackSummary): TrackStateSignal {
+  return {
+    present: true,
+    readable: true,
+    status: track.status,
+    ...(track.ownerPid === undefined ? {} : { ownerPid: track.ownerPid }),
+    ...(track.workflowId === undefined ? {} : { workflowId: track.workflowId }),
+  };
+}
+
+/** Summary vocabulary: a wait-parked run is still live to a run summary. */
+function projectSummaryStatus(state: RunStateClassification["state"]): RunSummaryStatus {
+  switch (state) {
+    case "waiting":
+    case "active":
+      return "active";
+    case "stale":
+      return "stale";
+    case "unknown":
+      return "unknown";
+    case "completed":
+    case "failed":
+    case "cancelled":
+      return state;
+  }
+}
+
+/**
+ * The classifier can see a stale owner that the summary's own track read did
+ * not (for example after a read failure); keep the stale flag and use the
+ * classifier's reason as the warning in that case.
+ */
+function staleProjectionFields(
+  runId: string,
+  track: TrackSummary | undefined,
+  classification: RunStateClassification,
+): { readonly stale?: true; readonly warning?: string } {
+  if (classification.state !== "stale" || orphanedTrackFields(track).stale === true) {
+    return {};
+  }
+
+  const message = classification.diagnostics.find(
+    (diagnostic) => diagnostic.code === "stale-owner",
+  )?.message;
+
+  return {
+    stale: true,
+    ...(message === undefined ? {} : { warning: `Warning: Run ${runId} is orphaned — ${message}` }),
   };
 }
 
@@ -286,27 +418,6 @@ function isProcessAlive(pid: number): boolean {
     // EPERM means the process exists but is not signalable by this user.
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
-}
-
-function selectTerminalStatus(
-  events: readonly Event[],
-): "completed" | "failed" | "cancelled" | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type === "workflow.completed") {
-      return "completed";
-    }
-
-    if (event?.type === "workflow.failed") {
-      return "failed";
-    }
-
-    if (event?.type === "workflow.cancelled") {
-      return "cancelled";
-    }
-  }
-
-  return undefined;
 }
 
 async function listArchivedRunSummaries(runsRoot: string): Promise<RunSummary[]> {

@@ -5,8 +5,13 @@ import type {
   EvidenceDiagnostic,
   EvidenceExecutionState,
 } from "../../contracts/evidence/evidence.types.js";
+import { DEFAULT_EVIDENCE_QUERY_LIMITS } from "../../contracts/evidence/run-evidence-query.types.js";
 import { isPlainObject } from "../../json/guards.js";
 import { listPendingWaits } from "../../runs/wait-events.js";
+import {
+  findLifecycleTerminalEvent,
+  selectCurrentLifecycleCycle,
+} from "../events/lifecycle-cycle.js";
 import { isPidAlive, isRunLockLive, type RunLock, readRunLock } from "../run-lock/run-lock.js";
 import { readBoundedTextFile } from "./bounded-readers.js";
 
@@ -23,18 +28,37 @@ import { readBoundedTextFile } from "./bounded-readers.js";
  * - pending `wait.started` events: a run parked on a durable wait.
  *
  * State mapping is intentionally conservative:
- * - terminal event wins;
- * - `workflow.cancelRequested` without a terminal event is `cancelled`;
- * - a pending wait is `waiting`, even when the track owner is gone (an
- *   operator answer is the next move, not an orphan);
+ * - the current lifecycle cycle's terminal event wins; a run reopened by
+ *   `workflow.resumed` or `workflow.retryStarted` is judged by events after
+ *   that reopen, not by an earlier cycle's terminal/cancellation;
+ * - `workflow.cancelRequested` is cancellation-in-progress, never terminal: no
+ *   terminal event has ended the cycle yet. A live owner stays `active`; a
+ *   dead owner parked on a wait would discard the request if the wait were
+ *   answered, so it is `unknown` with a cancellation-pending diagnostic.
+ *   Every other non-terminal outcome appends that diagnostic;
+ * - a pending wait in the current cycle is `waiting`, even when the track
+ *   owner is gone (an operator answer is the next move, not an orphan) —
+ *   unless a cancellation is pending, which must never be reported as an
+ *   answerable wait;
  * - a live run lock is `active`, even when `track.json` is missing, unreadable
  *   or unusable, because the lock is direct evidence that a process is driving
  *   the run;
  * - a running track with a dead owner is `stale` + `stale-owner`;
  * - without a live lock, a missing/unreadable track with no terminal event is
  *   `unknown`, never `active`;
- * - an incomplete bounded scan is `unknown` unless a terminal event was seen.
+ * - an incomplete bounded scan is `unknown` unless a current-cycle terminal
+ *   event was seen.
  */
+
+/** Diagnostic appended to any non-terminal outcome while a cancellation is pending. */
+const CANCELLATION_PENDING_DIAGNOSTIC: EvidenceDiagnostic = {
+  code: "cancellation-pending",
+  message: "A cancellation was requested but no terminal event has been recorded.",
+};
+
+/** Trap message: a dead run parked on a wait must not be presented as answerable. */
+const CANCELLATION_PENDING_TRAP_MESSAGE =
+  "Cancellation was requested, but no live owner or terminal event remains, and answering a wait or continuing would discard the request. Finish the cancellation (cancel) or deliberately discard it (continue).";
 
 export interface TrackStateSignal {
   readonly present: boolean;
@@ -91,7 +115,7 @@ export async function classifyRunState(
   const trackSignal =
     options.trackSignal === undefined
       ? await readTrackStateSignal(options.runDir, {
-          maxBytes: options.maxTrackBytes ?? 256 * 1024,
+          maxBytes: options.maxTrackBytes ?? DEFAULT_EVIDENCE_QUERY_LIMITS.maxTrackBytes,
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         })
       : options.trackSignal;
@@ -99,9 +123,13 @@ export async function classifyRunState(
     options.lock === undefined ? ((await readRunLock(options.runDir)) ?? null) : options.lock;
   const lockLive = lock !== null && isRunLockLive(lock, pidIsAlive);
 
-  const terminal = findTerminalEvent(options.events);
-  const pendingWaits = listPendingWaits(options.events);
-  const cancelRequested = findLastEventOfType(options.events, "workflow.cancelRequested");
+  // A run that was reopened starts a new lifecycle cycle. Earlier terminal,
+  // cancellation and wait events belong to the old cycle and must not decide
+  // the current state; the shared helper is the one rule every consumer uses.
+  const cycleEvents = selectCurrentLifecycleCycle(options.events);
+  const terminal = findLifecycleTerminalEvent(cycleEvents);
+  const pendingWaits = listPendingWaits(cycleEvents);
+  const cancelRequested = findLastEventOfType(cycleEvents, "workflow.cancelRequested");
   const startedEvent = options.events.find((event) => event.type === "workflow.started");
   const lastEvent = options.events.at(-1);
   const ownerPid = trackSignal?.ownerPid ?? lock?.pid;
@@ -132,23 +160,43 @@ export async function classifyRunState(
     return {
       ...base,
       state: "unknown",
-      diagnostics: [
-        {
-          code: "budget-exceeded",
-          message: "The event trail scan was incomplete, so the run state is unknown.",
-        },
-      ],
+      diagnostics: appendCancellationPending(
+        [
+          {
+            code: "budget-exceeded",
+            message: "The event trail scan was incomplete, so the run state is unknown.",
+          },
+        ],
+        cancelRequested,
+      ),
     };
   }
 
-  if (cancelRequested !== undefined) {
+  // A request is not terminal: only the runtime's terminal events end a cycle.
+  // A live owner is still driving the run and will act on the request.
+  if (cancelRequested !== undefined && lockLive) {
     return {
       ...base,
-      state: "cancelled",
+      state: "active",
+      diagnostics: [CANCELLATION_PENDING_DIAGNOSTIC],
+    };
+  }
+
+  // Without a live owner, a parked wait is a trap: answering it (or continuing)
+  // clears the cancellation marker and resumes the run, silently discarding the
+  // request. Report an unanswerable crash instead of `waiting`.
+  if (
+    cancelRequested !== undefined &&
+    !lockLive &&
+    (pendingWaits.length > 0 || trackSignal?.status === "waiting")
+  ) {
+    return {
+      ...base,
+      state: "unknown",
       diagnostics: [
         {
-          code: "partial-coverage",
-          message: "Cancellation was requested but no terminal event was recorded.",
+          code: "cancellation-pending",
+          message: CANCELLATION_PENDING_TRAP_MESSAGE,
         },
       ],
     };
@@ -175,13 +223,16 @@ export async function classifyRunState(
     return {
       ...base,
       state: "unknown",
-      diagnostics: [
-        {
-          code: "missing-source",
-          message:
-            "Track metadata is missing and no terminal event was recorded, so the run state is unknown.",
-        },
-      ],
+      diagnostics: appendCancellationPending(
+        [
+          {
+            code: "missing-source",
+            message:
+              "Track metadata is missing and no terminal event was recorded, so the run state is unknown.",
+          },
+        ],
+        cancelRequested,
+      ),
     };
   }
 
@@ -189,13 +240,16 @@ export async function classifyRunState(
     return {
       ...base,
       state: "unknown",
-      diagnostics: [
-        {
-          code: "unreadable-source",
-          message:
-            "Track metadata is unreadable and no terminal event was recorded, so the run state is unknown.",
-        },
-      ],
+      diagnostics: appendCancellationPending(
+        [
+          {
+            code: "unreadable-source",
+            message:
+              "Track metadata is unreadable and no terminal event was recorded, so the run state is unknown.",
+          },
+        ],
+        cancelRequested,
+      ),
     };
   }
 
@@ -209,33 +263,43 @@ export async function classifyRunState(
       return {
         ...base,
         state: "stale",
-        diagnostics: [
-          {
-            code: "stale-owner",
-            message: "The track still reports running but its owner process is no longer alive.",
-          },
-        ],
+        diagnostics: appendCancellationPending(
+          [
+            {
+              code: "stale-owner",
+              message: "The track still reports running but its owner process is no longer alive.",
+            },
+          ],
+          cancelRequested,
+        ),
       };
     }
-    return { ...base, state: "active", diagnostics: [] };
+    return {
+      ...base,
+      state: "active",
+      diagnostics: appendCancellationPending([], cancelRequested),
+    };
   }
 
   return {
     ...base,
     state: "unknown",
-    diagnostics: [
-      {
-        code: "partial-coverage",
-        message:
-          trackSignal.status === undefined
-            ? "Track metadata has no status and no terminal event was recorded."
-            : `Track status "${trackSignal.status.slice(0, 64)}" has no matching terminal event.`,
-      },
-    ],
+    diagnostics: appendCancellationPending(
+      [
+        {
+          code: "partial-coverage",
+          message:
+            trackSignal.status === undefined
+              ? "Track metadata has no status and no terminal event was recorded."
+              : `Track status "${trackSignal.status.slice(0, 64)}" has no matching terminal event.`,
+        },
+      ],
+      cancelRequested,
+    ),
   };
 }
 
-/** Map the canonical classification to the MCP/CLI watch vocabulary. */
+/** Map the canonical classification to the core watch vocabulary. */
 export function toWatchRunState(classification: RunStateClassification): WatchRunState {
   switch (classification.state) {
     case "active":
@@ -251,6 +315,21 @@ export function toWatchRunState(classification: RunStateClassification): WatchRu
     case "unknown":
       return "unknown";
   }
+}
+
+/** The five public watch states; canonical `unknown` is surfaced as `crashed`. */
+export type PublicWatchRunState = Exclude<WatchRunState, "unknown">;
+
+/**
+ * Map the canonical classification to the public five-state watch vocabulary.
+ *
+ * `unknown` becomes `crashed` because the watch will not observe further
+ * progress in either case; the MCP crash payload keeps the forensic difference
+ * between canonical `unknown` and `stale` in `crash.code`.
+ */
+export function toPublicWatchRunState(classification: RunStateClassification): PublicWatchRunState {
+  const projected = toWatchRunState(classification);
+  return projected === "unknown" ? "crashed" : projected;
 }
 
 /**
@@ -295,24 +374,10 @@ export async function readTrackStateSignal(
   };
 }
 
-function findTerminalEvent(
-  events: readonly Event[],
-): { readonly state: "completed" | "failed" | "cancelled"; readonly event: Event } | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type === "workflow.completed") {
-      return { state: "completed", event };
-    }
-    if (event?.type === "workflow.failed") {
-      return { state: "failed", event };
-    }
-    if (event?.type === "workflow.cancelled") {
-      return { state: "cancelled", event };
-    }
-  }
-  return undefined;
-}
-
+/**
+ * Last event of a type within the supplied window. Callers pass the current
+ * cycle when the event must not be selected from a superseded cycle.
+ */
 function findLastEventOfType(events: readonly Event[], type: Event["type"]): Event | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -321,4 +386,18 @@ function findLastEventOfType(events: readonly Event[], type: Event["type"]): Eve
     }
   }
   return undefined;
+}
+
+/**
+ * Keep the state-specific diagnostic first and append the pending-cancellation
+ * reason, so presentation surfaces can join every message without losing the
+ * state reason.
+ */
+function appendCancellationPending(
+  diagnostics: readonly EvidenceDiagnostic[],
+  cancelRequested: Event | undefined,
+): readonly EvidenceDiagnostic[] {
+  return cancelRequested === undefined
+    ? diagnostics
+    : [...diagnostics, CANCELLATION_PENDING_DIAGNOSTIC];
 }

@@ -8,8 +8,10 @@ import {
   clearCancellationMarker,
   createEvent,
   type Event,
+  findLifecycleTerminalEvent,
   isPlainObject,
   readCancellationMarker,
+  selectCurrentLifecycleCycle,
   writeCancellationMarker,
 } from "@trailstep/core";
 
@@ -54,8 +56,8 @@ async function cancelWorkflowRun(
   }
 
   const events = await readEventsForRun(resolvedRun.runDir);
-  const cycleEvents = activeRunCycleEvents(events);
-  const terminalStatus = selectTerminalStatus(cycleEvents);
+  const cycleEvents = selectCurrentLifecycleCycle(events);
+  const terminalStatus = findLifecycleTerminalEvent(cycleEvents)?.state;
 
   // The run's real terminal status comes from the event trail, never from the
   // marker: the marker is a PENDING REQUEST, so a stale marker left behind by
@@ -190,42 +192,6 @@ async function appendCancellationEvent(options: {
       payload: cancellationPayload(options.marker),
     }),
   );
-}
-
-/**
- * Events of the run's current lifecycle cycle: everything after the most
- * recent workflow.resumed/workflow.retryStarted (or all events when the run
- * was never re-opened). A resumed run must be cancelable again even though an
- * earlier cycle already recorded a workflow.cancelled event.
- */
-function activeRunCycleEvents(events: readonly Event[]): readonly Event[] {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const type = events[index]?.type;
-    if (type === "workflow.resumed" || type === "workflow.retryStarted") {
-      return events.slice(index + 1);
-    }
-  }
-
-  return events;
-}
-
-function selectTerminalStatus(
-  events: readonly Event[],
-): "completed" | "failed" | "cancelled" | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type === "workflow.completed") {
-      return "completed";
-    }
-    if (event?.type === "workflow.failed") {
-      return "failed";
-    }
-    if (event?.type === "workflow.cancelled") {
-      return "cancelled";
-    }
-  }
-
-  return undefined;
 }
 
 async function loadActiveInteractiveSession(

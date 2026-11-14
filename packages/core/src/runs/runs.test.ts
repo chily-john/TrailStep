@@ -16,6 +16,7 @@ import {
   findLatestPendingWait,
   findPendingWaitsById,
   listPendingWaits,
+  listWaitCancellationAmbiguities,
   waitEventBranchId,
 } from "./wait-events.js";
 
@@ -50,6 +51,25 @@ function waitEvent(
       ...(options.answerFile === undefined
         ? {}
         : { artifactPaths: { answerFile: options.answerFile } }),
+    },
+  };
+}
+
+function stepCancelledEvent(options: {
+  readonly stepId: string;
+  readonly branchId?: string;
+}): Event {
+  return {
+    id: `step.cancelled-${options.stepId}-${options.branchId ?? "unscoped"}`,
+    runId: "run-1",
+    workflowId: "workflow-1",
+    stepId: options.stepId,
+    timestamp: "2026-01-02T03:04:05.678Z",
+    schemaVersion: "v0",
+    type: "step.cancelled",
+    payload: {
+      ...(options.branchId === undefined ? {} : { branchId: options.branchId }),
+      reason: "cancelled in test",
     },
   };
 }
@@ -272,6 +292,171 @@ describe("wait event helpers", () => {
     const second = waitEvent("wait.started", { waitId: "w1", answerFile: "answers/a.json" });
 
     expect(listPendingWaits([first, satisfied, second])).toEqual([second]);
+  });
+
+  it("drops a root wait terminated by a later root step cancellation", () => {
+    const started = waitEvent("wait.started", { waitId: "approval", stepId: "ask" });
+    const cancelled = stepCancelledEvent({ stepId: "ask" });
+
+    expect(listPendingWaits([started, cancelled])).toEqual([]);
+    expect(findPendingWaitsById([started, cancelled], "approval")).toEqual([]);
+    expect(findLatestPendingWait([started, cancelled])).toBeUndefined();
+  });
+
+  it("treats an explicit root cancellation as matching an implicit root wait", () => {
+    const started = waitEvent("wait.started", { waitId: "approval", stepId: "ask" });
+    const cancelled = stepCancelledEvent({ stepId: "ask", branchId: "root" });
+
+    expect(listPendingWaits([started, cancelled])).toEqual([]);
+  });
+
+  it("ignores a step cancellation that precedes every wait", () => {
+    const cancelled = stepCancelledEvent({ stepId: "ask" });
+    const started = waitEvent("wait.started", { waitId: "approval", stepId: "ask" });
+
+    expect(listPendingWaits([cancelled])).toEqual([]);
+    expect(listPendingWaits([cancelled, started])).toEqual([started]);
+  });
+
+  it("keeps waits for other steps pending when a step is cancelled", () => {
+    const askWait = waitEvent("wait.started", { waitId: "approval", stepId: "ask" });
+    const reviewWait = waitEvent("wait.started", { waitId: "verdict", stepId: "review" });
+    const cancelled = stepCancelledEvent({ stepId: "ask" });
+
+    expect(listPendingWaits([askWait, reviewWait, cancelled])).toEqual([reviewWait]);
+  });
+
+  it("resolves only the cancelled branch for the same wait id", () => {
+    const branchA = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const branchB = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "b",
+      answerFile: "answers/b.json",
+    });
+    const cancelledA = stepCancelledEvent({ stepId: "step-1", branchId: "a" });
+
+    expect(listPendingWaits([branchA, branchB, cancelledA])).toEqual([branchB]);
+    expect(findPendingWaitsById([branchA, branchB, cancelledA], "approval")).toEqual([branchB]);
+    expect(findLatestPendingWait([branchA, branchB, cancelledA], "a")).toBeUndefined();
+    expect(findLatestPendingWait([branchA, branchB, cancelledA], "b")).toBe(branchB);
+  });
+
+  it("keeps a new wait started after a cancellation in the same step and branch", () => {
+    const first = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const cancelled = stepCancelledEvent({ stepId: "step-1", branchId: "a" });
+    const second = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+
+    expect(listPendingWaits([first, cancelled, second])).toEqual([second]);
+  });
+
+  it("keeps a new branch wait started after a legacy unscoped cancellation", () => {
+    const first = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const legacyCancelled = stepCancelledEvent({ stepId: "step-1" });
+    const second = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+
+    expect(listPendingWaits([first, legacyCancelled, second])).toEqual([second]);
+    // The first wait still cannot be attributed to branch-a, but the genuinely
+    // new wait after the cancellation stays pending.
+    expect(listWaitCancellationAmbiguities([first, legacyCancelled, second])).toEqual([
+      { wait: first, cancellation: legacyCancelled },
+    ]);
+  });
+
+  it("keeps a satisfied or failed wait resolved after a later cancellation", () => {
+    const satisfiedWait = waitEvent("wait.started", {
+      waitId: "one",
+      answerFile: "answers/one.json",
+    });
+    const satisfied = waitEvent("wait.satisfied", {
+      waitId: "one",
+      answerFile: "answers/one.json",
+    });
+    const failedWait = waitEvent("wait.started", {
+      waitId: "two",
+      answerFile: "answers/two.json",
+    });
+    const failed = waitEvent("wait.failed", {
+      waitId: "two",
+      answerFile: "answers/two.json",
+    });
+    const cancelled = stepCancelledEvent({ stepId: "step-1" });
+
+    expect(listPendingWaits([satisfiedWait, satisfied, failedWait, failed, cancelled])).toEqual([]);
+  });
+
+  it("withholds a branch wait from pending when only a legacy unscoped cancellation exists", () => {
+    const branchWait = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const legacyCancelled = stepCancelledEvent({ stepId: "step-1" });
+
+    expect(listPendingWaits([branchWait, legacyCancelled])).toEqual([]);
+    expect(findPendingWaitsById([branchWait, legacyCancelled], "approval")).toEqual([]);
+    expect(listWaitCancellationAmbiguities([branchWait, legacyCancelled])).toEqual([
+      { wait: branchWait, cancellation: legacyCancelled },
+    ]);
+  });
+
+  it("does not treat an explicit root cancellation as ambiguous for a branch wait", () => {
+    const branchWait = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const rootCancelled = stepCancelledEvent({ stepId: "step-1", branchId: "root" });
+
+    expect(listPendingWaits([branchWait, rootCancelled])).toEqual([branchWait]);
+    expect(listWaitCancellationAmbiguities([branchWait, rootCancelled])).toEqual([]);
+  });
+
+  it("resolves an ambiguous legacy cancellation branch wait once its branch cancels", () => {
+    const branchWait = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const legacyCancelled = stepCancelledEvent({ stepId: "step-1" });
+    const branchCancelled = stepCancelledEvent({ stepId: "step-1", branchId: "a" });
+
+    expect(listPendingWaits([branchWait, legacyCancelled, branchCancelled])).toEqual([]);
+    expect(listWaitCancellationAmbiguities([branchWait, legacyCancelled, branchCancelled])).toEqual(
+      [],
+    );
+  });
+
+  it("drops a branch wait on the crash window before workflow.cancelled", () => {
+    const branchWait = waitEvent("wait.started", {
+      waitId: "approval",
+      branchId: "a",
+      answerFile: "answers/a.json",
+    });
+    const cancelled = stepCancelledEvent({ stepId: "step-1", branchId: "a" });
+
+    // No workflow.cancelled follows: the branch step cancellation alone must
+    // make the wait unanswerable in a crash-window trail.
+    expect(listPendingWaits([branchWait, cancelled])).toEqual([]);
   });
 });
 

@@ -376,8 +376,11 @@ export {
   findLatestPendingWait,
   findPendingWaitsById,
   listPendingWaits,
+  listWaitCancellationAmbiguities,
+  readEventBranchId,
   readWaitAnswerFile,
   readWaitQuestion,
+  type WaitCancellationAmbiguity,
   waitEventBranchId,
   waitEventKey,
 } from "./runs/wait-events.js";

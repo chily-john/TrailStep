@@ -22,6 +22,8 @@ interface WaitRunSpec {
   readonly answerFile: string;
   readonly requestFile?: string;
   readonly satisfied?: boolean;
+  /** Append a step.cancelled for the wait's step; `branchId` omitted means legacy unscoped. */
+  readonly cancelled?: { readonly branchId?: string };
 }
 
 async function writeWaitRun(spec: WaitRunSpec): Promise<void> {
@@ -60,6 +62,14 @@ async function writeWaitRun(spec: WaitRunSpec): Promise<void> {
           answerFile: spec.answerFile,
         },
         ...(spec.branchId === undefined ? {} : { branchId: spec.branchId }),
+      }),
+    );
+  }
+  if (spec.cancelled !== undefined) {
+    lines.push(
+      event("step.cancelled", {
+        reason: "cancelled in test",
+        ...(spec.cancelled.branchId === undefined ? {} : { branchId: spec.cancelled.branchId }),
       }),
     );
   }
@@ -242,6 +252,50 @@ describe("trst_answer tool adapters over the real wait answer files", () => {
     expect(result.branchId).toBe("track-b");
     expect(result.question).toBe("Question on track-b");
     expect(existsSync(join(runDir, "waits", "track-a.answer.json"))).toBe(false);
+  });
+
+  it("refuses a branch wait whose step has a legacy cancellation without branch identity", async () => {
+    const runDir = await makeTempDir("trst-answer-legacy-cancel");
+    await writeWaitRun({
+      runDir,
+      waitId: "wait-1",
+      message: "Question",
+      branchId: "branch-a",
+      answerFile: "waits/wait-1.answer.json",
+      cancelled: {},
+    });
+
+    const result = await trstAnswer({ runId: runDir, waitId: "wait-1", answer: { ok: 1 } });
+
+    expect(result.persisted).toBe(false);
+    expect(result.error).toContain("without branch identity");
+    expect(result.error).toContain("branch-a");
+    expect(result.error).toContain("Refusing to guess");
+    expect(existsSync(join(runDir, "waits", "wait-1.answer.json"))).toBe(false);
+  });
+
+  it("does not answer a branch wait terminated by a matching branch cancellation", async () => {
+    const runDir = await makeTempDir("trst-answer-branch-cancelled");
+    await writeWaitRun({
+      runDir,
+      waitId: "wait-1",
+      message: "Question",
+      branchId: "branch-a",
+      answerFile: "waits/wait-1.answer.json",
+      cancelled: { branchId: "branch-a" },
+    });
+
+    const result = await trstAnswer({
+      runId: runDir,
+      waitId: "wait-1",
+      branchId: "branch-a",
+      answer: { ok: 1 },
+    });
+
+    expect(result.persisted).toBe(false);
+    expect(result.error).toContain("Pending wait not found");
+    expect(result.error).not.toContain("without branch identity");
+    expect(existsSync(join(runDir, "waits", "wait-1.answer.json"))).toBe(false);
   });
 
   it("does not invent a fallback when no pending wait matches (persisted false, no file)", async () => {

@@ -46,7 +46,12 @@ import {
   readBoundedTextFile,
   scanRunEventsBounded,
 } from "./bounded-readers.js";
-import { classifyRunState, type RunStateClassification } from "./classify-run-state.js";
+import {
+  classifyRunState,
+  type RunStateClassification,
+  readTrackStateSignal,
+  type TrackStateSignal,
+} from "./classify-run-state.js";
 
 /**
  * Read-only bounded evidence query surface (A4a).
@@ -559,15 +564,19 @@ async function inspectHotRun(options: {
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
 
+  const trackSignal = await readTrackStateSignal(options.runDir, {
+    maxBytes: options.limits.maxTrackBytes,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
   const classification = await classifyRunState({
     runDir: options.runDir,
     events: scan.events,
+    trackSignal,
     eventsComplete: scan.complete,
-    maxTrackBytes: options.limits.maxTrackBytes,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   const diagnostics = mergeDiagnostics(scan.diagnostics, classification.diagnostics);
-  const coverage = combineCoverage(scan.coverage, diagnostics);
+  const coverage = deriveHotCoverage(scan.coverage, trackSignal);
   const evidence = buildEvidence({
     project: options.project,
     runId: options.runId,
@@ -623,7 +632,7 @@ async function inspectArchivedRecord(options: {
         runId: options.record.runId,
         classification,
         storage: "archived",
-        coverage: combineCoverage(read.coverage, diagnostics),
+        coverage: read.coverage,
         diagnostics,
         observedAt: options.observedAt,
       });
@@ -1263,14 +1272,30 @@ function unknownEvidence(options: {
   };
 }
 
-function combineCoverage(
+/**
+ * Derive hot-run coverage from structured source-read outcomes only.
+ *
+ * Coverage answers one question: were the sources this query inspected observed
+ * completely? A state conclusion — `stale-owner`, `cancellation-pending`, a
+ * track status without a terminal event, an absent track — describes what the
+ * bytes mean, not whether they were read, so it must not downgrade coverage.
+ *
+ * - `unknown` from the event scan means the top-level trail was missing or
+ *   unreadable; no amount of track evidence can make the event source proven.
+ * - `partial` from the event scan is a real read/budget/abort gap.
+ * - A track that is provably absent is completely observed (known absence).
+ *   A present track that is malformed, truncated or otherwise unreadable is a
+ *   read gap even when the event scan is complete.
+ */
+function deriveHotCoverage(
   scanCoverage: EvidenceCoverage,
-  diagnostics: readonly EvidenceDiagnostic[],
+  trackSignal: TrackStateSignal,
 ): EvidenceCoverage {
   if (scanCoverage === "unknown") {
     return "unknown";
   }
-  return scanCoverage === "complete" && diagnostics.length === 0 ? "complete" : "partial";
+  const trackComplete = trackSignal.present === false || trackSignal.readable;
+  return scanCoverage === "complete" && trackComplete ? "complete" : "partial";
 }
 
 function matchesListFilters(

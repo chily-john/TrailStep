@@ -10,18 +10,16 @@ import {
   type Event,
   findLifecycleTerminalEvent,
   isPlainObject,
+  listPendingWaits,
   readCancellationMarker,
+  readEventBranchId,
   selectCurrentLifecycleCycle,
   writeCancellationMarker,
 } from "@trailstep/core";
 
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliInputError } from "../run/load-run-input.js";
-import {
-  findLatestPendingWait,
-  readEventsForRun,
-  resolveRunDirectory,
-} from "../wait-run-helpers.js";
+import { readEventsForRun, resolveRunDirectory } from "../wait-run-helpers.js";
 import type { CancelCommandArgs } from "./cancel-command.types.js";
 import { parseCancelInvocation } from "./parse-cancel-invocation.js";
 
@@ -118,19 +116,28 @@ async function cancelWorkflowRun(
     });
   }
 
-  const pendingWait = findLatestPendingWait(cycleEvents);
-  if (
-    pendingWait?.stepId !== undefined &&
-    !cycleEvents.some(
-      (event) => event.type === "step.cancelled" && event.stepId === pendingWait.stepId,
-    )
-  ) {
+  // A run-level cancellation terminates every wait that is still pending.
+  // Each synthetic step.cancelled carries the wait's own recorded branch
+  // identity when it has one, so a parallel branch wait is never left
+  // answerable and a cancellation is never attributed to a guessed branch.
+  const cancelledStepBranches = new Set<string>();
+  for (const pendingWait of listPendingWaits(cycleEvents)) {
+    if (pendingWait.stepId === undefined) {
+      continue;
+    }
+    const branchId = readEventBranchId(pendingWait);
+    const cancellationKey = `${pendingWait.stepId}\u0000${branchId ?? "root"}`;
+    if (cancelledStepBranches.has(cancellationKey)) {
+      continue;
+    }
+    cancelledStepBranches.add(cancellationKey);
     await appendCancellationEvent({
       runDir: resolvedRun.runDir,
       events,
       marker,
       type: "step.cancelled",
       stepId: pendingWait.stepId,
+      ...(branchId === undefined ? {} : { branchId }),
     });
   }
   // The terminal event is unconditional so a run without a pending wait can
@@ -175,6 +182,7 @@ async function appendCancellationEvent(options: {
   readonly marker: CancellationMarker;
   readonly type: "workflow.cancelRequested" | "workflow.cancelled" | "step.cancelled";
   readonly stepId?: string;
+  readonly branchId?: string;
 }): Promise<void> {
   const anchor = options.events.at(-1);
   const workflowId =
@@ -189,7 +197,10 @@ async function appendCancellationEvent(options: {
       workflowId,
       ...(options.stepId === undefined ? {} : { stepId: options.stepId }),
       type: options.type,
-      payload: cancellationPayload(options.marker),
+      payload: {
+        ...cancellationPayload(options.marker),
+        ...(options.branchId === undefined ? {} : { branchId: options.branchId }),
+      },
     }),
   );
 }

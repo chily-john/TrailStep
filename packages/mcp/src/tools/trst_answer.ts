@@ -16,6 +16,7 @@ import {
   type Event,
   findPendingWaitsById,
   isPlainObject,
+  listWaitCancellationAmbiguities,
   type PlainObject,
   type ResolvedRunDirectory,
   type RunDirectoryContext,
@@ -23,6 +24,7 @@ import {
   readWaitAnswerFile,
   readWaitQuestion,
   resolveRunDirectory,
+  selectCurrentLifecycleCycle,
   waitEventBranchId,
   writeWaitAnswerFile,
 } from "@trailstep/core";
@@ -100,13 +102,33 @@ export async function trstAnswer(options: TrstAnswerOptions): Promise<TrstAnswer
     };
   }
 
-  const pendingWaits = findPendingWaitsById(events, options.waitId);
+  const cycleEvents = selectCurrentLifecycleCycle(events);
+  const pendingWaits = findPendingWaitsById(cycleEvents, options.waitId);
   const candidates =
     options.branchId === undefined
       ? pendingWaits
       : pendingWaits.filter((event) => waitEventBranchId(event) === options.branchId);
 
   if (candidates.length === 0) {
+    const ambiguities = listWaitCancellationAmbiguities(cycleEvents).filter(
+      (ambiguity) =>
+        ambiguity.wait.payload.waitId === options.waitId &&
+        (options.branchId === undefined || waitEventBranchId(ambiguity.wait) === options.branchId),
+    );
+    if (ambiguities.length > 0) {
+      const branchIds = [
+        ...new Set(ambiguities.map((ambiguity) => waitEventBranchId(ambiguity.wait))),
+      ];
+      return {
+        persisted: false,
+        runDir: resolvedRun.runDir,
+        waitId: options.waitId,
+        ...(options.branchId === undefined ? {} : { branchId: options.branchId }),
+        error: `Wait ${options.waitId} in run ${resolvedRun.displayName} may have been cancelled by a legacy step.cancelled event without branch identity (branches: ${branchIds.join(
+          ", ",
+        )}). Refusing to guess which branch it terminated; the trail is preserved for recovery.`,
+      };
+    }
     // Open behavior, deliberately not invented: answering without a matching
     // pending wait does not fabricate a wait file or a persisted=true result.
     return {

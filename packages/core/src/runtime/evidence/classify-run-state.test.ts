@@ -74,6 +74,30 @@ describe("classifyRunState", () => {
     expect(toWatchRunState(classification)).toBe("waiting");
   });
 
+  it("does not expose a branch wait as pending after a legacy unscoped cancellation", async () => {
+    const branchWait = event("wait.started", {
+      stepId: "approval",
+      payload: { waitId: "w1", branchId: "branch-a" },
+    });
+    const classification = await classifyRunState({
+      runDir: await runDir(),
+      events: [
+        event("workflow.started"),
+        branchWait,
+        event("step.cancelled", { stepId: "approval" }),
+      ],
+      trackSignal: { present: true, readable: true, status: "running", ownerPid: 42 },
+      lock: null,
+      pidIsAlive: () => false,
+    });
+
+    // The legacy cancellation cannot be attributed to branch-a, so the wait is
+    // neither answerable nor allowed to make this crashed run look waiting.
+    expect(classification.pendingWaits).toEqual([]);
+    expect(classification.state).toBe("stale");
+    expect(toWatchRunState(classification)).toBe("crashed");
+  });
+
   it("keeps a waiting-status track waiting even with a dead owner", async () => {
     const classification = await classifyRunState({
       runDir: await runDir(),

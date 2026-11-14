@@ -14,7 +14,7 @@ import {
 } from "./cancellation.js";
 
 describe("workflow cancellation", () => {
-  it("consumes the cancel marker and resumes a cancelled run on continue", async () => {
+  it("recovers a cancelled run through retry and a fresh wait instead of continuing the terminated wait", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-cancel-waiting-"));
     let resumed = false;
     const workflow = waitingWorkflow(() => {
@@ -52,9 +52,23 @@ describe("workflow cancellation", () => {
       );
     }
 
-    // Answer the pending wait so the resumed run can finish.
-    const waitStarted = waiting.events.find((event) => event.type === "wait.started");
-    const artifactPaths = waitStarted?.payload.artifactPaths;
+    // A `step.cancelled` terminates the wait: continuing the cancelled run is
+    // not a valid recovery, because it would resurrect the terminated wait.
+    // Retry re-enters the interrupted step, which parks on a fresh wait.
+    const retried = await runWorkflow({
+      workflow,
+      cwd,
+      retry: { runDir: waiting.runDir, kind: "manual" },
+    });
+    expect(retried.status).toBe("waiting");
+    expect(await readCancellationMarker(waiting.runDir)).toBeUndefined();
+    expect(retried.events.map((event) => event.type)).toContain("workflow.retryStarted");
+
+    const retryWait = retried.events.filter((event) => event.type === "wait.started").at(-1);
+    if (retryWait === undefined) {
+      throw new Error("retried run did not record a fresh wait");
+    }
+    const artifactPaths = retryWait.payload.artifactPaths;
     if (
       typeof artifactPaths !== "object" ||
       artifactPaths === null ||
@@ -75,11 +89,8 @@ describe("workflow cancellation", () => {
       continue: { runDir: waiting.runDir },
     });
 
-    // The cancelled run is not permanently bricked: continue consumes the
-    // marker, re-opens the run with workflow.resumed, and runs to completion.
     expect(continued.status).toBe("success");
     expect(resumed).toBe(true);
-    expect(await readCancellationMarker(waiting.runDir)).toBeUndefined();
     const types = continued.events.map((event) => event.type);
     expect(types).toContain("workflow.cancelled");
     expect(types).toContain("workflow.resumed");
@@ -169,6 +180,61 @@ describe("workflow cancellation", () => {
     await expect(readFile(join(runDir, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow.cancelled",
     );
+  });
+
+  it("emits branch identity on step.cancelled in parallel tracks", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "trailstep-core-cancel-parallel-"));
+    const runDir = join(cwd, ".trailstep", "runs", "cancel-parallel-run");
+    const started: string[] = [];
+    let markBothStarted: () => void = () => undefined;
+    const bothStarted = new Promise<void>((resolve) => {
+      markBothStarted = resolve;
+    });
+
+    const branchStep = (id: string) =>
+      step({ id }).do(async () => {
+        started.push(id);
+        if (started.length === 2) {
+          markBothStarted();
+        }
+        // The cancellation watch races this never-settling step promise.
+        await new Promise<void>(() => undefined);
+        return done({});
+      });
+
+    const workflow: Workflow = {
+      id: "cancel-parallel-workflow",
+      start() {
+        return [branchStep("branch-a")({}), branchStep("branch-b")({})];
+      },
+    };
+
+    const resultPromise = runWorkflow({
+      workflow,
+      input: {},
+      runName: "cancel-parallel-run",
+      cwd,
+      scheduler: { workers: 2 },
+    });
+
+    await bothStarted;
+    await writeCancellationMarker({ runDir, reason: "Stop both branches.", source: "test" });
+    const result = await resultPromise;
+
+    expect(result.status).toBe("cancelled");
+    const track = JSON.parse(await readFile(join(runDir, "track.json"), "utf8")) as {
+      readonly branches?: unknown;
+    };
+    const branchIds = new Set(
+      Array.isArray(track.branches)
+        ? track.branches.filter((branchId): branchId is string => typeof branchId === "string")
+        : [],
+    );
+    const cancellations = result.events.filter((event) => event.type === "step.cancelled");
+    expect(cancellations.length).toBeGreaterThan(0);
+    for (const cancellation of cancellations) {
+      expect(branchIds.has(String(cancellation.payload.branchId))).toBe(true);
+    }
   });
 
   it("leaves no cancellation marker behind when the runtime honours a cancellation", async () => {

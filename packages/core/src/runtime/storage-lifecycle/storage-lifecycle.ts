@@ -1,10 +1,15 @@
 /**
  * Storage lifecycle: archive, restore, pin and delete run artifacts.
  *
- * `planStorageLifecycle`/`applyStorageLifecycle` operate on terminal, unpinned
- * runs. Direct name-addressed operations and lifecycle actions share the
- * canonical run-identifier validator in `runs/run-identifier.ts`, so a run id
- * cannot alias the runs root, its parent, or `.staging`/`.archive`.
+ * Automatic archive/delete is fail-closed: eligibility comes from
+ * `assessStorageEligibility`, an explicit assessment over a strict event read,
+ * track readability, pin state and strict lock ownership. A run summary's
+ * display status is never the safety authority, and an eventless terminal
+ * track is not terminal proof (D-LOCK-2).
+ *
+ * Direct name-addressed operations and lifecycle actions share the canonical
+ * run-identifier validator in `runs/run-identifier.ts`, so a run id cannot
+ * alias the runs root, its parent, or `.staging`/`.archive`.
  *
  * Two liveness limitations are deliberate and documented at their checks:
  *
@@ -26,11 +31,23 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
-import { isNodeError } from "../../json/guards.js";
+import type { Event } from "../../contracts/events/event.types.js";
+import { isNodeError, isPlainObject } from "../../json/guards.js";
 import { validateRunIdentifier } from "../../runs/run-identifier.js";
 import { defaultRunsRoot } from "../artifacts/run-storage.js";
-import { isRunLockLive, readRunLock } from "../run-lock/run-lock.js";
-import { listRunSummaries, type RunSummary } from "../runs/run-summaries.js";
+import {
+  findLifecycleTerminalEvent,
+  type LifecycleTerminalState,
+  selectCurrentLifecycleCycle,
+} from "../events/lifecycle-cycle.js";
+import { readBoundedTextFile } from "../evidence/bounded-readers.js";
+import { readTrackStateSignal } from "../evidence/classify-run-state.js";
+import {
+  observeRunLock,
+  type RunLockObservation,
+  type RunLockOwnerState,
+} from "../run-lock/run-lock.js";
+import { listRunSummaries } from "../runs/run-summaries.js";
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
@@ -78,7 +95,68 @@ interface ArchivePayload {
   readonly files: readonly { readonly path: string; readonly contentBase64: string }[];
 }
 
-const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+/**
+ * A storage-eligibility read is deliberately bounded. A trail larger than this
+ * budget is preserved instead of being automatically archived or deleted. D4
+ * prefers a missed cleanup over a destructive action under unread evidence.
+ */
+const STORAGE_EVENTS_MAX_BYTES = 64 * 1024 * 1024;
+const STORAGE_TRACK_MAX_BYTES = 256 * 1024;
+
+export type StorageEventReadStatus =
+  | "complete"
+  | "missing"
+  | "partial"
+  | "malformed"
+  | "unreadable"
+  | "aborted";
+
+export type StorageTrackObservation = "missing" | "readable" | "unreadable";
+
+export type StorageLockObservation = "missing" | RunLockOwnerState | "malformed" | "unreadable";
+
+export type StorageEligibilityCode =
+  | "eligible"
+  | "events-missing"
+  | "events-partial"
+  | "events-malformed"
+  | "events-unreadable"
+  | "events-aborted"
+  | "eventless-terminal-track"
+  | "terminal-missing"
+  | "track-missing"
+  | "track-unreadable"
+  | "pinned"
+  | "pin-unreadable"
+  | "lock-live"
+  | "lock-owner-unknown"
+  | "lock-malformed"
+  | "lock-unreadable";
+
+/**
+ * Result of the storage mutation gate. `eligible` is true only when a
+ * current-cycle terminal event, a readable track, an unpinned run and safety
+ * proof for ownership all hold. `eventRead`, `track` and `lock` keep absent
+ * evidence distinct from unreadable/ambiguous evidence for diagnostics.
+ */
+export interface StorageEligibilityAssessment {
+  readonly eligible: boolean;
+  readonly code: StorageEligibilityCode;
+  readonly message: string;
+  readonly eventRead: StorageEventReadStatus;
+  readonly track: StorageTrackObservation;
+  readonly lock: StorageLockObservation;
+  readonly terminalState?: LifecycleTerminalState;
+  readonly terminalEvent?: Event;
+  readonly workflowId?: string;
+  readonly lastTimestamp?: string;
+}
+
+interface StorageEventRead {
+  readonly status: StorageEventReadStatus;
+  readonly events: readonly Event[];
+  readonly message?: string;
+}
 
 export function storageArchiveDir(runsRoot: string): string {
   return join(runsRoot, ".archive");
@@ -126,26 +204,28 @@ export async function planStorageLifecycle(options: {
   const actions: StorageLifecycleAction[] = [];
 
   for (const summary of summaries) {
-    if (!isLifecycleEligible(summary) || (await isRunPinned(summary.runDir))) {
+    // Archived entries have no hot run directory to assess.
+    if (summary.status === "archived") {
       continue;
     }
-    // A terminal event trail is necessary but not sufficient: the scheduler
-    // writes a terminal track before it emits workflow.completed, and a run
-    // that is still finishing must never be archived or deleted underneath its
-    // live driver. The lock is the only cross-process liveness signal here.
+
+    // The summary only supplies the run location, workflow id and age. Its
+    // status is a display projection and must not authorize mutation.
     //
-    // Known limitation (TOCTOU): this read is not atomic with the later
+    // Known limitation (TOCTOU): this assessment is not atomic with the later
     // archive/delete mutation. A process can acquire the lock after this check
     // and before `archiveRun`/`deleteRun` renames or removes the directory, so
-    // a just-started run may still be archived or deleted. A future fix would
-    // hold an exclusive lifecycle lock across the mutation, or make the
+    // a just-started run may still be archived or deleted. A future fix (D5)
+    // would hold an exclusive lifecycle lock across the mutation, or make the
     // mutation a compare-and-swap directory rename.
     //
     // Known limitation (reused pid): liveness is pid-only, so a stale lock
     // whose pid was recycled by an unrelated live process keeps this run out
     // of the plan forever. There is intentionally no stale-lock escape here;
-    // see `assertRunNotLiveLocked` for the same limitation on direct calls.
-    if (isRunLockLive(await readRunLock(summary.runDir))) {
+    // see `assertRunOwnershipProvedAbsent` for the same limitation on direct
+    // calls.
+    const assessment = await assessStorageEligibility({ runDir: summary.runDir });
+    if (!assessment.eligible) {
       continue;
     }
 
@@ -162,14 +242,14 @@ export async function planStorageLifecycle(options: {
         action: "delete-hot",
         runId: summary.runId,
         path: summary.runDir,
-        reason: `${summary.status} run is ${Math.floor(ageDays)}d old (deleteAfterDays=${deleteAfterDays})`,
+        reason: `${assessment.terminalState ?? "terminal"} run is ${Math.floor(ageDays)}d old (deleteAfterDays=${deleteAfterDays})`,
       });
     } else if (archiveAfterDays !== undefined && ageDays >= archiveAfterDays) {
       actions.push({
         action: "archive",
         runId: summary.runId,
         path: summary.runDir,
-        reason: `${summary.status} run is ${Math.floor(ageDays)}d old (archiveAfterDays=${archiveAfterDays})`,
+        reason: `${assessment.terminalState ?? "terminal"} run is ${Math.floor(ageDays)}d old (archiveAfterDays=${archiveAfterDays})`,
       });
     }
   }
@@ -212,7 +292,7 @@ export async function applyStorageLifecycle(options: {
     if (action.action === "archive") {
       await archiveRun({ runsRoot, runId: action.runId, now: options.now });
     } else if (action.action === "delete-hot") {
-      await deleteRun({ runsRoot, runId: action.runId });
+      await deleteEligibleHotRun({ runsRoot, runId: action.runId });
     } else {
       await deleteArchivedRun({ runsRoot, runId: action.runId });
     }
@@ -224,21 +304,25 @@ export async function archiveRun(options: {
   readonly runsRoot: string;
   readonly runId: string;
   readonly now?: Date;
+  /** Test seam for failure injection; production uses `readDirectoryPayload`. */
+  readonly readPayload?: (
+    runDir: string,
+  ) => Promise<readonly { readonly path: string; readonly contentBase64: string }[]>;
 }): Promise<void> {
   const runDir = await validateStorageRunId(options.runsRoot, options.runId);
-  await assertRunNotLiveLocked(runDir, options.runId, "archived");
-  const summaries = await listRunSummaries({
-    cwd: dirname(dirname(options.runsRoot)),
-    runsRoot: options.runsRoot,
-  });
-  const summary = summaries.find(
-    (candidate) => candidate.runId === options.runId && candidate.status !== "archived",
-  );
-  if (summary === undefined || !isLifecycleEligible(summary)) {
-    throw new Error(`Run ${options.runId} is not a terminal readable run and cannot be archived.`);
+  const assessment = await assessStorageEligibility({ runDir });
+  if (!assessment.eligible) {
+    throw archiveIneligibilityError(options.runId, assessment, "not");
   }
-  if (await isRunPinned(runDir)) {
-    throw new Error(`Run ${options.runId} is pinned and cannot be archived.`);
+
+  const files = await (options.readPayload ?? readDirectoryPayload)(runDir);
+
+  // Revalidate immediately before the protective write/removal transition.
+  // This narrows the window but does NOT solve TOCTOU; D5 owns atomic
+  // exclusion between execution acquisition and destructive transitions.
+  const boundaryAssessment = await assessStorageEligibility({ runDir });
+  if (!boundaryAssessment.eligible) {
+    throw archiveIneligibilityError(options.runId, boundaryAssessment, "no longer");
   }
 
   const manifest: ArchiveManifest = {
@@ -246,11 +330,17 @@ export async function archiveRun(options: {
     runId: options.runId,
     archivedAt: (options.now ?? new Date()).toISOString(),
     sourceRunDir: runDir,
-    ...(summary.workflowId === undefined ? {} : { workflowId: summary.workflowId }),
-    ...(summary.lastTimestamp === undefined ? {} : { lastTimestamp: summary.lastTimestamp }),
-    status: summary.status,
+    ...(boundaryAssessment.workflowId === undefined
+      ? {}
+      : { workflowId: boundaryAssessment.workflowId }),
+    ...(boundaryAssessment.lastTimestamp === undefined
+      ? {}
+      : { lastTimestamp: boundaryAssessment.lastTimestamp }),
+    ...(boundaryAssessment.terminalState === undefined
+      ? {}
+      : { status: boundaryAssessment.terminalState }),
   };
-  const payload: ArchivePayload = { manifest, files: await readDirectoryPayload(runDir) };
+  const payload: ArchivePayload = { manifest, files };
   await mkdir(storageArchiveDir(options.runsRoot), { recursive: true });
   await writeFile(
     archivePayloadPath(options.runsRoot, options.runId),
@@ -338,9 +428,16 @@ export async function deleteRun(options: {
 }): Promise<void> {
   const runDir = await validateStorageRunId(options.runsRoot, options.runId);
   if (await pathExists(runDir)) {
-    await assertRunNotLiveLocked(runDir, options.runId, "deleted");
-    if (await isRunPinned(runDir)) {
+    // Explicit deletion is an operator action, so a non-terminal run is allowed.
+    // Ownership must still be proved safe: a live, malformed, unreadable or
+    // unassessable lock is never treated as absence.
+    await assertRunOwnershipProvedAbsent(runDir, options.runId, "deleted");
+    const pinState = await readStoragePinState(runDir);
+    if (pinState === "pinned") {
       throw new Error(`Run ${options.runId} is pinned and cannot be deleted.`);
+    }
+    if (pinState === "unreadable") {
+      throw new Error(`Run ${options.runId} has an unreadable pin marker and cannot be deleted.`);
     }
     await rm(runDir, { recursive: true, force: true });
     return;
@@ -412,14 +509,22 @@ async function listPinnedRunIds(options: {
 }
 
 async function isRunPinned(runDir: string): Promise<boolean> {
+  const state = await readStoragePinState(runDir);
+  if (state === "unreadable") {
+    throw new Error(`Could not read the pin marker at ${storagePinPath(runDir)}.`);
+  }
+  return state === "pinned";
+}
+
+async function readStoragePinState(runDir: string): Promise<"absent" | "pinned" | "unreadable"> {
   try {
     await stat(storagePinPath(runDir));
-    return true;
+    return "pinned";
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return false;
+      return "absent";
     }
-    throw error;
+    return "unreadable";
   }
 }
 
@@ -475,39 +580,343 @@ function archiveManifestPath(runsRoot: string, runId: string): string {
   return join(storageArchiveDir(runsRoot), `${runId}.manifest.json`);
 }
 
-function isLifecycleEligible(summary: RunSummary): boolean {
-  // The summary status is the single eligibility signal. A genuinely
-  // event-less run is already terminal here because `summarizeEventlessTrack`
-  // derives its status from the track; a run with an event trail must be
-  // finished by that trail, never by a terminal track written just before the
-  // terminal event.
-  return TERMINAL_STATUSES.has(summary.status);
+/**
+ * Explicitly assess whether a hot run may be automatically archived/deleted.
+ *
+ * A current-cycle terminal workflow event is the lifecycle proof. D4 then adds
+ * conservative mutation-gate checks: the event trail must have been read
+ * strictly and completely, the track must be present and readable, the run
+ * must be unpinned, and ownership must be proved absent. The track is required
+ * for this gate only; it is not lifecycle truth, and a terminal event plus an
+ * unreadable track stays preserved until D6 defines a recovery protocol.
+ *
+ * Absent evidence is reported distinctly from unreadable/ambiguous evidence.
+ * Callers must not treat any ineligible result as terminal or recoverable.
+ */
+export async function assessStorageEligibility(options: {
+  readonly runDir: string;
+  readonly signal?: AbortSignal;
+}): Promise<StorageEligibilityAssessment> {
+  const readOptions = options.signal === undefined ? {} : { signal: options.signal };
+  const [eventRead, trackSignal, pinState, lockObservation] = await Promise.all([
+    readStorageEvents(options.runDir, options.signal),
+    readTrackStateSignal(options.runDir, {
+      maxBytes: STORAGE_TRACK_MAX_BYTES,
+      ...readOptions,
+    }),
+    readStoragePinState(options.runDir),
+    observeRunLock(options.runDir),
+  ]);
+
+  const track: StorageTrackObservation =
+    trackSignal.present === false ? "missing" : trackSignal.readable ? "readable" : "unreadable";
+  const lock = projectLockObservation(lockObservation);
+  const terminal =
+    eventRead.status === "complete"
+      ? findLifecycleTerminalEvent(selectCurrentLifecycleCycle(eventRead.events))
+      : undefined;
+  const lastEvent = eventRead.events.at(-1);
+  const workflowId = terminal?.event.workflowId ?? lastEvent?.workflowId;
+  const eventlessTerminalTrack =
+    (eventRead.status === "missing" ||
+      (eventRead.status === "complete" && eventRead.events.length === 0)) &&
+    track === "readable" &&
+    isTerminalTrackState(trackSignal.status);
+
+  const base = {
+    eventRead: eventRead.status,
+    track,
+    lock,
+    ...(terminal === undefined
+      ? {}
+      : { terminalState: terminal.state, terminalEvent: terminal.event }),
+    ...(workflowId === undefined ? {} : { workflowId }),
+    ...(lastEvent?.timestamp === undefined ? {} : { lastTimestamp: lastEvent.timestamp }),
+  } as const;
+  const ineligible = (
+    code: StorageEligibilityCode,
+    message: string,
+  ): StorageEligibilityAssessment => ({ ...base, eligible: false, code, message });
+
+  if (eventlessTerminalTrack) {
+    return ineligible(
+      "eventless-terminal-track",
+      "A terminal track without a current-cycle terminal workflow event is not storage proof (D-LOCK-2).",
+    );
+  }
+
+  switch (eventRead.status) {
+    case "aborted":
+      return ineligible(
+        "events-aborted",
+        eventRead.message ?? "The event trail read was aborted, so eligibility is unknown.",
+      );
+    case "missing":
+      return ineligible(
+        "events-missing",
+        "The event trail is missing, so no current-cycle terminal event can be proved.",
+      );
+    case "partial":
+      return ineligible(
+        "events-partial",
+        eventRead.message ?? "The event trail was not read completely.",
+      );
+    case "malformed":
+      return ineligible(
+        "events-malformed",
+        eventRead.message ?? "The event trail contains malformed data.",
+      );
+    case "unreadable":
+      return ineligible(
+        "events-unreadable",
+        eventRead.message ?? "The event trail could not be read.",
+      );
+    case "complete":
+      break;
+  }
+
+  if (terminal === undefined) {
+    return ineligible(
+      "terminal-missing",
+      "No current-cycle terminal workflow event was found. A parked failure, wait, cancellation request, reopened cycle or terminal track alone is not terminal proof.",
+    );
+  }
+
+  if (track === "missing") {
+    return ineligible(
+      "track-missing",
+      "The run track is missing, so this conservative D4 mutation gate cannot prove eligibility.",
+    );
+  }
+  if (track === "unreadable") {
+    return ineligible(
+      "track-unreadable",
+      "The run track is present but unreadable, so storage cannot prove eligibility.",
+    );
+  }
+
+  if (pinState === "pinned") {
+    return ineligible("pinned", "The run is pinned.");
+  }
+  if (pinState === "unreadable") {
+    return ineligible("pin-unreadable", "The pin marker could not be read.");
+  }
+
+  switch (lockObservation.status) {
+    case "missing":
+      return {
+        ...base,
+        eligible: true,
+        code: "eligible",
+        message:
+          "Current-cycle terminal event, readable track, unpinned run and proved-absent ownership.",
+      };
+    case "observed":
+      if (lockObservation.owner === "dead") {
+        return {
+          ...base,
+          eligible: true,
+          code: "eligible",
+          message:
+            "Current-cycle terminal event, readable track, unpinned run and a dead lock owner (pid-only proof).",
+        };
+      }
+      if (lockObservation.owner === "live") {
+        return ineligible("lock-live", "A live process holds the run lock.");
+      }
+      return ineligible(
+        "lock-owner-unknown",
+        "The run lock has an unassessable owner, so ownership is not proved absent.",
+      );
+    case "malformed":
+      return ineligible("lock-malformed", lockObservation.message);
+    case "unreadable":
+      return ineligible("lock-unreadable", lockObservation.message);
+  }
 }
 
 /**
- * Refuse to mutate a run that a live process is still driving. `planStorageLifecycle`
- * skips these runs; the direct archive/delete entry points enforce it too so a
- * caller cannot bypass the planner.
+ * Refuse to mutate a run whose owner is not proved absent. Used by explicit
+ * operator deletion, which may target non-terminal runs but must not guess
+ * ownership from malformed/unreadable lock data.
  *
- * Known limitation (TOCTOU): the lock read and the caller's subsequent rename
- * or removal are not one atomic operation. A process can acquire the lock after
- * this check but before the mutation. A future fix would hold an exclusive
- * lifecycle lock across the mutation, or make it a compare-and-swap rename.
+ * Known limitation (TOCTOU): the lock observation and the caller's subsequent
+ * rename or removal are not one atomic operation. D5 owns that protocol.
  *
  * Known limitation (reused pid): liveness is pid-only, so a stale `run.lock`
- * whose pid was recycled by an unrelated live process blocks archive/delete
- * forever. This is intentionally not escaped here; a future fix would check
- * process start time or a boot identifier, or offer an operator-approved
- * escape.
+ * whose pid was recycled by an unrelated live process blocks mutation forever.
+ * D7b owns stronger process-start identity.
  */
-async function assertRunNotLiveLocked(
+async function assertRunOwnershipProvedAbsent(
   runDir: string,
   runId: string,
   action: "archived" | "deleted",
 ): Promise<void> {
-  if (isRunLockLive(await readRunLock(runDir))) {
-    throw new Error(`Run ${runId} is held by a live process and cannot be ${action}.`);
+  const observation = await observeRunLock(runDir);
+  switch (observation.status) {
+    case "missing":
+      return;
+    case "observed":
+      if (observation.owner === "dead") {
+        return;
+      }
+      if (observation.owner === "live") {
+        throw new Error(`Run ${runId} is held by a live process and cannot be ${action}.`);
+      }
+      throw new Error(`Run ${runId} has an unassessable lock owner and cannot be ${action}.`);
+    case "malformed":
+      throw new Error(`Run ${runId} has a malformed run.lock and cannot be ${action}.`);
+    case "unreadable":
+      throw new Error(`Run ${runId} has an unreadable run.lock and cannot be ${action}.`);
   }
+}
+
+/** Automatic delete-hot must prove the same positive eligibility as archive. */
+async function deleteEligibleHotRun(options: {
+  readonly runsRoot: string;
+  readonly runId: string;
+}): Promise<void> {
+  const runDir = await validateStorageRunId(options.runsRoot, options.runId);
+  const assessment = await assessStorageEligibility({ runDir });
+  if (!assessment.eligible) {
+    throw new Error(
+      `Run ${options.runId} is no longer storage-eligible and cannot be deleted by gc: ${assessment.message}`,
+    );
+  }
+  await rm(runDir, { recursive: true, force: true });
+}
+
+function archiveIneligibilityError(
+  runId: string,
+  assessment: StorageEligibilityAssessment,
+  qualifier: "not" | "no longer",
+): Error {
+  if (assessment.code === "lock-live") {
+    return new Error(`Run ${runId} is held by a live process and cannot be archived.`);
+  }
+  if (assessment.code === "pinned") {
+    return new Error(`Run ${runId} is pinned and cannot be archived.`);
+  }
+  return new Error(
+    `Run ${runId} is ${qualifier} storage-eligible and cannot be archived: ${assessment.message}`,
+  );
+}
+
+function projectLockObservation(observation: RunLockObservation): StorageLockObservation {
+  switch (observation.status) {
+    case "missing":
+      return "missing";
+    case "observed":
+      return observation.owner;
+    case "malformed":
+      return "malformed";
+    case "unreadable":
+      return "unreadable";
+  }
+}
+
+function isTerminalTrackState(status: string | undefined): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+/**
+ * Strict storage-facing event read. Unlike `readRunEvents`, this never skips a
+ * malformed line: a present-but-malformed or torn trail is reported instead of
+ * looking eventless. A missing file, a byte-budget truncation and an abort are
+ * distinct outcomes so a caller can tell absent evidence from unread evidence.
+ */
+async function readStorageEvents(
+  runDir: string,
+  signal: AbortSignal | undefined,
+): Promise<StorageEventRead> {
+  const eventsPath = join(runDir, "events.jsonl");
+  const read = await readBoundedTextFile(eventsPath, {
+    maxBytes: STORAGE_EVENTS_MAX_BYTES,
+    ...(signal === undefined ? {} : { signal }),
+  });
+
+  if (read.status === "missing") {
+    return { status: "missing", events: [] };
+  }
+  if (read.status === "unreadable") {
+    return {
+      status: "unreadable",
+      events: [],
+      message: `The event trail at ${eventsPath} could not be read.`,
+    };
+  }
+  if (read.aborted) {
+    return {
+      status: "aborted",
+      events: [],
+      message: "The event trail read was aborted, so eligibility is unknown.",
+    };
+  }
+  if (read.truncated) {
+    return {
+      status: "partial",
+      events: [],
+      message: `The event trail is larger than the ${STORAGE_EVENTS_MAX_BYTES}-byte storage eligibility budget.`,
+    };
+  }
+
+  const lines = read.text.split("\n");
+  const hasTrailingNewline = read.text.endsWith("\n");
+  const events: Event[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === undefined || line.trim().length === 0) {
+      continue;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      if (index === lines.length - 1 && !hasTrailingNewline) {
+        return {
+          status: "partial",
+          events: [],
+          message: `The event trail ends with an unfinished line ${index + 1}.`,
+        };
+      }
+      return {
+        status: "malformed",
+        events: [],
+        message: `The event trail has malformed JSON at line ${index + 1}.`,
+      };
+    }
+
+    if (!isStorageEvent(parsed)) {
+      return {
+        status: "malformed",
+        events: [],
+        message: `The event trail has a non-event record at line ${index + 1}.`,
+      };
+    }
+    events.push(parsed);
+  }
+
+  return { status: "complete", events };
+}
+
+function isStorageEvent(value: unknown): value is Event {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const candidate = value as {
+    readonly id?: unknown;
+    readonly type?: unknown;
+    readonly timestamp?: unknown;
+    readonly payload?: unknown;
+  };
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.type === "string" &&
+    typeof candidate.timestamp === "string" &&
+    typeof candidate.payload === "object" &&
+    candidate.payload !== null
+  );
 }
 
 function resolvePolicyDays(

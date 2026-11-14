@@ -31,6 +31,30 @@ export type AcquireRunLockResult =
   | { readonly status: "held"; readonly lock: RunLock }
   | { readonly status: "stale-replaced"; readonly lock: RunLock; readonly previous: RunLock };
 
+/**
+ * Strict ownership observation for callers that mutate a run directory.
+ *
+ * `unknown` is deliberately distinct from `dead`: a mutation may proceed only
+ * when absence is proved (`missing` or an assessable `dead` owner). This seam
+ * does not widen the tolerant boolean `isRunLockLive` used by read-only callers.
+ */
+export type RunLockOwnerState = "live" | "dead" | "unknown";
+
+export type RunLockObservation =
+  | { readonly status: "missing" }
+  | {
+      readonly status: "observed";
+      readonly lock: RunLock;
+      readonly owner: RunLockOwnerState;
+    }
+  | { readonly status: "malformed"; readonly message: string }
+  | { readonly status: "unreadable"; readonly message: string };
+
+export interface ObserveRunLockOptions {
+  /** Test seam. Defaults to probing the operating system with signal 0. */
+  readonly ownerProbe?: (pid: number) => RunLockOwnerState;
+}
+
 export interface AcquireRunLockOptions {
   readonly runDir: string;
   readonly runId: string;
@@ -93,6 +117,79 @@ export function isRunLockLive(
   pidIsAlive: (pid: number) => boolean = isPidAlive,
 ): boolean {
   return lock !== undefined && pidIsAlive(lock.pid);
+}
+
+/**
+ * Read a lock without collapsing absent, malformed and unreadable data into
+ * the same `undefined`. Mutation-safety callers must use this seam instead of
+ * `readRunLock`: a malformed or unreadable lock is not proof of absence.
+ */
+export async function observeRunLock(
+  runDir: string,
+  options: ObserveRunLockOptions = {},
+): Promise<RunLockObservation> {
+  let contents: string;
+  try {
+    contents = await readFile(runLockPath(runDir), "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { status: "missing" };
+    }
+    return {
+      status: "unreadable",
+      message: `The run lock at ${runLockPath(runDir)} is unreadable: ${errorMessage(error)}`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return {
+      status: "malformed",
+      message: `The run lock at ${runLockPath(runDir)} is malformed: not valid JSON.`,
+    };
+  }
+
+  if (!isRunLock(parsed)) {
+    return {
+      status: "malformed",
+      message: `The run lock at ${runLockPath(runDir)} is malformed: it does not match the run-lock schema.`,
+    };
+  }
+
+  const ownerProbe = options.ownerProbe ?? probeRunLockOwner;
+  let owner: RunLockOwnerState;
+  try {
+    owner = ownerProbe(parsed.pid);
+  } catch {
+    // A probe that cannot answer is not proof that the owner is gone.
+    owner = "unknown";
+  }
+
+  return { status: "observed", lock: parsed, owner };
+}
+
+/**
+ * Strict pid probe: `ESRCH` is the only result that proves the owner is gone.
+ * `EPERM` still means the process exists, and every other failure is unknown.
+ */
+function probeRunLockOwner(pid: number): RunLockOwnerState {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return "unknown";
+  }
+  try {
+    process.kill(pid, 0);
+    return "live";
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ESRCH") {
+      return "dead";
+    }
+    if (isNodeError(error) && error.code === "EPERM") {
+      return "live";
+    }
+    return "unknown";
+  }
 }
 
 /**

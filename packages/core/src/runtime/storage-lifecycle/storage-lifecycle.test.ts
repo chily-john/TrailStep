@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
@@ -10,6 +10,7 @@ import { listRunSummaries } from "../runs/run-summaries.js";
 import {
   applyStorageLifecycle,
   archiveRun,
+  assessStorageEligibility,
   deleteArchivedRun,
   deleteRun,
   pinRun,
@@ -306,86 +307,310 @@ describe("storage lifecycle", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("plans and applies lifecycle actions for a genuinely event-less terminal run", async ({
+  it("preserves eventless terminal tracks and refuses automatic/direct archive (D-LOCK-2/D4)", async ({
     task,
   }) => {
     const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
     const runsRoot = join(cwd, ".trailstep", "runs");
     await rm(cwd, { recursive: true, force: true });
-    await writeEventlessTerminalRun(runsRoot, "eventless-archive", "completed", {
-      runId: "eventless-archive",
+    // This intentionally inverts the pre-D4 expectation that an eventless
+    // terminal track was archive-eligible. D-LOCK-2/D4 treat the track as
+    // scheduler metadata, not terminal proof, and preserve the run.
+    const eventlessIds = [
+      "eventless-completed",
+      "eventless-failed",
+      "eventless-cancelled",
+    ] as const;
+    await writeEventlessTerminalRun(runsRoot, eventlessIds[0], "completed", {
+      runId: eventlessIds[0],
       workflowId: "workflow-a",
       status: "completed",
     });
-    await writeEventlessTerminalRun(runsRoot, "eventless-delete", "failed", {
-      runId: "eventless-delete",
+    await writeEventlessTerminalRun(runsRoot, eventlessIds[1], "failed", {
+      runId: eventlessIds[1],
       workflowId: "workflow-a",
       status: "failed",
     });
-    // A terminal track written before workflow.completed must never make a run
-    // with a still-active event trail lifecycle eligible, even with a live
-    // owner that is still finishing it.
-    await writeFinishingRun(runsRoot, "finishing-run", "workflow-a", process.pid);
-    // The track says completed but the event trail is still non-terminal and no
-    // lock is held: the summary projects the classifier's unknown, which stays
-    // non-terminal for lifecycle purposes.
-    await expect(listRunSummaries({ cwd, runsRoot })).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          runId: "finishing-run",
-          status: "unknown",
-          track: expect.objectContaining({ status: "completed", ownerPid: process.pid }),
-        }),
-      ]),
-    );
+    await writeEventlessTerminalRun(runsRoot, eventlessIds[2], "cancelled", {
+      runId: eventlessIds[2],
+      workflowId: "workflow-a",
+      status: "cancelled",
+    });
 
-    const archiveActions = await planStorageLifecycle({
+    for (const runId of eventlessIds) {
+      await expect(
+        assessStorageEligibility({ runDir: join(runsRoot, runId) }),
+      ).resolves.toMatchObject({
+        eligible: false,
+        code: "eventless-terminal-track",
+        eventRead: "missing",
+        track: "readable",
+      });
+    }
+
+    const archivePolicy = {
+      enabled: true,
+      archiveAfterDays: 7,
+      deleteAfterDays: 30,
+    } as const;
+    await expect(
+      planStorageLifecycle({
+        cwd,
+        runsRoot,
+        policy: archivePolicy,
+        now: new Date("2026-01-10T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      planStorageLifecycle({
+        cwd,
+        runsRoot,
+        policy: { enabled: true, deleteAfterDays: 7 },
+        now: new Date("2026-01-10T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(archiveRun({ runsRoot, runId: eventlessIds[0] })).rejects.toThrow(
+      /not storage-eligible.*D-LOCK-2/u,
+    );
+    await expect(
+      applyStorageLifecycle({
+        cwd,
+        runsRoot,
+        policy: archivePolicy,
+        now: new Date("2026-01-10T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+
+    for (const runId of eventlessIds) {
+      await expect(stat(join(runsRoot, runId))).resolves.toBeDefined();
+    }
+  });
+
+  it("keeps parked failures and superseded terminal cycles out of archive", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeParkedFailureRun(runsRoot, "parked-step-failure", "workflow-a");
+    await writeReopenedRun(runsRoot, "reopened-running", "workflow-a");
+    // A terminal track written before workflow.completed must not make a run
+    // with a non-terminal current cycle eligible, even with no lock at all.
+    await writeFinishingRun(runsRoot, "finishing-run", "workflow-a", 999_999_999);
+
+    await expect(
+      planStorageLifecycle({
+        cwd,
+        runsRoot,
+        policy: { enabled: true, archiveAfterDays: 7 },
+        now: new Date("2026-01-10T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+
+    for (const runId of ["parked-step-failure", "reopened-running", "finishing-run"]) {
+      await expect(
+        assessStorageEligibility({ runDir: join(runsRoot, runId) }),
+      ).resolves.toMatchObject({ eligible: false, code: "terminal-missing" });
+      await expect(archiveRun({ runsRoot, runId })).rejects.toThrow(/not storage-eligible/u);
+      await expect(stat(join(runsRoot, runId))).resolves.toBeDefined();
+    }
+  });
+
+  it("refuses malformed, partial, unreadable and aborted event trails", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeTerminalRun(runsRoot, "malformed-events", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await appendFile(join(runsRoot, "malformed-events", "events.jsonl"), "{not json}\n", "utf8");
+    await writeTerminalRun(runsRoot, "partial-events", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await appendFile(join(runsRoot, "partial-events", "events.jsonl"), '{"id":"torn', "utf8");
+    await writeTerminalRun(runsRoot, "unreadable-events", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await rm(join(runsRoot, "unreadable-events", "events.jsonl"));
+    await mkdir(join(runsRoot, "unreadable-events", "events.jsonl"));
+
+    await expect(
+      planStorageLifecycle({
+        cwd,
+        runsRoot,
+        policy: { enabled: true, archiveAfterDays: 7, deleteAfterDays: 7 },
+        now: new Date("2026-01-10T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "malformed-events") }),
+    ).resolves.toMatchObject({ eligible: false, code: "events-malformed" });
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "partial-events") }),
+    ).resolves.toMatchObject({ eligible: false, code: "events-partial" });
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "unreadable-events") }),
+    ).resolves.toMatchObject({ eligible: false, code: "events-unreadable" });
+    await expect(
+      assessStorageEligibility({
+        runDir: join(runsRoot, "malformed-events"),
+        signal: AbortSignal.abort(),
+      }),
+    ).resolves.toMatchObject({ eligible: false, code: "events-aborted" });
+
+    await expect(archiveRun({ runsRoot, runId: "malformed-events" })).rejects.toThrow(
+      /malformed JSON/u,
+    );
+    await expect(archiveRun({ runsRoot, runId: "partial-events" })).rejects.toThrow(
+      /unfinished line/u,
+    );
+    await expect(archiveRun({ runsRoot, runId: "unreadable-events" })).rejects.toThrow(
+      /could not be read/u,
+    );
+    for (const runId of ["malformed-events", "partial-events", "unreadable-events"]) {
+      await expect(stat(join(runsRoot, runId))).resolves.toBeDefined();
+    }
+  });
+
+  it("refuses a terminal event when the track is missing or unreadable", async ({ task }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeTerminalRun(runsRoot, "missing-track", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await rm(join(runsRoot, "missing-track", "track.json"));
+    await writeTerminalRun(runsRoot, "malformed-track", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await writeFile(join(runsRoot, "malformed-track", "track.json"), "{not json\n", "utf8");
+    await writeTerminalRun(runsRoot, "unreadable-track", "workflow-a", "2026-01-01T00:00:00.000Z");
+    await rm(join(runsRoot, "unreadable-track", "track.json"));
+    await mkdir(join(runsRoot, "unreadable-track", "track.json"));
+
+    await expect(
+      planStorageLifecycle({
+        cwd,
+        runsRoot,
+        policy: { enabled: true, archiveAfterDays: 7, deleteAfterDays: 7 },
+        now: new Date("2026-01-10T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "missing-track") }),
+    ).resolves.toMatchObject({ eligible: false, code: "track-missing" });
+    for (const runId of ["malformed-track", "unreadable-track"]) {
+      await expect(
+        assessStorageEligibility({ runDir: join(runsRoot, runId) }),
+      ).resolves.toMatchObject({ eligible: false, code: "track-unreadable", track: "unreadable" });
+      await expect(archiveRun({ runsRoot, runId })).rejects.toThrow(
+        /track is present but unreadable/u,
+      );
+      await expect(stat(join(runsRoot, runId))).resolves.toBeDefined();
+    }
+    await expect(archiveRun({ runsRoot, runId: "missing-track" })).rejects.toThrow(
+      /track is missing/u,
+    );
+    await expect(stat(join(runsRoot, "missing-track"))).resolves.toBeDefined();
+  });
+
+  it("requires strict lock ownership evidence for automatic and direct mutation", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    for (const runId of [
+      "missing-lock",
+      "dead-lock",
+      "unknown-lock",
+      "malformed-lock",
+      "unreadable-lock",
+    ]) {
+      await writeTerminalRun(runsRoot, runId, "workflow-a", "2026-01-01T00:00:00.000Z");
+    }
+    await writeRunLockWithPid(join(runsRoot, "dead-lock"), "dead-lock", 999_999_999);
+    await writeRunLockWithPid(join(runsRoot, "unknown-lock"), "unknown-lock", 0);
+    await writeFile(join(runsRoot, "malformed-lock", "run.lock"), "{not json\n", "utf8");
+    await mkdir(join(runsRoot, "unreadable-lock", "run.lock"));
+
+    const actions = await planStorageLifecycle({
       cwd,
       runsRoot,
       policy: { enabled: true, archiveAfterDays: 7, deleteAfterDays: 30 },
       now: new Date("2026-01-10T00:00:00.000Z"),
     });
-    expect(archiveActions.map((action) => `${action.action}:${action.runId}`)).toEqual([
-      "archive:eventless-archive",
-      "archive:eventless-delete",
-    ]);
-    await expect(
-      archiveRun({ runsRoot, runId: "finishing-run", now: new Date("2026-01-10T00:00:00.000Z") }),
-    ).rejects.toThrow("not a terminal readable run");
-
-    await archiveRun({ runsRoot, runId: "eventless-archive" });
-    await expect(stat(join(runsRoot, "eventless-archive"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-    await expect(
-      readFile(join(runsRoot, ".archive", "eventless-archive.manifest.json"), "utf8"),
-    ).resolves.toContain('"runId": "eventless-archive"');
-
-    const deleteActions = await planStorageLifecycle({
-      cwd,
-      runsRoot,
-      policy: { enabled: true, deleteAfterDays: 7 },
-      now: new Date("2026-01-10T00:00:00.000Z"),
-    });
-    expect(deleteActions.map((action) => `${action.action}:${action.runId}`).sort()).toEqual([
-      "delete-archive:eventless-archive",
-      "delete-hot:eventless-delete",
+    expect(actions.map((action) => `${action.action}:${action.runId}`).sort()).toEqual([
+      "archive:dead-lock",
+      "archive:missing-lock",
     ]);
 
-    await applyStorageLifecycle({
-      cwd,
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "missing-lock") }),
+    ).resolves.toMatchObject({ eligible: true, code: "eligible", lock: "missing" });
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "dead-lock") }),
+    ).resolves.toMatchObject({ eligible: true, code: "eligible", lock: "dead" });
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "unknown-lock") }),
+    ).resolves.toMatchObject({ eligible: false, code: "lock-owner-unknown", lock: "unknown" });
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "malformed-lock") }),
+    ).resolves.toMatchObject({ eligible: false, code: "lock-malformed", lock: "malformed" });
+    await expect(
+      assessStorageEligibility({ runDir: join(runsRoot, "unreadable-lock") }),
+    ).resolves.toMatchObject({ eligible: false, code: "lock-unreadable", lock: "unreadable" });
+
+    await expect(archiveRun({ runsRoot, runId: "unknown-lock" })).rejects.toThrow(
+      /unassessable owner/u,
+    );
+    await expect(archiveRun({ runsRoot, runId: "malformed-lock" })).rejects.toThrow(/malformed/u);
+    await expect(archiveRun({ runsRoot, runId: "unreadable-lock" })).rejects.toThrow(/unreadable/u);
+    await expect(deleteRun({ runsRoot, runId: "unknown-lock" })).rejects.toThrow(
+      /unassessable lock owner/u,
+    );
+    await expect(deleteRun({ runsRoot, runId: "malformed-lock" })).rejects.toThrow(
+      /malformed run.lock/u,
+    );
+    await expect(deleteRun({ runsRoot, runId: "unreadable-lock" })).rejects.toThrow(
+      /unreadable run.lock/u,
+    );
+    for (const runId of ["unknown-lock", "malformed-lock", "unreadable-lock"]) {
+      await expect(stat(join(runsRoot, runId))).resolves.toBeDefined();
+    }
+
+    // Explicit deletion remains available for an unwanted non-terminal run
+    // only when ownership is proved safe (no lock here).
+    await writeActiveRun(
       runsRoot,
-      policy: { enabled: true, deleteAfterDays: 7 },
-      now: new Date("2026-01-10T00:00:00.000Z"),
-    });
-    await expect(stat(join(runsRoot, "eventless-delete"))).rejects.toMatchObject({
+      "unwanted-non-terminal",
+      "workflow-a",
+      "2026-01-01T00:00:00.000Z",
+    );
+    await deleteRun({ runsRoot, runId: "unwanted-non-terminal" });
+    await expect(stat(join(runsRoot, "unwanted-non-terminal"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+
+    await archiveRun({ runsRoot, runId: "missing-lock" });
+    await archiveRun({ runsRoot, runId: "dead-lock" });
+    await expect(stat(join(runsRoot, "missing-lock"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(runsRoot, "dead-lock"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not remove the hot directory when reading an archive payload fails", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-storage-lifecycle-tests", task.id);
+    const runsRoot = join(cwd, ".trailstep", "runs");
+    await rm(cwd, { recursive: true, force: true });
+    await writeTerminalRun(runsRoot, "payload-failure", "workflow-a", "2026-01-01T00:00:00.000Z");
+
     await expect(
-      stat(join(runsRoot, ".archive", "eventless-archive.json.gz")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
-    // The still-finishing run was never archived or deleted.
-    await expect(stat(join(runsRoot, "finishing-run"))).resolves.toBeDefined();
+      archiveRun({
+        runsRoot,
+        runId: "payload-failure",
+        readPayload: async () => {
+          throw new Error("injected payload read failure");
+        },
+      }),
+    ).rejects.toThrow("injected payload read failure");
+
+    await expect(stat(join(runsRoot, "payload-failure"))).resolves.toBeDefined();
+    await expect(stat(join(runsRoot, ".archive", "payload-failure.json.gz"))).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
   });
 
   it("never plans or applies archive/delete for a run whose lock is live", async ({ task }) => {
@@ -468,15 +693,23 @@ async function writeTerminalRun(
   workflowId: string,
   timestamp: string,
 ): Promise<void> {
-  await mkdir(join(runsRoot, runId), { recursive: true });
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
   await writeFile(
-    join(runsRoot, runId, "events.jsonl"),
+    join(runDir, "events.jsonl"),
     `${eventLine({ runId, workflowId, type: "workflow.started", timestamp })}\n${eventLine({
       runId,
       workflowId,
       type: "workflow.completed",
       timestamp,
     })}\n`,
+    "utf8",
+  );
+  // A normal terminal run has scheduler track metadata. D4 still refuses a
+  // missing or unreadable track for the conservative mutation gate.
+  await writeFile(
+    join(runDir, "track.json"),
+    `${JSON.stringify({ runId, workflowId, status: "completed" })}\n`,
     "utf8",
   );
 }
@@ -541,17 +774,83 @@ async function writeFinishingRun(
   await utimes(runDir, old, old);
 }
 
+async function writeParkedFailureRun(
+  runsRoot: string,
+  runId: string,
+  workflowId: string,
+): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
+  const timestamp = "2026-01-01T00:00:00.000Z";
+  await writeFile(
+    join(runDir, "events.jsonl"),
+    `${eventLine({ runId, workflowId, type: "workflow.started", timestamp })}\n${eventLine({
+      runId,
+      workflowId,
+      type: "step.started",
+      timestamp,
+    })}\n${eventLine({
+      runId,
+      workflowId,
+      type: "step.failed",
+      timestamp,
+    })}\n`,
+    "utf8",
+  );
+  await writeFile(
+    join(runDir, "track.json"),
+    `${JSON.stringify({ runId, workflowId, status: "running", ownerPid: 999_999_999 })}\n`,
+    "utf8",
+  );
+}
+
+async function writeReopenedRun(
+  runsRoot: string,
+  runId: string,
+  workflowId: string,
+): Promise<void> {
+  const runDir = join(runsRoot, runId);
+  await mkdir(runDir, { recursive: true });
+  const timestamp = "2026-01-01T00:00:00.000Z";
+  await writeFile(
+    join(runDir, "events.jsonl"),
+    `${eventLine({ runId, workflowId, type: "workflow.started", timestamp })}\n${eventLine({
+      runId,
+      workflowId,
+      type: "workflow.completed",
+      timestamp,
+    })}\n${eventLine({
+      runId,
+      workflowId,
+      type: "workflow.resumed",
+      timestamp,
+    })}\n${eventLine({ runId, workflowId, type: "step.started", timestamp })}\n`,
+    "utf8",
+  );
+  // The track still says completed from the superseded cycle. The terminal
+  // event in that cycle must not authorize archive of the reopened run.
+  await writeFile(
+    join(runDir, "track.json"),
+    `${JSON.stringify({ runId, workflowId, status: "completed" })}\n`,
+    "utf8",
+  );
+}
+
 async function writeLiveLock(runDir: string, runId: string): Promise<void> {
+  await writeRunLockWithPid(runDir, runId, process.pid);
+}
+
+async function writeRunLockWithPid(runDir: string, runId: string, pid: number): Promise<void> {
   const now = new Date("2026-01-01T00:00:00.000Z").toISOString();
   await writeFile(
     join(runDir, "run.lock"),
     `${JSON.stringify({
       schemaVersion: 1,
       runId,
-      pid: process.pid,
+      pid,
       startedAt: now,
       lastHeartbeatAt: now,
-      nonce: `test-lock-${runId}`,
+      nonce: `test-lock-${runId}-${pid}`,
     })}\n`,
     "utf8",
   );

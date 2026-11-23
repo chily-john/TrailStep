@@ -45,7 +45,7 @@ This root context file contains a map of the codebase. **OpenViking is the canon
 - Format: `pnpm format`
 - Public package metadata readiness: `pnpm check:public-packages`
 - Public package tarball readiness: `pnpm run pack:public:dry-run`
-- Local artifact ignore readiness: `node scripts/check-local-artifact-ignore.mjs`
+- Local artifact ignore readiness: `node scripts/check-local-artifact-ignore.ts`
 - Sandbox: `pnpm sandbox [--keep]` (ephemeral full-project repro)
 
 ## Environment
@@ -60,7 +60,7 @@ This root context file contains a map of the codebase. **OpenViking is the canon
 - Search with `rg` (it respects `.gitignore`); never run `grep -r` / `find` from the repository root — that walks ~150k files in `node_modules/`, `data/` and `.trailstep/`, while `rg` sees ~579 in under a second. Scope searches to `packages/<pkg>/src`.
 - The OpenViking vector store lives in `data/vectordb/context` and is rebuildable; the sibling `data/viking` tree is **not** — it holds the canonical documentation, which exists only in OpenViking at `viking://resources/trailstep/docs/`. Never delete `data/viking`. Changing the embedding model or dimension means deleting `data/vectordb/context` and re-running the reindex (see `docs/openviking-setup.md`).
 - Internal `@trailstep/*` cross-links must use `workspace:*` (enforced by `pnpm check:public-packages`); never pin them to `^x.y.z` in `package.json`, or version bumps will desync `pnpm-lock.yaml` and fail CI `pnpm install --frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`.
-- After editing any `package.json`, run `pnpm install` and commit the updated `pnpm-lock.yaml` — but only regenerate the lockfile on a CLEAN tree (uncommitted manifest edits get baked into it and fail CI `--frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`). Verify with `node scripts/check-lockfile-sync.mjs` before pushing.
+- After editing any `package.json`, run `pnpm install` and commit the updated `pnpm-lock.yaml` — but only regenerate the lockfile on a CLEAN tree (uncommitted manifest edits get baked into it and fail CI `--frozen-lockfile` with `ERR_PNPM_OUTDATED_LOCKFILE`). Verify with `node scripts/check-lockfile-sync.ts` before pushing.
 - New workflows should use the continuation model: `defineWorkflow({ ... start })`, `step(...)`, and `done(...)`; do not expand the older static `steps: []` path.
 - Living source and tests are authoritative when package README text or rules drift.
 - Branch protection cannot be fully enforced from repository files; GitHub settings must be configured separately.

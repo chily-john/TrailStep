@@ -34,7 +34,7 @@ Useful release/readiness checks:
 ```bash
 pnpm check:public-packages
 pnpm run pack:public:dry-run
-node scripts/check-local-artifact-ignore.mjs
+node scripts/check-local-artifact-ignore.ts
 ```
 
 ## Changesets and versioning

@@ -12,9 +12,27 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
-const depGroups = ["dependencies", "devDependencies", "optionalDependencies"];
+const depGroups = ["dependencies", "devDependencies", "optionalDependencies"] as const;
 
-function unquote(value) {
+type DependencyGroupName = (typeof depGroups)[number];
+
+type Dependency = { name: string; specifier: string | null };
+
+type DependencyGroup = Map<string, Dependency>;
+
+type Importer = Map<string, DependencyGroup>;
+
+type Manifest = Partial<Record<DependencyGroupName, Record<string, string>>>;
+
+type ManifestSpecifier = { name: string; group: DependencyGroupName; specifier: string };
+
+type LockfileSpecifier = { name: string; group: DependencyGroupName; specifier: string | null };
+
+function isDependencyGroup(name: string): name is DependencyGroupName {
+  return (depGroups as readonly string[]).includes(name);
+}
+
+function unquote(value: string): string {
   const trimmed = value.trim();
   if (
     (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
@@ -25,13 +43,13 @@ function unquote(value) {
   return trimmed;
 }
 
-function parseLockfileImporters(lockfileText) {
+function parseLockfileImporters(lockfileText: string): Map<string, Importer> {
   const lines = lockfileText.split(/\r?\n/u);
-  const importers = new Map();
+  const importers = new Map<string, Importer>();
   let inImporters = false;
-  let currentImporter = null;
-  let currentGroup = null;
-  let currentDep = null;
+  let currentImporter: Importer | null = null;
+  let currentGroup: DependencyGroup | null = null;
+  let currentDep: Dependency | null = null;
 
   for (const line of lines) {
     if (/^importers:\s*$/u.test(line)) {
@@ -50,19 +68,29 @@ function parseLockfileImporters(lockfileText) {
     const depMatch = /^ {6}(.+):\s*$/u.exec(line);
     const specifierMatch = /^ {8}specifier:\s*(.+?)\s*$/u.exec(line);
 
-    if (specifierMatch && currentDep) {
-      currentDep.specifier = unquote(specifierMatch[1]);
+    const importerName = importerMatch?.[1];
+    const groupName = groupMatch?.[1];
+    const dependencyName = depMatch?.[1];
+    const specifierValue = specifierMatch?.[1];
+
+    if (specifierMatch && currentDep && specifierValue !== undefined) {
+      currentDep.specifier = unquote(specifierValue);
       currentDep = null;
-    } else if (depMatch && currentGroup) {
-      currentDep = { name: unquote(depMatch[1]), specifier: null };
+    } else if (depMatch && currentGroup && dependencyName !== undefined) {
+      currentDep = { name: unquote(dependencyName), specifier: null };
       currentGroup.set(currentDep.name, currentDep);
-    } else if (groupMatch && currentImporter && depGroups.includes(groupMatch[1])) {
+    } else if (
+      groupMatch &&
+      currentImporter &&
+      groupName !== undefined &&
+      isDependencyGroup(groupName)
+    ) {
       currentGroup = new Map();
-      currentImporter.set(groupMatch[1], currentGroup);
-    } else if (importerMatch) {
+      currentImporter.set(groupName, currentGroup);
+    } else if (importerMatch && importerName !== undefined) {
       currentImporter = new Map();
       currentGroup = null;
-      importers.set(unquote(importerMatch[1]), currentImporter);
+      importers.set(unquote(importerName), currentImporter);
     } else if (/^ {2}\S/u.test(line) || /^ {4}\S/u.test(line)) {
       currentGroup = null; // an unrelated key inside an importer
     }
@@ -71,9 +99,9 @@ function parseLockfileImporters(lockfileText) {
   return importers;
 }
 
-function workspacePackageDirectories() {
+function workspacePackageDirectories(): string[] {
   const workspaceText = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
-  const globs = [];
+  const globs: string[] = [];
   let inPackages = false;
   for (const line of workspaceText.split(/\r?\n/u)) {
     if (/^packages:\s*$/u.test(line)) {
@@ -83,9 +111,10 @@ function workspacePackageDirectories() {
     if (inPackages && /^\S/u.test(line)) {
       break;
     }
-    const entry = inPackages && /^ {2}-\s*(.+?)\s*$/u.exec(line);
-    if (entry) {
-      globs.push(unquote(entry[1]));
+    const entry = inPackages ? /^ {2}-\s*(.+?)\s*$/u.exec(line) : null;
+    const pattern = entry?.[1];
+    if (pattern !== undefined) {
+      globs.push(unquote(pattern));
     }
   }
 
@@ -107,8 +136,8 @@ function workspacePackageDirectories() {
   return directories.sort();
 }
 
-function manifestSpecifiers(manifest) {
-  const specifiers = new Map();
+function manifestSpecifiers(manifest: Manifest): Map<string, ManifestSpecifier> {
+  const specifiers = new Map<string, ManifestSpecifier>();
   for (const group of depGroups) {
     for (const [name, range] of Object.entries(manifest[group] ?? {})) {
       specifiers.set(`${group} > ${name}`, { name, group, specifier: String(range) });
@@ -117,8 +146,8 @@ function manifestSpecifiers(manifest) {
   return specifiers;
 }
 
-function lockfileSpecifiers(importer) {
-  const specifiers = new Map();
+function lockfileSpecifiers(importer: Importer | undefined): Map<string, LockfileSpecifier> {
+  const specifiers = new Map<string, LockfileSpecifier>();
   for (const group of depGroups) {
     for (const dep of importer?.get(group)?.values() ?? []) {
       specifiers.set(`${group} > ${dep.name}`, { name: dep.name, group, specifier: dep.specifier });
@@ -128,10 +157,12 @@ function lockfileSpecifiers(importer) {
 }
 
 const importers = parseLockfileImporters(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"));
-const problems = [];
+const problems: string[] = [];
 
 for (const directory of workspacePackageDirectories()) {
-  const manifest = JSON.parse(readFileSync(join(root, directory, "package.json"), "utf8"));
+  const manifest = JSON.parse(
+    readFileSync(join(root, directory, "package.json"), "utf8"),
+  ) as Manifest;
   const importerKey = directory === "." ? "." : directory.replaceAll("\\", "/");
   const manifestDeps = manifestSpecifiers(manifest);
   const lockfileDeps = lockfileSpecifiers(importers.get(importerKey));

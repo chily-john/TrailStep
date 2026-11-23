@@ -8,8 +8,8 @@ import {
 } from "./preinstall-scripts.js";
 import { findRepoRoot } from "./root.js";
 
-/** Story 004 flips this to `[".ts"]`; until then the scripts are still `.mjs`. */
-const SCRIPT_EXTENSIONS = [".ts", ".mjs"];
+/** `scripts/` holds one language: TypeScript, executed through Node type stripping. */
+const SCRIPT_EXTENSIONS = [".ts"];
 
 const repoRoot = findRepoRoot();
 
@@ -21,14 +21,18 @@ function relativeSpecifierFailure(file: string, specifier: string): string {
   );
 }
 
-function scriptFiles(directory = "scripts"): string[] {
+/** Every file under `scripts/` (recursively), repo-relative. */
+function scriptEntries(directory = "scripts"): string[] {
   return readdirSync(join(repoRoot, directory), { withFileTypes: true }).flatMap((entry) => {
     const path = `${directory}/${entry.name}`;
-    if (entry.isDirectory()) {
-      return scriptFiles(path);
-    }
-    return SCRIPT_EXTENSIONS.some((extension) => entry.name.endsWith(extension)) ? [path] : [];
+    return entry.isDirectory() ? scriptEntries(path) : [path];
   });
+}
+
+function scriptFiles(): string[] {
+  return scriptEntries().filter((file) =>
+    SCRIPT_EXTENSIONS.some((extension) => file.endsWith(extension)),
+  );
 }
 
 describe("pre-install scripts", () => {
@@ -100,12 +104,21 @@ describe("pre-install scripts", () => {
   });
 
   it("keeps every script free of relative specifiers", () => {
-    const failures = scriptFiles().flatMap((file) => {
+    const files = scriptFiles();
+
+    // A scan over zero files would pass vacuously; the five entry points are the floor.
+    expect(files.length).toBe(5);
+
+    const failures = files.flatMap((file) => {
       const specifiers = relativeSpecifiers(readFileSync(join(repoRoot, file), "utf8"));
       return specifiers.map((specifier) => relativeSpecifierFailure(file, specifier));
     });
 
     expect(failures.join("\n")).toBe("");
+  });
+
+  it("has no .mjs files under scripts", () => {
+    expect(scriptEntries().filter((file) => file.endsWith(".mjs"))).toEqual([]);
   });
 
   it("points every node scripts/ entry at an existing file", () => {

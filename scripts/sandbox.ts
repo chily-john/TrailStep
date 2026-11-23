@@ -37,6 +37,19 @@ const COMMAND_TIMEOUT_MS = 3 * 60 * 1000;
 const POLL_INTERVAL_MS = 25;
 const OUTPUT_TAIL_CHARS = 3000;
 
+type Expectation = { pattern: string; response: string };
+
+type RunCliOptions = {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  expectations?: Expectation[];
+  timeoutMs?: number;
+};
+
+type CliResult = { stdout: string; stderr: string };
+
+type CliExit = { code: number | null; signal?: NodeJS.Signals | null; error?: Error };
+
 // Scripted answers for the interactive `trailstep init` flow (init has no
 // --yes flag). Each response is written only after its prompt is observed on
 // stdout, because @clack/prompts drops keypresses that arrive while no prompt
@@ -54,24 +67,26 @@ const INIT_PROMPTS = [
 const keepSandbox = process.argv.includes("--keep");
 
 class StageError extends Error {
-  constructor(stage, message) {
+  readonly stage: string;
+
+  constructor(stage: string, message: string) {
     super(`stage "${stage}" failed: ${message}`);
     this.name = "StageError";
     this.stage = stage;
   }
 }
 
-function delay(ms) {
+function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
-function tail(text) {
+function tail(text: string): string {
   const trimmed = text.trim();
   return trimmed.length > OUTPUT_TAIL_CHARS ? trimmed.slice(-OUTPUT_TAIL_CHARS) : trimmed;
 }
 
-function sandboxEnv(home) {
-  const env = {};
+function sandboxEnv(home: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined && !key.startsWith("TRAILSTEP_")) {
       env[key] = value;
@@ -82,7 +97,7 @@ function sandboxEnv(home) {
   return env;
 }
 
-async function runCli(stage, args, options) {
+async function runCli(stage: string, args: string[], options: RunCliOptions): Promise<CliResult> {
   const { cwd, env, expectations = [], timeoutMs = COMMAND_TIMEOUT_MS } = options;
   const child = spawn(process.execPath, [cliEntry, ...args], {
     cwd,
@@ -92,7 +107,7 @@ async function runCli(stage, args, options) {
 
   let stdout = "";
   let stderr = "";
-  let exit;
+  let exit: CliExit | undefined;
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
@@ -104,20 +119,22 @@ async function runCli(stage, args, options) {
   child.stdin.on("error", () => {
     // The child may exit before consuming every scripted answer.
   });
-  const exited = new Promise((resolveExit) => {
+  const exited = new Promise<CliExit>((resolveExit) => {
     child.on("exit", (code, signal) => {
-      exit = { code, signal };
-      resolveExit(exit);
+      const result: CliExit = { code, signal };
+      exit = result;
+      resolveExit(result);
     });
     child.on("error", (error) => {
-      exit = { code: null, error };
-      resolveExit(exit);
+      const result: CliExit = { code: null, error };
+      exit = result;
+      resolveExit(result);
     });
   });
 
   const deadline = Date.now() + timeoutMs;
-  const combined = () => `${stdout}\n${stderr}`;
-  const abort = (message) => {
+  const combined = (): string => `${stdout}\n${stderr}`;
+  const abort: (message: string) => never = (message) => {
     child.kill();
     throw new StageError(stage, `${message}\n--- output tail ---\n${tail(combined())}`);
   };
@@ -166,7 +183,7 @@ async function runCli(stage, args, options) {
   }
 }
 
-async function expectPath(stage, path, label) {
+async function expectPath(stage: string, path: string, label: string): Promise<void> {
   try {
     await access(path);
   } catch {
@@ -174,7 +191,7 @@ async function expectPath(stage, path, label) {
   }
 }
 
-async function stage(name, run) {
+async function stage(name: string, run: () => Promise<unknown>): Promise<void> {
   console.log(`[sandbox] stage ${name}: running`);
   try {
     await run();
@@ -190,7 +207,7 @@ async function stage(name, run) {
   console.log(`[sandbox] stage ${name}: ok`);
 }
 
-function preflight() {
+function preflight(): void {
   const missing = [cliEntry, coreDist, mcpServerDist].filter((path) => !existsSync(path));
   if (missing.length > 0) {
     throw new StageError(
@@ -200,7 +217,7 @@ function preflight() {
   }
 }
 
-async function initStage(sandbox, home, env) {
+async function initStage(sandbox: string, home: string, env: NodeJS.ProcessEnv): Promise<void> {
   await mkdir(home, { recursive: true });
   const consumerPackage = {
     name: "trailstep-sandbox",
@@ -219,16 +236,19 @@ async function initStage(sandbox, home, env) {
 
   const configPath = join(sandbox, ".trailstep", "config.json");
   await expectPath("init", configPath, ".trailstep/config.json in the sandbox");
-  let config;
+  let config: unknown;
   try {
     config = JSON.parse(await readFile(configPath, "utf8"));
   } catch (error) {
-    throw new StageError("init", `.trailstep/config.json is not valid JSON: ${error.message}`);
+    throw new StageError(
+      "init",
+      `.trailstep/config.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   if (
     config === null ||
     typeof config !== "object" ||
-    Object.keys(config.agents ?? {}).length === 0
+    Object.keys((config as { agents?: Record<string, unknown> }).agents ?? {}).length === 0
   ) {
     throw new StageError("init", ".trailstep/config.json has no configured agents");
   }
@@ -239,9 +259,11 @@ async function initStage(sandbox, home, env) {
   );
 }
 
-async function fixtureStage(sandbox) {
+async function fixtureStage(sandbox: string): Promise<void> {
   const consumerPath = join(sandbox, "package.json");
-  const consumer = JSON.parse(await readFile(consumerPath, "utf8"));
+  const consumer = JSON.parse(await readFile(consumerPath, "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
   consumer.dependencies = { ...consumer.dependencies, [FIXTURE_PACKAGE]: "1.0.0" };
   await writeFile(consumerPath, `${JSON.stringify(consumer, null, 2)}\n`);
 
@@ -287,7 +309,11 @@ export default workflow;
   await expectPath("fixture", join(packageDir, "review.mjs"), "the fixture workflow file");
 }
 
-async function workflowsStage(sandbox, home, env) {
+async function workflowsStage(
+  sandbox: string,
+  home: string,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
   const { stdout } = await runCli("workflows", ["workflows"], { cwd: sandbox, env });
   if (!stdout.includes(FIXTURE_REF)) {
     throw new StageError(
@@ -298,7 +324,7 @@ async function workflowsStage(sandbox, home, env) {
   void home;
 }
 
-async function runStage(sandbox, env) {
+async function runStage(sandbox: string, env: NodeJS.ProcessEnv): Promise<void> {
   const { stdout } = await runCli("run", [FIXTURE_REF, RUN_NAME, "--input", RUN_INPUT], {
     cwd: sandbox,
     env,
@@ -320,11 +346,11 @@ async function runStage(sandbox, env) {
   }
 }
 
-async function outputStage(sandbox, env) {
+async function outputStage(sandbox: string, env: NodeJS.ProcessEnv): Promise<void> {
   const { stdout } = await runCli("output", ["output", RUN_NAME, "--json"], { cwd: sandbox, env });
-  let parsed;
+  let parsed: { ok?: unknown; prepared?: unknown } | undefined;
   try {
-    parsed = JSON.parse(stdout.trim());
+    parsed = JSON.parse(stdout.trim()) as { ok?: unknown; prepared?: unknown };
   } catch {
     throw new StageError(
       "output",
@@ -339,21 +365,26 @@ async function outputStage(sandbox, env) {
   }
 }
 
-async function doctorStage(sandbox, env) {
+async function doctorStage(sandbox: string, env: NodeJS.ProcessEnv): Promise<void> {
   // runCli fails the stage when doctor exits non-zero.
   await runCli("doctor", ["doctor"], { cwd: sandbox, env });
 }
 
-async function mcpStage(sandbox, home) {
+async function mcpStage(sandbox: string, home: string): Promise<void> {
   const mcpRequire = createRequire(join(root, "packages", "mcp", "package.json"));
-  let sdkPackage;
-  let sdkRoot;
+  let sdkPackage: { exports?: Record<string, { import?: unknown }> };
+  let sdkRoot: string;
   try {
     const cjsClientPath = mcpRequire.resolve("@modelcontextprotocol/sdk/client/index.js");
     sdkRoot = resolve(dirname(cjsClientPath), "..", "..", "..");
-    sdkPackage = JSON.parse(await readFile(join(sdkRoot, "package.json"), "utf8"));
+    sdkPackage = JSON.parse(await readFile(join(sdkRoot, "package.json"), "utf8")) as {
+      exports?: Record<string, { import?: unknown }>;
+    };
   } catch (error) {
-    throw new StageError("mcp", `could not resolve @modelcontextprotocol/sdk: ${error.message}`);
+    throw new StageError(
+      "mcp",
+      `could not resolve @modelcontextprotocol/sdk: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   const clientImport = sdkPackage.exports?.["./client"]?.import;
@@ -374,7 +405,7 @@ async function mcpStage(sandbox, home) {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   const listed = await client.listTools();
-  const names = listed.tools.map((tool) => tool.name).sort();
+  const names = listed.tools.map((tool: { name: string }) => tool.name).sort();
   await client.close().catch(() => undefined);
 
   if (JSON.stringify(names) !== JSON.stringify(EXPECTED_MCP_TOOLS)) {
@@ -386,7 +417,7 @@ async function mcpStage(sandbox, home) {
   console.log(`[sandbox] MCP listTools: ${names.join(", ")}`);
 }
 
-async function main() {
+async function main(): Promise<void> {
   preflight();
   const sandbox = await mkdtemp(join(tmpdir(), "trailstep-sandbox-"));
   const home = join(sandbox, "home");

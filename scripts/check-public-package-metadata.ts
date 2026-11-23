@@ -36,27 +36,52 @@ const expectedRepository = {
   url: "git+ssh://git@github.com/chily-john/trailstep.git",
 };
 
-function readJson(path) {
-  return JSON.parse(readFileSync(join(root, path), "utf8"));
+const depFields = ["dependencies", "devDependencies", "peerDependencies"] as const;
+
+type Manifest = {
+  name: string;
+  version?: string;
+  private?: boolean;
+  license?: string;
+  scripts?: Record<string, string>;
+  repository?: { type?: string; url?: string };
+  bugs?: { url?: string };
+  homepage?: string;
+  publishConfig?: { access?: string };
+  files?: string[];
+  main?: string;
+  types?: string;
+  exports?: Record<string, { import?: string; types?: string }>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+};
+
+function readJson<T = Manifest>(path: string): T {
+  return JSON.parse(readFileSync(join(root, path), "utf8")) as T;
 }
 
-function assertFile(path) {
+function assertFile(path: string): void {
   assert.ok(existsSync(join(root, path)), `Expected ${path} to exist`);
 }
 
-function packageDirectoryFor(packageName) {
+function packageDirectoryFor(packageName: string): string {
   return packageName.replace("@trailstep/", "");
 }
 
-function expectedCaretPeerRange(manifestByName, packageName) {
+function expectedCaretPeerRange(
+  manifestByName: Map<string, Manifest>,
+  packageName: string,
+): string {
   const version = manifestByName.get(packageName)?.version;
   assert.equal(typeof version, "string", `${packageName} must declare a version`);
-  const stableVersion = version.split("-")[0];
+  const declaredVersion = version ?? "";
+  const [stableVersion = declaredVersion] = declaredVersion.split("-");
   assert.match(stableVersion, /^\d+\.\d+\.\d+$/u, `${packageName} must declare a stable version`);
   return `^${stableVersion}`;
 }
 
-function assertNoPostinstallScripts(packageManifests) {
+function assertNoPostinstallScripts(packageManifests: Manifest[]): void {
   for (const manifest of packageManifests) {
     assert.equal(
       manifest.scripts?.postinstall,
@@ -66,7 +91,7 @@ function assertNoPostinstallScripts(packageManifests) {
   }
 }
 
-function assertPublicNpmMetadata(manifest) {
+function assertPublicNpmMetadata(manifest: Manifest): void {
   assertPublicPackageVersion(manifest);
   assert.equal(manifest.license, "Apache-2.0", `${manifest.name} must use Apache-2.0`);
   assert.deepEqual(
@@ -89,10 +114,11 @@ function assertPublicNpmMetadata(manifest) {
     "public",
     `${manifest.name} must publish with public access`,
   );
-  assert.ok(Array.isArray(manifest.files), `${manifest.name} must declare explicit files`);
-  assert.ok(manifest.files.includes("dist"), `${manifest.name} must publish dist`);
-  assert.ok(manifest.files.includes("README.md"), `${manifest.name} must publish README.md`);
-  assert.ok(manifest.files.includes("LICENSE"), `${manifest.name} must publish LICENSE`);
+  const files = manifest.files;
+  assert.ok(Array.isArray(files), `${manifest.name} must declare explicit files`);
+  assert.ok(files.includes("dist"), `${manifest.name} must publish dist`);
+  assert.ok(files.includes("README.md"), `${manifest.name} must publish README.md`);
+  assert.ok(files.includes("LICENSE"), `${manifest.name} must publish LICENSE`);
   assert.equal(manifest.main, "./dist/index.js", `${manifest.name} must declare main`);
   assert.equal(manifest.types, "./dist/index.d.ts", `${manifest.name} must declare types`);
   assert.equal(
@@ -111,19 +137,21 @@ function assertPublicNpmMetadata(manifest) {
   assertFile(`packages/${directory}/LICENSE`);
 }
 
-function assertPublicPackageVersion(manifest) {
-  assert.equal(typeof manifest.version, "string", `${manifest.name} must declare a version`);
+function assertPublicPackageVersion(manifest: Manifest): void {
+  const version = manifest.version;
+  assert.equal(typeof version, "string", `${manifest.name} must declare a version`);
+  const declaredVersion = version ?? "";
   assert.match(
-    manifest.version,
+    declaredVersion,
     /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u,
     `${manifest.name} must declare a semver-compatible version`,
   );
-  assert.notEqual(manifest.version, "0.0.0", `${manifest.name} must not publish as 0.0.0`);
+  assert.notEqual(declaredVersion, "0.0.0", `${manifest.name} must not publish as 0.0.0`);
 }
 
-function verifyPublicPackageMetadata() {
+function verifyPublicPackageMetadata(): void {
   const rootPackage = readJson("package.json");
-  const changesetConfig = readJson(".changeset/config.json");
+  const changesetConfig = readJson<{ ignore?: string[] }>(".changeset/config.json");
   const packageManifests = packageDirectories.map((directory) =>
     readJson(`packages/${directory}/package.json`),
   );
@@ -204,7 +232,7 @@ function verifyPublicPackageMetadata() {
     );
   }
 
-  for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
+  for (const depField of depFields) {
     for (const [depName, depRange] of Object.entries(rootPackage[depField] ?? {})) {
       if (depName.startsWith("@trailstep/")) {
         assert.equal(

@@ -7,15 +7,15 @@ const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
 
-function readText(path) {
+function readText(path: string): string {
   return readFileSync(join(root, path), "utf8");
 }
 
-function readJson(path) {
-  return JSON.parse(readText(path));
+function readJson(path: string): { files?: string[] } {
+  return JSON.parse(readText(path)) as { files?: string[] };
 }
 
-function assertGitignorePattern(pattern) {
+function assertGitignorePattern(pattern: string): void {
   const gitignore = readText(".gitignore");
   assert.match(
     gitignore,
@@ -24,7 +24,7 @@ function assertGitignorePattern(pattern) {
   );
 }
 
-function assertIgnored(path) {
+function assertIgnored(path: string): void {
   const result = execFileSync("git", ["check-ignore", path], {
     cwd: root,
     encoding: "utf8",
@@ -32,7 +32,7 @@ function assertIgnored(path) {
   assert.equal(result, path, `${path} must be ignored by git`);
 }
 
-function assertNotIgnored(path) {
+function assertNotIgnored(path: string): void {
   try {
     execFileSync("git", ["check-ignore", path], {
       cwd: root,
@@ -40,14 +40,15 @@ function assertNotIgnored(path) {
       stdio: "pipe",
     });
   } catch (error) {
-    assert.equal(error.status, 1, `${path} check-ignore should exit 1 when not ignored`);
+    const status = (error as { status?: number }).status;
+    assert.equal(status, 1, `${path} check-ignore should exit 1 when not ignored`);
     return;
   }
 
   assert.fail(`${path} must remain trackable and not be ignored by git`);
 }
 
-function assertNoTrackedLocalArtifacts() {
+function assertNoTrackedLocalArtifacts(): void {
   const allowedTrailstepFiles = new Set([".trailstep/.gitignore", ".trailstep/config.json"]);
   const tracked = execFileSync(
     "git",
@@ -64,7 +65,7 @@ function assertNoTrackedLocalArtifacts() {
   );
 }
 
-function assertPackageFilesExcludeLocalArtifacts() {
+function assertPackageFilesExcludeLocalArtifacts(): void {
   const packageJsonPaths = ["package.json"];
   for (const directoryEntry of readdirSync(join(root, "packages"), { withFileTypes: true })) {
     if (directoryEntry.isDirectory()) {
@@ -93,7 +94,7 @@ function assertPackageFilesExcludeLocalArtifacts() {
   }
 }
 
-function escapeRegExp(value) {
+function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 

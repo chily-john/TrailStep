@@ -6,12 +6,27 @@ import { join } from "node:path";
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
+
+type PublicPackage = { name: string; directory: string; requiredFiles?: string[] };
+
+type Manifest = {
+  name?: string;
+  private?: boolean;
+  scripts?: Record<string, string>;
+  files?: string[];
+  main?: string;
+  types?: string;
+  bin?: Record<string, string>;
+};
+
+type PackResult = { name: string; files?: { path: string }[] };
+
 const packCommand =
   process.platform === "win32"
     ? { command: "cmd.exe", args: ["/d", "/s", "/c", "pnpm pack --dry-run --json"] }
     : { command: "pnpm", args: ["pack", "--dry-run", "--json"] };
 
-const publicPackages = [
+const publicPackages: PublicPackage[] = [
   { name: "@trailstep/core", directory: "packages/core" },
   { name: "@trailstep/authoring", directory: "packages/authoring" },
   {
@@ -38,20 +53,20 @@ const forbiddenPackedPathPatterns = [
   { label: "turbo cache", pattern: /(?:^|\/)\.turbo(?:\/|$)/u },
 ];
 
-function readJson(path) {
-  return JSON.parse(readFileSync(join(root, path), "utf8"));
+function readJson(path: string): Manifest {
+  return JSON.parse(readFileSync(join(root, path), "utf8")) as Manifest;
 }
 
-function assertRootCommand() {
+function assertRootCommand(): void {
   const rootManifest = readJson("package.json");
   assert.equal(
     rootManifest.scripts?.["pack:public:dry-run"],
-    "node scripts/pack-public-packages.mjs",
+    "node scripts/pack-public-packages.ts",
     "root package.json must expose pack:public:dry-run",
   );
 }
 
-function assertExplicitPackageSet() {
+function assertExplicitPackageSet(): void {
   assert.deepEqual(
     publicPackages.map((pkg) => pkg.directory),
     [
@@ -77,14 +92,15 @@ function assertExplicitPackageSet() {
   }
 }
 
-function assertPackageManifest(pkg) {
+function assertPackageManifest(pkg: PublicPackage): Manifest {
   const manifest = readJson(`${pkg.directory}/package.json`);
   assert.equal(manifest.name, pkg.name, `${pkg.directory} must be ${pkg.name}`);
   assert.notEqual(manifest.private, true, `${pkg.name} must be publishable, not private`);
-  assert.ok(Array.isArray(manifest.files), `${pkg.name} must declare explicit files`);
-  assert.ok(manifest.files.includes("dist"), `${pkg.name} must include dist in files`);
-  assert.ok(manifest.files.includes("README.md"), `${pkg.name} must include README.md in files`);
-  assert.ok(manifest.files.includes("LICENSE"), `${pkg.name} must include LICENSE in files`);
+  const files = manifest.files;
+  assert.ok(Array.isArray(files), `${pkg.name} must declare explicit files`);
+  assert.ok(files.includes("dist"), `${pkg.name} must include dist in files`);
+  assert.ok(files.includes("README.md"), `${pkg.name} must include README.md in files`);
+  assert.ok(files.includes("LICENSE"), `${pkg.name} must include LICENSE in files`);
 
   assertBuiltEntry(pkg, manifest.main, "main");
   assertBuiltEntry(pkg, manifest.types, "types");
@@ -95,11 +111,15 @@ function assertPackageManifest(pkg) {
   return manifest;
 }
 
-function assertBuiltEntry(pkg, manifestPath, label) {
+function assertBuiltEntry(
+  pkg: PublicPackage,
+  manifestPath: string | undefined,
+  label: string,
+): void {
   if (manifestPath === undefined) {
     return;
   }
-  const normalized = normalizePackagePath(manifestPath);
+  const normalized = normalizePackagePath(manifestPath) as string;
   assert.ok(
     normalized.startsWith("dist/"),
     `${pkg.name} ${label} must point at a dist runtime entry`,
@@ -108,7 +128,7 @@ function assertBuiltEntry(pkg, manifestPath, label) {
   void label;
 }
 
-function packDryRun(pkg) {
+function packDryRun(pkg: PublicPackage): PackResult {
   const stdout = execFileSync(packCommand.command, packCommand.args, {
     cwd: join(root, pkg.directory),
     encoding: "utf8",
@@ -117,10 +137,10 @@ function packDryRun(pkg) {
   const parsed = parsePackJson(stdout);
   const [packResult] = Array.isArray(parsed) ? parsed : [parsed];
   assert.ok(packResult, `${pkg.name} npm pack --dry-run returned no package data`);
-  return packResult;
+  return packResult as PackResult;
 }
 
-function parsePackJson(stdout) {
+function parsePackJson(stdout: string): unknown {
   const lines = stdout.trim().split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const candidate = lines.slice(index).join("\n").trim();
@@ -135,10 +155,16 @@ function parsePackJson(stdout) {
   assert.fail(`pnpm pack --dry-run --json did not emit parseable JSON:\n${stdout}`);
 }
 
-function assertPackedContents(pkg, manifest, packResult) {
+function assertPackedContents(
+  pkg: PublicPackage,
+  manifest: Manifest,
+  packResult: PackResult,
+): void {
   assert.equal(packResult.name, pkg.name, `${pkg.name} dry-run packed the wrong package`);
   const files = new Set(
-    (packResult.files ?? []).map((file) => normalizePackagePath(file.path)).filter(Boolean),
+    (packResult.files ?? [])
+      .map((file) => normalizePackagePath(file.path))
+      .filter((path): path is string => Boolean(path)),
   );
 
   for (const requiredFile of [
@@ -149,7 +175,7 @@ function assertPackedContents(pkg, manifest, packResult) {
     normalizePackagePath(manifest.types),
     ...Object.values(manifest.bin ?? {}).map(normalizePackagePath),
     ...(pkg.requiredFiles ?? []),
-  ].filter(Boolean)) {
+  ].filter((path): path is string => Boolean(path))) {
     assert.ok(files.has(requiredFile), `${pkg.name} packed contents must include ${requiredFile}`);
   }
 
@@ -163,7 +189,7 @@ function assertPackedContents(pkg, manifest, packResult) {
   }
 }
 
-function normalizePackagePath(path) {
+function normalizePackagePath(path: string | undefined): string | undefined {
   return path
     ?.replace(/\\/gu, "/")
     .replace(/^\.\//u, "")

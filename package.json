@@ -24,14 +24,14 @@
     "sandbox": "node scripts/sandbox.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
-    "@changesets/cli": "^3.0.1",
+    "@biomejs/biome": "^2.6.8",
+    "@changesets/cli": "^3.0.3",
     "@trailstep/create-flows": "workspace:*",
     "@trailstep/sub-agents": "workspace:*",
     "tsup": "^8.5.0",
-    "turbo": "^2.10.10",
+    "turbo": "^2.11.13",
     "typescript": "^5.8.3",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "dependencies": {
     "@trailstep/provider-pi": "workspace:*"

@@ -26,7 +26,9 @@ This root context file contains a map of the codebase. **OpenViking is the canon
 │   ├── provider-codex/   # Codex provider adapter package (`@trailstep/provider-codex`)
 │   ├── provider-gemini/  # Gemini provider adapter package (`@trailstep/provider-gemini`)
 │   └── provider-pi/      # Pi provider adapter package (`@trailstep/provider-pi`)
-└── scripts/              # Local release-readiness and artifact hygiene checks
+├── factory/              # Private maintenance workspace packages (never published)
+│   └── arch/             # Repo-shape guards and the future architecture checker (`@trailstep/factory-arch`)
+├── scripts/              # Single-file, dependency-free pre-install entry points (run before `pnpm install`; `node:` imports only)
 ├── .github/              # CI, release, dependency review, CODEOWNERS, PR/branch-protection guidance
 └── .changeset/           # Changesets release/versioning configuration
 ```

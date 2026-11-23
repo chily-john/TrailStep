@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && turbo run typecheck",
     "test": "turbo run test",
     "lint": "biome check . && turbo run lint",
     "format": "biome format --write .",
@@ -28,6 +28,7 @@
     "@changesets/cli": "^3.0.1",
     "@trailstep/create-flows": "workspace:*",
     "@trailstep/sub-agents": "workspace:*",
+    "@types/node": "^26.2.0",
     "tsup": "^8.5.0",
     "turbo": "^2.10.10",
     "typescript": "^5.8.3",

@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "tsc --noEmit -p tsconfig.json && turbo run typecheck",
     "test": "turbo run test",
-    "lint": "biome check . && turbo run lint",
+    "lint": "biome check .",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "changeset": "changeset",

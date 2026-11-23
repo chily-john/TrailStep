@@ -311,8 +311,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:fast": "vitest run --exclude src/take-it-away/workflow.test.ts --exclude src/grill-it-away/workflow.test.ts",
-    "test:e2e": "vitest run src/take-it-away/workflow.test.ts src/grill-it-away/workflow.test.ts",
-    "lint": "biome check src"
+    "test:e2e": "vitest run src/take-it-away/workflow.test.ts src/grill-it-away/workflow.test.ts"
   },
   "dependencies": {
     "@trailstep/authoring": "workspace:*"

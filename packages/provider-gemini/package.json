@@ -33,7 +33,6 @@
     "prepack": "pnpm build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "lint": "biome check src",
     "test:fast": "vitest run"
   },
   "devDependencies": {

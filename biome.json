@@ -27,7 +27,254 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "performance": {
+        "noReExportAll": "error"
+      },
+      "suspicious": {
+        "noDeprecatedImports": "error",
+        "noExportsInTest": "error"
+      },
+      "style": {
+        "noCommonJs": "error",
+        "noEnum": "error",
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 600
+          }
+        },
+        "noNamespace": "error",
+        "noParameterProperties": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["**/utils/**", "**/utils"],
+                "message": "S-5: `utils` is a banned folder name; name the folder for its domain concept."
+              },
+              {
+                "group": ["**/helpers/**", "**/helpers"],
+                "message": "S-5: `helpers` is a banned folder name; name the folder for its domain concept."
+              },
+              {
+                "group": ["**/common/**", "**/common"],
+                "message": "S-5: `common` is a banned folder name; name the folder for its domain concept."
+              },
+              {
+                "group": ["**/misc/**", "**/misc"],
+                "message": "S-5: `misc` is a banned folder name; name the folder for its domain concept."
+              },
+              {
+                "group": ["**/lib/**", "**/lib"],
+                "message": "S-5: `lib` is a banned folder name; name the folder for its domain concept."
+              }
+            ]
+          }
+        },
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": {
+            "filenameCases": ["kebab-case"]
+          }
+        },
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "strictCase": false,
+            "conventions": [
+              {
+                "selector": {
+                  "kind": "objectLiteralProperty"
+                },
+                "match": "_?(.+)",
+                "formats": ["camelCase", "CONSTANT_CASE", "snake_case"]
+              },
+              {
+                "selector": {
+                  "kind": "const"
+                },
+                "match": "_?(.+)",
+                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE"]
+              },
+              {
+                "selector": {
+                  "kind": "exportAlias"
+                },
+                "match": "_?(.+)",
+                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE", "snake_case"]
+              },
+              {
+                "selector": {
+                  "kind": "importAlias"
+                },
+                "match": "_?(.+)",
+                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE", "snake_case"]
+              },
+              {
+                "selector": {
+                  "kind": "function",
+                  "scope": "global"
+                },
+                "match": "_?(.+)",
+                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE", "snake_case"]
+              }
+            ]
+          }
+        }
+      }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.test.js",
+        "**/*.test.jsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "**/fixtures/**",
+        "**/__fixtures__/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/*/src/internal/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noProcessEnv": "error"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/dashboard/src/App.svelte", "packages/dashboard/src/App.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": {
+              "level": "error",
+              "options": {
+                "filenameCases": ["kebab-case", "PascalCase"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/mcp/src/tools/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": {
+              "level": "error",
+              "options": {
+                "filenameCases": ["kebab-case", "snake_case"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/contracts/evidence/provider-evidence-adapter.schema.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 662
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/runtime/artifacts/run-storage.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 655
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/runtime/evidence/run-evidence-query.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 1949
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/runtime/run-workflow/run-workflow.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 939
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/runtime/storage-lifecycle/storage-lifecycle.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 914
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/provider-pi/src/pi-usage.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 603
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { main } from "../../../index.js";
+import { locateArchCli, summarizeArchCheck } from "./doctor-command.js";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -406,5 +407,133 @@ describe("doctor command", () => {
     expect(exitCode).toBe(0);
     expect(lines).toEqual(["No TrailStep deprecation findings."]);
     expect(errors).toEqual([]);
+  });
+  it("finds the arch CLI at the project root and reports an unbuilt factory", async ({ task }) => {
+    const absent = tmpDir(task, "arch-absent");
+    await mkdir(absent, { recursive: true });
+    expect(await locateArchCli(absent)).toEqual({ status: "absent" });
+
+    const unbuilt = tmpDir(task, "arch-unbuilt");
+    await writeJson(join(unbuilt, "factory", "arch", "package.json"), { name: "x" });
+    expect(await locateArchCli(unbuilt)).toEqual({ status: "unbuilt" });
+
+    const ready = tmpDir(task, "arch-ready");
+    await writeJson(join(ready, "factory", "arch", "package.json"), { name: "x" });
+    await mkdir(join(ready, "factory", "arch", "dist"), { recursive: true });
+    await writeFile(join(ready, "factory", "arch", "dist", "cli.js"), "", "utf8");
+    expect(await locateArchCli(ready)).toEqual({
+      status: "ready",
+      cliPath: join(ready, "factory", "arch", "dist", "cli.js"),
+    });
+  });
+
+  it("renders one arch verdict per state without ever gating", () => {
+    const ready = { status: "ready", cliPath: "/repo/factory/arch/dist/cli.js" } as const;
+    const diagnostic = {
+      rule: "G8",
+      file: "packages/core/src/authoring/x.ts",
+      line: 12,
+      message: "Reach-in at contracts/owner/private.ts.",
+      fix: "Import the owner's front door, not a private sibling.",
+    };
+
+    expect(summarizeArchCheck({ status: "absent" }, null)).toEqual([]);
+    expect(summarizeArchCheck({ status: "unbuilt" }, null).join("\n")).toContain(
+      "not available (factory/arch is not built",
+    );
+    expect(
+      summarizeArchCheck(ready, { exitCode: 0, stdout: "[]\n", stderr: "" }).join("\n"),
+    ).toContain("no strict violations in touched files");
+    const red = summarizeArchCheck(ready, {
+      exitCode: 1,
+      stdout: `${JSON.stringify([diagnostic])}\n`,
+      stderr: "",
+    });
+    expect(red[0]).toContain("1 strict violation(s) in touched files");
+    expect(red[1]).toBe(
+      "  G8  packages/core/src/authoring/x.ts:12  Reach-in at contracts/owner/private.ts." +
+        "  Fix: Import the owner's front door, not a private sibling.",
+    );
+    // A diagnostic without a fix recipe degrades to the bare line, never a throw.
+    const noFix = {
+      rule: "G8",
+      file: "packages/core/src/authoring/x.ts",
+      line: 12,
+      message: "Reach-in at contracts/owner/private.ts.",
+    };
+    expect(
+      summarizeArchCheck(ready, { exitCode: 1, stdout: JSON.stringify([noFix]), stderr: "" })[1],
+    ).toBe("  G8  packages/core/src/authoring/x.ts:12  Reach-in at contracts/owner/private.ts.");
+    // An empty fix recipe is treated as absent, not as a trailing `Fix: `.
+    expect(
+      summarizeArchCheck(ready, {
+        exitCode: 1,
+        stdout: JSON.stringify([{ ...noFix, fix: "" }]),
+        stderr: "",
+      })[1],
+    ).toBe("  G8  packages/core/src/authoring/x.ts:12  Reach-in at contracts/owner/private.ts.");
+    expect(red.at(-1)).toContain("reporting only");
+    expect(
+      summarizeArchCheck(ready, { exitCode: 2, stdout: "not json\n", stderr: "" }).join("\n"),
+    ).toContain("no readable report (not json)");
+    expect(summarizeArchCheck(ready, { error: "spawn ENOENT" }).join("\n")).toContain(
+      "not available (spawn ENOENT)",
+    );
+  });
+
+  it("reports arch violations from the built CLI without changing doctor's exit code", async ({
+    task,
+  }) => {
+    const cwd = resolve(tmpDir(task, "arch-reports"));
+    await writeJson(join(cwd, "factory", "arch", "package.json"), { name: "x" });
+    await writeJson(join(cwd, "factory", "arch", "dist", "cli.js"), { name: "x" });
+    await writeFile(
+      join(cwd, "factory", "arch", "dist", "cli.js"),
+      `process.stdout.write(JSON.stringify([{ rule: "G8", file: "packages/core/src/a.ts", line: 3, message: "Reach-in.", fix: "Import the front door." }]));\nprocess.exitCode = 1;\n`,
+      "utf8",
+    );
+    const lines: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await main({
+      argv: ["doctor"],
+      cwd,
+      io: { writeLine: (line) => lines.push(line), writeError: (line) => errors.push(line) },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("arch:check --changed: 1 strict violation(s)");
+    expect(lines.join("\n")).toContain("G8  packages/core/src/a.ts:3  Reach-in.");
+    expect(lines.join("\n")).toContain("Fix: Import the front door.");
+    expect(lines.at(-1)).toBe("No TrailStep deprecation findings.");
+    expect(errors).toEqual([]);
+  });
+
+  it("says so when the factory is present but unbuilt, and stays silent for user projects", async ({
+    task,
+  }) => {
+    const unbuilt = tmpDir(task, "arch-unbuilt-doctor");
+    await writeJson(join(unbuilt, "factory", "arch", "package.json"), { name: "x" });
+    const unbuiltLines: string[] = [];
+    expect(
+      await main({
+        argv: ["doctor"],
+        cwd: unbuilt,
+        io: { writeLine: (line) => unbuiltLines.push(line), writeError: () => {} },
+      }),
+    ).toBe(0);
+    expect(unbuiltLines.join("\n")).toContain("not available (factory/arch is not built");
+
+    const userProject = tmpDir(task, "arch-user-project");
+    await mkdir(userProject, { recursive: true });
+    const userLines: string[] = [];
+    expect(
+      await main({
+        argv: ["doctor"],
+        cwd: userProject,
+        io: { writeLine: (line) => userLines.push(line), writeError: () => {} },
+      }),
+    ).toBe(0);
+    expect(userLines).toEqual(["No TrailStep deprecation findings."]);
   });
 });

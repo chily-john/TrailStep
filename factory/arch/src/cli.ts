@@ -18,6 +18,7 @@ import {
   renderDiagnostic,
   scorecardJson,
 } from "./arch/rules/index.js";
+import { SKILL_ARTIFACT_PATH, writeSkill } from "./arch/skill.js";
 import { type CliOptions, CliUsageError, helpText, parseCliArgs } from "./cli-args.js";
 import {
   type ChangedFiles,
@@ -153,6 +154,20 @@ function runChangedMode(options: CliOptions, deps: CliDeps, paths: ArchReportPat
   return hasStrictViolations(scoped) ? 1 : 0;
 }
 
+/** `--emit-skill <path>`: regenerate the artifact, never build the graph. */
+function runEmitSkillMode(options: CliOptions, deps: CliDeps): number {
+  if (options.emitSkill === undefined) {
+    deps.io.stderr("arch:check: --emit-skill requires a path.\n");
+    return 2;
+  }
+  const target = path.resolve(deps.io.cwd, options.emitSkill);
+  const bytes = writeSkill(manifest, target);
+  const relative = displayPath(deps.repoRoot, target);
+  const sanctioned = relative === SKILL_ARTIFACT_PATH ? " (the sanctioned artifact)" : "";
+  deps.io.stdout(`arch:skill: wrote ${relative}${sanctioned} — ${bytes} bytes from the manifest\n`);
+  return 0;
+}
+
 /** Runs one CLI invocation and returns its exit code (never throws for usage). */
 export function runCli(argv: readonly string[], deps: CliDeps): number {
   let options: CliOptions;
@@ -174,6 +189,9 @@ export function runCli(argv: readonly string[], deps: CliDeps): number {
   try {
     if (options.mode === "explain") {
       return explainRule(options.rule ?? "", deps);
+    }
+    if (options.mode === "emit-skill") {
+      return runEmitSkillMode(options, deps);
     }
     const paths: ArchReportPaths = {
       repoRoot: deps.repoRoot,

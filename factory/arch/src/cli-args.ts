@@ -2,13 +2,14 @@
  * Argument parsing for the architecture CLI (Story 106).
  *
  * The surface is deliberately small: two scopes (`--report`, `--changed`), two
- * machine formats (`--json`, `--sarif`), one explainer (`--explain <rule>`),
- * and one artifact path override (`--out <path>`). There are no per-rule
- * flags: severity lives in the manifest (parent §8.2), so a `--skip G1`-style
- * toggle has no place in this parser.
+ * machine formats (`--json`, `--sarif`), one explainer (`--explain <rule>`), one
+ * artifact path override (`--out <path>`), and the skill emitter
+ * (`--emit-skill <path>`, Story 110). There are no per-rule flags: severity
+ * lives in the manifest (parent §8.2), so a `--skip G1`-style toggle has no
+ * place in this parser.
  */
 
-export type CliMode = "report" | "changed" | "explain";
+export type CliMode = "report" | "changed" | "explain" | "emit-skill";
 export type CliFormat = "human" | "json" | "sarif";
 
 export interface CliOptions {
@@ -16,6 +17,8 @@ export interface CliOptions {
   readonly format: CliFormat;
   readonly rule: string | null;
   readonly out: string | null;
+  /** Set only by `--emit-skill <path>`; absent for every other mode. */
+  readonly emitSkill?: string;
   readonly help: boolean;
 }
 
@@ -33,6 +36,7 @@ Usage:
   pnpm arch:check [--report] [--json | --sarif] [--out <path>]
   pnpm arch:check --changed [--json | --sarif]
   pnpm arch:explain <rule>
+  pnpm arch:check --emit-skill <path>
 
 Modes:
   --report        Full-tree scorecard (the default). Writes the scorecard JSON
@@ -43,6 +47,11 @@ Modes:
   --explain <id>  Prints one rule from the manifest: severity, doc anchor and
                   URI, fix recipe, legal targets, and a fixture-derived
                   good/bad example. An unknown rule ID exits 1.
+  --emit-skill <path>
+                  Regenerates the agent skill text from the manifest and writes
+                  it to <path>. Never runs the checker. The committed artifact is
+                  .agents/skills/trailstep-architecture/SKILL.md; its drift test
+                  fails until this regeneration runs.
 
 Output:
   --json          Report mode prints the scorecard JSON (Story 105's golden
@@ -135,6 +144,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   let format: CliFormat = "human";
   let rule: string | null = null;
   let out: string | null = null;
+  let emitSkill: string | null = null;
 
   const setMode = (next: CliMode): void => {
     if (modeExplicit && mode !== next) {
@@ -205,6 +215,17 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
         index = parsed.next;
         break;
       }
+      case "--emit-skill": {
+        if (modeExplicit && mode !== "emit-skill") {
+          throw new CliUsageError("--emit-skill cannot be combined with another mode.");
+        }
+        const parsed = flagValue(argv, index, "--emit-skill", inline);
+        mode = "emit-skill";
+        modeExplicit = true;
+        emitSkill = parsed.value;
+        index = parsed.next;
+        break;
+      }
       default: {
         if (argument.startsWith("-")) {
           throw new CliUsageError(`unknown flag "${argument}".`);
@@ -231,6 +252,11 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   if (mode === "explain" && format !== "human") {
     throw new CliUsageError("--json and --sarif are not valid with --explain.");
   }
+  if (mode === "emit-skill" && format !== "human") {
+    throw new CliUsageError("--json and --sarif are not valid with --emit-skill.");
+  }
 
-  return { mode, format, rule, out, help: false };
+  return emitSkill === null
+    ? { mode, format, rule, out, help: false }
+    : { mode, format, rule, out, emitSkill, help: false };
 }

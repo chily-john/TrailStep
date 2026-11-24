@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildFixtureGraph } from "./arch/engine/index.js";
+import { manifest } from "./arch/manifest.js";
 import { FIXTURE_MANIFEST, RULE_FIXTURES } from "./arch/rules/fixtures.test.support.js";
 import { buildScorecard, runRules } from "./arch/rules/index.js";
+import { renderSkill, SKILL_ARTIFACT_PATH } from "./arch/skill.js";
 import { type CliDeps, type CliIo, runCli } from "./cli.js";
 import type { GitResult, GitRunner } from "./cli-changed.js";
 import type { ArchReport } from "./cli-report.js";
@@ -338,6 +341,27 @@ describe("architecture CLI", () => {
     expect(runCli(["--explain", "BADID"], test.deps({}))).toBe(1);
     expect(test.stderr()).toContain('unknown rule "BADID"');
     expect(test.stderr()).toContain("G1, G2, G3");
+  });
+
+  it("emits the generated skill from the manifest without building the graph", () => {
+    const test = harness(BASE_TREE);
+    const target = "nested/emitted-skill.md";
+    const code = runCli(["--emit-skill", target], test.deps({}));
+    expect(code).toBe(0);
+    expect(test.stderr()).toBe("");
+    expect(test.stdout()).toContain("arch:skill: wrote nested/emitted-skill.md");
+    expect(readFileSync(`${test.repoRoot}/${target}`, "utf8")).toBe(renderSkill(manifest));
+  });
+
+  it("tags the sanctioned artifact path and keeps --emit-skill out of the other modes", () => {
+    const test = harness(BASE_TREE);
+    expect(runCli(["--emit-skill", SKILL_ARTIFACT_PATH], test.deps({}))).toBe(0);
+    expect(test.stdout()).toContain(`wrote ${SKILL_ARTIFACT_PATH} (the sanctioned artifact)`);
+
+    expect(runCli(["--emit-skill", "x.md", "--json"], test.deps({}))).toBe(2);
+    expect(test.stderr()).toContain("not valid with --emit-skill");
+    expect(runCli(["--changed", "--emit-skill", "x.md"], test.deps({}))).toBe(2);
+    expect(test.stderr()).toContain("cannot be combined");
   });
 
   it("exits 2 for a usage error and shows the help", () => {

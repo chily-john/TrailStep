@@ -50,7 +50,12 @@ export type RuleId =
 /** The four numbered ranks in amended §8.1. A typo is a compile error. */
 export type RankLevel = 0 | 1 | 2 | 3;
 
-/** Group names that exist as `packages/core/src/<name>` on the current tree. */
+/**
+ * Group names the manifest vocabulary accepts. All but `evidence` exist as
+ * `packages/core/src/<name>` on the current tree; `evidence` becomes a
+ * top-level rank-3 group in W6 (it still lives inside `runtime` today) and is
+ * needed by fixtures to exercise the `execution ↮ evidence` exclusion.
+ */
 export type CurrentGroupName =
   | "agent-execution"
   | "agent-targeting"
@@ -58,6 +63,7 @@ export type CurrentGroupName =
   | "cli-provider-runtime"
   | "contracts"
   | "deprecations"
+  | "evidence"
   | "json"
   | "mcp"
   | "providers"
@@ -96,6 +102,23 @@ export interface RankGroup {
   readonly targetGroup: TargetGroupName;
 }
 
+/**
+ * Two §8.1 groups in the same rank that may not import each other, in EITHER
+ * direction. The pair is unordered: `{ from: "execution", to: "evidence" }`
+ * forbids `execution → evidence` and `evidence → execution` alike.
+ *
+ * This is manifest data, not a G2 special case: §8.1 gives rank 2
+ * (`providers`, `run-store`) "May import 0–1" and rank 3 (`execution`,
+ * `evidence`) "May import 0–2", and calls out `execution ↮ evidence` —
+ * "never, in either direction" / "the write path never imports the read path".
+ * Rank 0 is deliberately NOT a forbidden pair: `contracts → json` is legal and
+ * `json → contracts` is forbidden by the layer order alone.
+ */
+export interface ForbiddenPeerPair {
+  readonly from: TargetGroupName;
+  readonly to: TargetGroupName;
+}
+
 export interface RankLayer {
   /** The §8.1 rank band (0–3). G2's layer index comes from `docGroups`, not this. */
   readonly rank: RankLevel;
@@ -106,6 +129,13 @@ export interface RankLayer {
    * `json, contracts`, so the one-way edge needs no peer-import exception.
    */
   readonly docGroups: readonly TargetGroupName[];
+  /**
+   * Same-rank target groups closed to each other in both directions (§8.1).
+   * Every entry must name two distinct `docGroups` of this rank; an empty list
+   * is correct for a rank with one group (rank 1) or a sanctioned peer edge
+   * (rank 0).
+   */
+  readonly forbiddenPeers: readonly ForbiddenPeerPair[];
   /** Current folders mapped to their target groups; order mirrors `docGroups`. */
   readonly groups: readonly RankGroup[];
 }
@@ -128,6 +158,43 @@ export interface Exemption {
   readonly reason: string;
 }
 
+/**
+ * Data the rule layer would otherwise have to hard-code: role folder names
+ * (`internal`, `api`), the test convention, folder-shape budgets, and the
+ * label for the package-root bucket in the scorecard.
+ *
+ * These are repo conventions, not repo paths: the manifest is the one place a
+ * project name may appear. Rule and engine sources stay free of either.
+ */
+export interface ArchConventions {
+  /** The layer folder whose files may not read the public surface (S-6) or ambient env (M-6). */
+  readonly internalFolder: string;
+  /** The package's public-surface folder; not an owner folder for G8/V-6. */
+  readonly publicSurfaceFolder: string;
+  /** Cross-cutting tests live in `<package>/<this>/` (T-2). */
+  readonly crossCuttingTestFolder: string;
+  readonly testSuffix: string;
+  /** The declared type-only family front-door suffix (V-6/G8). */
+  readonly typeOnlySuffix: string;
+  /**
+   * The schema-file suffix (`<stem>.schema.ts`). T-1/T-2 resolve it as a unit
+   * kind: a test colocated with an owner's schema is a unit test (doc T-1).
+   */
+  readonly schemaSuffix: string;
+  /** Folder names whose subtrees are fixtures, not production shapes. */
+  readonly fixtureFolderNames: readonly string[];
+  /** Folder names that name a technical role instead of a capability (S-5). */
+  readonly bannedFolderNames: readonly string[];
+  /** Basenames banned below the package root (N-1). */
+  readonly reservedFilenames: readonly string[];
+  /** V-4: this many same-prefix files in one folder means a folder is missing. */
+  readonly repeatedPrefixThreshold: number;
+  /** G4 scorecard metric: folder depth below the package root, pre-exemption. */
+  readonly ncaCandidateDepth: number;
+  /** G4 scorecard metric: the label for files directly at the package root. */
+  readonly packageRootBucket: string;
+}
+
 /** A strict → report move recorded by the demotion protocol. */
 export interface DemotionRecord {
   readonly rule: RuleId;
@@ -143,8 +210,37 @@ export interface DemotionRecord {
 export interface ArchManifest {
   readonly ranks: readonly RankLayer[];
   readonly unrankedGroups: readonly UnrankedGroup[];
-  /** Owner folders whose front door is `<folder>.types.ts` (V-6). */
+  /**
+   * MATERIALIZED type-only families: the owner folder exists and its
+   * `<folder>.types.ts` front door already exists (validated). V-6 accepts the
+   * door and G8 treats it as the only legal import target.
+   *
+   * W6 OBLIGATION: every `contractFamilyRoots` folder moves here in the SAME
+   * commit that creates its `<folder>.types.ts` door and rewrites its imports.
+   * The two lists are disjoint (validated), so a folder has exactly one family
+   * declaration — there is no duplicate family list.
+   */
   readonly typeOnlyFamilies: readonly string[];
+  /**
+   * PENDING contract-family folders whose TARGET front door is
+   * `<folder>.types.ts` (amended §13.2 file map and Appendix D: `shapes`,
+   * `events`, `process`, `agents`), but whose door does not exist yet. V-6 names
+   * that target door (red by design); G8 accepts it as the expected name so a
+   * post-W6 import of the sanctioned door is not a reach-in.
+   *
+   * `evidence` is NOT here: its target door is `evidence.ts` (a runtime value),
+   * like `json.ts` and `failures.ts`. A `contracts/agents` caveat is recorded
+   * at the entry itself.
+   */
+  readonly contractFamilyRoots: readonly string[];
+  /** The normative document every diagnostic cites (rendered/JSON `doc`). */
+  readonly docUri: string;
+  /**
+   * The folder/file vocabulary the rule layer needs (Story 105). Rules carry
+   * no repository strings; every name, suffix, and threshold below is data.
+   * The engine does not consume this block; the rule layer does.
+   */
+  readonly conventions: ArchConventions;
   readonly rules: Readonly<Record<RuleId, RuleSpec>>;
   /** The rule table's own enumeration: ordering for explain/skill generation. */
   readonly ruleOrder: readonly RuleId[];
@@ -185,8 +281,10 @@ export const manifest = deepFreeze({
     {
       rank: 0,
       // Parent §13.2's `layers` list starts `["json", "contracts", ...]`:
-      // `contracts` may import `json`, never the reverse. The order is the rule.
+      // `contracts` may import `json`, never the reverse. The order is the rule,
+      // so rank 0 is the sanctioned peer edge and declares no forbidden pair.
       docGroups: ["json", "contracts"],
+      forbiddenPeers: [],
       groups: [
         {
           name: "json",
@@ -203,6 +301,7 @@ export const manifest = deepFreeze({
     {
       rank: 1,
       docGroups: ["authoring"],
+      forbiddenPeers: [],
       groups: [
         {
           name: "authoring",
@@ -214,6 +313,11 @@ export const manifest = deepFreeze({
     {
       rank: 2,
       docGroups: ["providers", "run-store"],
+      // §8.1: rank 2 "May import 0–1" — the two groups of the band are closed
+      // to each other. `run-store → providers` is ordered downward by
+      // `docGroups`, so the layer list alone would let it pass; this pair is
+      // what makes the band exclusion real.
+      forbiddenPeers: [{ from: "providers", to: "run-store" }],
       // Until W6: providers/{targeting,cli-runtime,mcp-config} are the
       // agent-targeting, cli-provider-runtime and mcp folders; run-store is `runs`.
       groups: [
@@ -247,6 +351,11 @@ export const manifest = deepFreeze({
     {
       rank: 3,
       docGroups: ["execution", "evidence"],
+      // §8.1: rank 3 "May import 0–2" and `execution ↮ evidence` — "never, in
+      // either direction" ("the write path never imports the read path").
+      // `execution → evidence` is caught by the layer order; the reverse edge is
+      // ordered downward, so the pair is the load-bearing half.
+      forbiddenPeers: [{ from: "execution", to: "evidence" }],
       // Until W6: `runtime` is the pre-split catch-all (most of it becomes
       // execution); `agent-execution` is the dispatch half of execution.
       groups: [
@@ -282,6 +391,46 @@ export const manifest = deepFreeze({
   // and V-6 names a runtime-value family's front door `<folder>.ts`.
   typeOnlyFamilies: ["packages/core/src/contracts/run-context"],
 
+  // The doc's TARGET `.types.ts` front doors that W6 has not created yet
+  // (amended §13.2 file map + Appendix D). V-6 names these (red by design);
+  // G8 already treats `<folder>.types.ts` as the expected door, so post-W6
+  // imports are not reach-ins. `run-context` is in `typeOnlyFamilies`, not here
+  // (disjoint lists — one declaration per family).
+  //
+  // `agents` CAVEAT (W6 must resolve it before declaring the family):
+  // `contracts/agents/agent-execution.types.ts` exports a runtime const
+  // (`DEFAULT_AGENT_EXECUTION`) and two functions, so today the family is NOT
+  // type-only. V-6: "a family that exports runtime values names it
+  // `<folder>.ts`", while amended §13.2/Appendix D name `agents.types.ts`.
+  // W6 MUST move those runtime exports out of the family (to their execution
+  // owner) so `agents.types.ts` is genuinely types-only, then declare the family
+  // in `typeOnlyFamilies` in the same commit as the door.
+  contractFamilyRoots: [
+    "packages/core/src/contracts/agents",
+    "packages/core/src/contracts/events",
+    "packages/core/src/contracts/process",
+    "packages/core/src/contracts/shapes",
+  ],
+
+  docUri: "viking://resources/trailstep/docs/architecture/codebase-architecture.md",
+
+  // Story 105's rule vocabulary. These are the only place role folder names
+  // and shape thresholds are written down; rule sources read them as data.
+  conventions: {
+    internalFolder: "internal",
+    publicSurfaceFolder: "api",
+    crossCuttingTestFolder: "test",
+    testSuffix: ".test.ts",
+    typeOnlySuffix: ".types.ts",
+    schemaSuffix: ".schema.ts",
+    fixtureFolderNames: ["fixtures", "__fixtures__"],
+    bannedFolderNames: ["utils", "helpers", "common", "misc", "lib"],
+    reservedFilenames: ["types.ts", "helpers.ts", "constants.ts", "utils.ts", "index.ts"],
+    repeatedPrefixThreshold: 3,
+    ncaCandidateDepth: 2,
+    packageRootBucket: "(root)",
+  },
+
   ruleOrder: [
     "G1",
     "G2",
@@ -315,7 +464,7 @@ export const manifest = deepFreeze({
       anchor: "G2 | Upward imports",
       fix: "Remove the upward edge; if a lower rank needs the shape, it belongs at rank 0 (`json` or `contracts`).",
       notes:
-        "Layer order is the flattened `docGroups` (parent §13.2): rank 0 is `json, contracts`, so `json → contracts` is upward and `contracts → json` is the only legal rank-0 direction.",
+        "Layer order is the flattened `docGroups` (parent §13.2): rank 0 is `json, contracts`, so `json → contracts` is upward and `contracts → json` is the only legal rank-0 direction. Each rank's `forbiddenPeers` also closes the band: rank 2 `providers`/`run-store` and rank 3 `execution`/`evidence` may not import each other in either direction (§8.1).",
     },
     G3: {
       severity: "report",

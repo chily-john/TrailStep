@@ -30,6 +30,11 @@ function tempTree(): string {
     mkdirSync(join(root, family), { recursive: true });
     writeFileSync(join(root, family, `${basename(family)}.types.ts`), "");
   }
+  // Pending contract families are folders only: their `.types.ts` door is the
+  // W6 target, so the temp tree deliberately does not create it.
+  for (const family of manifest.contractFamilyRoots) {
+    mkdirSync(join(root, family), { recursive: true });
+  }
 
   return root;
 }
@@ -98,6 +103,94 @@ describe("manifest validation", () => {
 
     expect(problemCodes(manifestProblems(broken, REPO_ROOT))).toContain(
       "family-front-door-missing",
+    );
+  });
+
+  it("fails loudly for a pending contract family whose folder does not exist", () => {
+    const broken: ArchManifest = {
+      ...manifest,
+      contractFamilyRoots: ["packages/core/src/contracts/does-not-exist"],
+    };
+
+    expect(problemCodes(manifestProblems(broken, REPO_ROOT))).toContain(
+      "contract-family-folder-missing",
+    );
+  });
+
+  it("fails loudly when a folder is both materialized and pending", () => {
+    // The W6 obligation is one declaration per family; the two lists are
+    // disjoint so V-6/G8 have a single source for the door name.
+    const broken: ArchManifest = {
+      ...manifest,
+      contractFamilyRoots: ["packages/core/src/contracts/run-context"],
+    };
+
+    expect(problemCodes(manifestProblems(broken, REPO_ROOT))).toContain(
+      "contract-family-declared-twice",
+    );
+  });
+
+  it("fails loudly for a duplicate pending contract family", () => {
+    const broken: ArchManifest = {
+      ...manifest,
+      contractFamilyRoots: [
+        "packages/core/src/contracts/agents",
+        "packages/core/src/contracts/agents",
+      ],
+    };
+
+    expect(problemCodes(manifestProblems(broken, REPO_ROOT))).toContain(
+      "contract-family-duplicate",
+    );
+  });
+
+  it("fails loudly for a forbidden peer pair outside its rank", () => {
+    const broken: ArchManifest = {
+      ...manifest,
+      ranks: manifest.ranks.map((layer) =>
+        layer.rank === 2
+          ? { ...layer, forbiddenPeers: [{ from: "providers" as const, to: "execution" as const }] }
+          : layer,
+      ),
+    };
+
+    const problems = manifestProblems(broken, REPO_ROOT);
+
+    expect(problemCodes(problems)).toContain("rank-forbidden-peer-foreign");
+    expect(problems.map((problem) => problem.message).join("\n")).toContain(
+      'forbids a peer import involving "execution", which rank 2 does not declare',
+    );
+  });
+
+  it("fails loudly for a self-pair and a duplicate forbidden peer pair", () => {
+    const selfPair: ArchManifest = {
+      ...manifest,
+      ranks: manifest.ranks.map((layer) =>
+        layer.rank === 2
+          ? { ...layer, forbiddenPeers: [{ from: "providers" as const, to: "providers" as const }] }
+          : layer,
+      ),
+    };
+    expect(problemCodes(manifestProblems(selfPair, REPO_ROOT))).toContain(
+      "rank-forbidden-peer-self",
+    );
+
+    const duplicatePair: ArchManifest = {
+      ...manifest,
+      ranks: manifest.ranks.map((layer) =>
+        layer.rank === 2
+          ? {
+              ...layer,
+              forbiddenPeers: [
+                { from: "providers" as const, to: "run-store" as const },
+                { from: "run-store" as const, to: "providers" as const },
+              ],
+            }
+          : layer,
+      ),
+    };
+    expect(problemCodes(manifestProblems(duplicatePair, REPO_ROOT))).toContain(
+      "rank-forbidden-peer-duplicate",
     );
   });
 
@@ -206,6 +299,72 @@ describe("manifest validation", () => {
     };
 
     expect(problemCodes(manifestProblems(withoutG1Order, REPO_ROOT))).toContain("rule-unlisted");
+  });
+
+  it("fails loudly for malformed rule conventions", () => {
+    const emptyFolder: ArchManifest = {
+      ...manifest,
+      conventions: { ...manifest.conventions, internalFolder: "" },
+    };
+    expect(problemCodes(manifestProblems(emptyFolder, REPO_ROOT))).toContain("convention-empty");
+
+    const duplicateNames: ArchManifest = {
+      ...manifest,
+      conventions: {
+        ...manifest.conventions,
+        bannedFolderNames: ["utils", "utils"],
+      },
+    };
+    expect(problemCodes(manifestProblems(duplicateNames, REPO_ROOT))).toContain(
+      "convention-list-duplicate",
+    );
+
+    const lowThreshold: ArchManifest = {
+      ...manifest,
+      conventions: { ...manifest.conventions, repeatedPrefixThreshold: 1 },
+    };
+    expect(problemCodes(manifestProblems(lowThreshold, REPO_ROOT))).toContain(
+      "convention-threshold-invalid",
+    );
+
+    const badSuffix: ArchManifest = {
+      ...manifest,
+      conventions: { ...manifest.conventions, testSuffix: "test" },
+    };
+    expect(problemCodes(manifestProblems(badSuffix, REPO_ROOT))).toContain(
+      "convention-suffix-invalid",
+    );
+
+    const pathAsName: ArchManifest = {
+      ...manifest,
+      conventions: { ...manifest.conventions, reservedFilenames: ["src/index.ts"] },
+    };
+    expect(problemCodes(manifestProblems(pathAsName, REPO_ROOT))).toContain(
+      "convention-not-a-name",
+    );
+
+    // A `/` entry can never equal a folder basename, so it silently disables
+    // S-5 (banned names) or the fixture exemption (G5/T rules).
+    const bannedPath: ArchManifest = {
+      ...manifest,
+      conventions: { ...manifest.conventions, bannedFolderNames: ["src/utils"] },
+    };
+    expect(problemCodes(manifestProblems(bannedPath, REPO_ROOT))).toContain(
+      "convention-not-a-name",
+    );
+
+    const fixturePath: ArchManifest = {
+      ...manifest,
+      conventions: { ...manifest.conventions, fixtureFolderNames: ["src/fixtures"] },
+    };
+    expect(problemCodes(manifestProblems(fixturePath, REPO_ROOT))).toContain(
+      "convention-not-a-name",
+    );
+  });
+
+  it("fails loudly when the normative doc URI is missing", () => {
+    const broken: ArchManifest = { ...manifest, docUri: "  " };
+    expect(problemCodes(manifestProblems(broken, REPO_ROOT))).toContain("doc-uri-missing");
   });
 
   it("fails loudly for a demotion below the noise threshold", () => {

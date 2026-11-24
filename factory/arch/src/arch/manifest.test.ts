@@ -61,6 +61,19 @@ describe("the architecture manifest", () => {
     expect(manifest.unrankedGroups[0].allowedImportRanks).toEqual([0]);
   });
 
+  it("records the §8.1 same-rank exclusions as manifest data", () => {
+    // Rank 0 is the sanctioned peer edge (`contracts → json` one-way); rank 1
+    // has one group. Ranks 2 and 3 are closed bands: "May import 0–1" /
+    // "May import 0–2", and `execution ↮ evidence` is "never, in either
+    // direction".
+    expect(manifest.ranks.map((layer) => layer.forbiddenPeers)).toEqual([
+      [],
+      [],
+      [{ from: "providers", to: "run-store" }],
+      [{ from: "execution", to: "evidence" }],
+    ]);
+  });
+
   it("keeps rank 0 one-way in the ordered layer list", () => {
     const layerOrder: readonly string[] = manifest.ranks.flatMap((layer) => layer.docGroups);
     const rankZero = manifest.ranks[0];
@@ -118,6 +131,19 @@ describe("the architecture manifest", () => {
     expect(manifest.typeOnlyFamilies).not.toContain(
       "packages/core/src/contracts/dispatch-provenance",
     );
+
+    // P2-4: the doc's TARGET `.types.ts` front doors that W6 has not created
+    // yet (§13.2 file map + Appendix D). They are declared once, as pending
+    // contract families; `evidence` is a value door (`evidence.ts`).
+    expect(manifest.contractFamilyRoots).toEqual([
+      "packages/core/src/contracts/agents",
+      "packages/core/src/contracts/events",
+      "packages/core/src/contracts/process",
+      "packages/core/src/contracts/shapes",
+    ]);
+    for (const family of manifest.contractFamilyRoots) {
+      expect(manifest.typeOnlyFamilies).not.toContain(family);
+    }
   });
 
   it("encodes the rev-4 severity sets", () => {
@@ -167,6 +193,24 @@ describe("the architecture manifest", () => {
         owner: "biome",
         biomeRule: "style/noExcessiveLinesPerFile",
       },
+    });
+  });
+
+  it("records the rule vocabulary and the normative doc URI as data", () => {
+    expect(manifest.docUri).toContain("codebase-architecture.md");
+    expect(manifest.conventions).toEqual({
+      internalFolder: "internal",
+      publicSurfaceFolder: "api",
+      crossCuttingTestFolder: "test",
+      testSuffix: ".test.ts",
+      typeOnlySuffix: ".types.ts",
+      schemaSuffix: ".schema.ts",
+      fixtureFolderNames: ["fixtures", "__fixtures__"],
+      bannedFolderNames: ["utils", "helpers", "common", "misc", "lib"],
+      reservedFilenames: ["types.ts", "helpers.ts", "constants.ts", "utils.ts", "index.ts"],
+      repeatedPrefixThreshold: 3,
+      ncaCandidateDepth: 2,
+      packageRootBucket: "(root)",
     });
   });
 

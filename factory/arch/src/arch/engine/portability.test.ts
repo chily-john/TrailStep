@@ -55,6 +55,7 @@ const BANNED_SEGMENTS = new Set([
 const BANNED_FRAGMENTS = ["trailstep"] as const;
 
 const ENGINE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const RULES_DIRECTORY = path.join(ENGINE_DIRECTORY, "..", "rules");
 
 function bannedFragment(literal: string): string | null {
   const lower = literal.toLowerCase();
@@ -172,6 +173,34 @@ describe("engine portability", () => {
     expect(sources.map((source) => source.file)).toContain("fixture-harness.ts");
 
     expect(portabilityViolations(sources)).toEqual([]);
+  });
+
+  it("keeps every non-test rule source free of repository literals", () => {
+    const sources = readEngineSources(RULES_DIRECTORY);
+
+    // Non-vacuous floor: the rule layer, not an empty directory, is scanned.
+    expect(sources.length).toBeGreaterThanOrEqual(12);
+    expect(sources.map((source) => source.file)).toContain("run-rules.ts");
+    expect(sources.map((source) => source.file)).toContain("rule-g8.ts");
+
+    expect(portabilityViolations(sources)).toEqual([]);
+  });
+
+  it("fails on a planted rules-directory violation in a temp tree", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "arch-rules-portability-"));
+
+    try {
+      writeFileSync(
+        path.join(directory, "rule-bad.ts"),
+        'export const where = "packages/core/src/runtime";\n',
+        "utf8",
+      );
+      expect(portabilityViolations(readEngineSources(directory))).toEqual([
+        { file: "rule-bad.ts", literal: "packages/core/src/runtime", fragment: "packages" },
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("fails on a deliberate violation fixture (in memory)", () => {

@@ -97,6 +97,35 @@ export function manifestProblems(manifest: ArchManifest, root: string): readonly
     // Each group must target a docGroup of its OWN rank: a global membership
     // test would let a group be re-ranked (mcp → execution) without a problem.
     const layerDocGroups = new Set(layer.docGroups);
+    // A forbidden pair is a §8.1 band closure: both sides must be groups of THIS
+    // rank, distinct, and declared once (unordered). A stale or foreign name
+    // would silently stop closing the band.
+    const seenPeerPairs = new Set<string>();
+    for (const pair of layer.forbiddenPeers) {
+      const sides = [pair.from, pair.to];
+      for (const side of sides) {
+        if (!layerDocGroups.has(side)) {
+          add(
+            "rank-forbidden-peer-foreign",
+            `rank ${layer.rank} forbids a peer import involving "${side}", which rank ${layer.rank} does not declare (docGroups: ${layer.docGroups.join(", ")})`,
+          );
+        }
+      }
+      if (pair.from === pair.to) {
+        add(
+          "rank-forbidden-peer-self",
+          `rank ${layer.rank} lists "${pair.from}" as its own forbidden peer; a band closure needs two distinct groups`,
+        );
+      }
+      const key = [pair.from, pair.to].sort().join("\u0000");
+      if (seenPeerPairs.has(key)) {
+        add(
+          "rank-forbidden-peer-duplicate",
+          `rank ${layer.rank} declares the forbidden pair ${pair.from}/${pair.to} more than once`,
+        );
+      }
+      seenPeerPairs.add(key);
+    }
     for (const group of layer.groups) {
       const folder = join(root, group.root);
       if (!isDirectory(folder)) {
@@ -188,6 +217,32 @@ export function manifestProblems(manifest: ArchManifest, root: string): readonly
     seenFamilies.add(family);
   }
 
+  // Pending contract-family folders have a TARGET `<folder>.types.ts` front
+  // door that W6 creates. Only the folder is required here: the door is the
+  // documented red target (V-6 names it), not a present file.
+  const pendingFamilies = new Set<string>();
+  for (const family of manifest.contractFamilyRoots) {
+    if (!isDirectory(join(root, family))) {
+      add(
+        "contract-family-folder-missing",
+        `pending contract family "${family}" is not a folder under ${root}`,
+      );
+    }
+    if (pendingFamilies.has(family)) {
+      add(
+        "contract-family-duplicate",
+        `pending contract family "${family}" appears more than once`,
+      );
+    }
+    if (manifest.typeOnlyFamilies.includes(family)) {
+      add(
+        "contract-family-declared-twice",
+        `"${family}" is both a materialized type-only family and a pending contract family; a folder has exactly one family declaration`,
+      );
+    }
+    pendingFamilies.add(family);
+  }
+
   // Exemptions are documented exceptions; a path that does not resolve is stale
   // or invented, and either way a lie.
   for (const exemption of manifest.exemptions) {
@@ -236,6 +291,83 @@ export function manifestProblems(manifest: ArchManifest, root: string): readonly
         `rule "${ruleId}" has a multi-line fix recipe; it must be one line`,
       );
     }
+  }
+
+  // Conventions are the rule layer's data. A missing or malformed entry would
+  // silently disable a rule (an empty banned-name list makes S-5 vacuous), so
+  // every list and threshold is checked here.
+  if (manifest.docUri.trim() === "") {
+    add("doc-uri-missing", "docUri must name the normative architecture document");
+  }
+  const conventions = manifest.conventions;
+  const conventionNames: readonly [string, string][] = [
+    ["internalFolder", conventions.internalFolder],
+    ["publicSurfaceFolder", conventions.publicSurfaceFolder],
+    ["crossCuttingTestFolder", conventions.crossCuttingTestFolder],
+    ["testSuffix", conventions.testSuffix],
+    ["typeOnlySuffix", conventions.typeOnlySuffix],
+    ["schemaSuffix", conventions.schemaSuffix],
+    ["packageRootBucket", conventions.packageRootBucket],
+  ];
+  for (const [name, value] of conventionNames) {
+    if (value.trim() === "") {
+      add("convention-empty", `conventions.${name} must be a non-empty string`);
+    }
+  }
+  for (const name of ["internalFolder", "publicSurfaceFolder", "crossCuttingTestFolder"] as const) {
+    if (conventions[name].includes("/")) {
+      add("convention-not-a-name", `conventions.${name} must be a folder name, not a path`);
+    }
+  }
+  if (!conventions.testSuffix.startsWith(".")) {
+    add("convention-suffix-invalid", "conventions.testSuffix must start with a dot");
+  }
+  if (!conventions.typeOnlySuffix.startsWith(".")) {
+    add("convention-suffix-invalid", "conventions.typeOnlySuffix must start with a dot");
+  }
+  if (!conventions.schemaSuffix.startsWith(".")) {
+    add("convention-suffix-invalid", "conventions.schemaSuffix must start with a dot");
+  }
+  const conventionLists: readonly [string, readonly string[]][] = [
+    ["fixtureFolderNames", conventions.fixtureFolderNames],
+    ["bannedFolderNames", conventions.bannedFolderNames],
+    ["reservedFilenames", conventions.reservedFilenames],
+  ];
+  for (const [name, values] of conventionLists) {
+    if (values.length === 0) {
+      add("convention-list-empty", `conventions.${name} must not be empty`);
+    }
+    if (new Set(values).size !== values.length) {
+      add("convention-list-duplicate", `conventions.${name} contains a duplicate entry`);
+    }
+    for (const value of values) {
+      if (value.trim() === "") {
+        add("convention-list-entry-empty", `conventions.${name} contains an empty entry`);
+      }
+    }
+  }
+  for (const reserved of conventions.reservedFilenames) {
+    if (reserved.includes("/")) {
+      add("convention-not-a-name", `reserved filename "${reserved}" must be a bare filename`);
+    }
+  }
+  // The folder-name lists are compared against a basename; an entry containing
+  // `/` can never match and would silently disable S-5 or the fixture exemption.
+  for (const listName of ["bannedFolderNames", "fixtureFolderNames"] as const) {
+    for (const folderName of conventions[listName]) {
+      if (folderName.includes("/")) {
+        add(
+          "convention-not-a-name",
+          `conventions.${listName} entry "${folderName}" must be a bare folder name`,
+        );
+      }
+    }
+  }
+  if (conventions.repeatedPrefixThreshold < 2) {
+    add("convention-threshold-invalid", "conventions.repeatedPrefixThreshold must be at least 2");
+  }
+  if (conventions.ncaCandidateDepth < 1) {
+    add("convention-threshold-invalid", "conventions.ncaCandidateDepth must be at least 1");
   }
 
   // Budgets are consumed by G5/G6 and rendered by `arch:explain`.

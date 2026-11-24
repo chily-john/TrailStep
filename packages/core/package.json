@@ -33,8 +33,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:fast": "vitest run --exclude src/runtime/run-workflow/run-workflow-parallel-tracks.test.ts",
-    "test:e2e": "vitest run src/runtime/run-workflow/run-workflow-parallel-tracks.test.ts",
-    "lint": "biome check src"
+    "test:e2e": "vitest run src/runtime/run-workflow/run-workflow-parallel-tracks.test.ts"
   },
   "dependencies": {
     "ajv": "^8.17.1",

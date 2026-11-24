@@ -1,0 +1,17 @@
+{
+  "name": "@trailstep/factory-arch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --exclude \"dist/**\"",
+    "test:fast": "vitest run --exclude \"dist/**\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.8.3",
+    "vitest": "^5.1.0"
+  }
+}

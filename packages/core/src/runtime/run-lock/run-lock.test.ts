@@ -10,6 +10,7 @@ import {
   acquireRunLock,
   isPidAlive,
   isRunLockLive,
+  observeRunLock,
   RUN_LOCK_FILE_NAME,
   readRunLock,
   releaseRunLock,
@@ -185,6 +186,53 @@ describe("run lock", () => {
     await expect(readRunLock(runDir)).resolves.toBeUndefined();
   });
 
+  it("strictly distinguishes missing, malformed, unreadable and owner quadrants", async () => {
+    const runDir = await makeRunDir();
+    await expect(observeRunLock(runDir)).resolves.toEqual({ status: "missing" });
+
+    await writeFile(runLockPath(runDir), "{ not json", "utf8");
+    await expect(observeRunLock(runDir)).resolves.toMatchObject({ status: "malformed" });
+
+    await rm(runLockPath(runDir));
+    await mkdir(runLockPath(runDir));
+    await expect(observeRunLock(runDir)).resolves.toMatchObject({ status: "unreadable" });
+
+    // A directory at run.lock is deterministic; chmod-based unreadable fixtures
+    // are not reliable under root or on every filesystem.
+    await rm(runLockPath(runDir), { recursive: true });
+    await writeStrictLock(runDir, process.pid);
+    await expect(observeRunLock(runDir)).resolves.toMatchObject({
+      status: "observed",
+      owner: "live",
+    });
+
+    await writeStrictLock(runDir, 999_999_999);
+    await expect(observeRunLock(runDir)).resolves.toMatchObject({
+      status: "observed",
+      owner: "dead",
+    });
+
+    // A structurally valid lock with an unassessable pid is not proof of absence.
+    await writeStrictLock(runDir, 0);
+    await expect(observeRunLock(runDir)).resolves.toMatchObject({
+      status: "observed",
+      owner: "unknown",
+    });
+
+    await writeStrictLock(runDir, process.pid);
+    await expect(
+      observeRunLock(runDir, {
+        ownerProbe: () => {
+          throw new Error("probe failed");
+        },
+      }),
+    ).resolves.toMatchObject({ status: "observed", owner: "unknown" });
+    await expect(observeRunLock(runDir, { ownerProbe: () => "dead" })).resolves.toMatchObject({
+      status: "observed",
+      owner: "dead",
+    });
+  });
+
   it("decides liveness from the pid alone", async () => {
     expect(isPidAlive(process.pid)).toBe(true);
     expect(isPidAlive(-1)).toBe(false);
@@ -214,6 +262,22 @@ describe("run lock", () => {
     await expect(readdir(runDir)).resolves.toEqual([RUN_LOCK_FILE_NAME]);
   });
 });
+
+async function writeStrictLock(runDir: string, pid: number): Promise<void> {
+  const timestamp = FIXED_NOW().toISOString();
+  await writeFile(
+    runLockPath(runDir),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      runId: "strict-lock-run",
+      pid,
+      startedAt: timestamp,
+      lastHeartbeatAt: timestamp,
+      nonce: `strict-${pid}`,
+    })}\n`,
+    "utf8",
+  );
+}
 
 describe("runWorkflow run lock", () => {
   const simpleWorkflow = defineWorkflow<{ task: string }, { answer: string }>({

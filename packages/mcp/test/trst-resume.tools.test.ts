@@ -422,6 +422,27 @@ describe("statusFromEvents derives the continue status from the trail, never fro
     ).toBe("running");
   });
 
+  it("does not report a wait terminated by step.cancelled as waiting", () => {
+    const rootWait = {
+      ...event("wait.started"),
+      stepId: "ask",
+      payload: { waitId: "approval" },
+    } as Event;
+    const rootCancelled = { ...event("step.cancelled"), stepId: "ask" } as Event;
+    expect(statusFromEvents([event("workflow.started"), rootWait, rootCancelled])).toBe("running");
+
+    // A legacy unscoped cancellation cannot resolve an arbitrary branch wait,
+    // and must not present that wait as waiting either.
+    const branchWait = {
+      ...event("wait.started"),
+      stepId: "ask",
+      payload: { waitId: "approval", branchId: "branch-a" },
+    } as Event;
+    expect(statusFromEvents([event("workflow.started"), branchWait, rootCancelled])).toBe(
+      "running",
+    );
+  });
+
   it("maps a trailing wait.started to waiting", () => {
     expect(statusFromEvents([event("workflow.started"), event("wait.started")])).toBe("waiting");
   });

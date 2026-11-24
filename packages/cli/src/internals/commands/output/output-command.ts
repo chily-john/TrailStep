@@ -1,4 +1,9 @@
-import { type Event, isPlainObject } from "@trailstep/core";
+import {
+  type Event,
+  findLifecycleTerminalEvent,
+  isPlainObject,
+  selectCurrentLifecycleCycle,
+} from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import {
@@ -65,9 +70,13 @@ export const outputCommand: CliCommand<OutputCommandArgs> = {
       access: "inspect",
     });
     const events = await readEventsForRun(resolved.runDir);
+    // A reopened run can carry several lifecycle cycles. Output, message and
+    // status describe only the current cycle: an earlier cycle's completion,
+    // failure or pending wait must not leak into the reopened run's answer.
+    const cycleEvents = selectCurrentLifecycleCycle(events);
     if (args.message) {
-      const terminal = findLatestTerminalEvent(events);
-      const message = terminal?.payload.message;
+      const terminal = findLifecycleTerminalEvent(cycleEvents);
+      const message = terminal?.event.payload.message;
       if (typeof message !== "string") {
         context.io.writeError(`No final workflow message found for ${resolved.displayName}.`);
         return 1;
@@ -76,11 +85,11 @@ export const outputCommand: CliCommand<OutputCommandArgs> = {
       return 0;
     }
 
-    const completed = findFinalOutputEvent(events);
+    const completed = findFinalOutputEvent(cycleEvents);
 
     if (!completed) {
       context.io.writeError(
-        `No final workflow output found for ${resolved.displayName}; run status is ${describeRunStatus(events)}.`,
+        `No final workflow output found for ${resolved.displayName}; run status is ${describeRunStatus(cycleEvents)}.`,
       );
       return 1;
     }
@@ -110,18 +119,12 @@ function findFinalOutputEvent(events: readonly Event[]): Event | undefined {
   return undefined;
 }
 
-function findLatestTerminalEvent(events: readonly Event[]): Event | undefined {
-  return [...events]
-    .reverse()
-    .find((event) => event.type === "workflow.failed" || event.type === "workflow.completed");
-}
-
-function describeRunStatus(events: readonly Event[]): string {
-  const latestTerminal = findLatestTerminalEvent(events);
-  if (latestTerminal?.type === "workflow.failed") {
-    return "failed";
+function describeRunStatus(cycleEvents: readonly Event[]): string {
+  const terminal = findLifecycleTerminalEvent(cycleEvents);
+  if (terminal !== undefined) {
+    return terminal.state;
   }
-  if (findLatestPendingWait(events)) {
+  if (findLatestPendingWait(cycleEvents)) {
     return "waiting";
   }
   return "not completed";

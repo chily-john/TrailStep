@@ -31,8 +31,7 @@
     "test": "vitest run",
     "test:fast": "vitest run --exclude test/run-workflow-tool.test.ts",
     "test:e2e": "vitest run test/run-workflow-tool.test.ts",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check src"
+    "typecheck": "tsc --noEmit"
   },
   "publishConfig": {
     "access": "public"

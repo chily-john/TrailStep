@@ -8,7 +8,10 @@ export function decorateBranchEvent(
   branch: BranchState,
   decorateWaits: boolean,
 ): Event {
-  const isStepEvent = event.type === "step.started" || event.type === "step.completed";
+  const isStepEvent =
+    event.type === "step.started" ||
+    event.type === "step.completed" ||
+    event.type === "step.cancelled";
   const isWaitEvent =
     event.type === "wait.started" ||
     event.type === "wait.satisfied" ||

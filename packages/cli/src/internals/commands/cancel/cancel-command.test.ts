@@ -149,6 +149,65 @@ describe("cancel command", () => {
     expect(errors).toEqual([]);
   });
 
+  it("cancels every pending parallel branch wait with its own branch identity", async ({
+    task,
+  }) => {
+    const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-parallel-waits`);
+    await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    const runDir = join(cwd, ".trailstep", "runs", "delegate-run");
+    await mkdir(runDir, { recursive: true });
+    await writeEvents(runDir, [
+      event("workflow.started", { runId: "delegate-run", workflowId: "delegate" }),
+      event("wait.started", {
+        runId: "delegate-run",
+        workflowId: "delegate",
+        stepId: "ask",
+        payload: {
+          waitId: "approval",
+          branchId: "branch-a",
+          artifactPaths: { answerFile: "steps/0001-ask/waits/approval/answer.json" },
+        },
+      }),
+      event("wait.started", {
+        runId: "delegate-run",
+        workflowId: "delegate",
+        stepId: "ask",
+        payload: {
+          waitId: "approval",
+          branchId: "branch-b",
+          artifactPaths: { answerFile: "steps/0002-ask/waits/approval/answer.json" },
+        },
+      }),
+    ]);
+
+    await expect(
+      main({
+        argv: ["cancel", "delegate-run"],
+        cwd,
+        io: { writeLine: () => undefined, writeError: () => undefined },
+      }),
+    ).resolves.toBe(0);
+
+    const appended = (await readFile(join(runDir, "events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; payload: Record<string, unknown> })
+      .filter((parsed) => parsed.type === "step.cancelled");
+    expect(appended.map((parsed) => parsed.payload.branchId)).toEqual(["branch-a", "branch-b"]);
+
+    // The branch-attributed cancellations make both waits unanswerable; neither
+    // the old "latest one wins" behavior nor a guessed branch is acceptable.
+    const errors: string[] = [];
+    await expect(
+      main({
+        argv: ["answer", "delegate-run", "approval", "--json", '{"approved":true}'],
+        cwd,
+        io: { writeLine: () => undefined, writeError: (line) => errors.push(line) },
+      }),
+    ).resolves.toBe(1);
+    expect(errors.join("\n")).toContain("Pending wait not found");
+  });
+
   it("writes conforming evt_ ids for cancellation events", async ({ task }) => {
     const cwd = join("node_modules", ".tmp-trailstep-cancel-tests", `${task.id}-evt-ids`);
     await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

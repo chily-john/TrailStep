@@ -17,15 +17,22 @@ export interface ResolvedAgentSessionTarget {
 }
 
 export class AgentSessionTargetResolutionError extends Error {
+  readonly code:
+    | "default-agent-missing"
+    | "configured-agent-empty"
+    | "target-not-openable"
+    | "custom-provider-interactive-unsupported";
+
   constructor(
     message: string,
-    readonly code:
+    code:
       | "default-agent-missing"
       | "configured-agent-empty"
       | "target-not-openable"
       | "custom-provider-interactive-unsupported",
   ) {
     super(message);
+    this.code = code;
     this.name = "AgentSessionTargetResolutionError";
   }
 }

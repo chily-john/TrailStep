@@ -24,11 +24,15 @@ import type {
 
 /**
  * Projector revision for the A4a query projection. It is independent of
- * `schemaVersion`, which stays `1`; revision 3 adds the `cycles` projection and
- * projects a bare cancellation request as the run's current state rather than
- * `cancelled`.
+ * `schemaVersion`, which stays `1`; revision 3 added the `cycles` projection
+ * and projected a bare cancellation request as the run's current state rather
+ * than `cancelled`. Revision 4 derives `execution.coverage` from structured
+ * source-read outcomes (bounded event scan and track read) instead of treating
+ * every state diagnostic — `stale-owner`, `cancellation-pending`, an absent
+ * track, and so on — as a read gap. The projection shape is unchanged and no
+ * field meaning changed, so the schema version stays `1`.
  */
-export const RUN_EVIDENCE_QUERY_PROJECTOR_REVISION = "3" as const;
+export const RUN_EVIDENCE_QUERY_PROJECTOR_REVISION = "4" as const;
 
 export interface EvidenceQueryLimits {
   /** Maximum run directories/manifests examined by one list call. */

@@ -212,6 +212,89 @@ describe("answer command branch addressing", () => {
     await expect(pathExists(join(runDir, "steps"))).resolves.toBe(false);
   });
 
+  it("refuses a branch wait whose step has a legacy cancellation without branch identity", async () => {
+    const runDir = tmpRunDir("legacy-ambiguous-cancel");
+    await writeRunEvents(runDir, [
+      waitEvent({ type: "workflow.started" }),
+      waitEvent({
+        type: "wait.started",
+        stepId: "ask",
+        waitId: "ask",
+        branchId: "branch-a",
+        answerFile: "steps/0002-ask/waits/ask/answer.json",
+      }),
+      waitEvent({ type: "step.cancelled", stepId: "ask" }),
+    ]);
+    const io = createIo();
+
+    const exitCode = await answerCommand.run(
+      { runNameOrRunDir: runDir, waitId: "ask", json: '{"approved":true}' },
+      createContext(process.cwd(), io),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.errors.join("\n")).toContain("without branch identity");
+    expect(io.errors.join("\n")).toContain("branch-a");
+    expect(io.errors.join("\n")).toContain("Refusing to guess");
+    await expect(pathExists(join(runDir, "steps"))).resolves.toBe(false);
+  });
+
+  it("does not answer a branch wait terminated by a matching branch cancellation", async () => {
+    const runDir = tmpRunDir("branch-cancelled");
+    await writeRunEvents(runDir, [
+      waitEvent({ type: "workflow.started" }),
+      waitEvent({
+        type: "wait.started",
+        stepId: "ask",
+        waitId: "ask",
+        branchId: "branch-a",
+        answerFile: "steps/0002-ask/waits/ask/answer.json",
+      }),
+      waitEvent({ type: "step.cancelled", stepId: "ask", branchId: "branch-a" }),
+    ]);
+    const io = createIo();
+
+    const exitCode = await answerCommand.run(
+      {
+        runNameOrRunDir: runDir,
+        waitId: "ask",
+        branchId: "branch-a",
+        json: '{"approved":true}',
+      },
+      createContext(process.cwd(), io),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.errors.join("\n")).toContain("Pending wait not found");
+    expect(io.errors.join("\n")).not.toContain("without branch identity");
+    await expect(pathExists(join(runDir, "steps"))).resolves.toBe(false);
+  });
+
+  it("only considers the current lifecycle cycle for answerable waits", async () => {
+    const runDir = tmpRunDir("previous-cycle-wait");
+    await writeRunEvents(runDir, [
+      waitEvent({ type: "workflow.started" }),
+      waitEvent({
+        type: "wait.started",
+        stepId: "ask",
+        waitId: "ask",
+        answerFile: "steps/0001-ask/waits/ask/answer.json",
+      }),
+      waitEvent({ type: "workflow.cancelled" }),
+      waitEvent({ type: "workflow.resumed" }),
+    ]);
+    const io = createIo();
+
+    const exitCode = await answerCommand.run(
+      { runNameOrRunDir: runDir, waitId: "ask", json: '{"approved":true}' },
+      createContext(process.cwd(), io),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.errors.join("\n")).toContain("Pending wait not found");
+    await expect(pathExists(join(runDir, "steps"))).resolves.toBe(false);
+  });
+
   it("writes the wait answer atomically so a concurrent reader never sees a partial file", async () => {
     const runDir = tmpRunDir("atomic-answer");
     const answerFile = "steps/0001-ask/waits/ask/answer.json";

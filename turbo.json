@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["tsconfig.base.json"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -32,9 +33,6 @@
     "@trailstep/mcp#test:e2e": {
       "dependsOn": ["^build", "@trailstep/cli#build"],
       "outputs": ["coverage/**"]
-    },
-    "lint": {
-      "outputs": []
     }
   }
 }

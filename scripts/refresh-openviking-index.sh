@@ -111,7 +111,7 @@ sync_dir() {
   if [ "$DRY_RUN" -eq 1 ]; then
     return 0
   fi
-  timeout 900 ov add-resource "$local_dir" --to "$target" --wait --timeout 800 \
+  timeout 900 ov add-resource "$local_dir" --to "$target" --wait \
     --ignore-dirs "$IGNORE" --reason "TrailStep index refresh" 2>&1 \
     | grep -E "root_uri|IO Error|Request Timeout|failed_files" | head -n 3
 }
@@ -135,7 +135,7 @@ restore_docs_from_git() {
     return 0
   fi
   note "--- syncing $tmp -> $CANONICAL_DOCS_URI"
-  timeout 900 ov add-resource "$tmp" --to "$CANONICAL_DOCS_URI" --wait --timeout 800 \
+  timeout 900 ov add-resource "$tmp" --to "$CANONICAL_DOCS_URI" --wait \
     --ignore-dirs "$IGNORE" --reason "TrailStep canonical docs restore from git history" 2>&1 \
     | grep -E "root_uri|IO Error|Request Timeout|failed_files" | head -n 3
   note "    temp dir kept for inspection: $tmp"
@@ -185,11 +185,12 @@ sync_dir "./.changeset" "$ROOT/changeset"
 # root files
 note "--- syncing root files"
 if [ "$DRY_RUN" -eq 1 ]; then
-  note "    (dry run) would sync ./AGENTS.md -> $ROOT/AGENTS"
+  note "    (dry run) would refresh ./AGENTS.md -> $ROOT/AGENTS.md"
 else
-  timeout 600 ov add-resource "./AGENTS.md" --to "$ROOT/AGENTS" --wait --timeout 500 \
-    --ignore-dirs "$IGNORE" --reason "TrailStep index refresh" 2>&1 \
-    | grep -E "root_uri|Error" | head -n 2
+  # A single file cannot be re-imported onto an existing file resource
+  # (add-resource treats the target as a directory), so refresh in place.
+  timeout 600 ov write "$ROOT/AGENTS.md" --from-file "./AGENTS.md" --wait 2>&1 \
+    | grep -E "Error|error|status" | head -n 2
 fi
 
 note "=== DONE ==="

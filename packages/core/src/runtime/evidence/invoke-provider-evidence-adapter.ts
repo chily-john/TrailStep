@@ -130,8 +130,11 @@ export async function invokeProviderEvidenceAdapter(
 }
 
 class ProviderEvidenceAbort extends Error {
-  constructor(readonly reason: "timeout" | "aborted") {
+  readonly reason: "timeout" | "aborted";
+
+  constructor(reason: "timeout" | "aborted") {
     super(reason);
+    this.reason = reason;
     this.name = "ProviderEvidenceAbort";
   }
 }

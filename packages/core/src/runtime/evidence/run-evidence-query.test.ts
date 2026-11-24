@@ -129,7 +129,7 @@ describe("bounded evidence query", () => {
     const inspected = await inspectRunEvidence({ runsRoot, project, runId: "revision-run" });
 
     expect(inspected.status).toBe("found");
-    expect(inspected.evidence?.projectorRevision).toBe("3");
+    expect(inspected.evidence?.projectorRevision).toBe("4");
   });
 
   it("derives waiting, keeps wait text out of default DTOs, and never exposes prompt/output canaries", async () => {
@@ -308,6 +308,374 @@ describe("bounded evidence query", () => {
       "stale-owner",
     );
     expect(parseRunEvidence(evidence).status).toBe("valid");
+  });
+
+  it("keeps coverage complete for a stale owner when every source was read", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(
+      runsRoot,
+      "stale-complete-run",
+      [event("workflow.started"), event("step.started", { stepId: "work" })],
+      {
+        track: {
+          runId: "stale-complete-run",
+          status: "running",
+          ownerPid: 2_147_483_647,
+          workflowId: "workflow-1",
+        },
+      },
+    );
+
+    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
+    const evidence = listed.entries[0];
+    expect(evidence?.execution.state).toBe("stale");
+    expect(evidence?.execution.coverage).toBe("complete");
+    expect(evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "stale-owner",
+    );
+    expect(listed.coverage).toBe("complete");
+  });
+
+  it("keeps coverage complete for a pending cancellation when every source was read", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(
+      runsRoot,
+      "cancel-pending-complete-run",
+      [
+        event("workflow.started"),
+        event("step.started", { stepId: "work" }),
+        event("workflow.cancelRequested", { id: "cancel-request" }),
+      ],
+      {
+        track: {
+          runId: "cancel-pending-complete-run",
+          status: "running",
+          ownerPid: process.pid,
+        },
+      },
+    );
+
+    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
+    const evidence = listed.entries[0];
+    expect(evidence?.execution.state).toBe("active");
+    expect(evidence?.execution.coverage).toBe("complete");
+    expect(evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "cancellation-pending",
+    );
+    expect(listed.coverage).toBe("complete");
+  });
+
+  it("treats a provably absent track as complete known absence", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "absent-track-run", [event("workflow.started")]);
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "absent-track-run",
+    });
+    expect(inspected.evidence?.execution.state).toBe("unknown");
+    expect(
+      inspected.evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("missing-source");
+    // Known absence is fully observed even though the state stays unknown.
+    expect(inspected.evidence?.execution.coverage).toBe("complete");
+  });
+
+  it("treats a provably absent track as complete known absence with a live lock", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "absent-track-live-lock-run", [event("workflow.started")], {
+      artifacts: {
+        "run.lock": JSON.stringify({
+          schemaVersion: 1,
+          runId: "absent-track-live-lock-run",
+          pid: process.pid,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
+          nonce: "live-lock-nonce",
+        }),
+      },
+    });
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "absent-track-live-lock-run",
+    });
+    expect(inspected.evidence?.execution.state).toBe("active");
+    expect(inspected.evidence?.execution.coverage).toBe("complete");
+  });
+
+  it("keeps coverage complete when a readable terminal track has no terminal event", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "terminal-track-no-event-run", [event("workflow.started")], {
+      track: { runId: "terminal-track-no-event-run", status: "completed", ownerPid: 2_147_483_647 },
+    });
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "terminal-track-no-event-run",
+    });
+    // The track was read completely, so coverage is complete; whether a
+    // terminal-track-only run is terminal is a state question (D6 recovery),
+    // not a read gap.
+    expect(inspected.evidence?.execution.state).toBe("unknown");
+    expect(inspected.evidence?.execution.coverage).toBe("complete");
+    expect(
+      inspected.evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("partial-coverage");
+  });
+
+  it("keeps coverage partial for a malformed track even with a complete event scan", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "malformed-track-run", [event("workflow.started")], {
+      artifacts: { "track.json": "{not-json" },
+    });
+
+    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
+    const evidence = listed.entries[0];
+    expect(evidence?.execution.coverage).toBe("partial");
+    expect(evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "unreadable-source",
+    );
+  });
+
+  it("keeps coverage partial for an oversized track even with a complete event scan", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "oversized-track-run", [event("workflow.started")], {
+      track: {
+        runId: "oversized-track-run",
+        status: "running",
+        ownerPid: process.pid,
+        padding: "x".repeat(4096),
+      },
+    });
+
+    const listed = await listRunEvidence({
+      runsRoot,
+      project,
+      limits: { maxTrackBytes: 128, deadlineMs: 10_000 },
+    });
+    const evidence = listed.entries[0];
+    expect(evidence?.execution.coverage).toBe("partial");
+    expect(evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "unreadable-source",
+    );
+  });
+
+  it("keeps coverage partial for an unreadable track even with a complete event scan", async () => {
+    const runsRoot = await makeRunsRoot();
+    const runDir = await writeRun(runsRoot, "unreadable-track-run", [event("workflow.started")]);
+    // A directory where track.json is expected makes the bounded read fail
+    // without relying on platform-specific permission bits.
+    await mkdir(join(runDir, "track.json"));
+
+    const listed = await listRunEvidence({ runsRoot, project, limits: { deadlineMs: 10_000 } });
+    const evidence = listed.entries[0];
+    expect(evidence?.execution.coverage).toBe("partial");
+    expect(evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "unreadable-source",
+    );
+  });
+
+  it("keeps coverage partial for a partial event scan even when a terminal event is visible", async () => {
+    const runsRoot = await makeRunsRoot();
+    const events: Event[] = [
+      event("workflow.started"),
+      event("workflow.completed"),
+      ...Array.from({ length: 500 }, (_, index) =>
+        event("step.progress", {
+          payload: { message: `progress ${index}`, body: "x".repeat(1024) },
+        }),
+      ),
+    ];
+    await writeRun(runsRoot, "partial-terminal-run", events);
+
+    const listed = await listRunEvidence({
+      runsRoot,
+      project,
+      limits: { maxEventBytesPerRun: 4096, deadlineMs: 10_000 },
+    });
+    const evidence = listed.entries[0];
+    expect(evidence?.execution.state).toBe("completed");
+    expect(evidence?.execution.coverage).toBe("partial");
+    expect(evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "budget-exceeded",
+    );
+  });
+
+  it("keeps coverage unknown when the event trail is unavailable", async () => {
+    const runsRoot = await makeRunsRoot();
+    const runDir = join(runsRoot, "no-events-run");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "track.json"),
+      `${JSON.stringify({ status: "running", ownerPid: process.pid })}\n`,
+      "utf8",
+    );
+
+    const inspected = await inspectRunEvidence({ runsRoot, project, runId: "no-events-run" });
+    expect(inspected.status).toBe("found");
+    expect(inspected.evidence?.execution.coverage).toBe("unknown");
+  });
+
+  it("keeps coverage partial when the query is aborted", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "aborted-inspect-run", [event("workflow.started")]);
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "aborted-inspect-run",
+      signal: AbortSignal.abort(),
+    });
+    expect(inspected.status).toBe("found");
+    expect(inspected.evidence?.execution.coverage).toBe("partial");
+    expect(
+      inspected.evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("budget-exceeded");
+  });
+
+  it("keeps coverage partial when the pending-wait projection is capped", async () => {
+    const runsRoot = await makeRunsRoot();
+    const events: Event[] = [event("workflow.started")];
+    for (let index = 0; index < 33; index += 1) {
+      events.push(
+        event("wait.started", {
+          stepId: "approval",
+          payload: { waitId: `wait-${index}`, branchId: "root" },
+        }),
+      );
+    }
+    await writeRun(runsRoot, "many-waits-run", events);
+
+    const inspected = await inspectRunEvidence({ runsRoot, project, runId: "many-waits-run" });
+    expect(inspected.evidence?.execution.state).toBe("waiting");
+    expect(inspected.evidence?.execution.coverage).toBe("partial");
+    expect(
+      inspected.evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("budget-exceeded");
+  });
+
+  it("derives archived coverage from the archive read, not from state diagnostics", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeArchive(
+      runsRoot,
+      "archived-cancel-run",
+      { schemaVersion: 1, runId: "archived-cancel-run" },
+      Buffer.from("payload"),
+    );
+    const archivedEvents = [
+      event("workflow.started", { id: "archived-started" }),
+      event("workflow.cancelRequested", { id: "archived-cancel" }),
+    ];
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "archived-cancel-run",
+      archive: {
+        readArchivedRunEvents: async ({ runId }) => ({
+          status: "ok",
+          runId,
+          events: archivedEvents,
+          coverage: "complete",
+          diagnostics: [],
+        }),
+        readArchivedArtifact: async () => {
+          throw new Error("not used");
+        },
+      },
+    });
+    expect(inspected.evidence?.execution.storage).toBe("archived");
+    expect(
+      inspected.evidence?.execution.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("cancellation-pending");
+    expect(inspected.evidence?.execution.coverage).toBe("complete");
+  });
+
+  it("keeps archived coverage partial when the archive read was truncated", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeArchive(
+      runsRoot,
+      "archived-partial-run",
+      { schemaVersion: 1, runId: "archived-partial-run" },
+      Buffer.from("payload"),
+    );
+
+    const inspected = await inspectRunEvidence({
+      runsRoot,
+      project,
+      runId: "archived-partial-run",
+      archive: {
+        readArchivedRunEvents: async ({ runId }) => ({
+          status: "ok",
+          runId,
+          events: [event("workflow.started")],
+          coverage: "partial",
+          diagnostics: [
+            { code: "budget-exceeded", message: "The archive event budget was exceeded." },
+          ],
+        }),
+        readArchivedArtifact: async () => {
+          throw new Error("not used");
+        },
+      },
+    });
+    expect(inspected.evidence?.execution.coverage).toBe("partial");
+  });
+
+  it("downgrades list coverage when any included entry is non-complete", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "complete-list-run", [
+      event("workflow.started"),
+      event("workflow.completed"),
+    ]);
+    const partialEvents: Event[] = [event("workflow.started")];
+    for (let index = 0; index < 500; index += 1) {
+      partialEvents.push(
+        event("step.progress", {
+          payload: { message: `progress ${index}`, body: "x".repeat(1024) },
+        }),
+      );
+    }
+    await writeRun(runsRoot, "partial-list-run", partialEvents);
+
+    const listed = await listRunEvidence({
+      runsRoot,
+      project,
+      limits: { maxEventBytesPerRun: 4096, deadlineMs: 10_000 },
+    });
+
+    const completeEntry = listed.entries.find((entry) => entry.run.runId === "complete-list-run");
+    const partialEntry = listed.entries.find((entry) => entry.run.runId === "partial-list-run");
+    expect(completeEntry?.execution.coverage).toBe("complete");
+    expect(partialEntry?.execution.coverage).toBe("partial");
+    expect(listed.coverage).toBe("partial");
+  });
+
+  it("downgrades list coverage when the result limit hides matching runs", async () => {
+    const runsRoot = await makeRunsRoot();
+    await writeRun(runsRoot, "limit-run-a", [
+      event("workflow.started"),
+      event("workflow.completed"),
+    ]);
+    await writeRun(runsRoot, "limit-run-b", [
+      event("workflow.started"),
+      event("workflow.completed"),
+    ]);
+
+    const listed = await listRunEvidence({
+      runsRoot,
+      project,
+      limit: 1,
+      limits: { deadlineMs: 10_000 },
+    });
+    expect(listed.entries).toHaveLength(1);
+    expect(listed.truncated).toBe(true);
+    expect(listed.coverage).toBe("partial");
+    expect(listed.diagnostics.map((diagnostic) => diagnostic.code)).toContain("budget-exceeded");
   });
 
   it("maps missing track + no terminal event to unknown, never active", async () => {

@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "factory/*"
 allowBuilds:
   esbuild: false
 overrides:

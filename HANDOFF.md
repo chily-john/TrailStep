@@ -20,7 +20,7 @@ happen next.
   `test:e2e` runs on pushes to main. `release.yml` keeps the full suite.
 - Local skill `agent/skills/trailtest/SKILL.md` documents lanes + helpers + safety rules.
 - Root `@trailstep/*` cross-links pinned to `workspace:*` (enforced by
-  `scripts/check-public-package-metadata.mjs`) so `pnpm-lock.yaml` never desyncs.
+  `scripts/check-public-package-metadata.ts`) so `pnpm-lock.yaml` never desyncs.
 
 ## Delegate runs: use the LOCAL CLI
 

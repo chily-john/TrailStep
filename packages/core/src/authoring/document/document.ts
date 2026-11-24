@@ -65,10 +65,13 @@ export class Document {
     return new Document(value.content, value.path);
   }
 
-  constructor(
-    public readonly content: string,
-    public readonly path: string,
-  ) {}
+  readonly content: string;
+  readonly path: string;
+
+  constructor(content: string, path: string) {
+    this.content = content;
+    this.path = path;
+  }
 }
 
 /**

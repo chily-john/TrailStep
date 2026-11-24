@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { isRecord } from "@trailstep/core";
@@ -69,7 +70,11 @@ export const doctorCommand: CliCommand<DoctorCommandArgs> = {
     }
 
     const recommendedConfigWarnings = await findRecommendedConfigWarnings(context);
+    const archLines = await reportArchChanged(context);
 
+    for (const line of archLines) {
+      context.io.writeLine(line);
+    }
     for (const finding of findings) {
       context.io.writeLine(formatDeprecationFinding(finding));
     }
@@ -229,4 +234,185 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 
 function isNodeError(error: unknown): error is { readonly code: string } {
   return isRecord(error) && typeof error.code === "string";
+}
+
+/**
+ * The architecture seam (Story 110 AC 3).
+ *
+ * Doctor reports the same verdict the CI gate has — `arch:check --changed` —
+ * and never gates on it: the exit code below is only ever cosmetic text, and a
+ * missing or failing checker degrades to one line instead of failing doctor.
+ *
+ * Availability is looked up at the invocation's own project root and never in
+ * an ancestor: doctor reports on the project it was pointed at, and a parent
+ * repository's gate must never be run against a nested project. A project with
+ * no `factory/arch` at all (every installed-user project) gets no line: there
+ * is nothing for that project to check, so silence is the correct report.
+ */
+const ARCH_CLI_SEGMENTS = ["factory", "arch", "dist", "cli.js"] as const;
+const ARCH_PACKAGE_SEGMENTS = ["factory", "arch", "package.json"] as const;
+const ARCH_CHECK_TIMEOUT_MS = 30_000;
+
+export interface ArchCheckOutcome {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export type ArchCheckSpawn = (input: {
+  readonly cliPath: string;
+  readonly cwd: string;
+}) => Promise<ArchCheckOutcome>;
+
+export type ArchCliAvailability =
+  | { readonly status: "ready"; readonly cliPath: string }
+  | { readonly status: "unbuilt" }
+  | { readonly status: "absent" };
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+      return false;
+    }
+    // Unreadable is not absent: let the spawn attempt report the real reason.
+    return true;
+  }
+}
+
+/** Classifies the project root: a built arch CLI, an unbuilt one, or neither. */
+export async function locateArchCli(cwd: string): Promise<ArchCliAvailability> {
+  const cliPath = join(cwd, ...ARCH_CLI_SEGMENTS);
+  if (await pathExists(cliPath)) {
+    return { status: "ready", cliPath };
+  }
+  if (await pathExists(join(cwd, ...ARCH_PACKAGE_SEGMENTS))) {
+    return { status: "unbuilt" };
+  }
+  return { status: "absent" };
+}
+
+const NO_ARCH_VIOLATIONS = "arch:check --changed: no strict violations in touched files.";
+const ARCH_REPORTING_NOTE =
+  "arch:check --changed: reporting only; the CI gate is the blocking caller.";
+
+/**
+ * One arch violation, in doctor's own style: the same fields the CI gate prints,
+ * including the diagnostic's one-line `Fix:` recipe. That recipe is the
+ * remediation (the arch contract calls it the most valuable part), so dropping
+ * it would leave a reader with the symptom and no remediation — doctor's
+ * `formatDeprecationFinding` already appends `Replacement: …` for the same
+ * reason. A diagnostic without a `fix` degrades to the bare line.
+ */
+function archViolationLine(diagnostic: Record<string, unknown>): string | null {
+  const rule = typeof diagnostic.rule === "string" ? diagnostic.rule : null;
+  const file = typeof diagnostic.file === "string" ? diagnostic.file : null;
+  if (rule === null || file === null) {
+    return null;
+  }
+  const line = typeof diagnostic.line === "number" ? `:${diagnostic.line}` : "";
+  const message = typeof diagnostic.message === "string" ? diagnostic.message : "";
+  const fix =
+    typeof diagnostic.fix === "string" && diagnostic.fix.length > 0
+      ? `  Fix: ${diagnostic.fix}`
+      : "";
+  return `  ${rule}  ${file}${line}  ${message}${fix}`;
+}
+
+function firstLine(text: string): string {
+  const line = text.split("\n").find((candidate) => candidate.trim().length > 0);
+  return line === undefined ? "" : line.trim();
+}
+
+/**
+ * Renders one arch verdict. `--changed --json` is machine-read so a reworded
+ * human rendering cannot change doctor's report; anything unreadable becomes a
+ * single explicit line rather than a stack trace or a gating failure.
+ */
+export function summarizeArchCheck(
+  availability: ArchCliAvailability,
+  outcome: ArchCheckOutcome | { readonly error: string } | null,
+): readonly string[] {
+  if (availability.status === "absent") {
+    return [];
+  }
+  if (availability.status === "unbuilt") {
+    return [
+      "arch:check --changed: not available (factory/arch is not built; run `pnpm --filter @trailstep/factory-arch build`).",
+    ];
+  }
+  if (outcome === null) {
+    return ["arch:check --changed: not run."];
+  }
+  if ("error" in outcome) {
+    return [`arch:check --changed: not available (${outcome.error}).`];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(outcome.stdout);
+  } catch {
+    const detail =
+      firstLine(outcome.stderr) || firstLine(outcome.stdout) || `exit ${outcome.exitCode}`;
+    return [`arch:check --changed: no readable report (${detail}).`];
+  }
+  if (!Array.isArray(parsed)) {
+    return ["arch:check --changed: no readable report (unexpected JSON shape)."];
+  }
+
+  const violationLines = parsed
+    .filter((diagnostic): diagnostic is Record<string, unknown> => isRecord(diagnostic))
+    .map(archViolationLine)
+    .filter((line): line is string => line !== null);
+
+  if (violationLines.length === 0) {
+    return [NO_ARCH_VIOLATIONS];
+  }
+  return [
+    `arch:check --changed: ${violationLines.length} strict violation(s) in touched files.`,
+    ...violationLines,
+    ARCH_REPORTING_NOTE,
+  ];
+}
+
+const defaultArchCheckSpawn: ArchCheckSpawn = async ({ cliPath, cwd }) =>
+  new Promise<ArchCheckOutcome>((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, "--changed", "--json"], {
+      cwd,
+      shell: false,
+      windowsHide: true,
+      timeout: ARCH_CHECK_TIMEOUT_MS,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout, stderr }));
+  });
+
+/** The doctor's arch lines; empty when the project has no arch checker. */
+export async function reportArchChanged(
+  context: Pick<CliCommandContext, "cwd">,
+  spawnArchCheck: ArchCheckSpawn = defaultArchCheckSpawn,
+): Promise<readonly string[]> {
+  const availability = await locateArchCli(context.cwd);
+  if (availability.status !== "ready") {
+    return summarizeArchCheck(availability, null);
+  }
+  try {
+    const outcome = await spawnArchCheck({ cliPath: availability.cliPath, cwd: context.cwd });
+    return summarizeArchCheck(availability, outcome);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return summarizeArchCheck(availability, { error: message });
+  }
 }

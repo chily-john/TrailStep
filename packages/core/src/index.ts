@@ -376,8 +376,11 @@ export {
   findLatestPendingWait,
   findPendingWaitsById,
   listPendingWaits,
+  listWaitCancellationAmbiguities,
+  readEventBranchId,
   readWaitAnswerFile,
   readWaitQuestion,
+  type WaitCancellationAmbiguity,
   waitEventBranchId,
   waitEventKey,
 } from "./runs/wait-events.js";
@@ -491,8 +494,12 @@ export {
   acquireRunLock,
   isPidAlive,
   isRunLockLive,
+  type ObserveRunLockOptions,
+  observeRunLock,
   RUN_LOCK_FILE_NAME,
   type RunLock,
+  type RunLockObservation,
+  type RunLockOwnerState,
   readRunLock,
   releaseRunLock,
   runLockPath,
@@ -523,13 +530,19 @@ export {
 } from "./runtime/runs/run-summaries.js";
 export type { BranchSummary, TrackSummary } from "./runtime/runs/track-summary.js";
 export type {
+  StorageEligibilityAssessment,
+  StorageEligibilityCode,
+  StorageEventReadStatus,
   StorageLifecycleAction,
   StorageLifecyclePolicy,
   StorageLifecycleStatus,
+  StorageLockObservation,
+  StorageTrackObservation,
 } from "./runtime/storage-lifecycle/storage-lifecycle.js";
 export {
   applyStorageLifecycle,
   archiveRun,
+  assessStorageEligibility,
   deleteArchivedRun,
   deleteRun,
   parseStorageLifecycleDurationDays,

@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { atomicWriteJson, isPlainObject } from "@trailstep/core";
+import {
+  atomicWriteJson,
+  isPlainObject,
+  listWaitCancellationAmbiguities,
+  selectCurrentLifecycleCycle,
+} from "@trailstep/core";
 import type { CliCommand, CliCommandContext } from "../../command-framework/command.types.js";
 import { CliUsageError } from "../../command-framework/command.types.js";
 import { continueCommand } from "../continue/continue-command.js";
@@ -29,13 +34,30 @@ export const answerCommand: CliCommand<AnswerCommandArgs> = {
   async run(args: AnswerCommandArgs, context: CliCommandContext): Promise<number> {
     const resolvedRun = await resolveRunDirectory(args.runNameOrRunDir, context);
     const events = await readEventsForRun(resolvedRun.runDir);
-    const pendingWaits = findPendingWaitsById(events, args.waitId);
+    const cycleEvents = selectCurrentLifecycleCycle(events);
+    const pendingWaits = findPendingWaitsById(cycleEvents, args.waitId);
     const candidates =
       args.branchId === undefined
         ? pendingWaits
         : pendingWaits.filter((event) => waitEventBranchId(event) === args.branchId);
 
     if (candidates.length === 0) {
+      const ambiguities = listWaitCancellationAmbiguities(cycleEvents).filter(
+        (ambiguity) =>
+          ambiguity.wait.payload.waitId === args.waitId &&
+          (args.branchId === undefined || waitEventBranchId(ambiguity.wait) === args.branchId),
+      );
+      if (ambiguities.length > 0) {
+        const branchIds = [
+          ...new Set(ambiguities.map((ambiguity) => waitEventBranchId(ambiguity.wait))),
+        ];
+        context.io.writeError(
+          `Wait ${args.waitId} in run ${args.runNameOrRunDir} may have been cancelled by a legacy step.cancelled event without branch identity (branches: ${branchIds.join(
+            ", ",
+          )}). Refusing to guess which branch it terminated; the trail is preserved for recovery.`,
+        );
+        return 1;
+      }
       context.io.writeError(
         args.branchId === undefined
           ? `Pending wait not found: ${args.waitId} in run ${args.runNameOrRunDir}.`

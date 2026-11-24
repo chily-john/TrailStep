@@ -29,7 +29,6 @@
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "lint": "biome check src",
     "test:fast": "vitest run"
   },
   "dependencies": {

@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && turbo run typecheck",
     "test": "turbo run test",
     "lint": "biome check .",
+    "arch:check": "node factory/arch/dist/cli.js",
+    "arch:explain": "node factory/arch/dist/cli.js --explain",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "changeset": "changeset",

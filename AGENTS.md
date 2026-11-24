@@ -38,6 +38,7 @@ This root context file contains a map of the codebase. **OpenViking is the canon
 - Install: `pnpm install`
 - Lint: `pnpm lint`
 - Typecheck: `pnpm typecheck`
+- Verify: `pnpm verify` (lint + typecheck + arch + test:fast); `pnpm verify:quick` is the fast gate (lint + changed-scope arch) and is **not a typecheck substitute**.
 - Test: `pnpm test`
 - Test fast: `pnpm exec turbo run test:fast` (per-package: `pnpm --filter <pkg> test:fast`)
 - Test e2e: `pnpm exec turbo run test:e2e` (only for add/MCP/parallel composition)

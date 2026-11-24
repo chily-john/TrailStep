@@ -18,6 +18,10 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # `arch:check --changed` diffs against the merge base with the PR's
+          # base branch. A shallow clone has no such base, so the CLI would fall
+          # back to a HEAD-only diff and pass without examining anything.
+          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -44,7 +48,81 @@ jobs:
         run: pnpm exec turbo run test:fast
 
       - name: Build
+        # `turbo run build` also builds `factory/arch` (the `arch:check` CLI).
         run: pnpm build
+
+      # --- Architecture gate (Story 107) -------------------------------------
+      # `--changed` blocks on strict violations in touched files; `--report`
+      # scores the full tree and never blocks. `--silent` keeps pnpm's own
+      # progress output off stdout so the redirected files stay valid SARIF;
+      # the CLI's stderr (usage/operational errors) still reaches the log.
+      #
+      # Both SARIF files are written to $RUNNER_TEMP, i.e. OUTSIDE the workspace.
+      # An in-repo redirect target would be an untracked file sitting there
+      # before the CLI starts; `--changed` probes `git status`, sees a dirty
+      # tree, and diffs HEAD instead of the merge base — an empty diff on a
+      # clean checkout, so the gate exits 0 without examining the PR diff.
+
+      - name: Architecture (changed files)
+        # Debugging note: on `push` (HEAD == the base branch) the changed diff is
+        # empty by design — this gate's teeth are on `pull_request`.
+        run: |
+          # $RUNNER_TEMP is always set on GitHub runners; default it so this
+          # exact step body is reproducible locally.
+          RUNNER_TEMP="${RUNNER_TEMP:-$(mktemp -d)}"
+          base_ref="origin/${GITHUB_BASE_REF:-main}"
+          if base="$(git merge-base HEAD "$base_ref")"; then
+            echo "arch:check --changed base: merge-base HEAD ${base_ref} (${base:0:12})"
+          else
+            echo "::error::no merge base with ${base_ref}; refusing a HEAD-only diff (false green)"
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            # CI checkouts are clean by construction; anything else would make
+            # --changed diff HEAD and pass vacuously. Fail closed.
+            echo "::error::working tree is dirty; arch:check would diff HEAD instead of the base"
+            git status --short
+            exit 1
+          fi
+          status=0
+          pnpm --silent arch:check --changed --sarif > "$RUNNER_TEMP/arch-changed.sarif" || status=$?
+          # An empty redirect target means the gate produced no verdict (the
+          # exact P1 symptom). Check before propagating the CLI's exit code.
+          if [ ! -s "$RUNNER_TEMP/arch-changed.sarif" ]; then
+            echo "::error::arch:check wrote no changed SARIF; the gate produced no verdict"
+            exit 1
+          fi
+          exit "$status"
+
+      - name: Architecture scorecard (report until W6)
+        # delete --report here when the migration completes
+        # Exit semantics: violations never block (exit 0). Exit 2 is an
+        # operational error (bad flag, unreadable tree) and should red the
+        # lane — fail closed. `if: always()` keeps the telemetry on red runs.
+        if: always()
+        run: |
+          RUNNER_TEMP="${RUNNER_TEMP:-$(mktemp -d)}"
+          pnpm --silent arch:check --report --sarif > "$RUNNER_TEMP/arch-full.sarif"
+
+      - name: Upload architecture SARIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-sarif
+          path: |
+            ${{ runner.temp }}/arch-changed.sarif
+            ${{ runner.temp }}/arch-full.sarif
+          # A total miss means the gate never ran: the changed step also
+          # asserts its own file is non-empty.
+          if-no-files-found: error
+
+      - name: Upload architecture scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-scorecard
+          path: .trailstep/arch/architecture-scorecard.json
+          if-no-files-found: warn
 
   e2e:
     name: E2E suite

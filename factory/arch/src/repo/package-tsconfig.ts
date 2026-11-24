@@ -20,6 +20,21 @@ export const CANONICAL_OUT_DIR = "dist";
 /** Keys that mute relative reach-in detection. */
 export const FORBIDDEN_COMPILER_OPTIONS = ["paths", "baseUrl", "references", "composite"];
 
+/**
+ * Keys that must never appear in a config every workspace package inherits
+ * (`tsconfig.base.json`) or in the root project config (`tsconfig.json`).
+ * `rootDir` and `allowImportingTsExtensions` are harmless in a single package
+ * but fatal when they apply to every package at once.
+ */
+export const SHARED_FORBIDDEN_COMPILER_OPTIONS = [
+  "paths",
+  "baseUrl",
+  "references",
+  "composite",
+  "rootDir",
+  "allowImportingTsExtensions",
+] as const;
+
 /** The subset of `tsconfig.json` this guard reads. */
 export interface PackageTsconfigShape {
   extends?: unknown;
@@ -37,6 +52,9 @@ export interface TsconfigViolation {
 
 const REACH_IN_FIX =
   'reach-in protection comes from package.json#exports plus rootDir: "src", so import the published package instead of widening this config';
+
+const SHARED_REACH_IN_FIX =
+  "reach-in protection comes from per-package package.json#exports plus each package's own rootDir, and a base-level key would apply to every package at once";
 
 /**
  * Returns one violation per broken assertion, in a stable order.
@@ -94,6 +112,37 @@ export function packageTsconfigViolations(config: PackageTsconfigShape): Tsconfi
       key: "references",
       actual: config.references,
       fix: `remove "references": project references suppress the TS6059 relative reach-in error; ${REACH_IN_FIX}`,
+    });
+  }
+
+  return violations;
+}
+
+/**
+ * Returns one violation per forbidden key in a shared or root config.
+ * `packageTsconfigViolations` is deliberately untouched: a package still owns
+ * its `rootDir`, so only these two files must stay free of these keys.
+ * Pure: no filesystem access, so fixture cases stay fast and repo-independent.
+ */
+export function sharedTsconfigViolations(config: PackageTsconfigShape): TsconfigViolation[] {
+  const violations: TsconfigViolation[] = [];
+  const compilerOptions = config.compilerOptions ?? {};
+
+  for (const key of SHARED_FORBIDDEN_COMPILER_OPTIONS) {
+    if (Object.hasOwn(compilerOptions, key)) {
+      violations.push({
+        key: `compilerOptions.${key}`,
+        actual: compilerOptions[key],
+        fix: `remove "compilerOptions.${key}"; ${SHARED_REACH_IN_FIX}`,
+      });
+    }
+  }
+
+  if (config.references !== undefined) {
+    violations.push({
+      key: "references",
+      actual: config.references,
+      fix: `remove "references": project references suppress the TS6059 relative reach-in error; ${SHARED_REACH_IN_FIX}`,
     });
   }
 

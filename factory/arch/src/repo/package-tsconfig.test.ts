@@ -8,6 +8,8 @@ import {
   describePackageTsconfigViolations,
   type PackageTsconfigShape,
   packageTsconfigViolations,
+  SHARED_FORBIDDEN_COMPILER_OPTIONS,
+  sharedTsconfigViolations,
 } from "./package-tsconfig.js";
 import { findRepoRoot } from "./root.js";
 
@@ -162,5 +164,78 @@ describe("package tsconfigs", () => {
     });
 
     expect(violationKeys(config)).toEqual([]);
+  });
+});
+
+/** The two configs every package inherits from or shares with the repo root. */
+const SHARED_CONFIG_PATHS = ["tsconfig.base.json", "tsconfig.json"];
+
+/** The strict flags the base config must keep; carried here to prove they are benign. */
+const BASE_STRICT_FLAGS = {
+  verbatimModuleSyntax: true,
+  noUncheckedSideEffectImports: true,
+  moduleDetection: "force",
+  noImplicitOverride: true,
+  noImplicitReturns: true,
+  noFallthroughCasesInSwitch: true,
+  erasableSyntaxOnly: true,
+};
+
+function sharedViolationKeys(config: PackageTsconfigShape): string[] {
+  return sharedTsconfigViolations(config).map((violation) => violation.key);
+}
+
+describe("shared base and root tsconfigs", () => {
+  it("keeps the base and root configs free of reach-in keys", () => {
+    const failures: string[] = [];
+
+    for (const configPath of SHARED_CONFIG_PATHS) {
+      const config = parsePackageTsconfig(
+        readFileSync(join(repoRoot, configPath), "utf8"),
+        configPath,
+      );
+      const violations = sharedTsconfigViolations(config);
+
+      if (violations.length > 0) {
+        failures.push(describePackageTsconfigViolations(configPath, violations));
+      }
+    }
+
+    expect(failures.join("\n")).toBe("");
+  });
+
+  it("accepts a clean base config carrying the strict flags", () => {
+    expect(sharedViolationKeys({ compilerOptions: { ...BASE_STRICT_FLAGS } })).toEqual([]);
+  });
+
+  it("tolerates benign compiler options next to the strict flags", () => {
+    expect(
+      sharedViolationKeys({
+        compilerOptions: { ...BASE_STRICT_FLAGS, skipLibCheck: true, target: "ES2022" },
+      }),
+    ).toEqual([]);
+  });
+
+  it.each(SHARED_CONFIG_PATHS)("rejects every forbidden key in %s", (configPath) => {
+    for (const key of SHARED_FORBIDDEN_COMPILER_OPTIONS) {
+      const violations = sharedTsconfigViolations({ compilerOptions: { [key]: ["fixture"] } });
+
+      expect(violations.map((violation) => violation.key)).toEqual([`compilerOptions.${key}`]);
+
+      const message = describePackageTsconfigViolations(configPath, violations);
+      expect(message).toContain(`${configPath}: compilerOptions.${key}`);
+      expect(message).toContain("per-package package.json#exports");
+      expect(message).toContain("every package at once");
+    }
+
+    const topLevelReferences = sharedTsconfigViolations({
+      compilerOptions: {},
+      references: [{ path: "./packages/core" }],
+    });
+
+    expect(topLevelReferences.map((violation) => violation.key)).toEqual(["references"]);
+    expect(describePackageTsconfigViolations(configPath, topLevelReferences)).toContain(
+      `${configPath}: references`,
+    );
   });
 });

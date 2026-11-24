@@ -5,9 +5,11 @@
  * silently forks that coverage, so this guard rejects every one and names the
  * offending package or file.
  *
- * The root command is not pinned: a future `--error-on-warnings` must not
- * require a test edit, so the guard only asserts that it starts with
- * `biome check` and does not chain `turbo run lint`.
+ * The root command is not pinned beyond its target: a future
+ * `--error-on-warnings` must not require a test edit, so the guard asserts the
+ * first Biome argument after `biome check` is `.` (or `./`) and does not chain
+ * `turbo run lint`. A narrower target such as `biome check src` silently leaves
+ * the rest of the tree unchecked.
  */
 
 /** The subset of a `package.json` this guard reads. */
@@ -29,7 +31,11 @@ export interface LintEntrypointShape {
   rootManifest: PackageManifestShape;
 }
 
-export type LintEntrypointViolationKey = "package-script" | "turbo-task" | "root-script";
+export type LintEntrypointViolationKey =
+  | "package-script"
+  | "turbo-task"
+  | "root-script"
+  | "root-target";
 
 /** One assertion failure: which check broke and the file-plus-fix message to report. */
 export interface LintEntrypointViolation {
@@ -41,6 +47,9 @@ const PACKAGE_FIX =
   "remove it; `pnpm lint` runs `biome check .` once from the repo root and already covers every package source";
 
 const ROOT_FIX = "keep a single `biome check .` invocation from the repo root";
+
+const ROOT_TARGET_FIX =
+  "run `biome check .` from the repo root; a narrower target silently leaves files outside it unchecked";
 
 /**
  * Returns one violation per broken assertion, in a stable order.
@@ -70,12 +79,23 @@ export function lintEntrypointViolations(shape: LintEntrypointShape): LintEntryp
   }
 
   const rootLint = shape.rootManifest.scripts?.lint;
+  const rootTokens = rootLint?.trim().split(/\s+/u) ?? [];
+  const isBiomeCheck = rootTokens[0] === "biome" && rootTokens[1] === "check";
 
-  if (rootLint === undefined || !rootLint.startsWith("biome check")) {
+  if (!isBiomeCheck) {
     violations.push({
       key: "root-script",
-      message: `package.json: scripts.lint is ${JSON.stringify(rootLint ?? null)}; it must start with "biome check". Fix: ${ROOT_FIX}.`,
+      message: `package.json: scripts.lint is ${JSON.stringify(rootLint ?? null)}; it must start with "biome check .". Fix: ${ROOT_FIX}.`,
     });
+  } else {
+    const target = rootTokens[2];
+
+    if (target !== "." && target !== "./") {
+      violations.push({
+        key: "root-target",
+        message: `package.json: scripts.lint target is ${JSON.stringify(target ?? null)} (script is ${JSON.stringify(rootLint)}). Fix: ${ROOT_TARGET_FIX}.`,
+      });
+    }
   }
 
   if (rootLint?.includes("turbo run lint") === true) {

@@ -5,11 +5,13 @@ import {
   importedSpecifiers,
   preinstallScriptPaths,
   relativeSpecifiers,
+  SCRIPT_ENTRYPOINT_FLOOR,
+  scriptAllowlistViolations,
 } from "./preinstall-scripts.js";
 import { findRepoRoot } from "./root.js";
 
-/** `scripts/` holds one language: TypeScript, executed through Node type stripping. */
-const SCRIPT_EXTENSIONS = [".ts"];
+/** Relative imports are only meaningful in the TypeScript entry points. */
+const TYPESCRIPT_EXTENSION = ".ts";
 
 const repoRoot = findRepoRoot();
 
@@ -30,9 +32,7 @@ function scriptEntries(directory = "scripts"): string[] {
 }
 
 function scriptFiles(): string[] {
-  return scriptEntries().filter((file) =>
-    SCRIPT_EXTENSIONS.some((extension) => file.endsWith(extension)),
-  );
+  return scriptEntries().filter((file) => file.endsWith(TYPESCRIPT_EXTENSION));
 }
 
 describe("pre-install scripts", () => {
@@ -106,8 +106,9 @@ describe("pre-install scripts", () => {
   it("keeps every script free of relative specifiers", () => {
     const files = scriptFiles();
 
-    // A scan over zero files would pass vacuously; the five entry points are the floor.
-    expect(files.length).toBe(5);
+    // The allowlist guard pins the directory floor; this only needs a
+    // non-vacuous TypeScript subset to scan.
+    expect(files.length).toBeGreaterThan(0);
 
     const failures = files.flatMap((file) => {
       const specifiers = relativeSpecifiers(readFileSync(join(repoRoot, file), "utf8"));
@@ -117,8 +118,42 @@ describe("pre-install scripts", () => {
     expect(failures.join("\n")).toBe("");
   });
 
-  it("has no .mjs files under scripts", () => {
-    expect(scriptEntries().filter((file) => file.endsWith(".mjs"))).toEqual([]);
+  it("accepts TypeScript entry points and shell wrappers", () => {
+    expect(
+      scriptAllowlistViolations([
+        "scripts/check-lockfile-sync.ts",
+        "scripts/nested/helper.ts",
+        "scripts/refresh-openviking-index.sh",
+      ]),
+    ).toEqual([]);
+  });
+
+  it.each([".js", ".cjs", ".mjs", ".mts"])("rejects a %s entry point", (extension) => {
+    const file = `scripts/legacy${extension}`;
+    const [violation] = scriptAllowlistViolations([file]);
+
+    expect(violation?.file).toBe(file);
+    expect(violation?.extension).toBe(extension);
+    expect(violation?.message).toContain(`${file}: extension is ${JSON.stringify(extension)}`);
+    expect(violation?.message).toContain("scripts/ holds one language");
+    expect(violation?.message).toContain("put multi-file maintenance code in factory/");
+  });
+
+  it("rejects an extensionless script", () => {
+    const [violation] = scriptAllowlistViolations(["scripts/legacy"]);
+
+    expect(violation?.extension).toBe("(none)");
+    expect(violation?.message).toContain("scripts/ holds one language");
+  });
+
+  it("holds only allowlisted script files", () => {
+    const files = scriptEntries();
+    const failures = scriptAllowlistViolations(files).map((violation) => violation.message);
+
+    // Report the offending file and its fix before the count, so a hostile
+    // addition fails with the ruling instead of a bare off-by-one.
+    expect(failures.join("\n")).toBe("");
+    expect(files.length).toBe(SCRIPT_ENTRYPOINT_FLOOR);
   });
 
   it("points every node scripts/ entry at an existing file", () => {

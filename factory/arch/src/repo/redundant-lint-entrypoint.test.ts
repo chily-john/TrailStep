@@ -92,6 +92,10 @@ describe("redundant lint entry points", () => {
     expect(messagesFor("root-script").join("\n")).toBe("");
   });
 
+  it("runs biome over the whole tree from the root", () => {
+    expect(messagesFor("root-target").join("\n")).toBe("");
+  });
+
   it("names the package and the fix for a package-level lint script", () => {
     const violations = fixtureViolations({
       packages: [
@@ -125,7 +129,24 @@ describe("redundant lint entry points", () => {
     expect(fixtureViolations({ rootLint: "biome check . && turbo run lint" })).toHaveLength(1);
   });
 
+  it.each([
+    ["a subdirectory", "biome check src"],
+    ["a relative subdirectory", "biome check ./src"],
+    ["no target", "biome check"],
+  ])("rejects %s as the root lint target", (_label, rootLint) => {
+    const violations = fixtureViolations({ rootLint });
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.key).toBe("root-target");
+    expect(violations[0]?.message).toContain("package.json: scripts.lint");
+    expect(violations[0]?.message).toContain(JSON.stringify(rootLint));
+    expect(violations[0]?.message).toContain(
+      "a narrower target silently leaves files outside it unchecked",
+    );
+  });
+
   it("does not pin the root command beyond a single biome invocation", () => {
     expect(fixtureViolations({ rootLint: "biome check . --error-on-warnings" })).toEqual([]);
+    expect(fixtureViolations({ rootLint: "biome check ./" })).toEqual([]);
   });
 });

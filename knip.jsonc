@@ -1,0 +1,56 @@
+{
+  // Report-only dead-code sizing for W6 (parent doc §6.3). Knip is wired nowhere:
+  // no package.json script, no CI step; run it by hand as `pnpm exec knip --production`.
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // G7/C-2 definition: an entry export with no non-test consumer is unbacked (§6.3).
+  "includeEntryExports": true,
+  "ignore": [
+    // Test-only contract fixture module: its only consumers are core's *.test.ts files.
+    "packages/core/src/runtime/evidence/run-state-contract-fixtures.ts"
+  ],
+  "ignoreDependencies": [
+    // Runtime-resolved through `createRequire` via @trailstep/mcp for the CLI's add-mcp spawn;
+    // intentionally a production dependency of @trailstep/mcp so consumers get it installed.
+    "add-mcp"
+  ],
+  "workspaces": {
+    ".": {
+      // Root scripts are entry points invoked by package.json `node scripts/*.ts` commands,
+      // which knip's static script parser does not resolve to files.
+      "entry": ["scripts/*.ts!", "vitest.config.ts!"],
+      "project": ["scripts/**/*.ts!", "*.ts!"]
+    },
+    "packages/*": {
+      // Public barrel is the only production entry; tests are dev entries so their imports
+      // never mask an unbacked entry export in `--production`.
+      "entry": ["src/index.ts!", "src/**/*.test.ts", "test/**/*.test.ts"],
+      "project": ["src/**/*.ts!", "!src/**/*.test.ts!", "!src/test/**!", "test/**/*.ts"]
+    },
+    "packages/dashboard": {
+      "entry": [
+        "index.html!",
+        "src/main.ts!",
+        "vite.config.ts!",
+        "svelte.config.js!",
+        "src/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,svelte}!",
+        "!src/**/*.test.ts!",
+        // Dev-server tooling (Vite plugin + run-event streaming) and test fixtures are not
+        // production runtime code: reachable only from vite.config.ts or *.test.ts.
+        "src/server/events.ts",
+        "src/server/vite-plugin.ts",
+        "src/server/test-fixtures.ts",
+        "*.{ts,js}!",
+        "index.html!"
+      ]
+    },
+    "factory/arch": {
+      // The CLI (`node factory/arch/dist/cli.js`) is the production entry; repo-shape guards
+      // under src/repo are test-only pure functions by design (W0 pattern).
+      "entry": ["src/cli.ts!", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts!", "!src/**/*.test.ts!", "src/repo/**/*.ts"]
+    }
+  }
+}

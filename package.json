@@ -31,6 +31,7 @@
     "@trailstep/create-flows": "workspace:*",
     "@trailstep/sub-agents": "workspace:*",
     "@types/node": "^26.2.0",
+    "knip": "^6.45.1",
     "tsup": "^8.5.0",
     "turbo": "^2.10.10",
     "typescript": "^5.8.3",

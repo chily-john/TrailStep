@@ -25,6 +25,10 @@ function buildCoreGraph(includeTests: boolean) {
  * candidates, and `runtime/run-workflow` as the widest folder at 28 direct
  * children. Tests are included for the folder-width and NCA-candidate
  * measurements, exactly like the parent probe's raw tree.
+ *
+ * Owner-folder SCCs (G-2a) are per-group telemetry: 1 value-edge component /
+ * 3 folders and 2 all-edge components / 10 folders on this tree (authoring 2,
+ * runtime 8). The cross-group cycle never appears as an owner component.
  */
 describe("golden scorecard over packages/core/src", () => {
   it("reproduces the evidence table and serializes byte-for-byte identically", () => {
@@ -36,6 +40,8 @@ describe("golden scorecard over packages/core/src", () => {
     expect(first.edges.production).toEqual({ total: 864, value: 472, type: 392 });
     expect(first.metrics.scc.value).toEqual({ count: 1, groups: 7 });
     expect(first.metrics.scc.all).toEqual({ count: 1, groups: 9 });
+    expect(first.metrics.scc.owners.value).toEqual({ count: 1, folders: 3 });
+    expect(first.metrics.scc.owners.all).toEqual({ count: 2, folders: 10 });
     expect(first.metrics.nca.candidates).toBe(36);
     expect(first.metrics.folderWidth.max).toBe(28);
     expect(first.metrics.folderWidth.maxFolder).toBe("packages/core/src/runtime/run-workflow");
@@ -75,7 +81,14 @@ describe("golden scorecard over packages/core/src", () => {
     }
 
     expect(diagnostics.length).toBeGreaterThan(0);
-    expect(counts.get("G1")).toBe(1);
+    // One cross-group SCC plus two per-group owner SCCs (authoring, runtime).
+    // The cross-group cycle is not repeated as an owner-folder diagnostic.
+    expect(counts.get("G1")).toBe(3);
+    // 37 before the fix round, 32 after the intra-owner guard (which removes
+    // deprecations and four nested false positives), then 23 after excluding
+    // the remaining 9 top-level-group cases. The review's "22" assumed all 10
+    // top-level cases survived the intra-owner guard; deprecations did not.
+    expect(counts.get("G4")).toBe(23);
     expect(counts.get("G5")).toBe(4);
     expect(counts.get("G8") ?? 0).toBeGreaterThan(0);
 

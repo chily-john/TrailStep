@@ -41,6 +41,7 @@ export type {
   Diagnostic,
   DiagnosticInput,
   DiagnosticSet,
+  DiagnosticTargetKind,
   OperationalDiagnostic,
   OperationalDiagnosticCode,
   RuleContext,

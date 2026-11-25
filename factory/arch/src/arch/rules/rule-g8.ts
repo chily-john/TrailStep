@@ -2,7 +2,7 @@ import path from "node:path";
 import type { ArchGraph } from "../engine/types.js";
 import type { ArchManifest } from "../manifest.js";
 import { createDiagnostic } from "./diagnostics.js";
-import { buildRuleIndex, isInsideFolder, typeDoorFamily } from "./graph-index.js";
+import { buildRuleIndex, frontDoorBasename, isInsideFolder } from "./graph-index.js";
 import type { Diagnostic } from "./types.js";
 
 /**
@@ -25,10 +25,7 @@ export function g8ReachIns(graph: ArchGraph, manifest: ArchManifest): Diagnostic
     const owner = path.posix.dirname(edge.to);
     const ownerName = path.posix.basename(owner);
     const fileName = path.posix.basename(edge.to);
-    const declaredFamily = typeDoorFamily(index, owner) !== null;
-    const frontDoor = declaredFamily
-      ? `${ownerName}${conventions.typeOnlySuffix}`
-      : `${ownerName}.ts`;
+    const frontDoor = frontDoorBasename(index, owner);
 
     if (owner === index.packageRoot || isInsideFolder(owner, edge.from)) {
       continue;

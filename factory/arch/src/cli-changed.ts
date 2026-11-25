@@ -12,7 +12,9 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import type { ArchGraph } from "./arch/engine/types.js";
 import { manifest } from "./arch/manifest.js";
+import { buildRuleIndex, type RuleIndex } from "./arch/rules/graph-index.js";
 import { type Diagnostic, isStrictRuleId, type StrictRuleId } from "./arch/rules/index.js";
+import { isG4ReachIn, isG4ScopeFolder } from "./arch/rules/rule-g4.js";
 import { stronglyConnectedComponents } from "./arch/rules/scc.js";
 
 export interface GitResult {
@@ -314,17 +316,20 @@ function isTestPath(file: string, testSuffix: string): boolean {
 }
 
 /**
- * G4 blocks only when the touched file is an importer of the flagged folder
- * under that folder's parent — the same set `g4NcaViolations` counts. An
- * importer outside the parent is a G2/G8 case and cannot make the NCA span.
+ * G4 blocks only when the touched file is a qualifying non-front-door importer
+ * of the flagged folder under that folder's parent — exactly the edge set
+ * `g4NcaViolations` counts. A front-door import is composition, an intra-owner
+ * import is the owner's implementation, an importer outside the parent is a
+ * G2/G8 case, and a top-level group is not a G4 folder; none can make the NCA
+ * span.
  */
 function importsFlaggedFolder(
-  graph: ArchGraph,
+  index: RuleIndex,
   testSuffix: string,
   touchedFile: string,
   folder: string,
 ): boolean {
-  if (isTestPath(touchedFile, testSuffix)) {
+  if (isTestPath(touchedFile, testSuffix) || !isG4ScopeFolder(index, folder)) {
     return false;
   }
   const parent = path.posix.dirname(folder);
@@ -332,40 +337,37 @@ function importsFlaggedFolder(
   if (importerFolder !== parent && !isInside(parent, importerFolder)) {
     return false;
   }
-  return graph.edges.some(
-    (edge) =>
-      edge.from === touchedFile &&
-      !isTestPath(edge.from, testSuffix) &&
-      !isTestPath(edge.to, testSuffix) &&
-      isInside(folder, edge.to),
+  return index.productionEdges.some(
+    (edge) => edge.from === touchedFile && isG4ReachIn(index, folder, edge),
   );
 }
 
 /**
- * The files on a value-or-type cycle inside one G1 SCC. The group diagnostic
- * only names groups; the ratchet needs the file-level component so a file that
- * merely lives in a cyclic group does not block.
+ * The files on a value-or-type cycle inside one G1 SCC. The diagnostic names
+ * either groups or owner folders; the ratchet needs the file-level component
+ * so a file that merely lives in a cyclic group or owner folder does not block.
+ * The diagnostic's structured `targetKind` selects the namespace; the target
+ * text is never inspected.
  */
 function cycleParticipantFiles(
   graph: ArchGraph,
-  memberGroups: ReadonlySet<string>,
+  members: ReadonlySet<string>,
+  kind: "group" | "owner",
   testSuffix: string,
 ): ReadonlySet<string> {
   const files = graph.files
-    .filter(
-      (file) =>
-        file.group !== null && memberGroups.has(file.group) && !isTestPath(file.path, testSuffix),
-    )
+    .filter((file) => {
+      if (isTestPath(file.path, testSuffix)) {
+        return false;
+      }
+      return kind === "owner"
+        ? members.has(path.posix.dirname(file.path))
+        : file.group !== null && members.has(file.group);
+    })
     .map((file) => file.path);
   const nodes = new Set(files);
   const edges: (readonly [string, string])[] = [];
   for (const edge of graph.edges) {
-    if (edge.fromGroup === null || edge.toGroup === null) {
-      continue;
-    }
-    if (!memberGroups.has(edge.fromGroup) || !memberGroups.has(edge.toGroup)) {
-      continue;
-    }
     if (isTestPath(edge.from, testSuffix) || isTestPath(edge.to, testSuffix)) {
       continue;
     }
@@ -383,16 +385,21 @@ function touchesCycle(
   graph: ArchGraph,
   testSuffix: string,
 ): boolean {
-  const memberGroups = new Set(
+  const members = new Set(
     diagnostic.target
       .split(",")
       .map((member) => member.trim())
       .filter((member) => member !== ""),
   );
-  if (memberGroups.size === 0) {
+  if (members.size === 0) {
     return false;
   }
-  const participants = cycleParticipantFiles(graph, memberGroups, testSuffix);
+  // A G1 diagnostic without a structured kind cannot be scoped safely; only
+  // the rule itself sets the field, so this is defensive, never a fallback.
+  if (diagnostic.targetKind === undefined) {
+    return false;
+  }
+  const participants = cycleParticipantFiles(graph, members, diagnostic.targetKind, testSuffix);
   return touched.some((file) => participants.has(file));
 }
 
@@ -402,6 +409,7 @@ function scopeMayBlock(
   touchedSet: ReadonlySet<string>,
   folders: ReadonlySet<string>,
   graph: ArchGraph | undefined,
+  index: RuleIndex | undefined,
   testSuffix: string,
 ): boolean {
   if (diagnostic.set !== "hard") {
@@ -419,11 +427,11 @@ function scopeMayBlock(
   if (scope === "never") {
     return false;
   }
-  if (graph === undefined) {
+  if (graph === undefined || index === undefined) {
     return false;
   }
   if (scope === "folder-importer") {
-    return touched.some((file) => importsFlaggedFolder(graph, testSuffix, file, diagnostic.file));
+    return touched.some((file) => importsFlaggedFolder(index, testSuffix, file, diagnostic.file));
   }
   return touchesCycle(diagnostic, touched, graph, testSuffix);
 }
@@ -447,8 +455,9 @@ export function scopeDiagnosticsToTouched(
   const touchedSet = new Set(touched);
   const folders = ownFolders(touched);
   const testSuffix = options.testSuffix ?? manifest.conventions.testSuffix;
+  const index = options.graph === undefined ? undefined : buildRuleIndex(options.graph, manifest);
   return diagnostics.filter((diagnostic) =>
-    scopeMayBlock(diagnostic, touched, touchedSet, folders, options.graph, testSuffix),
+    scopeMayBlock(diagnostic, touched, touchedSet, folders, options.graph, index, testSuffix),
   );
 }
 

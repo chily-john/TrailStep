@@ -64,28 +64,42 @@ jobs:
       # clean checkout, so the gate exits 0 without examining the PR diff.
 
       - name: Architecture (changed files)
-        # Debugging note: on `push` (HEAD == the base branch) the changed diff is
-        # empty by design — this gate's teeth are on `pull_request`.
+        # Debugging note: on `push` (HEAD == main) the changed diff is
+        # intentionally empty — this gate's teeth are on `pull_request`. There
+        # the CLI must use the workflow's PR base, never a branch upstream: a
+        # pushed PR branch can track itself, which makes the diff empty.
         run: |
           # $RUNNER_TEMP is always set on GitHub runners; default it so this
           # exact step body is reproducible locally.
           RUNNER_TEMP="${RUNNER_TEMP:-$(mktemp -d)}"
-          base_ref="origin/${GITHUB_BASE_REF:-main}"
+          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
+            if [ -z "${GITHUB_BASE_REF:-}" ]; then
+              echo "::error::GITHUB_BASE_REF is required on pull_request; refusing a HEAD-only diff"
+              exit 1
+            fi
+            base_ref="origin/${GITHUB_BASE_REF}"
+            base_note="the pull request base"
+          else
+            # push-to-main: explicit no-op. HEAD is the base; --base must not
+            # fall back to an accidental branch upstream.
+            base_ref="HEAD"
+            base_note="intentional push-to-main no-op; PR runs carry the diff"
+          fi
           if base="$(git merge-base HEAD "$base_ref")"; then
-            echo "arch:check --changed base: merge-base HEAD ${base_ref} (${base:0:12})"
+            echo "arch:check --changed base: merge-base HEAD ${base_ref} (${base:0:12}) — ${base_note}"
           else
             echo "::error::no merge base with ${base_ref}; refusing a HEAD-only diff (false green)"
             exit 1
           fi
           if [ -n "$(git status --porcelain)" ]; then
-            # CI checkouts are clean by construction; anything else would make
-            # --changed diff HEAD and pass vacuously. Fail closed.
-            echo "::error::working tree is dirty; arch:check would diff HEAD instead of the base"
+            # CI checkouts are clean by construction. An explicit --base cannot
+            # widen to HEAD, but a dirty checkout is still a broken premise.
+            echo "::error::working tree is dirty; refusing to run the changed gate"
             git status --short
             exit 1
           fi
           status=0
-          pnpm --silent arch:check --changed --sarif > "$RUNNER_TEMP/arch-changed.sarif" || status=$?
+          pnpm --silent arch:check --changed --base "$base_ref" --sarif > "$RUNNER_TEMP/arch-changed.sarif" || status=$?
           # An empty redirect target means the gate produced no verdict (the
           # exact P1 symptom). Check before propagating the CLI's exit code.
           if [ ! -s "$RUNNER_TEMP/arch-changed.sarif" ]; then

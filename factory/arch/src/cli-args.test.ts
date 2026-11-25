@@ -18,6 +18,7 @@ describe("architecture CLI argument parsing", () => {
       format: "human",
       rule: null,
       out: null,
+      base: null,
       help: false,
     });
   });
@@ -44,6 +45,21 @@ describe("architecture CLI argument parsing", () => {
     });
   });
 
+  it("parses --base for changed mode both inline and as the next argument", () => {
+    expect(parseCliArgs(["--changed", "--base", "origin/main"])).toMatchObject({
+      mode: "changed",
+      base: "origin/main",
+    });
+    expect(parseCliArgs(["--changed", "--base=origin/main"])).toMatchObject({
+      mode: "changed",
+      base: "origin/main",
+    });
+    expect(parseCliArgs(["--base", "abc123", "--changed"])).toMatchObject({
+      mode: "changed",
+      base: "abc123",
+    });
+  });
+
   it("rejects conflicting modes and formats", () => {
     expect(parseError(["--report", "--changed"])).toContain("mutually exclusive");
     expect(parseError(["--json", "--sarif"])).toContain("mutually exclusive");
@@ -53,8 +69,15 @@ describe("architecture CLI argument parsing", () => {
   it("rejects missing values, stray arguments, and --out outside report mode", () => {
     expect(parseError(["--explain"])).toContain("requires a value");
     expect(parseError(["--out"])).toContain("requires a value");
+    expect(parseError(["--base"])).toContain("requires a value");
     expect(parseError(["--changed", "--out", "/tmp/x.json"])).toContain(
       "only valid in report mode",
+    );
+    expect(parseError(["--report", "--base", "origin/main"])).toContain(
+      "only valid in changed mode",
+    );
+    expect(parseError(["--explain", "G8", "--base", "origin/main"])).toContain(
+      "only valid in changed mode",
     );
     expect(parseError(["--wat"])).toContain('unknown flag "--wat"');
     expect(parseError(["G8"])).toContain('unexpected argument "G8"');
@@ -69,6 +92,8 @@ describe("architecture CLI argument parsing", () => {
     const help = helpText();
     expect(help).toContain("HEAD (dirty working tree)");
     expect(help).toContain("merge-base HEAD");
+    expect(help).toContain("--base <ref>");
+    expect(help).toContain("never a HEAD-only fallback");
     expect(help).toContain(".trailstep/arch/architecture-scorecard.json");
     expect(help).toContain("There are no per-rule flags");
   });

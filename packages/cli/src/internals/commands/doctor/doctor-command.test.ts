@@ -472,6 +472,25 @@ describe("doctor command", () => {
         stderr: "",
       })[1],
     ).toBe("  G8  packages/core/src/authoring/x.ts:12  Reach-in at contracts/owner/private.ts.");
+    // Operational findings have a `code` instead of a manifest `rule`; doctor
+    // must still render the file, position, message, and fix recipe.
+    const operational = {
+      kind: "operational",
+      code: "ARCH-RESOLVE",
+      file: "packages/core/src/authoring/broken.ts",
+      line: 4,
+      message: 'module "./missing.js" did not resolve (value import)',
+      fix: "Correct the import path.",
+    };
+    expect(
+      summarizeArchCheck(ready, {
+        exitCode: 1,
+        stdout: JSON.stringify([operational]),
+        stderr: "",
+      })[1],
+    ).toBe(
+      '  ARCH-RESOLVE  packages/core/src/authoring/broken.ts:4  module "./missing.js" did not resolve (value import)  Fix: Correct the import path.',
+    );
     expect(red.at(-1)).toContain("reporting only");
     expect(
       summarizeArchCheck(ready, { exitCode: 2, stdout: "not json\n", stderr: "" }).join("\n"),

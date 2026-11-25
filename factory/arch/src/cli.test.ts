@@ -1,11 +1,16 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildFixtureGraph } from "./arch/engine/index.js";
 import { manifest } from "./arch/manifest.js";
 import { FIXTURE_MANIFEST, RULE_FIXTURES } from "./arch/rules/fixtures.test.support.js";
 import { buildScorecard, runRules } from "./arch/rules/index.js";
 import { renderSkill, SKILL_ARTIFACT_PATH } from "./arch/skill.js";
-import { type CliDeps, type CliIo, runCli } from "./cli.js";
+import { type CliDeps, type CliIo, isEntrypoint, runCli } from "./cli.js";
 import type { GitResult, GitRunner } from "./cli-changed.js";
 import type { ArchReport } from "./cli-report.js";
 
@@ -23,6 +28,12 @@ const REACH_IN_TREE = {
   ...BASE_TREE,
   "src/authoring/consumer.ts":
     'import { privateValue } from "../contracts/owner/private.js";\nexport const consumer = privateValue;\n',
+} as const;
+
+const MISSING_IMPORT_TREE = {
+  ...BASE_TREE,
+  "src/authoring/broken.ts":
+    'import { missing } from "./does-not-exist.js";\nexport const broken = missing;\n',
 } as const;
 
 /** 13 direct files + one subfolder put `src/runtime` over the G5 gate (12). */
@@ -202,6 +213,85 @@ describe("architecture CLI", () => {
     expect(output).toContain(`Fix: ${FIXTURE_MANIFEST.rules.G8.fix}`);
   });
 
+  it("changed mode fails closed on a touched unresolved import with a human diagnostic", () => {
+    const test = harness(MISSING_IMPORT_TREE);
+    const code = runCli(["--changed"], test.deps({ git: dirtyGit(["src/authoring/broken.ts"]) }));
+    expect(code).toBe(1);
+    const output = test.stdout();
+    expect(output).toContain("ARCH-RESOLVE  src/authoring/broken.ts:1");
+    expect(output).toContain('module "./does-not-exist.js" did not resolve (value import)');
+    expect(output).toContain("Target: ./does-not-exist.js");
+    expect(output).toContain("Fix: Correct the import path");
+    expect(output).toContain("operational finding, not a manifest rule");
+    expect(output).not.toContain("No strict violations in touched files.");
+  });
+
+  it("changed mode emits an unresolved import as an operational JSON finding", () => {
+    const test = harness(MISSING_IMPORT_TREE);
+    const code = runCli(
+      ["--changed", "--json"],
+      test.deps({ git: dirtyGit(["src/authoring/broken.ts"]) }),
+    );
+    expect(code).toBe(1);
+    const parsed = JSON.parse(test.stdout()) as Record<string, unknown>[];
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      kind: "operational",
+      code: "ARCH-RESOLVE",
+      severity: "error",
+      file: "src/authoring/broken.ts",
+      line: 1,
+      target: "./does-not-exist.js",
+      set: "error",
+    });
+    expect(parsed[0]?.message).toContain("did not resolve");
+    expect(parsed[0]?.fix).toContain("Correct the import path");
+  });
+
+  it("changed mode emits an unresolved import as a blocking SARIF result", () => {
+    const test = harness(MISSING_IMPORT_TREE);
+    const code = runCli(
+      ["--changed", "--sarif"],
+      test.deps({ git: dirtyGit(["src/authoring/broken.ts"]) }),
+    );
+    expect(code).toBe(1);
+    const parsed = JSON.parse(test.stdout()) as {
+      runs: {
+        tool: { driver: { rules: { id: string; properties?: { kind?: string } }[] } };
+        results: { ruleId: string; ruleIndex: number; level: string; message: { text: string } }[];
+      }[];
+    };
+    expect(parsed.runs[0]?.tool.driver.rules).toEqual([
+      expect.objectContaining({ id: "ARCH-RESOLVE", properties: { kind: "operational" } }),
+    ]);
+    expect(parsed.runs[0]?.results).toEqual([
+      expect.objectContaining({ ruleId: "ARCH-RESOLVE", ruleIndex: 0, level: "error" }),
+    ]);
+    expect(parsed.runs[0]?.results[0]?.message.text).toContain("Fix: Correct the import path");
+  });
+
+  it("changed mode ignores an unresolved import outside the touched set", () => {
+    const test = harness(MISSING_IMPORT_TREE);
+    const code = runCli(
+      ["--changed", "--json"],
+      test.deps({ git: dirtyGit(["src/authoring/consumer.ts"]) }),
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(test.stdout())).toEqual([]);
+  });
+
+  it("report --sarif includes unresolved imports but stays report-only", () => {
+    const test = harness(MISSING_IMPORT_TREE);
+    const out = `${test.repoRoot}/scorecard.json`;
+    expect(runCli(["--report", "--sarif", "--out", out], test.deps({}))).toBe(0);
+    const parsed = JSON.parse(test.stdout()) as {
+      runs: { results: { ruleId: string; level: string }[] }[];
+    };
+    expect(parsed.runs[0]?.results).toEqual([
+      expect.objectContaining({ ruleId: "ARCH-RESOLVE", level: "error" }),
+    ]);
+  });
+
   it("changed mode surfaces G1 when the touched file's own edge is on the cycle", () => {
     const test = harness(RULE_FIXTURES.G1.fail.files);
     const code = runCli(["--changed"], test.deps({ git: dirtyGit(["src/json/json.ts"]) }));
@@ -370,4 +460,36 @@ describe("architecture CLI", () => {
     expect(test.stderr()).toContain("mutually exclusive");
     expect(test.stderr()).toContain("Usage:");
   });
+
+  it("canonicalizes the entrypoint and fails closed on an unreadable path", () => {
+    const self = fileURLToPath(import.meta.url);
+    expect(isEntrypoint(import.meta.url, self)).toBe(true);
+    expect(isEntrypoint(import.meta.url, `${self}.missing`)).toBe(false);
+    expect(isEntrypoint(import.meta.url, undefined)).toBe(false);
+  });
+
+  it("runs as the entrypoint when invoked through a symlink", () => {
+    const packageRoot = path.resolve(import.meta.dirname, "..");
+    const require = createRequire(import.meta.url);
+    const typescriptRoot = path.dirname(require.resolve("typescript"));
+    const tscPath = path.resolve(typescriptRoot, "..", "bin", "tsc");
+    const build = spawnSync(process.execPath, [tscPath, "-p", "tsconfig.json"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+    });
+    if (build.status !== 0) {
+      throw new Error(`tsc build failed:\n${build.stderr || build.stdout}`);
+    }
+
+    const cliPath = path.join(packageRoot, "dist", "cli.js");
+    const linkDirectory = mkdtempSync(path.join(tmpdir(), "arch-cli-symlink-"));
+    cleanup.push(() => rmSync(linkDirectory, { recursive: true, force: true }));
+    const linkPath = path.join(linkDirectory, "arch-cli.js");
+    symlinkSync(cliPath, linkPath);
+
+    const result = spawnSync(process.execPath, [linkPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("trailstep architecture gate");
+    expect(result.stderr).toBe("");
+  }, 30_000);
 });

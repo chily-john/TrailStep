@@ -307,7 +307,15 @@ const ARCH_REPORTING_NOTE =
  * reason. A diagnostic without a `fix` degrades to the bare line.
  */
 function archViolationLine(diagnostic: Record<string, unknown>): string | null {
-  const rule = typeof diagnostic.rule === "string" ? diagnostic.rule : null;
+  // Manifest diagnostics carry `rule`; operational findings (an unresolved
+  // import) carry a stable `code` instead. Accept both so doctor always shows
+  // the file, position, message, and fix recipe.
+  const rule =
+    typeof diagnostic.rule === "string"
+      ? diagnostic.rule
+      : typeof diagnostic.code === "string"
+        ? diagnostic.code
+        : null;
   const file = typeof diagnostic.file === "string" ? diagnostic.file : null;
   if (rule === null || file === null) {
     return null;

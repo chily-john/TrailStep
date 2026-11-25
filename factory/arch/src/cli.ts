@@ -8,14 +8,18 @@
  * process contract.
  */
 
+import { realpathSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { manifest, type RuleId } from "./arch/manifest.js";
 import { RULE_FIXTURES, runRuleOnFixture } from "./arch/rules/fixtures.test.support.js";
 import {
-  diagnosticJson,
+  type CheckFinding,
+  findingJson,
   isStrictRuleId,
-  renderDiagnostic,
+  renderFinding,
+  resolutionErrorDiagnostics,
+  scopeOperationalDiagnostics,
   scorecardJson,
 } from "./arch/rules/index.js";
 import { SKILL_ARTIFACT_PATH, writeSkill } from "./arch/skill.js";
@@ -23,7 +27,6 @@ import { type CliOptions, CliUsageError, helpText, parseCliArgs } from "./cli-ar
 import {
   type ChangedFiles,
   type GitRunner,
-  hasStrictViolations,
   listChangedFiles,
   scopeDiagnosticsToTouched,
 } from "./cli-changed.js";
@@ -102,7 +105,12 @@ function runReportMode(options: CliOptions, deps: CliDeps, paths: ArchReportPath
   if (options.format === "json") {
     deps.io.stdout(`${scorecardJson(report.scorecard)}\n`);
   } else if (options.format === "sarif") {
-    deps.io.stdout(`${renderSarif(manifest, report.diagnostics)}\n`);
+    deps.io.stdout(
+      `${renderSarif(manifest, [
+        ...report.diagnostics,
+        ...resolutionErrorDiagnostics(report.graph.resolutionErrors),
+      ])}\n`,
+    );
   } else {
     deps.io.stdout(renderReport(report, displayPath(deps.repoRoot, scorecardPath)));
   }
@@ -134,12 +142,18 @@ function runChangedMode(options: CliOptions, deps: CliDeps, paths: ArchReportPat
   }
 
   const report = createReport(deps, paths);
-  const scoped = scopeDiagnosticsToTouched(report.diagnostics, changed.touched, {
-    graph: report.graph,
-  });
+  const scoped: CheckFinding[] = [
+    ...scopeDiagnosticsToTouched(report.diagnostics, changed.touched, {
+      graph: report.graph,
+    }),
+    ...scopeOperationalDiagnostics(
+      resolutionErrorDiagnostics(report.graph.resolutionErrors),
+      changed.touched,
+    ),
+  ];
 
   if (options.format === "json") {
-    deps.io.stdout(`${JSON.stringify(scoped.map(diagnosticJson), null, 2)}\n`);
+    deps.io.stdout(`${JSON.stringify(scoped.map(findingJson), null, 2)}\n`);
   } else if (options.format === "sarif") {
     deps.io.stdout(`${renderSarif(manifest, scoped)}\n`);
   } else {
@@ -147,11 +161,11 @@ function runChangedMode(options: CliOptions, deps: CliDeps, paths: ArchReportPat
     if (scoped.length === 0) {
       deps.io.stdout("No strict violations in touched files.\n");
     } else {
-      deps.io.stdout(`${scoped.map(renderDiagnostic).join("\n\n")}\n`);
+      deps.io.stdout(`${scoped.map(renderFinding).join("\n\n")}\n`);
     }
   }
 
-  return hasStrictViolations(scoped) ? 1 : 0;
+  return scoped.length > 0 ? 1 : 0;
 }
 
 /** `--emit-skill <path>`: regenerate the artifact, never build the graph. */
@@ -220,18 +234,19 @@ function defaultDeps(): CliDeps {
   };
 }
 
-function isEntrypoint(): boolean {
-  const entry = process.argv[1];
+export function isEntrypoint(moduleUrl: string, entry: string | undefined): boolean {
   if (entry === undefined) {
     return false;
   }
   try {
-    return import.meta.url === pathToFileURL(entry).href;
+    const modulePath = realpathSync(fileURLToPath(moduleUrl));
+    const entryPath = realpathSync(path.resolve(entry));
+    return modulePath === entryPath;
   } catch {
     return false;
   }
 }
 
-if (isEntrypoint()) {
+if (isEntrypoint(import.meta.url, process.argv[1])) {
   process.exitCode = runCli(process.argv.slice(2), defaultDeps());
 }

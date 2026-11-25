@@ -11,7 +11,15 @@ export {
   createDiagnosticComparator,
   diagnosticJson,
   diagnosticSet,
+  findingJson,
+  isOperationalDiagnostic,
+  operationalDiagnosticJson,
   renderDiagnostic,
+  renderFinding,
+  renderOperationalDiagnostic,
+  resolutionErrorDiagnostic,
+  resolutionErrorDiagnostics,
+  scopeOperationalDiagnostics,
 } from "./diagnostics.js";
 export type { RuleIndex } from "./graph-index.js";
 export { buildRuleIndex } from "./graph-index.js";
@@ -29,9 +37,12 @@ export {
 export type { Scorecard, ScorecardMetrics } from "./scorecard.js";
 export { buildScorecard, scorecardJson } from "./scorecard.js";
 export type {
+  CheckFinding,
   Diagnostic,
   DiagnosticInput,
   DiagnosticSet,
+  OperationalDiagnostic,
+  OperationalDiagnosticCode,
   RuleContext,
   RuleFunction,
 } from "./types.js";

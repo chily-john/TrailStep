@@ -1,5 +1,12 @@
+import type { ResolutionError } from "../engine/types.js";
 import type { ArchManifest, RuleId } from "../manifest.js";
-import type { Diagnostic, DiagnosticInput, DiagnosticSet } from "./types.js";
+import type {
+  CheckFinding,
+  Diagnostic,
+  DiagnosticInput,
+  DiagnosticSet,
+  OperationalDiagnostic,
+} from "./types.js";
 
 /** Maps the manifest severity to the rendered set label. */
 export function diagnosticSet(severity: Diagnostic["severity"]): DiagnosticSet {
@@ -77,6 +84,96 @@ export function diagnosticJson(diagnostic: Diagnostic): Record<string, unknown> 
     anchor: diagnostic.docAnchor,
     set: diagnostic.set,
   };
+}
+
+const RESOLUTION_FIX =
+  "Correct the import path, add the missing file, or declare the missing package so TypeScript can resolve it.";
+
+/**
+ * Turns one engine resolution failure into an operational diagnostic. The
+ * engine already knows the importer, specifier, edge kind, and position; the
+ * CLI only supplies the actionable wording. The failure stays separate from
+ * `RuleId`, so no manifest coverage/explain surface can mistake it for a rule.
+ */
+export function resolutionErrorDiagnostic(error: ResolutionError): OperationalDiagnostic {
+  return {
+    kind: "operational",
+    code: "ARCH-RESOLVE",
+    severity: "error",
+    file: error.from,
+    line: error.line,
+    column: error.column,
+    target: error.specifier,
+    message: `${error.reason} (${error.kind} import)`,
+    fix: RESOLUTION_FIX,
+    set: "error",
+  };
+}
+
+export function resolutionErrorDiagnostics(
+  errors: readonly ResolutionError[],
+): OperationalDiagnostic[] {
+  return errors.map(resolutionErrorDiagnostic);
+}
+
+export function isOperationalDiagnostic(finding: CheckFinding): finding is OperationalDiagnostic {
+  return "kind" in finding && finding.kind === "operational";
+}
+
+/** The §9.1 rendered shape for an operational finding (no fake rule line). */
+export function renderOperationalDiagnostic(diagnostic: OperationalDiagnostic): string {
+  const location =
+    diagnostic.line === null ? diagnostic.file : `${diagnostic.file}:${diagnostic.line}`;
+  return [
+    `${diagnostic.code}  ${location}`,
+    `    ${diagnostic.message}`,
+    `    Target: ${diagnostic.target}`,
+    `    Fix: ${diagnostic.fix}`,
+    `    Set: error (blocking; operational finding, not a manifest rule)`,
+  ].join("\n");
+}
+
+export function operationalDiagnosticJson(
+  diagnostic: OperationalDiagnostic,
+): Record<string, unknown> {
+  return {
+    kind: diagnostic.kind,
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    file: diagnostic.file,
+    line: diagnostic.line,
+    column: diagnostic.column,
+    target: diagnostic.target,
+    message: diagnostic.message,
+    fix: diagnostic.fix,
+    set: diagnostic.set,
+  };
+}
+
+/** One renderer for the mixed `--changed` finding list. */
+export function renderFinding(finding: CheckFinding): string {
+  return isOperationalDiagnostic(finding)
+    ? renderOperationalDiagnostic(finding)
+    : renderDiagnostic(finding);
+}
+
+/** One JSON contract for the mixed `--changed` finding list. */
+export function findingJson(finding: CheckFinding): Record<string, unknown> {
+  return isOperationalDiagnostic(finding)
+    ? operationalDiagnosticJson(finding)
+    : diagnosticJson(finding);
+}
+
+/** Resolution failures block only when their importer is a touched file. */
+export function scopeOperationalDiagnostics(
+  diagnostics: readonly OperationalDiagnostic[],
+  touched: readonly string[],
+): OperationalDiagnostic[] {
+  if (touched.length === 0) {
+    return [];
+  }
+  const touchedSet = new Set(touched);
+  return diagnostics.filter((diagnostic) => touchedSet.has(diagnostic.file));
 }
 
 function matchesPath(value: string, exemptionPath: string): boolean {

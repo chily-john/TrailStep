@@ -1,5 +1,11 @@
 # @trailstep/sub-agents
 
+## 0.3.5
+
+### Patch Changes
+
+- @trailstep/authoring@0.4.4
+
 ## 0.3.4
 
 ### Patch Changes

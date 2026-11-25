@@ -1,5 +1,0 @@
----
-"@trailstep/core": patch
----
-
-Run-evidence coverage now follows what the query actually read, not what the state projection concluded. A complete event scan plus a readable track stays `complete` for `stale-owner`, `cancellation-pending` and other state diagnostics; those conclusions stay visible in `execution.diagnostics` without pretending a source was unreadable. A track that is provably absent is complete known absence, while a present but malformed, oversized or otherwise unreadable track keeps coverage `partial` even when the trail was read completely. Archive-backed evidence takes the archive reader's own coverage instead of downgrading a complete read because the classifier emitted a state diagnostic; manifest-only archived evidence remains `unknown`. `RUN_EVIDENCE_QUERY_PROJECTOR_REVISION` moves from `3` to `4` because the emitted projection changes; `schemaVersion` stays `1` because no field shape or meaning changed. Pending-wait caps, archive truncation, event byte/event/deadline budgets, result limits and aborts still downgrade coverage, and a missing or unreadable `events.jsonl` still reports `unknown`.

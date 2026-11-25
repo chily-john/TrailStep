@@ -1,5 +1,22 @@
 # @trailstep/cli
 
+## 0.11.1
+
+### Patch Changes
+
+- 6ffb5ce: A `step.cancelled` now terminates the matching pending wait for answerability and continuation. `listPendingWaits` resolves a wait only when a later `step.cancelled` has the same `stepId` and branch identity, where an absent branch is the implicit root branch. Cancelling one parallel branch no longer resolves a same-id wait on another branch, and a cancellation never erases a wait that started after it. The scheduler now decorates `step.cancelled` with real branch provenance, and `trailstep cancel` emits one branch-attributed cancellation per pending wait instead of an unscoped cancellation for only the latest wait.
+  
+  A legacy `step.cancelled` without branch identity cannot be attributed to a parallel branch. `listPendingWaits` withholds that branch wait instead of resolving an arbitrary branch, and the new `listWaitCancellationAmbiguities` projection lets CLI and MCP answer report the ambiguity and refuse to write an answer. `trailstep answer` and `trst_answer` now evaluate waits in the current lifecycle cycle and report the legacy ambiguity instead of guessing.
+  
+  Behaviour change: a cancelled wait is no longer answerable or continuable. `trailstep cancel` followed by `trailstep continue` now clears the pending cancellation marker, then fails closed with `Run is not waiting`; recovery is through `trailstep retry`, which re-enters the cancelled step and parks on a fresh wait. The core cancellation integration test now proves this retry recovery path. Watch/classifier projections no longer present a cancelled or legacy-ambiguous wait as pending.
+- 1d36f1d: `trailstep output` now reads only the run's current lifecycle cycle. `workflow.resumed` and `workflow.retryStarted` start a new cycle, so a reopened run no longer returns an earlier cycle's `workflow.completed` output or terminal message, and its error status is not inherited from an earlier completion, failure or pending wait. When the current cycle has no final output, the error status reports the current cycle's `completed`, `failed` or `cancelled` terminal event, or `waiting` for its pending wait; a reopened running run reports `not completed`. `--message` uses the current cycle's terminal message and otherwise keeps the existing no-final-message error. Single-cycle output, `--field`, `--json` and archived-run restore guidance are unchanged.
+- 57ae516: Automatic storage retention is now fail-closed. `planStorageLifecycle`, `applyStorageLifecycle` and direct `archiveRun` authorize a hot-run archive/delete only from a new `assessStorageEligibility` result: a complete strict read of `events.jsonl` containing a current-cycle `workflow.completed`/`workflow.failed`/`workflow.cancelled` event, a present and readable `track.json`, no pin, and ownership that is strictly observed as absent (missing lock or an assessable dead pid). Eventless terminal tracks are preserved rather than treated as terminal proof (D-LOCK-2), and a terminal event whose track is missing or unreadable is preserved for the D6 recovery protocol. Malformed, partial or unreadable event trails, unreadable or malformed tracks, and malformed, unreadable or unassessable locks produce no automatic action; direct archive refuses them with a diagnostic. Explicit `deleteRun` remains an operator action for non-terminal runs but now also refuses live, malformed, unreadable or unassessable lock ownership. The new `observeRunLock` seam keeps missing, malformed, unreadable, live, dead and unknown ownership distinct without widening the tolerant read-only `isRunLockLive`. Eligibility is still revalidated at the action boundary only as far as D4 can; the archive/delete race is not solved and remains D5 work. `trailstep storage gc` may therefore retain more legacy or inconsistent runs, and its usage text now says so.
+- Updated dependencies [6ffb5ce]
+- Updated dependencies [ee0e38a]
+- Updated dependencies [57ae516]
+  - @trailstep/core@0.10.1
+  - @trailstep/mcp@0.5.1
+
 ## 0.11.0
 
 ### Minor Changes

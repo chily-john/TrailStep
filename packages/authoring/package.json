@@ -1,6 +1,6 @@
 {
   "name": "@trailstep/authoring",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "TypeScript authoring helpers for TrailStep workflows.",
   "license": "Apache-2.0",
   "type": "module",
@@ -38,7 +38,7 @@
     "@trailstep/core": "workspace:*"
   },
   "peerDependencies": {
-    "@trailstep/core": "^0.10.0"
+    "@trailstep/core": "^0.10.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

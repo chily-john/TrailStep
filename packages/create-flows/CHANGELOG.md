@@ -1,5 +1,11 @@
 # @trailstep/create-flows
 
+## 0.3.12
+
+### Patch Changes
+
+- @trailstep/authoring@0.4.5
+
 ## 0.3.11
 
 ### Patch Changes

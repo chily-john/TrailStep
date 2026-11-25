@@ -1,5 +1,14 @@
 # @trailstep/provider-pi
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [6ffb5ce]
+- Updated dependencies [ee0e38a]
+- Updated dependencies [57ae516]
+  - @trailstep/core@0.10.1
+
 ## 0.3.2
 
 ### Patch Changes

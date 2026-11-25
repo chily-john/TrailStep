@@ -153,6 +153,25 @@ function cleanGit(): GitRunner {
   });
 }
 
+function explicitBaseGit(touched: readonly string[]): GitRunner {
+  const diff = touched.map((file) => `M\0${file}\0`).join("");
+  return fakeGit((command) => {
+    if (command === "status --porcelain=v1 -z --untracked-files=normal") {
+      return gitResult("");
+    }
+    if (command === "rev-parse --verify --quiet origin/main^{commit}") {
+      return gitResult("base-sha\n");
+    }
+    if (command === "merge-base HEAD origin/main") {
+      return gitResult("abcdef1234567890\n");
+    }
+    if (command === "diff --name-status -z abcdef1234567890...HEAD --") {
+      return gitResult(diff);
+    }
+    return gitResult(`unexpected: ${command}`, false);
+  });
+}
+
 describe("architecture CLI", () => {
   it("prints help and exits 0", () => {
     const test = harness(BASE_TREE);
@@ -389,6 +408,32 @@ describe("architecture CLI", () => {
     expect(runCli(["--changed"], test.deps({ git: cleanGit() }))).toBe(0);
     expect(test.stdout()).toBe("");
     expect(test.stderr()).toBe("");
+  });
+
+  it("changed mode honors an explicit --base and prints the resolved base", () => {
+    const test = harness(REACH_IN_TREE);
+    const code = runCli(
+      ["--changed", "--base", "origin/main"],
+      test.deps({ git: explicitBaseGit(["src/authoring/consumer.ts"]) }),
+    );
+    expect(code).toBe(1);
+    expect(test.stdout()).toContain("base: merge-base HEAD origin/main (abcdef123456)");
+    expect(test.stdout()).toContain("G8  src/authoring/consumer.ts:1");
+  });
+
+  it("changed mode fails closed when an explicit --base cannot be resolved", () => {
+    const test = harness(BASE_TREE);
+    const git = fakeGit((command) => {
+      if (command === "status --porcelain=v1 -z --untracked-files=normal") {
+        return gitResult("");
+      }
+      return gitResult("", false);
+    });
+
+    expect(runCli(["--changed", "--base", "origin/main"], test.deps({ git }))).toBe(2);
+    expect(test.stdout()).toBe("");
+    expect(test.stderr()).toContain("does not resolve to a commit");
+    expect(test.stderr()).toContain("refusing a HEAD-only diff");
   });
 
   it("changed --json emits the scoped diagnostics", () => {

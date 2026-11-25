@@ -3,8 +3,9 @@
  * which diagnostics belong to them.
  *
  * The git subprocess is injectable so the CLI tests never mutate the repo. The
- * base rule (dirty → HEAD; clean → merge base; no merge base → HEAD) is
- * documented in `cli-args.ts`'s help text and asserted here.
+ * base rule (explicit --base → verified merge base; dirty → HEAD; clean →
+ * merge base; no merge base → HEAD) is documented in `cli-args.ts`'s help text
+ * and asserted here. An explicit --base never falls back to HEAD.
  */
 
 import { spawnSync } from "node:child_process";
@@ -118,6 +119,14 @@ interface DiffSelection {
   readonly includeUntracked: boolean;
 }
 
+export interface ListChangedFilesOptions {
+  /**
+   * Explicit diff base, resolved to merge-base HEAD <base>..HEAD. `null` or
+   * absent keeps the local default (dirty tree → HEAD, clean tree → upstream).
+   */
+  readonly base?: string | null;
+}
+
 function firstMergeBase(git: GitRunner, target: string): string | null {
   const verify = git(["rev-parse", "--verify", "--quiet", `${target}^{commit}`]);
   if (!verify.ok) {
@@ -129,6 +138,38 @@ function firstMergeBase(git: GitRunner, target: string): string | null {
   }
   const sha = mergeBase.stdout.trim();
   return sha === "" ? null : sha;
+}
+
+/**
+ * Explicit-base selection for CI: resolve the ref, verify a merge base, and
+ * diff only that merge base against HEAD. Throws instead of guessing, because
+ * a HEAD-only fallback here is exactly the false-green this option exists to
+ * prevent. Uncommitted changes are intentionally outside this diff.
+ */
+function explicitSelection(git: GitRunner, baseRef: string): DiffSelection {
+  const resolved = git(["rev-parse", "--verify", "--quiet", `${baseRef}^{commit}`]);
+  const commit = resolved.ok ? resolved.stdout.trim() : "";
+  if (commit === "") {
+    const detail = resolved.stderr.trim();
+    throw new Error(
+      `--base "${baseRef}" does not resolve to a commit${detail === "" ? "" : ` (${detail})`}; refusing a HEAD-only diff.`,
+    );
+  }
+
+  const mergeBase = git(["merge-base", "HEAD", baseRef]);
+  const sha = mergeBase.ok ? mergeBase.stdout.trim() : "";
+  if (sha === "") {
+    const detail = mergeBase.stderr.trim();
+    throw new Error(
+      `--base "${baseRef}" has no merge base with HEAD${detail === "" ? "" : ` (${detail})`}; refusing a HEAD-only diff.`,
+    );
+  }
+
+  return {
+    base: `merge-base HEAD ${baseRef} (${sha.slice(0, 12)})`,
+    args: ["diff", "--name-status", "-z", `${sha}...HEAD`, "--"],
+    includeUntracked: false,
+  };
 }
 
 function cleanSelection(git: GitRunner): DiffSelection {
@@ -172,21 +213,35 @@ function dirtySelection(): DiffSelection {
 }
 
 /**
- * Lists the touched source files and names the base. A dirty tree always wins:
- * uncommitted work (including the protected docs drift) is compared against
- * HEAD, so a local `--changed` answers "what did I touch", not "what has this
- * long-lived branch accumulated".
+ * Lists the touched source files and names the base.
+ *
+ * Without an explicit base, a dirty tree always wins: uncommitted work
+ * (including the protected docs drift) is compared against HEAD, so a local
+ * `--changed` answers "what did I touch", not "what has this long-lived branch
+ * accumulated".
+ *
+ * With `options.base`, the commit is resolved and merged with HEAD, then that
+ * merge base is diffed against HEAD. The explicit base wins over the dirty
+ * default, and an unresolvable ref or missing merge base throws rather than
+ * falling back to HEAD.
  */
 export function listChangedFiles(
   repoRoot: string,
   git: GitRunner = createGitRunner(repoRoot),
+  options: ListChangedFilesOptions = {},
 ): ChangedFiles {
   const status = requireGit(
     git(["status", "--porcelain=v1", "-z", "--untracked-files=normal"]),
     "git status",
   );
   const dirty = status.length > 0;
-  const selection = dirty ? dirtySelection() : cleanSelection(git);
+  const explicitBase = options.base ?? null;
+  const selection =
+    explicitBase !== null
+      ? explicitSelection(git, explicitBase)
+      : dirty
+        ? dirtySelection()
+        : cleanSelection(git);
   const parsed = parseNameStatus(requireGit(git(selection.args), "git diff"));
 
   const paths = [...parsed.changed];

@@ -1,8 +1,13 @@
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ArchGraph } from "./arch/engine/index.js";
 import { manifest } from "./arch/manifest.js";
 import { createDiagnostic } from "./arch/rules/index.js";
 import {
+  createGitRunner,
   type GitResult,
   type GitRunner,
   hasStrictViolations,
@@ -65,6 +70,25 @@ function graphFixture(options: {
 }
 
 const STATUS = "status --porcelain=v1 -z --untracked-files=normal";
+
+/** Real-git fixture helper: fail loudly with git's stderr when a setup step fails. */
+function runGit(cwd: string, args: readonly string[]): string {
+  const result = spawnSync("git", [...args], {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Arch Test",
+      GIT_AUTHOR_EMAIL: "arch@example.test",
+      GIT_COMMITTER_NAME: "Arch Test",
+      GIT_COMMITTER_EMAIL: "arch@example.test",
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
 
 describe("changed-file parsing", () => {
   it("parses name-status -z with deletions and renames", () => {
@@ -132,6 +156,101 @@ describe("listChangedFiles", () => {
     expect(changed.base).toBe("merge-base HEAD origin/main (abcdef123456)");
     expect(changed.dirty).toBe(false);
     expect(changed.touched).toEqual(["src/new.ts"]);
+  });
+
+  it("uses an explicit base in a dirty tree without widening to untracked files", () => {
+    const git = fakeGit((command) => {
+      if (command === STATUS) {
+        return gitResponse(" M src/committed.ts\0?? src/untracked.ts\0");
+      }
+      if (command === "rev-parse --verify --quiet origin/main^{commit}") {
+        return gitResponse("base-sha\n");
+      }
+      if (command === "merge-base HEAD origin/main") {
+        return gitResponse("abcdef1234567890\n");
+      }
+      if (command === "diff --name-status -z abcdef1234567890...HEAD --") {
+        return gitResponse("M\0src/committed.ts\0");
+      }
+      return { ok: false, stdout: "", stderr: `unexpected: ${command}` };
+    });
+
+    const changed = listChangedFiles("/repo", git, { base: "origin/main" });
+    expect(changed.base).toBe("merge-base HEAD origin/main (abcdef123456)");
+    expect(changed.dirty).toBe(true);
+    expect(changed.touched).toEqual(["src/committed.ts"]);
+  });
+
+  it("fails closed when an explicit base does not resolve", () => {
+    const commands: string[] = [];
+    const git = fakeGit((command) => {
+      commands.push(command);
+      if (command === STATUS) {
+        return gitResponse("");
+      }
+      return { ok: false, stdout: "", stderr: "unknown revision" };
+    });
+
+    expect(() => listChangedFiles("/repo", git, { base: "origin/main" })).toThrow(
+      /does not resolve to a commit.*refusing a HEAD-only diff/,
+    );
+    expect(commands).not.toContain("diff --name-status -z HEAD --");
+  });
+
+  it("fails closed when an explicit base has no merge base", () => {
+    const commands: string[] = [];
+    const git = fakeGit((command) => {
+      commands.push(command);
+      if (command === STATUS) {
+        return gitResponse("");
+      }
+      if (command === "rev-parse --verify --quiet origin/main^{commit}") {
+        return gitResponse("base-sha\n");
+      }
+      return { ok: false, stdout: "", stderr: "no common ancestor" };
+    });
+
+    expect(() => listChangedFiles("/repo", git, { base: "origin/main" })).toThrow(
+      /has no merge base with HEAD.*refusing a HEAD-only diff/,
+    );
+    expect(commands).not.toContain("diff --name-status -z HEAD --");
+  });
+
+  it("pins an explicit base after a pushed branch upstream would produce an empty diff", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "trailstep-arch-base-"));
+    try {
+      runGit(directory, ["init", "-q"]);
+      runGit(directory, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+      writeFileSync(path.join(directory, "base.ts"), "export const base = 1;\n");
+      runGit(directory, ["add", "."]);
+      runGit(directory, ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "base"]);
+      const baseSha = runGit(directory, ["rev-parse", "HEAD"]);
+
+      runGit(directory, ["checkout", "-q", "-b", "feature"]);
+      mkdirSync(path.join(directory, "src"));
+      writeFileSync(path.join(directory, "src/feature.ts"), "export const feature = 1;\n");
+      runGit(directory, ["add", "."]);
+      runGit(directory, ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "feature"]);
+
+      // Simulate a pushed PR branch that tracks itself: the default clean-tree
+      // selection merges against that upstream and sees no changes.
+      runGit(directory, ["remote", "add", "origin", directory]);
+      runGit(directory, ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]);
+      runGit(directory, ["update-ref", "refs/remotes/origin/main", baseSha]);
+      runGit(directory, ["update-ref", "refs/remotes/origin/feature", "HEAD"]);
+      runGit(directory, ["branch", "--set-upstream-to=origin/feature", "feature"]);
+
+      const git = createGitRunner(directory);
+      const localDefault = listChangedFiles(directory, git);
+      expect(localDefault.base).toContain("origin/feature");
+      expect(localDefault.touched).toEqual([]);
+
+      const explicit = listChangedFiles(directory, git, { base: "origin/main" });
+      expect(explicit.base).toBe(`merge-base HEAD origin/main (${baseSha.slice(0, 12)})`);
+      expect(explicit.touched).toEqual(["src/feature.ts"]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("falls back to HEAD when no merge base exists", () => {

@@ -2,11 +2,11 @@
  * Argument parsing for the architecture CLI (Story 106).
  *
  * The surface is deliberately small: two scopes (`--report`, `--changed`), two
- * machine formats (`--json`, `--sarif`), one explainer (`--explain <rule>`), one
- * artifact path override (`--out <path>`), and the skill emitter
- * (`--emit-skill <path>`, Story 110). There are no per-rule flags: severity
- * lives in the manifest (parent §8.2), so a `--skip G1`-style toggle has no
- * place in this parser.
+ * machine formats (`--json`, `--sarif`), one explicit diff base for CI
+ * (`--base <ref-or-commit>`), one explainer (`--explain <rule>`), one artifact
+ * path override (`--out <path>`), and the skill emitter (`--emit-skill <path>`,
+ * Story 110). There are no per-rule flags: severity lives in the manifest
+ * (parent §8.2), so a `--skip G1`-style toggle has no place in this parser.
  */
 
 export type CliMode = "report" | "changed" | "explain" | "emit-skill";
@@ -17,6 +17,8 @@ export interface CliOptions {
   readonly format: CliFormat;
   readonly rule: string | null;
   readonly out: string | null;
+  /** Set only by `--base <ref>`; changed mode only. */
+  readonly base: string | null;
   /** Set only by `--emit-skill <path>`; absent for every other mode. */
   readonly emitSkill?: string;
   readonly help: boolean;
@@ -34,7 +36,7 @@ const HELP = `trailstep architecture gate (Story 106)
 
 Usage:
   pnpm arch:check [--report] [--json | --sarif] [--out <path>]
-  pnpm arch:check --changed [--json | --sarif]
+  pnpm arch:check --changed [--base <ref-or-commit>] [--json | --sarif]
   pnpm arch:explain <rule>
   pnpm arch:check --emit-skill <path>
 
@@ -44,6 +46,11 @@ Modes:
   --changed       Runs the strict set scoped to the files this working tree or
                   branch touches. Exits 1 when a touched file violates a strict
                   rule. Report-only rules never block.
+  --base <ref>    Changed mode only. Resolves <ref> to a commit, computes
+                  merge-base HEAD <ref>, and diffs that merge base against
+                  HEAD. An unresolvable ref or missing merge base exits 2; it
+                  never falls back to a HEAD-only diff. Uncommitted changes are
+                  not part of this diff.
   --explain <id>  Prints one rule from the manifest: severity, doc anchor and
                   URI, fix recipe, legal targets, and a fixture-derived
                   good/bad example. An unknown rule ID exits 1.
@@ -67,13 +74,17 @@ Scorecard artifact:
 
 Changed-file rule:
   The file list is git's, with deleted files and non-TypeScript files excluded.
-  - Dirty working tree: compare against HEAD (tracked modifications plus
-    untracked, non-ignored files); the base is printed as
+  - Explicit base (--base <ref>): compare merge-base HEAD <ref> against HEAD.
+    An unresolvable ref or missing merge base is an operational error (exit 2),
+    never a HEAD-only fallback. The base is printed as
+    "merge-base HEAD <ref> (<sha>)".
+  - Dirty working tree (no --base): compare against HEAD (tracked modifications
+    plus untracked, non-ignored files); the base is printed as
     "HEAD (dirty working tree)".
-  - Clean working tree: compare against the merge base of HEAD and the
-    upstream branch (or origin/main, main, origin/master, master); the base is
-    printed as "merge-base HEAD <ref> (<sha>)".
-  - No merge base (fresh branch, shallow clone): fall back to HEAD.
+  - Clean working tree (no --base): compare against the merge base of HEAD and
+    the upstream branch (or origin/main, main, origin/master, master); the base
+    is printed as "merge-base HEAD <ref> (<sha>)".
+  - No merge base (no --base, fresh branch, shallow clone): fall back to HEAD.
 Changed-mode scope (the ratchet):
   Only debt the touched files' own edges and own folders introduce can block.
     file            G2 G8 S-6 M-6 T-1 T-2 N-1 block when the diagnostic names
@@ -137,6 +148,17 @@ function splitFlag(argument: string): { name: string; inline: string | null } {
   return { name: argument.slice(0, equals), inline: argument.slice(equals + 1) };
 }
 
+/**
+ * Kept as a function so the check reads `mode` as the full `CliMode` union; the
+ * `--changed` assignment happens inside `setMode`, which TypeScript's control
+ * flow does not trace into a closure.
+ */
+function validateBaseMode(mode: CliMode, base: string | null): void {
+  if (base !== null && mode !== "changed") {
+    throw new CliUsageError("--base is only valid in changed mode.");
+  }
+}
+
 /** Parses argv (without `node` and the script path). Throws `CliUsageError`. */
 export function parseCliArgs(argv: readonly string[]): CliOptions {
   let mode: CliMode = "report";
@@ -144,6 +166,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   let format: CliFormat = "human";
   let rule: string | null = null;
   let out: string | null = null;
+  let base: string | null = null;
   let emitSkill: string | null = null;
 
   const setMode = (next: CliMode): void => {
@@ -161,7 +184,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     switch (name) {
       case "--help":
       case "-h":
-        return { mode, format, rule, out, help: true };
+        return { mode, format, rule, out, base, help: true };
       case "--report":
         if (inline !== null) {
           throw new CliUsageError("--report takes no value.");
@@ -215,6 +238,12 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
         index = parsed.next;
         break;
       }
+      case "--base": {
+        const parsed = flagValue(argv, index, "--base", inline);
+        base = parsed.value;
+        index = parsed.next;
+        break;
+      }
       case "--emit-skill": {
         if (modeExplicit && mode !== "emit-skill") {
           throw new CliUsageError("--emit-skill cannot be combined with another mode.");
@@ -249,6 +278,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   if (out !== null && mode !== "report") {
     throw new CliUsageError("--out is only valid in report mode.");
   }
+  validateBaseMode(mode, base);
   if (mode === "explain" && format !== "human") {
     throw new CliUsageError("--json and --sarif are not valid with --explain.");
   }
@@ -257,6 +287,6 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   }
 
   return emitSkill === null
-    ? { mode, format, rule, out, help: false }
-    : { mode, format, rule, out, emitSkill, help: false };
+    ? { mode, format, rule, out, base, help: false }
+    : { mode, format, rule, out, base, emitSkill, help: false };
 }

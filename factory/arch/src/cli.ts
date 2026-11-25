@@ -129,7 +129,7 @@ function renderChangedHeader(changed: ChangedFiles, report: ArchReport): string 
 }
 
 function runChangedMode(options: CliOptions, deps: CliDeps, paths: ArchReportPaths): number {
-  const changed = listChangedFiles(deps.repoRoot, deps.git);
+  const changed = listChangedFiles(deps.repoRoot, deps.git, { base: options.base });
 
   // Zero touched source files is a clean answer, not a check to narrate.
   if (changed.touched.length === 0) {

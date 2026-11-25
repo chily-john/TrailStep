@@ -32,6 +32,7 @@ export type {
   Diagnostic,
   DiagnosticInput,
   DiagnosticSet,
+  DiagnosticTargetKind,
   RuleContext,
   RuleFunction,
 } from "./types.js";

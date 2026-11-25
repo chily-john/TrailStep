@@ -40,6 +40,7 @@ export function createDiagnostic(
     line: input.line ?? null,
     column: input.column ?? null,
     target: input.target,
+    ...(input.targetKind === undefined ? {} : { targetKind: input.targetKind }),
     message: input.message,
     fix: spec.fix,
     docAnchor: spec.anchor,
@@ -76,6 +77,7 @@ export function diagnosticJson(diagnostic: Diagnostic): Record<string, unknown> 
     doc: diagnostic.docUri,
     anchor: diagnostic.docAnchor,
     set: diagnostic.set,
+    ...(diagnostic.targetKind === undefined ? {} : { targetKind: diagnostic.targetKind }),
   };
 }
 

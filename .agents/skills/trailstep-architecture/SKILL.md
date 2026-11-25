@@ -1,6 +1,6 @@
 ---
 name: trailstep-architecture
-description: Recover from TrailStep architecture gate violations. Use when `pnpm arch:check` or `pnpm arch:check --changed` reports a violation, when a diagnostic names a G, S, V, N, M, or T rule, or before declaring architecture-affecting work done.
+description: Recover from TrailStep architecture gate violations. Use when `pnpm arch:check --check` or `pnpm arch:check --changed` reports a violation, when a diagnostic names a G, S, V, N, M, or T rule, or before declaring architecture-affecting work done.
 ---
 
 # TrailStep architecture gate
@@ -11,8 +11,11 @@ description: Recover from TrailStep architecture gate violations. Use when `pnpm
 
 ## Commands
 
-- `pnpm arch:check --changed` — the gate. Checks only the files this change touches against
-  the strict set; exits 1 with one diagnostic per violation, each carrying its fix recipe.
+- `pnpm arch:check --changed` — the fast gate. Checks only the files this change touches
+  against the strict set; exits 1 with one diagnostic per violation, each carrying its fix
+  recipe.
+- `pnpm arch:check --check` — the full-tree gate. Writes the scorecard, prints every
+  diagnostic, and exits 1 when the tree is red.
 - `pnpm arch:check` — the full-tree scorecard. Always exits 0: a red scorecard is the
   migration backlog, never a pass/fail answer.
 - `pnpm arch:explain <rule>` — one rule: severity, doc anchor, fix recipe, and a
@@ -25,16 +28,18 @@ Run `pnpm verify` before declaring done.
 
 ## State contract
 
-- `--changed` blocks; the full tree reports; the verify lanes compose both scopes.
+- `--changed` blocks on touched files; `--check` blocks on the full tree; bare
+  `arch:check`/`--report` only reports. The verify lanes keep composing the reporting and
+  changed scopes.
 - Report-only rules never block; review-set rules have no checker at all.
 - Severity lives in the manifest, never in a flag: there is no `--skip <rule>`.
 - A diagnostic's `Fix:` line is the remediation; the rule anchor explains why.
 
 ## Strict rules (these block)
 
-- `G1` — Break the cycle: move the shared shape to the lower-ranked group or remove the edge that closes the loop.
+- `G1` — Break the cycle: remove the edge that closes the loop, or move the shared shape to the lower-ranked group or nearest common ancestor.
 - `G2` — Remove the upward edge; if a lower rank needs the shape, it belongs at rank 0 (`json` or `contracts`).
-- `G4` — Move the private helper up to the parent group or expose it through the parent's front door.
+- `G4` — Move the shared behavior to the parent as its own capability, or expose it through the owner's front door; G4 applies only to folders below a group root (top-level groups are G2/G3/G8 cases), and a parent barrel is not a remedy.
 - `G5` — Split the folder by flow until it has at most 8 direct children (the migration gate is 12).
 - `G8` — Import the owner's front door (`<owner>.ts`, or `<owner>.types.ts` for a declared type-only family), not a private sibling.
 - `S-5` — Rename the folder for its capability, adapter, dependency layer, or store; `utils`/`helpers`/`common`/`misc`/`lib` are banned.

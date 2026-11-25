@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { manifest, type RuleId } from "./arch/manifest.js";
 import { RULE_FIXTURES, runRuleOnFixture } from "./arch/rules/fixtures.test.support.js";
 import {
+  type Diagnostic,
   diagnosticJson,
   isStrictRuleId,
   renderDiagnostic,
@@ -91,12 +92,15 @@ function displayPath(repoRoot: string, filePath: string): string {
   return relative.split(path.sep).join("/");
 }
 
+function scorecardPathFor(options: CliOptions, deps: CliDeps): string {
+  return options.out !== null
+    ? path.resolve(deps.io.cwd, options.out)
+    : path.join(deps.repoRoot, DEFAULT_SCORECARD_PATH);
+}
+
 function runReportMode(options: CliOptions, deps: CliDeps, paths: ArchReportPaths): number {
   const report = createReport(deps, paths);
-  const scorecardPath =
-    options.out !== null
-      ? path.resolve(deps.io.cwd, options.out)
-      : path.join(deps.repoRoot, DEFAULT_SCORECARD_PATH);
+  const scorecardPath = scorecardPathFor(options, deps);
   writeScorecard(report.scorecard, scorecardPath);
 
   if (options.format === "json") {
@@ -107,6 +111,57 @@ function runReportMode(options: CliOptions, deps: CliDeps, paths: ArchReportPath
     deps.io.stdout(renderReport(report, displayPath(deps.repoRoot, scorecardPath)));
   }
   return 0;
+}
+
+/** The blocking full-tree mode: same scorecard, same diagnostics, verdict exit. */
+function runCheckMode(options: CliOptions, deps: CliDeps, paths: ArchReportPaths): number {
+  const report = createReport(deps, paths);
+  const scorecardPath = scorecardPathFor(options, deps);
+  writeScorecard(report.scorecard, scorecardPath);
+  const blocking = hasStrictViolations(report.diagnostics);
+
+  if (options.format === "json") {
+    deps.io.stdout(
+      `${JSON.stringify(
+        {
+          scorecard: report.scorecard,
+          diagnostics: report.diagnostics.map(diagnosticJson),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  } else if (options.format === "sarif") {
+    deps.io.stdout(`${renderSarif(manifest, report.diagnostics)}\n`);
+  } else {
+    deps.io.stdout(
+      renderReport(report, displayPath(deps.repoRoot, scorecardPath), { blocking: true }),
+    );
+    deps.io.stdout(renderCheckDiagnostics(report.diagnostics, blocking));
+  }
+
+  return blocking ? 1 : 0;
+}
+
+/**
+ * The full diagnostic list after the scorecard. Check and report mode share
+ * the diagnostic set; only the verdict and exit code differ.
+ */
+function renderCheckDiagnostics(diagnostics: readonly Diagnostic[], blocking: boolean): string {
+  const lines = ["", "Full diagnostics — full tree:"];
+  if (diagnostics.length === 0) {
+    lines.push("  No strict violations.");
+  } else {
+    lines.push(diagnostics.map(renderDiagnostic).join("\n\n"));
+  }
+  const strictCount = diagnostics.filter((diagnostic) => diagnostic.set === "hard").length;
+  lines.push(
+    "",
+    blocking
+      ? `Verdict: ${strictCount} strict violation(s) — blocking.`
+      : "Verdict: no strict violations — clean.",
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 function renderChangedHeader(changed: ChangedFiles, report: ArchReport): string {
@@ -199,7 +254,9 @@ export function runCli(argv: readonly string[], deps: CliDeps): number {
     };
     return options.mode === "changed"
       ? runChangedMode(options, deps, paths)
-      : runReportMode(options, deps, paths);
+      : options.mode === "check"
+        ? runCheckMode(options, deps, paths)
+        : runReportMode(options, deps, paths);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     deps.io.stderr(`arch:check: ${message}\n`);

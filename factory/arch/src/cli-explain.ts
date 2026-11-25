@@ -36,17 +36,31 @@ function legalTargets(manifest: ArchManifest, ruleId: RuleId): string[] {
       const peers = manifest.ranks.flatMap((rank) =>
         rank.forbiddenPeers.map((pair) => `${pair.from} ↮ ${pair.to}`),
       );
-      return [
+      const shared = [
         `Layer order (first is lowest; imports point toward it): ${layers.join(", ")}`,
         ...ranks,
         `Forbidden same-rank pairs: ${peers.length === 0 ? "none" : peers.join(", ")}`,
       ];
+      return ruleId === "G1"
+        ? [
+            ...shared,
+            "Cycle scope: top-level group SCCs plus owner-folder SCCs computed per group",
+            "A cross-group cycle is a group SCC only; it is never repeated as an owner-folder cycle",
+            "Edge kinds that count: value and type-only; test files are excluded",
+          ]
+        : shared;
     }
-    case "G4":
+    case "G4": {
+      const families = [...manifest.typeOnlyFamilies, ...manifest.contractFamilyRoots];
       return [
-        `NCA candidate depth: ${manifest.conventions.ncaCandidateDepth}`,
-        `Package-root bucket: ${manifest.conventions.packageRootBucket}`,
+        "Scope: the owner's parent is a group root or a folder below one; top-level groups are never G4 cases",
+        "Qualifying importer: a non-front-door import into the owner folder from outside it",
+        `Value front door: <owner>/<owner>.ts`,
+        `Type-only front door: <owner>/<owner>${manifest.conventions.typeOnlySuffix}`,
+        `Declared type-only families: ${families.length === 0 ? "none" : families.join(", ")}`,
+        "No rank-0 exemption inside a group; an intra-owner import or a front-door import is composition, not a reach-in",
       ];
+    }
     case "G5":
       return [
         `Folder width: gate ${manifest.budgets.folderWidth.gate}, target ${manifest.budgets.folderWidth.target}`,

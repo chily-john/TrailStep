@@ -457,7 +457,7 @@ export const manifest = deepFreeze({
     G1: {
       severity: "strict",
       anchor: "G1 | Group cycles",
-      fix: "Break the cycle: move the shared shape to the lower-ranked group or remove the edge that closes the loop.",
+      fix: "Break the cycle: remove the edge that closes the loop, or move the shared shape to the lower-ranked group or nearest common ancestor.",
     },
     G2: {
       severity: "strict",
@@ -474,7 +474,7 @@ export const manifest = deepFreeze({
     G4: {
       severity: "strict",
       anchor: "G4 | NCA violations",
-      fix: "Move the private helper up to the parent group or expose it through the parent's front door.",
+      fix: "Move the shared behavior to the parent as its own capability, or expose it through the owner's front door; G4 applies only to folders below a group root (top-level groups are G2/G3/G8 cases), and a parent barrel is not a remedy.",
     },
     G5: {
       severity: "strict",

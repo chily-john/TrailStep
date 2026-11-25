@@ -9,6 +9,12 @@ import type { ArchManifest, RuleId, RuleSeverity } from "../manifest.js";
 export type DiagnosticSet = "hard" | "report" | "review";
 
 /**
+ * The kind of cycle a G1 diagnostic names. `--changed` consumes this instead
+ * of inferring the kind from the target text.
+ */
+export type DiagnosticTargetKind = "group" | "owner";
+
+/**
  * One violation, in the §9.1 contract shape. Folder-level rules use the folder
  * as `file` and `null` for `line`/`column`; every rule carries the manifest's
  * fix recipe and doc anchor verbatim.
@@ -20,6 +26,8 @@ export interface Diagnostic {
   readonly line: number | null;
   readonly column: number | null;
   readonly target: string;
+  /** Set only by rules whose target has more than one namespace (G1). */
+  readonly targetKind?: DiagnosticTargetKind;
   readonly message: string;
   readonly fix: string;
   readonly docAnchor: string;
@@ -48,6 +56,7 @@ export type RuleFunction = (
 export interface DiagnosticInput {
   readonly file: string;
   readonly target: string;
+  readonly targetKind?: DiagnosticTargetKind;
   readonly message: string;
   readonly line?: number | null;
   readonly column?: number | null;

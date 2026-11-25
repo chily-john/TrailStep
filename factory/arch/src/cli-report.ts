@@ -1,6 +1,8 @@
 /**
- * Report-mode orchestration: build the rule graph, run the strict set, build
- * the Story 105 scorecard, write the artifact, and render the human summary.
+ * Full-tree orchestration for report and check modes: build the rule graph,
+ * run the strict set, build the Story 105 scorecard, write the artifact, and
+ * render the human summary. Check mode adds the verdict and full diagnostic
+ * list in `cli.ts`; the measurements are shared.
  *
  * The CLI owns the artifact location; the scorecard shape and all measurements
  * stay in `arch/rules/`.
@@ -69,9 +71,14 @@ function ruleLine(scorecard: Scorecard, ruleId: (typeof manifest.ruleOrder)[numb
 /**
  * The human report. It intentionally prints every rule (including zeroes) so
  * the completion record is the first telemetry snapshot the demotion protocol
- * can cite.
+ * can cite. `blocking` only changes the mode label: report and check mode share
+ * the same scorecard and the same full diagnostic set.
  */
-export function renderReport(report: ArchReport, scorecardPath: string): string {
+export function renderReport(
+  report: ArchReport,
+  scorecardPath: string,
+  options: { readonly blocking?: boolean } = {},
+): string {
   const { scorecard } = report;
   const strictRules = manifest.ruleOrder.filter(
     (ruleId) => manifest.rules[ruleId].severity === "strict",
@@ -80,13 +87,18 @@ export function renderReport(report: ArchReport, scorecardPath: string): string 
     (total, ruleId) => total + scorecard.rules[ruleId].violations,
     0,
   );
+  const modeLabel =
+    options.blocking === true
+      ? "check (blocking; exit 1 on a strict violation)"
+      : "report (never blocks; exit 0)";
   const lines = [
     "Architecture scorecard — full tree",
-    `Mode: report (never blocks; exit 0)`,
+    `Mode: ${modeLabel}`,
     `Files: ${scorecard.files.total} (${scorecard.files.production} production, ${scorecard.files.tests} test)`,
     `Edges: ${scorecard.edges.total} (${scorecard.edges.production.value} value / ${scorecard.edges.production.type} type; production ${scorecard.edges.production.total}, test ${scorecard.edges.test})`,
     `Resolution errors: ${scorecard.resolutionErrors}`,
-    `SCC: value ${scorecard.metrics.scc.value.count} component(s) / ${scorecard.metrics.scc.value.groups} groups; all ${scorecard.metrics.scc.all.count} / ${scorecard.metrics.scc.all.groups}`,
+    `SCC: groups value ${scorecard.metrics.scc.value.count} component(s) / ${scorecard.metrics.scc.value.groups} groups; all ${scorecard.metrics.scc.all.count} / ${scorecard.metrics.scc.all.groups}`,
+    `SCC: owner folders value ${scorecard.metrics.scc.owners.value.count} component(s) / ${scorecard.metrics.scc.owners.value.folders} folders; all ${scorecard.metrics.scc.owners.all.count} / ${scorecard.metrics.scc.owners.all.folders}`,
     `NCA: ${scorecard.metrics.nca.candidates} candidates, ${scorecard.metrics.nca.violations} violations`,
     `Folder width: max ${scorecard.metrics.folderWidth.max} at ${scorecard.metrics.folderWidth.maxFolder} (gate ${scorecard.metrics.folderWidth.gate}, target ${scorecard.metrics.folderWidth.target}; ${scorecard.metrics.folderWidth.overGate.length} over gate)`,
     `Cross-group: ${scorecard.metrics.crossGroup.edges} edges, ${scorecard.metrics.crossGroup.pairs} pairs (${scorecard.metrics.crossGroup.downwardPairs} down / ${scorecard.metrics.crossGroup.upwardPairs} up / ${scorecard.metrics.crossGroup.sidewaysPairs} sideways)`,

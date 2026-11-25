@@ -27,10 +27,16 @@ interface GraphEdgeInput {
   readonly toGroup: string | null;
 }
 
+interface GraphGroupInput {
+  readonly name: string;
+  readonly root: string;
+}
+
 /** The minimal graph shape the scope needs; no rules or scorecard fields. */
 function graphFixture(options: {
   readonly files: readonly { readonly path: string; readonly group: string | null }[];
   readonly edges?: readonly GraphEdgeInput[];
+  readonly groups?: readonly GraphGroupInput[];
 }): ArchGraph {
   const edges = options.edges ?? [];
   return {
@@ -52,7 +58,13 @@ function graphFixture(options: {
       fromGroup: edge.fromGroup,
       toGroup: edge.toGroup,
     })),
-    groups: [],
+    groups: (options.groups ?? []).map((group) => ({
+      name: group.name,
+      root: group.root,
+      rank: null,
+      layerIndex: null,
+      targetGroup: group.name,
+    })),
     resolutionErrors: [],
     stats: {
       files: options.files.length,
@@ -201,28 +213,31 @@ describe("changed-file diagnostic scope", () => {
     expect(scopeDiagnosticsToTouched([banned], ["src/runtime/utils/nested/helper.ts"])).toEqual([]);
   });
 
-  it("keeps G4 only when the touched file is an importer under the folder's parent", () => {
+  it("keeps G4 only when the touched file is a non-front-door importer under the folder's parent", () => {
     const nca = createDiagnostic(manifest, "G4", {
       file: "src/runtime/scope/helper",
       target: "alpha, beta",
       message: "nca",
     });
     const graph = graphFixture({
+      groups: [{ name: "runtime", root: "src/runtime" }],
       files: [
         { path: "src/runtime/scope/alpha/a.ts", group: "runtime" },
+        { path: "src/runtime/scope/beta/b.ts", group: "runtime" },
         { path: "src/runtime/scope/helper/helper.ts", group: "runtime" },
+        { path: "src/runtime/scope/helper/private.ts", group: "runtime" },
         { path: "src/authoring/consumer.ts", group: "authoring" },
       ],
       edges: [
         {
           from: "src/runtime/scope/alpha/a.ts",
-          to: "src/runtime/scope/helper/helper.ts",
+          to: "src/runtime/scope/helper/private.ts",
           fromGroup: "runtime",
           toGroup: "runtime",
         },
         {
           from: "src/authoring/consumer.ts",
-          to: "src/runtime/scope/helper/helper.ts",
+          to: "src/runtime/scope/helper/private.ts",
           fromGroup: "authoring",
           toGroup: "runtime",
         },
@@ -232,12 +247,44 @@ describe("changed-file diagnostic scope", () => {
       nca,
     ]);
     expect(scopeDiagnosticsToTouched([nca], ["src/authoring/consumer.ts"], { graph })).toEqual([]);
+    expect(scopeDiagnosticsToTouched([nca], ["src/runtime/scope/beta/b.ts"], { graph })).toEqual(
+      [],
+    );
+  });
+
+  it("does not keep G4 for a front-door importer (composition is not a reach-in)", () => {
+    const nca = createDiagnostic(manifest, "G4", {
+      file: "src/runtime/scope/helper",
+      target: "alpha, beta",
+      message: "nca",
+    });
+    const graph = graphFixture({
+      groups: [{ name: "runtime", root: "src/runtime" }],
+      files: [
+        { path: "src/runtime/scope/alpha/a.ts", group: "runtime" },
+        { path: "src/runtime/scope/helper/helper.ts", group: "runtime" },
+        { path: "src/runtime/scope/helper/private.ts", group: "runtime" },
+      ],
+      edges: [
+        {
+          from: "src/runtime/scope/alpha/a.ts",
+          to: "src/runtime/scope/helper/helper.ts",
+          fromGroup: "runtime",
+          toGroup: "runtime",
+        },
+      ],
+    });
+
+    expect(scopeDiagnosticsToTouched([nca], ["src/runtime/scope/alpha/a.ts"], { graph })).toEqual(
+      [],
+    );
   });
 
   it("keeps G1 only when the touched file's own edge is on a file cycle", () => {
     const cycle = createDiagnostic(manifest, "G1", {
       file: "src/agent-execution",
       target: "agent-execution, runtime",
+      targetKind: "group",
       message: "cycle",
     });
     const graph = graphFixture({
@@ -269,6 +316,7 @@ describe("changed-file diagnostic scope", () => {
     const cycle = createDiagnostic(manifest, "G1", {
       file: "src/agent-execution",
       target: "agent-execution, runtime",
+      targetKind: "group",
       message: "cycle",
     });
     const graph = graphFixture({
@@ -301,6 +349,113 @@ describe("changed-file diagnostic scope", () => {
     expect(scopeDiagnosticsToTouched([cycle], ["src/authoring/consumer.ts"], { graph })).toEqual(
       [],
     );
+  });
+
+  it("keeps a same-group owner-cycle G1 only for files on its file cycle", () => {
+    const ownerCycle = createDiagnostic(manifest, "G1", {
+      file: "src/contracts/agents",
+      target: "src/contracts/agents, src/contracts/run-context",
+      targetKind: "owner",
+      message: "owner-folder cycle",
+    });
+    const graph = graphFixture({
+      files: [
+        { path: "src/contracts/agents/agents.ts", group: "contracts" },
+        { path: "src/contracts/agents/clean.ts", group: "contracts" },
+        { path: "src/contracts/run-context/run-context.ts", group: "contracts" },
+      ],
+      edges: [
+        {
+          from: "src/contracts/agents/agents.ts",
+          to: "src/contracts/run-context/run-context.ts",
+          fromGroup: "contracts",
+          toGroup: "contracts",
+        },
+        {
+          from: "src/contracts/run-context/run-context.ts",
+          to: "src/contracts/agents/agents.ts",
+          fromGroup: "contracts",
+          toGroup: "contracts",
+        },
+      ],
+    });
+
+    expect(
+      scopeDiagnosticsToTouched([ownerCycle], ["src/contracts/agents/agents.ts"], { graph }),
+    ).toEqual([ownerCycle]);
+    // Merely living in a cyclic owner folder is not file-cycle participation.
+    expect(
+      scopeDiagnosticsToTouched([ownerCycle], ["src/contracts/agents/clean.ts"], { graph }),
+    ).toEqual([]);
+  });
+
+  it("scopes G1 by the structured target kind, never by target text", () => {
+    const untyped = createDiagnostic(manifest, "G1", {
+      file: "src/contracts/agents",
+      target: "src/contracts/agents, src/contracts/run-context",
+      message: "legacy diagnostic",
+    });
+    const graph = graphFixture({
+      files: [
+        { path: "src/contracts/agents/agents.ts", group: "contracts" },
+        { path: "src/contracts/run-context/run-context.ts", group: "contracts" },
+      ],
+      edges: [
+        {
+          from: "src/contracts/agents/agents.ts",
+          to: "src/contracts/run-context/run-context.ts",
+          fromGroup: "contracts",
+          toGroup: "contracts",
+        },
+        {
+          from: "src/contracts/run-context/run-context.ts",
+          to: "src/contracts/agents/agents.ts",
+          fromGroup: "contracts",
+          toGroup: "contracts",
+        },
+      ],
+    });
+
+    expect(
+      scopeDiagnosticsToTouched([untyped], ["src/contracts/agents/agents.ts"], { graph }),
+    ).toEqual([]);
+  });
+
+  it("does not keep G4 for an intra-owner importer (owner implementation, not a reach-in)", () => {
+    const nca = createDiagnostic(manifest, "G4", {
+      file: "src/runtime/scope/helper",
+      target: "alpha, helper",
+      message: "nca",
+    });
+    const graph = graphFixture({
+      groups: [{ name: "runtime", root: "src/runtime" }],
+      files: [
+        { path: "src/runtime/scope/alpha/a.ts", group: "runtime" },
+        { path: "src/runtime/scope/helper/helper.ts", group: "runtime" },
+        { path: "src/runtime/scope/helper/private.ts", group: "runtime" },
+      ],
+      edges: [
+        {
+          from: "src/runtime/scope/helper/helper.ts",
+          to: "src/runtime/scope/helper/private.ts",
+          fromGroup: "runtime",
+          toGroup: "runtime",
+        },
+        {
+          from: "src/runtime/scope/alpha/a.ts",
+          to: "src/runtime/scope/helper/private.ts",
+          fromGroup: "runtime",
+          toGroup: "runtime",
+        },
+      ],
+    });
+
+    expect(
+      scopeDiagnosticsToTouched([nca], ["src/runtime/scope/helper/helper.ts"], { graph }),
+    ).toEqual([]);
+    expect(scopeDiagnosticsToTouched([nca], ["src/runtime/scope/alpha/a.ts"], { graph })).toEqual([
+      nca,
+    ]);
   });
 
   it("never blocks folder-existence diagnostics in changed mode", () => {

@@ -53,12 +53,15 @@ describe("strict rule fixtures", () => {
 });
 
 describe("primary violations", () => {
-  it("G1 reports the complete SCC membership at the group roots", () => {
+  it("G1 reports a cross-group cycle once, at the group roots", () => {
     const diagnostics = runRuleOnFixture("G1", RULE_FIXTURES.G1.fail);
+    // The same cross-group cycle is a group SCC; it must never be repeated as
+    // an owner-folder SCC (owner SCCs are computed per group).
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toMatchObject({
       file: "src/contracts",
       target: "contracts, json",
+      targetKind: "group",
     });
     expect(diagnostics[0]?.message).toContain("2 groups");
   });
@@ -92,7 +95,264 @@ describe("primary violations", () => {
   });
 });
 
+describe("G4 private-helper NCA vs deliberate front-door composition", () => {
+  const OWNER_FRONT_DOOR = "src/runtime/scope/owner/owner.ts";
+  const OWNER_PRIVATE = "src/runtime/scope/owner/private.ts";
+  const ALPHA = "src/runtime/scope/alpha/a.ts";
+  const BETA = "src/runtime/scope/beta/b.ts";
+
+  it("passes when same-parent siblings compose through the owner's front door", () => {
+    const files = {
+      [OWNER_FRONT_DOOR]: "export const owner = 1;\n",
+      [OWNER_PRIVATE]: "export const privateValue = 1;\n",
+      [ALPHA]: 'import { owner } from "../owner/owner.js";\nexport const a = owner;\n',
+      [BETA]: 'import { owner } from "../owner/owner.js";\nexport const b = owner;\n',
+    };
+
+    expect(runRuleOnFixture("G4", { files })).toEqual([]);
+  });
+
+  it("fails when same-parent siblings both reach into the private file", () => {
+    const files = {
+      [OWNER_FRONT_DOOR]: "export const owner = 1;\n",
+      [OWNER_PRIVATE]: "export const privateValue = 1;\n",
+      [ALPHA]:
+        'import { privateValue } from "../owner/private.js";\nexport const a = privateValue;\n',
+      [BETA]:
+        'import { privateValue } from "../owner/private.js";\nexport const b = privateValue;\n',
+    };
+
+    const diagnostics = runRuleOnFixture("G4", { files });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      file: "src/runtime/scope/owner",
+      target: "alpha, beta",
+    });
+    expect(diagnostics[0]?.message).toContain("non-front-door importers");
+    expect(diagnostics[0]?.message).toContain("private helper shared by sibling areas");
+  });
+
+  it("ignores the owner's own intra-folder imports (intra-owner is not a reach-in)", () => {
+    // The owner imports its own private sibling, and exactly one sibling area
+    // reaches in. Only the reach-in can count, so the NCA span is one child.
+    const files = {
+      "src/runtime/scope/helper/helper.ts":
+        'import { helperValue } from "./private.js";\nexport const helper = helperValue;\n',
+      "src/runtime/scope/helper/private.ts": "export const helperValue = 1;\n",
+      "src/runtime/scope/alpha/a.ts":
+        'import { helperValue } from "../helper/private.js";\nexport const a = helperValue;\n',
+    };
+
+    expect(runRuleOnFixture("G4", { files })).toEqual([]);
+  });
+
+  it("does not count a single private reach-in as an NCA span", () => {
+    // One front-door composer plus one private reach-in is a G8 case: only the
+    // reach-in bypasses the door, so the NCA children set has one member.
+    const files = {
+      [OWNER_FRONT_DOOR]: "export const owner = 1;\n",
+      [OWNER_PRIVATE]: "export const privateValue = 1;\n",
+      [ALPHA]: 'import { owner } from "../owner/owner.js";\nexport const a = owner;\n',
+      [BETA]:
+        'import { privateValue } from "../owner/private.js";\nexport const b = privateValue;\n',
+    };
+
+    expect(runRuleOnFixture("G4", { files })).toEqual([]);
+  });
+
+  it("accepts a declared materialized .types.ts front door", () => {
+    const files = {
+      "src/contracts/typed-family/typed-family.types.ts":
+        "export type Typed = { value: number };\n",
+      "src/contracts/typed-family/secret.ts": "export const secret = 1;\n",
+      "src/contracts/alpha/a.ts":
+        'import type { Typed } from "../typed-family/typed-family.types.js";\nexport const a: Typed = { value: 1 };\n',
+      "src/contracts/beta/b.ts":
+        'import type { Typed } from "../typed-family/typed-family.types.js";\nexport const b: Typed = { value: 2 };\n',
+    };
+
+    expect(runRuleOnFixture("G4", { files })).toEqual([]);
+  });
+
+  it("accepts a pending family's declared .types.ts front door", () => {
+    const files = {
+      "src/contracts/pending-family/pending-family.types.ts":
+        "export type Pending = { value: number };\n",
+      "src/contracts/pending-family/secret.ts": "export const secret = 1;\n",
+      "src/contracts/alpha/a.ts":
+        'import type { Pending } from "../pending-family/pending-family.types.js";\nexport const a: Pending = { value: 1 };\n',
+      "src/contracts/beta/b.ts":
+        'import type { Pending } from "../pending-family/pending-family.types.js";\nexport const b: Pending = { value: 2 };\n',
+    };
+
+    expect(runRuleOnFixture("G4", { files })).toEqual([]);
+  });
+
+  it("does not apply to a top-level group (its parent is the package root)", () => {
+    // The deprecations-class false positive: sibling top-level groups reaching
+    // into one group are G2/G3/G8 relationships, never a G4 NCA case.
+    const files = {
+      "src/json/json.ts": "export const json = 1;\n",
+      "src/json/private.ts": "export const privateValue = 1;\n",
+      "src/contracts/read.ts":
+        'import { privateValue } from "../json/private.js";\nexport const contracts = privateValue;\n',
+      "src/authoring/read.ts":
+        'import { privateValue } from "../json/private.js";\nexport const authoring = privateValue;\n',
+    };
+
+    expect(runRuleOnFixture("G4", { files })).toEqual([]);
+  });
+
+  it("applies to a rank-0 folder below a group root (no rank-0 exemption)", () => {
+    const files = {
+      "src/json/scope/helper/helper.ts": "export const helper = 1;\n",
+      "src/json/scope/helper/private.ts": "export const privateValue = 1;\n",
+      "src/json/scope/alpha/a.ts":
+        'import { privateValue } from "../helper/private.js";\nexport const a = privateValue;\n',
+      "src/json/scope/beta/b.ts":
+        'import { privateValue } from "../helper/private.js";\nexport const b = privateValue;\n',
+    };
+
+    const diagnostics = runRuleOnFixture("G4", { files });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      file: "src/json/scope/helper",
+      target: "alpha, beta",
+    });
+  });
+});
+
+describe("G1 owner-folder cycles inside one group", () => {
+  const AGENTS_FRONT_DOOR = "src/contracts/agents/agents.ts";
+  const RUN_CONTEXT_FRONT_DOOR = "src/contracts/run-context/run-context.ts";
+
+  function valueCycleFiles(): Record<string, string> {
+    return {
+      [AGENTS_FRONT_DOOR]:
+        'import { runContext } from "../run-context/run-context.js";\nexport const agents = runContext;\n',
+      [RUN_CONTEXT_FRONT_DOOR]:
+        'import { agents } from "../agents/agents.js";\nexport const runContext = agents;\n',
+    };
+  }
+
+  it("reports a same-group value cycle at owner-folder level", () => {
+    const diagnostics = runRuleOnFixture("G1", { files: valueCycleFiles() });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      file: "src/contracts/agents",
+      target: "src/contracts/agents, src/contracts/run-context",
+      targetKind: "owner",
+    });
+    expect(diagnostics[0]?.message).toContain(
+      "owner-folder cycle in group contracts across 2 owner folders",
+    );
+  });
+
+  it("computes owner cycles independently inside each group", () => {
+    const files = {
+      ...valueCycleFiles(),
+      "src/runtime/alpha/alpha.ts":
+        'import { beta } from "../beta/beta.js";\nexport const alpha = beta;\n',
+      "src/runtime/beta/beta.ts":
+        'import { alpha } from "../alpha/alpha.js";\nexport const beta = alpha;\n',
+    };
+
+    const diagnostics = runRuleOnFixture("G1", { files });
+
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics.map((diagnostic) => diagnostic.targetKind)).toEqual(["owner", "owner"]);
+    expect(diagnostics.map((diagnostic) => diagnostic.file)).toEqual([
+      "src/contracts/agents",
+      "src/runtime/alpha",
+    ]);
+    expect(diagnostics[0]?.message).toContain("group contracts");
+    expect(diagnostics[1]?.message).toContain("group runtime");
+  });
+
+  it("does not repeat a cross-group cycle as an owner-folder cycle", () => {
+    const files = {
+      "src/contracts/contracts.ts":
+        'import { runtime } from "../runtime/runtime.js";\nexport const contracts = runtime;\n',
+      "src/runtime/runtime.ts":
+        'import { contracts } from "../contracts/contracts.js";\nexport const runtime = contracts;\n',
+    };
+
+    const diagnostics = runRuleOnFixture("G1", { files });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      target: "contracts, runtime",
+      targetKind: "group",
+    });
+  });
+
+  it("counts a same-group type-only cycle", () => {
+    const diagnostics = runRuleOnFixture("G1", {
+      files: {
+        [AGENTS_FRONT_DOOR]:
+          'import type { RunContext } from "../run-context/run-context.js";\nexport type Agents = { context: RunContext };\n',
+        [RUN_CONTEXT_FRONT_DOOR]:
+          'import type { Agents } from "../agents/agents.js";\nexport type RunContext = { agents: Agents };\n',
+      },
+    });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]?.message).toContain("owner-folder cycle");
+  });
+
+  it("leaves acyclic front-door composition alone", () => {
+    const diagnostics = runRuleOnFixture("G1", {
+      files: {
+        [AGENTS_FRONT_DOOR]:
+          'import { runContext } from "../run-context/run-context.js";\nexport const agents = runContext;\n',
+        [RUN_CONTEXT_FRONT_DOOR]: "export const runContext = 1;\n",
+      },
+    });
+
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("excludes test edges and test owners consistently", () => {
+    const files = {
+      [AGENTS_FRONT_DOOR]: "export const agents = 1;\n",
+      [RUN_CONTEXT_FRONT_DOOR]:
+        'import { agents } from "../agents/agents.js";\nexport const runContext = agents;\n',
+      // The reverse edge exists only in a test: owner cycles are production
+      // architecture, exactly like the group SCC view.
+      "src/contracts/agents/agents.test.ts":
+        'import { runContext } from "../run-context/run-context.js";\nexport const t = runContext;\n',
+    };
+
+    expect(runRuleOnFixture("G1", { files, includeTests: true })).toEqual([]);
+  });
+
+  it("disappears when exactly one owner-cycle edge is removed", () => {
+    const files = valueCycleFiles();
+    const mutated = {
+      ...files,
+      [RUN_CONTEXT_FRONT_DOOR]: "export const runContext = 1;\n",
+    };
+
+    expect(runRuleOnFixture("G1", { files })).not.toHaveLength(0);
+    expect(runRuleOnFixture("G1", { files: mutated })).toEqual([]);
+  });
+});
+
 describe("diagnostic rendering", () => {
+  it("serializes the structured G1 target kind in the diagnostic payload", () => {
+    const [diagnostic] = runRuleOnFixture("G1", RULE_FIXTURES.G1.fail);
+    expect(diagnostic).toBeDefined();
+    if (diagnostic === undefined) {
+      return;
+    }
+
+    expect(diagnostic.targetKind).toBe("group");
+    expect(diagnosticJson(diagnostic).targetKind).toBe("group");
+  });
+
   it("renders the §9.1 shape and a stable JSON object", () => {
     const [diagnostic] = runRuleOnFixture("G2", RULE_FIXTURES.G2.fail);
     expect(diagnostic).toBeDefined();

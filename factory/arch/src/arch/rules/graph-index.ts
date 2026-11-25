@@ -80,6 +80,20 @@ export function typeDoorFamily(index: RuleIndex, folder: string): TypeDoorFamily
   return null;
 }
 
+/**
+ * The owner folder's front door: `<owner>.ts`, or `<owner>.types.ts` when the
+ * folder is a declared type-only family (materialized or W6-pending). G8 uses
+ * it for reach-ins; G4 uses it to tell deliberate module composition from a
+ * private-helper reach-in. What the door exports is S-7's concern, not this
+ * filename check's.
+ */
+export function frontDoorBasename(index: RuleIndex, folder: string): string {
+  const owner = path.posix.basename(folder);
+  return typeDoorFamily(index, folder) === null
+    ? `${owner}.ts`
+    : `${owner}${index.manifest.conventions.typeOnlySuffix}`;
+}
+
 /** The folder that directly contains `file`. */
 export function folderOf(file: string): string {
   return path.posix.dirname(file);

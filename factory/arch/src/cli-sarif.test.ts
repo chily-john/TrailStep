@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { manifest } from "./arch/manifest.js";
 import { RULE_FIXTURES, runRuleOnFixture } from "./arch/rules/fixtures.test.support.js";
-import { createDiagnostic } from "./arch/rules/index.js";
+import { createDiagnostic, resolutionErrorDiagnostics } from "./arch/rules/index.js";
 import { renderSarif, sarifLevel } from "./cli-sarif.js";
 
 describe("SARIF rendering", () => {
@@ -57,6 +57,56 @@ describe("SARIF rendering", () => {
         },
       ],
     });
+  });
+
+  it("renders an unresolved import as its own operational SARIF rule", () => {
+    const [finding] = resolutionErrorDiagnostics([
+      {
+        from: "src/authoring/broken.ts",
+        specifier: "./missing.js",
+        kind: "value",
+        line: 3,
+        column: 1,
+        reason: 'module "./missing.js" did not resolve',
+      },
+    ]);
+    expect(finding).toBeDefined();
+    if (finding === undefined) {
+      return;
+    }
+
+    const sarif = JSON.parse(renderSarif(manifest, [finding])) as {
+      runs: {
+        tool: { driver: { rules: Record<string, unknown>[] } };
+        results: Record<string, unknown>[];
+      }[];
+    };
+
+    expect(sarif.runs[0]?.tool.driver.rules).toEqual([
+      {
+        id: "ARCH-RESOLVE",
+        name: "ARCH-RESOLVE",
+        shortDescription: { text: finding.fix },
+        properties: { kind: "operational" },
+      },
+    ]);
+    expect(sarif.runs[0]?.results).toEqual([
+      {
+        ruleId: "ARCH-RESOLVE",
+        ruleIndex: 0,
+        level: "error",
+        message: { text: `${finding.message} Fix: ${finding.fix}` },
+        locations: [
+          {
+            physicalLocation: {
+              artifactLocation: { uri: "src/authoring/broken.ts", uriBaseId: "%SRCROOT%" },
+              region: { startLine: 3, startColumn: 1 },
+            },
+          },
+        ],
+      },
+    ]);
+    expect(manifest.ruleOrder as readonly string[]).not.toContain("ARCH-RESOLVE");
   });
 
   it("maps strict to error and report/review to note", () => {

@@ -28,6 +28,35 @@ export interface Diagnostic {
 }
 
 /**
+ * A stable machine code for a finding that is not a manifest rule. Resolution
+ * failures are operational errors: they must block a touched file, but they do
+ * not belong to the architecture rule vocabulary (no severity, anchor, fix
+ * recipe, or exemption lives in the manifest for them).
+ */
+export type OperationalDiagnosticCode = "ARCH-RESOLVE";
+
+/**
+ * A non-rule finding. It deliberately has no `rule`, `docAnchor`, or `docUri`:
+ * pretending it were a manifest rule would make `arch:explain` and the
+ * manifest coverage tests lie.
+ */
+export interface OperationalDiagnostic {
+  readonly kind: "operational";
+  readonly code: OperationalDiagnosticCode;
+  readonly severity: "error";
+  readonly file: string;
+  readonly line: number | null;
+  readonly column: number | null;
+  readonly target: string;
+  readonly message: string;
+  readonly fix: string;
+  readonly set: "error";
+}
+
+/** Everything `--changed` can report: manifest diagnostics plus operational errors. */
+export type CheckFinding = Diagnostic | OperationalDiagnostic;
+
+/**
  * The only I/O a rule may request. `runRules` supplies a disk-backed reader for
  * a real run (`diskRuleContext`); the fixture harness supplies an in-memory map
  * of the fixture sources. A rule therefore stays a function of its inputs: the

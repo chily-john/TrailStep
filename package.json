@@ -28,16 +28,16 @@
     "sandbox": "node scripts/sandbox.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
-    "@changesets/cli": "^3.0.1",
+    "@biomejs/biome": "^2.6.8",
+    "@changesets/cli": "^3.0.3",
     "@trailstep/create-flows": "workspace:*",
     "@trailstep/sub-agents": "workspace:*",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.6",
     "knip": "^6.45.1",
     "tsup": "^8.5.0",
-    "turbo": "^2.10.10",
+    "turbo": "^2.11.13",
     "typescript": "^5.8.3",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "dependencies": {
     "@trailstep/provider-pi": "workspace:*"

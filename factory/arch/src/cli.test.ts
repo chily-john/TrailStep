@@ -150,6 +150,86 @@ describe("architecture CLI", () => {
     expect(test.stderr()).toBe("");
   });
 
+  it("check mode exits 0 on a clean tree and writes the scorecard", () => {
+    const test = harness(BASE_TREE);
+    const out = `${test.repoRoot}/check-scorecard.json`;
+
+    expect(runCli(["--check", "--out", out], test.deps({}))).toBe(0);
+    expect(test.stdout()).toContain("Mode: check (blocking; exit 1 on a strict violation)");
+    expect(test.stdout()).toContain("Total strict violations: 0");
+    expect(test.stdout()).toContain("Verdict: no strict violations — clean.");
+    expect(readFileSync(out, "utf8")).toContain('"schemaVersion": 1');
+  });
+
+  it("check mode exits 1 on a red tree and prints the full diagnostics", () => {
+    const test = harness(REACH_IN_TREE);
+    const out = `${test.repoRoot}/check-scorecard.json`;
+
+    expect(runCli(["--check", "--out", out], test.deps({}))).toBe(1);
+    expect(test.stdout()).toContain("Mode: check (blocking; exit 1 on a strict violation)");
+    expect(test.stdout()).toContain("Total strict violations: 1");
+    expect(test.stdout()).toContain("G8  src/authoring/consumer.ts:1");
+    expect(test.stdout()).toContain("Verdict: 1 strict violation(s) — blocking.");
+    expect(readFileSync(out, "utf8")).toContain('"schemaVersion": 1');
+  });
+
+  it("check --json emits a valid scorecard-plus-diagnostics object", () => {
+    const test = harness(REACH_IN_TREE);
+    const out = `${test.repoRoot}/check-scorecard.json`;
+
+    expect(runCli(["--check", "--json", "--out", out], test.deps({}))).toBe(1);
+    const parsed = JSON.parse(test.stdout()) as {
+      scorecard: { schemaVersion: number };
+      diagnostics: { rule: string; file: string; set: string }[];
+    };
+    expect(parsed.scorecard.schemaVersion).toBe(1);
+    expect(parsed.diagnostics).toHaveLength(1);
+    expect(parsed.diagnostics[0]).toMatchObject({
+      rule: "G8",
+      file: "src/authoring/consumer.ts",
+      set: "hard",
+    });
+  });
+
+  it("check --sarif emits the same full diagnostics as SARIF", () => {
+    const test = harness(REACH_IN_TREE);
+    const out = `${test.repoRoot}/check-scorecard.json`;
+
+    expect(runCli(["--check", "--sarif", "--out", out], test.deps({}))).toBe(1);
+    const parsed = JSON.parse(test.stdout()) as {
+      runs: { tool: { driver: { name: string } }; results: { ruleId: string; level: string }[] }[];
+    };
+    expect(parsed.runs[0]?.tool.driver.name).toBe("trailstep-arch");
+    expect(parsed.runs[0]?.results).toEqual([
+      expect.objectContaining({ ruleId: "G8", level: "error" }),
+    ]);
+  });
+
+  it("check mode exits 2 on an operational error", () => {
+    const test = harness(BASE_TREE);
+    const deps: CliDeps = {
+      ...test.deps({}),
+      report: () => {
+        throw new Error("graph build failed");
+      },
+    };
+
+    expect(runCli(["--check"], deps)).toBe(2);
+    expect(test.stderr()).toContain("arch:check: graph build failed");
+  });
+
+  it("rejects --check combined with any other mode", () => {
+    const test = harness(BASE_TREE);
+    expect(runCli(["--check", "--report"], test.deps({}))).toBe(2);
+    expect(test.stderr()).toContain("mutually exclusive");
+    expect(runCli(["--check", "--changed"], test.deps({}))).toBe(2);
+    expect(test.stderr()).toContain("mutually exclusive");
+    expect(runCli(["--check", "--explain", "G8"], test.deps({}))).toBe(2);
+    expect(test.stderr()).toContain("cannot be combined");
+    expect(runCli(["--check", "--emit-skill", "x.md"], test.deps({}))).toBe(2);
+    expect(test.stderr()).toContain("cannot be combined");
+  });
+
   it("report mode prints the scorecard and always exits 0, even when red", () => {
     const test = harness(REACH_IN_TREE);
     const out = `${test.repoRoot}/scorecard.json`;

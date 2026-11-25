@@ -1,7 +1,7 @@
 import type { ArchGraph } from "../engine/types.js";
 import type { ArchManifest, RuleId } from "../manifest.js";
 import { buildRuleIndex } from "./graph-index.js";
-import { computeGroupSccs, groupSccMetric } from "./rule-g1.js";
+import { computeGroupSccs, computeOwnerSccs, groupSccMetric, ownerSccMetric } from "./rule-g1.js";
 import { type CrossGroupMetric, g3CrossGroupMetric } from "./rule-g3.js";
 import { ncaCandidateCount } from "./rule-g4.js";
 import { measureFolderWidths } from "./rule-g5.js";
@@ -31,6 +31,11 @@ export interface ScorecardMetrics {
   readonly scc: {
     readonly value: { readonly count: number; readonly groups: number };
     readonly all: { readonly count: number; readonly groups: number };
+    /** Owner-folder SCCs are separate telemetry; group counts stay historical. */
+    readonly owners: {
+      readonly value: { readonly count: number; readonly folders: number };
+      readonly all: { readonly count: number; readonly folders: number };
+    };
   };
   readonly nca: { readonly candidates: number; readonly violations: number };
   readonly folderWidth: FolderWidthMetric;
@@ -127,6 +132,7 @@ export function buildScorecard(
   const production = index.productionFiles.length;
   const tests = index.testFiles.length;
   const scc = groupSccMetric(computeGroupSccs(graph, manifest));
+  const owners = ownerSccMetric(computeOwnerSccs(graph, manifest));
   const g4Violations = diagnostics.filter((diagnostic) => diagnostic.rule === "G4").length;
   const productionEdges = index.productionEdges;
 
@@ -145,7 +151,7 @@ export function buildScorecard(
     resolutionErrors: graph.stats.resolutionErrors,
     rules: ruleCounts(manifest, diagnostics),
     metrics: {
-      scc,
+      scc: { ...scc, owners },
       nca: { candidates: ncaCandidateCount(graph, manifest), violations: g4Violations },
       folderWidth: widthMetric(index, manifest),
       crossGroup: g3CrossGroupMetric(graph, manifest),

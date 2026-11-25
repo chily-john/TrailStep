@@ -1,15 +1,15 @@
 /**
  * Argument parsing for the architecture CLI (Story 106).
  *
- * The surface is deliberately small: two scopes (`--report`, `--changed`), two
- * machine formats (`--json`, `--sarif`), one explainer (`--explain <rule>`), one
- * artifact path override (`--out <path>`), and the skill emitter
- * (`--emit-skill <path>`, Story 110). There are no per-rule flags: severity
- * lives in the manifest (parent §8.2), so a `--skip G1`-style toggle has no
- * place in this parser.
+ * The surface is deliberately small: three scopes (`--report`, `--check`,
+ * `--changed`), two machine formats (`--json`, `--sarif`), one explainer
+ * (`--explain <rule>`), one artifact path override (`--out <path>`), and the
+ * skill emitter (`--emit-skill <path>`, Story 110). There are no per-rule
+ * flags: severity lives in the manifest (parent §8.2), so a `--skip G1`-style
+ * toggle has no place in this parser.
  */
 
-export type CliMode = "report" | "changed" | "explain" | "emit-skill";
+export type CliMode = "report" | "check" | "changed" | "explain" | "emit-skill";
 export type CliFormat = "human" | "json" | "sarif";
 
 export interface CliOptions {
@@ -34,6 +34,7 @@ const HELP = `trailstep architecture gate (Story 106)
 
 Usage:
   pnpm arch:check [--report] [--json | --sarif] [--out <path>]
+  pnpm arch:check --check [--json | --sarif] [--out <path>]
   pnpm arch:check --changed [--json | --sarif]
   pnpm arch:explain <rule>
   pnpm arch:check --emit-skill <path>
@@ -41,6 +42,11 @@ Usage:
 Modes:
   --report        Full-tree scorecard (the default). Writes the scorecard JSON
                   artifact and always exits 0, even when the strict set is red.
+  --check         Full-tree blocking gate. Writes the same scorecard and prints
+                  the same full diagnostic list, then exits 1 when any strict
+                  violation exists and 0 when the tree is clean. JSON prints
+                  {"scorecard": ..., "diagnostics": [...]}; SARIF carries the
+                  same full diagnostics.
   --changed       Runs the strict set scoped to the files this working tree or
                   branch touches. Exits 1 when a touched file violates a strict
                   rule. Report-only rules never block.
@@ -55,11 +61,13 @@ Modes:
 
 Output:
   --json          Report mode prints the scorecard JSON (Story 105's golden
-                  format); changed mode prints the scoped diagnostics as JSON.
+                  format); check mode prints the scorecard plus the full
+                  diagnostics; changed mode prints the scoped diagnostics as
+                  JSON.
   --sarif         Prints SARIF 2.1.0 for the selected diagnostics (one result
                   per violation, rule ID as ruleId, fix recipe in the message).
-  --out <path>    Report-mode scorecard path. Relative paths resolve against
-                  the current directory.
+  --out <path>    Report- and check-mode scorecard path. Relative paths resolve
+                  against the current directory.
 
 Scorecard artifact:
   Default: .trailstep/arch/architecture-scorecard.json (gitignored run output,
@@ -81,11 +89,15 @@ Changed-mode scope (the ratchet):
     own folder      G5 (width budget) and S-5 (banned capability name) block
                     only when the touched file's own folder (dirname) is the
                     violated folder, never an ancestor folder.
-    importer        G4 blocks when a touched file is one of the importers that
-                    make the flagged folder an NCA case.
-    edge cycle      G1 blocks only when a touched file's own value/type edge
-                    lies on a file cycle; living inside a cyclic group does
-                    not block.
+    importer        G4 blocks when a touched file is a non-front-door importer
+                    of the flagged folder under that folder's parent. An import
+                    through the owner's front door is composition, not a
+                    reach-in, and cannot make the NCA span.
+    edge cycle      G1 blocks only when a touched production file's own
+                    value/type edge lies on a file cycle inside the
+                    diagnostic's group SCC or owner-folder SCC. Living in a
+                    cyclic group or cyclic owner folder without being on the
+                    file cycle does not block.
     report surface  V-4, V-6 and S-9 are folder-shape/existence diagnostics:
                     they never block --changed and stay visible in the
                     full-tree report.
@@ -94,8 +106,10 @@ Changed-mode scope (the ratchet):
   pass.
 
 Exit codes:
-  0  report mode, or changed mode with no strict violation among touched files
-  1  changed mode found a strict violation (or --explain got an unknown rule)
+  0  report mode, check mode on a clean tree, or changed mode with no strict
+     violation among touched files
+  1  check mode found a strict violation on the full tree, changed mode found
+     one among touched files, or --explain got an unknown rule
   2  usage or operational error
 
 There are no per-rule flags. Severity lives in the manifest; use the demotion
@@ -137,6 +151,10 @@ function splitFlag(argument: string): { name: string; inline: string | null } {
   return { name: argument.slice(0, equals), inline: argument.slice(equals + 1) };
 }
 
+function modeAllowsOut(mode: CliMode): boolean {
+  return mode === "report" || mode === "check";
+}
+
 /** Parses argv (without `node` and the script path). Throws `CliUsageError`. */
 export function parseCliArgs(argv: readonly string[]): CliOptions {
   let mode: CliMode = "report";
@@ -148,7 +166,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
 
   const setMode = (next: CliMode): void => {
     if (modeExplicit && mode !== next) {
-      throw new CliUsageError("--report and --changed are mutually exclusive.");
+      throw new CliUsageError("--report, --check and --changed are mutually exclusive.");
     }
     mode = next;
     modeExplicit = true;
@@ -167,6 +185,13 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
           throw new CliUsageError("--report takes no value.");
         }
         setMode("report");
+        index += 1;
+        break;
+      case "--check":
+        if (inline !== null) {
+          throw new CliUsageError("--check takes no value.");
+        }
+        setMode("check");
         index += 1;
         break;
       case "--changed":
@@ -246,8 +271,8 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   if (mode !== "explain" && rule !== null) {
     throw new CliUsageError("a rule ID is only valid with --explain.");
   }
-  if (out !== null && mode !== "report") {
-    throw new CliUsageError("--out is only valid in report mode.");
+  if (out !== null && !modeAllowsOut(mode)) {
+    throw new CliUsageError("--out is only valid in report or check mode.");
   }
   if (mode === "explain" && format !== "human") {
     throw new CliUsageError("--json and --sarif are not valid with --explain.");

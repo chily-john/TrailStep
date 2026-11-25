@@ -50,6 +50,16 @@ describe("report mode", () => {
     expect(text).toContain("Scorecard: .trailstep/arch/architecture-scorecard.json");
   });
 
+  it("labels the blocking check mode without changing the measurements", () => {
+    const report = cleanReport();
+    const text = renderReport(report, "scorecard.json", { blocking: true });
+
+    expect(text).toContain("Mode: check (blocking; exit 1 on a strict violation)");
+    expect(text).toContain("Total strict violations: 0");
+    expect(text).toContain("SCC: groups value");
+    expect(text).toContain("SCC: owner folders value");
+  });
+
   it("writes the Story 105 scorecard JSON to the requested path", () => {
     const directory = mkdtempSync(path.join(tmpdir(), "arch-report-"));
     cleanup.push(() => rmSync(directory, { recursive: true, force: true }));

@@ -1,4 +1,5 @@
-import type { ArchGraph } from "../engine/types.js";
+import path from "node:path";
+import type { ArchGraph, GraphEdge } from "../engine/types.js";
 import type { ArchManifest } from "../manifest.js";
 import { createDiagnostic } from "./diagnostics.js";
 import {
@@ -6,40 +7,83 @@ import {
   directChild,
   folderDepth,
   folderOf,
+  frontDoorBasename,
   isInsideFolder,
   type RuleIndex,
 } from "./graph-index.js";
 import type { Diagnostic } from "./types.js";
 
-function importersOfFolder(index: RuleIndex, folder: string): readonly string[] {
-  return index.productionEdges
-    .filter((edge) => isInsideFolder(folder, edge.to))
-    .map((edge) => edge.from);
+/**
+ * The G4 qualifying edge: a non-test import into `folder` that targets a file
+ * other than the folder's own front door and starts OUTSIDE `folder`. A
+ * front-door import is explicit module composition, and an import between two
+ * files inside the owner folder is the owner's own implementation: neither is
+ * a reach-in, and neither can make the folder an NCA case. A parent-level
+ * barrel is not a front door for the child either.
+ *
+ * Exported so `--changed` ratchets on exactly the edge set this rule counts,
+ * never on a broader "any import into the folder" predicate.
+ */
+export function isG4ReachIn(index: RuleIndex, folder: string, edge: GraphEdge): boolean {
+  const testSuffix = index.manifest.conventions.testSuffix;
+  if (edge.from.endsWith(testSuffix) || edge.to.endsWith(testSuffix)) {
+    return false;
+  }
+  if (!isInsideFolder(folder, edge.to)) {
+    return false;
+  }
+  // Glossary reach-in: an import from OUTSIDE the owner folder. An intra-owner
+  // edge is the folder's own implementation, never a sibling reach-in.
+  if (isInsideFolder(folder, edge.from)) {
+    return false;
+  }
+  return path.posix.basename(edge.to) !== frontDoorBasename(index, folder);
+}
+
+/** True when `folder` is a group root or lives below one. */
+function isInsideAGroup(index: RuleIndex, folder: string): boolean {
+  return index.graph.groups.some(
+    (group) => folder === group.root || isInsideFolder(group.root, folder),
+  );
 }
 
 /**
- * G4 (amended): for a folder F with parent P, the importers of F that live
- * under P must not span more than one direct child of P. Importers outside P
- * are G2/G8 cases and are ignored here. Top-level groups (depth 1) are not NCA
- * cases: their parent is the package root, and rank-0 groups are public leaf
- * modules (parent §12 decision 2).
+ * G4's scope: the flagged folder's parent must be a group root or a folder
+ * below one. A top-level group's parent is the package root, so top-level
+ * groups are never G4 cases; relationships between them are G2/G3/G8.
+ */
+export function isG4ScopeFolder(index: RuleIndex, folder: string): boolean {
+  return folder !== index.packageRoot && isInsideAGroup(index, folderOf(folder));
+}
+
+/**
+ * G4 (amended): for an owner folder F with parent P inside a group, the
+ * non-front-door importers of F that live under P must not span more than one
+ * direct child of P. Importers outside P are G2/G8 cases and are ignored here.
+ * Imports through F's derived `<F>.ts` or declared `<F>.types.ts` front door are
+ * composition, not reach-ins, and neither are imports inside F itself. G4
+ * applies only below a group root: top-level groups are never G4 cases, and
+ * there is no rank-0 exemption for folders below a group.
  */
 export function g4NcaViolations(graph: ArchGraph, manifest: ArchManifest): Diagnostic[] {
   const index = buildRuleIndex(graph, manifest);
   const diagnostics: Diagnostic[] = [];
 
   for (const folder of index.folders) {
-    if (folder === index.packageRoot || folderDepth(index.packageRoot, folder) < 2) {
+    if (!isG4ScopeFolder(index, folder)) {
       continue;
     }
     const parent = folderOf(folder);
     const children = new Set<string>();
-    for (const importer of importersOfFolder(index, folder)) {
-      const importerFolder = folderOf(importer);
+    for (const edge of index.productionEdges) {
+      if (!isG4ReachIn(index, folder, edge)) {
+        continue;
+      }
+      const importerFolder = folderOf(edge.from);
       if (importerFolder !== parent && !isInsideFolder(parent, importerFolder)) {
         continue;
       }
-      children.add(directChild(parent, importer));
+      children.add(directChild(parent, edge.from));
     }
     if (children.size > 1) {
       const names = [...children].sort();
@@ -47,7 +91,7 @@ export function g4NcaViolations(graph: ArchGraph, manifest: ArchManifest): Diagn
         createDiagnostic(manifest, "G4", {
           file: folder,
           target: names.join(", "),
-          message: `importers under ${parent} span ${names.length} direct children (${names.join(", ")}); this private helper is used by siblings.`,
+          message: `private helper shared by sibling areas: non-front-door importers under ${parent} span ${names.length} direct children (${names.join(", ")}).`,
         }),
       );
     }

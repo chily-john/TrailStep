@@ -3,7 +3,7 @@ import ts from "typescript";
 import type { ArchGraph } from "../engine/types.js";
 import type { ArchManifest, RuleId } from "../manifest.js";
 import { applyExemptions, createDiagnosticComparator } from "./diagnostics.js";
-import { g1GroupCycles } from "./rule-g1.js";
+import { g1Cycles } from "./rule-g1.js";
 import { g2UpwardImports } from "./rule-g2.js";
 import { g4NcaViolations } from "./rule-g4.js";
 import { g5FolderWidth } from "./rule-g5.js";
@@ -37,7 +37,7 @@ export type StrictRuleId =
  * (or a manifest rule) fails loudly.
  */
 export const STRICT_RULE_IMPLEMENTATIONS: Readonly<Record<StrictRuleId, RuleFunction>> = {
-  G1: g1GroupCycles,
+  G1: g1Cycles,
   G2: g2UpwardImports,
   G4: g4NcaViolations,
   G5: g5FolderWidth,

@@ -85,6 +85,7 @@ describe("generated architecture skill", () => {
     const text = readCommittedSkill(REPO_ROOT);
     for (const contract of [
       "pnpm arch:check --changed",
+      "pnpm arch:check --check",
       "pnpm arch:check",
       "pnpm arch:explain",
       "pnpm verify:quick",
@@ -92,7 +93,7 @@ describe("generated architecture skill", () => {
       "pnpm verify",
       "Run `pnpm verify` before declaring done.",
       "It is not a typecheck substitute.",
-      "--changed` blocks; the full tree reports",
+      "`--changed` blocks on touched files; `--check` blocks on the full tree",
       "there is no `--skip <rule>`",
       manifest.docUri,
     ]) {

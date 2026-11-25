@@ -117,22 +117,25 @@ export const RULE_FIXTURES: Readonly<Record<StrictRuleId, RuleFixture>> = {
     },
   },
   G4: {
+    // Regression fixture: the owner imports its own private sibling and exactly
+    // one sibling area reaches in. The intra-owner edge must not count toward
+    // the NCA span, so this is a pass (a single reach-in is a G8 case).
     pass: {
       files: {
-        "src/runtime/scope/helper/helper.ts": "export const helper = 1;\n",
+        "src/runtime/scope/helper/helper.ts":
+          'import { helperValue } from "./private.js";\nexport const helper = helperValue;\n',
+        "src/runtime/scope/helper/private.ts": "export const helperValue = 1;\n",
         "src/runtime/scope/alpha/a.ts":
-          'import { helper } from "../helper/helper.js";\nexport const a = helper;\n',
-        "src/runtime/scope/alpha/b.ts":
-          'import { helper } from "../helper/helper.js";\nexport const b = helper;\n',
+          'import { helperValue } from "../helper/private.js";\nexport const a = helperValue;\n',
       },
     },
     fail: {
       files: {
-        "src/runtime/scope/helper/helper.ts": "export const helper = 1;\n",
+        "src/runtime/scope/helper/private.ts": "export const helper = 1;\n",
         "src/runtime/scope/alpha/a.ts":
-          'import { helper } from "../helper/helper.js";\nexport const a = helper;\n',
+          'import { helper } from "../helper/private.js";\nexport const a = helper;\n',
         "src/runtime/scope/beta/b.ts":
-          'import { helper } from "../helper/helper.js";\nexport const b = helper;\n',
+          'import { helper } from "../helper/private.js";\nexport const b = helper;\n',
       },
     },
   },
